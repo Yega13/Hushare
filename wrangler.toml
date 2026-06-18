@@ -1,0 +1,18 @@
+name = "hushare"
+main = "worker.ts"
+compatibility_date = "2025-04-01"
+compatibility_flags = ["nodejs_compat"]
+
+[assets]
+directory = ".open-next/assets"
+binding = "ASSETS"
+
+[[r2_buckets]]
+binding = "R2_BUCKET"
+bucket_name = "hushare-media"
+
+[vars]
+NEXT_PUBLIC_SITE_URL = "https://hushare.space"
+NEXT_PUBLIC_SUPABASE_URL = ""
+NEXT_PUBLIC_SUPABASE_ANON_KEY = ""
+R2_PUBLIC_HOST = ""
