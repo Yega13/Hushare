@@ -20,6 +20,11 @@ jobs:
 
       - name: Build for Cloudflare
         run: npm run cf:build
+        env:
+          NEXT_PUBLIC_SITE_URL: "https://hushare.space"
+          NEXT_PUBLIC_SUPABASE_URL: "https://yqngmyjquwemwogdyuwv.supabase.co"
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InlxbmdteWpxdXdlbXdvZ2R5dXd2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODE4ODY1ODgsImV4cCI6MjA5NzQ2MjU4OH0.D6r3Qm4ihpzVqrDy8cFWoUyAETKVznA2kQl4cYlp-1k"
+          NEXT_PUBLIC_TURNSTILE_SITE_KEY: "0x4AAAAAADDt-NIV2H4_FNKgornAUjbhM0g"
 
       - name: Deploy via Wrangler
         uses: cloudflare/wrangler-action@v3
