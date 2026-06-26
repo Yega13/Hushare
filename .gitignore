@@ -17,6 +17,9 @@
 /.next/
 /out/
 
+# OpenNext build output (contains baked-in env vars — never commit)
+/.open-next/
+
 # production
 /build
 

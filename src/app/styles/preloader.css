@@ -1,0 +1,155 @@
+.hush-brand-preloader {
+  min-height: 100svh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2rem;
+  background: #FDFAF5;
+}
+
+.hush-line-reveal-loader {
+  position: relative;
+  width: min(68vw, 24rem);
+  padding: 0 0 1.15rem;
+  contain: layout paint;
+  transform: translateZ(0);
+}
+
+.hush-line-reveal-loader::before {
+  content: none;
+}
+
+.hush-line-reveal-logo {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.hush-line-reveal-logo-base {
+  opacity: 0.045;
+  filter: grayscale(0.2);
+}
+
+.hush-line-reveal-logo-fill {
+  position: absolute;
+  inset: 0 auto auto 0;
+  opacity: 1;
+  clip-path: inset(0 100% 0 0);
+  transform: translateZ(0);
+  will-change: clip-path, opacity;
+  animation: hush-line-reveal-logo 1850ms cubic-bezier(0.65, 0, 0.35, 1) infinite;
+}
+
+.hush-line-reveal-track {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  width: 100%;
+  height: 2px;
+  border-radius: 999px;
+  background: rgba(117, 0, 38, 0.16);
+  overflow: hidden;
+}
+
+.hush-line-reveal-sweep {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  width: 30%;
+  height: 2px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, transparent 0%, #750026 18%, #750026 82%, transparent 100%);
+  transform: translateX(-110%);
+  transform-origin: left center;
+  will-change: transform, opacity;
+  animation: hush-line-reveal-sweep 1850ms cubic-bezier(0.65, 0, 0.35, 1) infinite;
+}
+
+.hush-initial-preloader {
+  position: fixed;
+  inset: 0;
+  width: 100vw;
+  height: 100svh;
+  z-index: 2147483647;
+  overflow: hidden;
+  background: #FDFAF5;
+  opacity: 1;
+}
+
+.hush-initial-preloader-leaving {
+  pointer-events: none;
+  animation: hush-preloader-leave 620ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.hush-route-loading {
+  min-height: 100svh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #FDFAF5;
+}
+
+.hush-route-loading-dot {
+  width: 38px;
+  height: 38px;
+  border-radius: 999px;
+  border: 2px solid rgba(37, 79, 34, 0.18);
+  border-top-color: #254F22;
+  animation: hush-route-loading-spin 720ms linear infinite;
+}
+
+@keyframes hush-line-reveal-logo {
+  0% {
+    clip-path: inset(0 100% 0 0);
+    opacity: 0;
+  }
+  12% {
+    opacity: 0.92;
+  }
+  62%,
+  82% {
+    clip-path: inset(0 0 0 0);
+    opacity: 1;
+  }
+  100% {
+    clip-path: inset(0 0 0 0);
+    opacity: 0;
+  }
+}
+
+@keyframes hush-line-reveal-cursor {
+  0% {
+    opacity: 0;
+    transform: translateX(-1rem);
+  }
+  10%,
+  76% {
+    opacity: 1;
+  }
+  84%,
+  100% {
+    opacity: 0;
+    transform: translateX(calc(min(68vw, 24rem) + 1rem));
+  }
+}
+
+@keyframes hush-line-reveal-sweep {
+  0% {
+    transform: translateX(-110%);
+    opacity: 0;
+  }
+  12%,
+  88% {
+    opacity: 1;
+  }
+  100% {
+    transform: translateX(360%);
+    opacity: 0;
+  }
+}
+
+@keyframes hush-route-loading-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}

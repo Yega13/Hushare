@@ -1,0 +1,162 @@
+@layer utilities {
+  .hush-motion {
+    transition:
+      transform 180ms cubic-bezier(0.16, 1, 0.3, 1),
+      opacity 180ms ease,
+      box-shadow 180ms ease,
+      border-color 180ms ease,
+      background-color 180ms ease;
+  }
+
+  .hush-media-img {
+    filter: var(--hush-media-filter, none);
+    transition: filter 180ms ease;
+  }
+
+  .hush-press {
+    transition:
+      transform 160ms cubic-bezier(0.16, 1, 0.3, 1),
+      opacity 160ms ease,
+      box-shadow 160ms ease;
+  }
+
+  .hush-press:hover {
+    transform: translateY(-1px);
+  }
+
+  .hush-press:active {
+    transform: translateY(1px) scale(0.985);
+  }
+
+  .hush-menu-pop {
+    transform-origin: top right;
+    animation: hush-menu-pop 190ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  }
+
+  .hush-modal-pop {
+    animation: hush-modal-pop 240ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  }
+
+  .hush-fade-up {
+    animation: hush-fade-up 520ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  }
+
+  .hush-float-slow {
+    animation: hush-float 7s ease-in-out infinite;
+  }
+
+  .hush-tilt-card {
+    --hush-tilt-x: 0deg;
+    --hush-tilt-y: 0deg;
+    transform-style: preserve-3d;
+    will-change: transform;
+    transition:
+      box-shadow 220ms ease,
+      filter 220ms ease;
+  }
+
+  .hush-tilt-card:hover {
+    filter: saturate(1.04);
+    box-shadow: 0 30px 70px rgba(37, 79, 34, 0.22), 0 10px 24px rgba(37, 79, 34, 0.12);
+  }
+
+  .hush-tilt-card img {
+    transform: translateZ(16px) scale(1.03);
+    transition: transform 220ms cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  .hush-reveal {
+    animation: hush-fade-up 520ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  }
+
+  .hush-faq-extra {
+    animation: hush-faq-extra 260ms ease both;
+  }
+
+  .hush-hover-lift {
+    transition: transform 220ms cubic-bezier(0.16, 1, 0.3, 1), box-shadow 220ms ease;
+  }
+
+  .hush-hover-lift:hover {
+    transform: translateY(-6px);
+    box-shadow: 0 12px 32px rgba(37, 79, 34, 0.15);
+  }
+}
+
+@supports (animation-timeline: view()) {
+  .hush-reveal {
+    animation: hush-fade-up both;
+    animation-timeline: view();
+    animation-range: entry 0% cover 26%;
+  }
+}
+
+@media (max-width: 640px) and (hover: none) {
+  .hush-hover-lift:hover {
+    transform: none;
+  }
+}
+
+@keyframes hush-menu-pop {
+  from {
+    opacity: 0;
+    transform: translateY(-6px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes hush-modal-pop {
+  from {
+    opacity: 0;
+    transform: translateY(10px) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes hush-fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(18px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes hush-faq-extra {
+  from {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes editor-saved-fade {
+  0%   { opacity: 0.9; }
+  60%  { opacity: 0.85; }
+  100% { opacity: 0; }
+}
+
+.animate-fade-out {
+  animation: editor-saved-fade 2s ease forwards;
+}
+
+@keyframes hush-float {
+  0%,
+  100% {
+    transform: perspective(900px) translateY(0) rotate(var(--hush-rotate, 0deg)) rotateX(var(--hush-tilt-x, 0deg)) rotateY(var(--hush-tilt-y, 0deg));
+  }
+  50% {
+    transform: perspective(900px) translateY(-8px) rotate(var(--hush-rotate, 0deg)) rotateX(var(--hush-tilt-x, 0deg)) rotateY(var(--hush-tilt-y, 0deg));
+  }
+}

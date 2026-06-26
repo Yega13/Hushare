@@ -1,7 +1,19 @@
 name = "hushare"
 main = "worker.ts"
-compatibility_date = "2025-04-01"
-compatibility_flags = ["nodejs_compat"]
+compatibility_date = "2026-06-01"
+compatibility_flags = ["nodejs_compat", "global_fetch_strictly_public"]
+workers_dev = false
+
+[[routes]]
+pattern = "hushare.space/*"
+zone_name = "hushare.space"
+
+[[routes]]
+pattern = "www.hushare.space/*"
+zone_name = "hushare.space"
+
+[triggers]
+crons = ["0 2 * * *"]
 
 [assets]
 directory = ".open-next/assets"
@@ -13,6 +25,31 @@ bucket_name = "hushare-media"
 
 [vars]
 NEXT_PUBLIC_SITE_URL = "https://hushare.space"
-NEXT_PUBLIC_SUPABASE_URL = ""
-NEXT_PUBLIC_SUPABASE_ANON_KEY = ""
-R2_PUBLIC_HOST = ""
+NEXT_PUBLIC_SUPABASE_URL = "https://yqngmyjquwemwogdyuwv.supabase.co"
+NEXT_PUBLIC_SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InlxbmdteWpxdXdlbXdvZ2R5dXd2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODE4ODY1ODgsImV4cCI6MjA5NzQ2MjU4OH0.D6r3Qm4ihpzVqrDy8cFWoUyAETKVznA2kQl4cYlp-1k"
+R2_PUBLIC_HOST = "videos.hushare.space"
+NEXT_PUBLIC_TURNSTILE_SITE_KEY = "0x4AAAAAADDt-NIV2H4_FNKgornAUjbhM0g"
+# Set to "true" after verifying hushare.space in Resend dashboard → Domains
+RESEND_DOMAIN_VERIFIED = "true"
+# Secrets — set via: wrangler secret put <NAME>
+# SUPABASE_SERVICE_ROLE_KEY
+# SUPABASE_AUTH_HOOK_SECRET
+# CLOUDFLARE_ACCOUNT_ID
+# CLOUDFLARE_STREAM_TOKEN
+# R2_ACCESS_KEY_ID
+# R2_SECRET_ACCESS_KEY
+# ALBUM_PASSWORD_PEPPER          (32+ random base64 bytes — NEVER change once users exist)
+# ALBUM_PASSWORD_PEPPER_PREVIOUS (only needed during pepper rotation)
+# ALBUM_RETIREMENT_SECRET        (32+ chars)
+# RESEND_API_KEY
+# TURNSTILE_SECRET_KEY           (Cloudflare Turnstile → your site → Secret key)
+# POLAR_API_KEY
+# POLAR_WEBHOOK_SECRET
+# POLAR_PRODUCT_PRO_MONTHLY
+# POLAR_PRODUCT_PRO_YEARLY
+# POLAR_PRODUCT_STUDIO_MONTHLY
+# POLAR_PRODUCT_STUDIO_YEARLY
+# ADMIN_EMAILS                   (comma-separated emails)
+# AWS_ACCESS_KEY_ID              (Rekognition — Studio tier face search)
+# AWS_SECRET_ACCESS_KEY          (Rekognition)
+# AWS_REGION                     (defaults to eu-west-1)

@@ -1,0 +1,197 @@
+'use client'
+
+import { useEffect, useMemo, useRef, useState } from 'react'
+import Image from 'next/image'
+import { Check, Copy, Download, Loader2, Play, QrCode, Share2, X } from 'lucide-react'
+import { showAppToast } from '@/components/AppToast'
+import { useZipDownload } from '@/components/photo-grid/useZipDownload'
+import type { Album, Photo } from '@/types'
+
+type Props = {
+  album: Album
+  photos: Photo[]
+  shareUrl: string
+  onOpenSlideshow: () => void
+  onOpenFaceFinder: () => void
+}
+
+const btnBase: React.CSSProperties = {
+  display: 'inline-flex',
+  alignItems: 'center',
+  gap: '0.375rem',
+  padding: '0.375rem 0.875rem',
+  borderRadius: '0.625rem',
+  fontSize: '0.8125rem',
+  fontWeight: 600,
+  background: '#FDFAF5',
+  color: '#254F22',
+  border: '1px solid #DDD5C5',
+  cursor: 'pointer',
+  whiteSpace: 'nowrap' as const,
+}
+
+export default function GuestActionsBar({ album, photos, shareUrl, onOpenSlideshow, onOpenFaceFinder: _onOpenFaceFinder }: Props) {
+  const { zipping, zipProgress, downloadZip } = useZipDownload(photos, album.title ?? '')
+
+  const [shareOpen, setShareOpen] = useState(false)
+  const [copied, setCopied] = useState(false)
+  const [qrDataUrl, setQrDataUrl] = useState('')
+  const shareRef = useRef<HTMLDivElement>(null)
+
+  // Pre-generate QR once
+  useEffect(() => {
+    let cancelled = false
+    import('qrcode').then(({ default: QRCode }) => {
+      QRCode.toDataURL(shareUrl, { width: 300, margin: 2, color: { dark: '#254F22', light: '#FFFFFF' } })
+        .then((url) => { if (!cancelled) setQrDataUrl(url) })
+    })
+    return () => { cancelled = true }
+  }, [shareUrl])
+
+  // Close share popup on outside click
+  useEffect(() => {
+    if (!shareOpen) return
+    function onOutside(e: MouseEvent) {
+      if (shareRef.current && !shareRef.current.contains(e.target as Node)) setShareOpen(false)
+    }
+    document.addEventListener('mousedown', onOutside)
+    return () => document.removeEventListener('mousedown', onOutside)
+  }, [shareOpen])
+
+  async function handleNativeShare() {
+    if (typeof navigator !== 'undefined' && navigator.share) {
+      try {
+        await navigator.share({ url: shareUrl, title: album.title, text: `Check out "${album.title}" on Hushare` })
+        setShareOpen(false)
+        return
+      } catch { /* fall through */ }
+    }
+    await copyLink()
+  }
+
+  async function copyLink() {
+    try {
+      await navigator.clipboard.writeText(shareUrl)
+      setCopied(true)
+      showAppToast('Link copied.')
+      setTimeout(() => setCopied(false), 2000)
+    } catch {
+      showAppToast('Could not copy — please copy the link manually.', 'error')
+    }
+  }
+
+  // Stream-only videos cannot be downloaded; only R2-backed photos can be zipped
+  const downloadableCount = useMemo(
+    () => photos.filter((p) => p.storage_backend === 'r2').length,
+    [photos],
+  )
+
+  return (
+    <div style={{ background: '#F5F0E8', borderBottom: '1px solid #DDD5C5' }}>
+      <div className="hush-container py-3 flex flex-wrap items-center gap-2">
+
+        {/* Slideshow */}
+        <button
+          className="hush-press"
+          style={btnBase}
+          onClick={() => {
+            if (photos.length === 0) {
+              showAppToast('No photos to show yet.', 'error')
+              return
+            }
+            onOpenSlideshow()
+          }}
+        >
+          <Play className="w-3.5 h-3.5" />
+          Slideshow
+        </button>
+
+        {/* Download All — only if owner allows it and there are downloadable items */}
+        {album.allow_guest_downloads && (
+          <button
+            className="hush-press"
+            style={btnBase}
+            disabled={zipping || downloadableCount === 0}
+            onClick={downloadZip}
+          >
+            {zipping ? (
+              <>
+                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                {zipProgress < 100 ? `${zipProgress}%` : 'Zipping…'}
+              </>
+            ) : (
+              <>
+                <Download className="w-3.5 h-3.5" />
+                Download all
+              </>
+            )}
+          </button>
+        )}
+
+        {/* Share — with popup */}
+        <div ref={shareRef} className="relative">
+          <button
+            className="hush-press"
+            style={btnBase}
+            onClick={() => setShareOpen((v) => !v)}
+          >
+            <Share2 className="w-3.5 h-3.5" />
+            Share
+          </button>
+
+          {shareOpen && (
+            <div
+              className="hush-menu-pop absolute left-0 top-full mt-2 z-50 rounded-2xl shadow-xl"
+              style={{ background: '#FFFFFF', border: '1px solid #DDD5C5', width: 300, padding: 16 }}
+            >
+              <div className="flex items-center justify-between mb-3">
+                <span className="font-semibold text-sm" style={{ color: '#254F22' }}>Share album</span>
+                <button type="button" onClick={() => setShareOpen(false)} style={{ color: '#A89880' }} aria-label="Close">
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              <button
+                className="hush-hover-lift w-full flex items-center justify-between gap-3 rounded-xl px-3 py-3 mb-2 text-left transition hover:opacity-90"
+                style={{ background: '#FDFAF5', border: '1px solid #DDD5C5', cursor: 'pointer' }}
+                onClick={handleNativeShare}
+              >
+                <span>
+                  <span className="block text-sm font-semibold" style={{ color: '#254F22' }}>Share album</span>
+                  <span className="block text-xs" style={{ color: '#8B6F4E' }}>Send via messages, apps or copy</span>
+                </span>
+                <Share2 className="w-4 h-4 flex-none" style={{ color: '#7C5C3E' }} />
+              </button>
+
+              <button
+                className="hush-hover-lift w-full flex items-center justify-between gap-3 rounded-xl px-3 py-3 text-left transition hover:opacity-90"
+                style={{ background: '#FDFAF5', border: '1px solid #DDD5C5', cursor: 'pointer' }}
+                onClick={copyLink}
+              >
+                <span>
+                  <span className="block text-sm font-semibold" style={{ color: '#254F22' }}>Copy link</span>
+                  <span className="block text-xs truncate" style={{ color: '#8B6F4E', maxWidth: 200 }}>{shareUrl}</span>
+                </span>
+                {copied ? <Check className="w-4 h-4" style={{ color: '#254F22' }} /> : <Copy className="w-4 h-4" style={{ color: '#7C5C3E' }} />}
+              </button>
+
+              <div className="mt-3 rounded-xl p-3" style={{ background: '#FFFFFF', border: '1px solid #DDD5C5' }}>
+                <div className="flex items-center gap-3">
+                  {qrDataUrl && <Image src={qrDataUrl} alt="QR Code" width={80} height={80} unoptimized />}
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-semibold flex items-center gap-2" style={{ color: '#254F22' }}>
+                      <QrCode className="w-4 h-4" />
+                      QR code
+                    </p>
+                    <p className="text-xs leading-relaxed" style={{ color: '#7C5C3E' }}>Scan to open this album.</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+
+      </div>
+    </div>
+  )
+}

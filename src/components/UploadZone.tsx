@@ -1,0 +1,882 @@
+'use client'
+
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import * as tus from 'tus-js-client'
+import type { Album, Tier } from '@/types'
+import { stripExifFromJpeg } from '@/lib/exif'
+import { detectKind, uploadCapsForTier, generateVideoPoster } from '@/lib/media'
+import {
+  UPLOAD_CONCURRENCY_MOBILE,
+  UPLOAD_CONCURRENCY_DESKTOP,
+  STREAM_CHUNK_SIZE_BYTES,
+} from '@/lib/constants'
+
+// ─── XHR timeout ──────────────────────────────────────────────────────────────
+const XHR_TIMEOUT_MS = 120_000
+// ─── Max image dimension — images larger than this get downscaled before upload ─
+const MAX_IMG_DIM = 4096
+
+// ─── Semaphore ────────────────────────────────────────────────────────────────
+
+class Semaphore {
+  private slots: number
+  private queue: (() => void)[] = []
+  constructor(capacity: number) { this.slots = capacity }
+  acquire(): Promise<void> {
+    if (this.slots > 0) { this.slots--; return Promise.resolve() }
+    return new Promise<void>(res => this.queue.push(res))
+  }
+  release(): void {
+    const next = this.queue.shift()
+    if (next) { next() } else { this.slots++ }
+  }
+}
+
+// ─── HEIC Worker singleton ────────────────────────────────────────────────────
+// Module-level state: safe in 'use client' — each browser tab gets its own JS heap.
+
+let _heicWorker: Worker | null = null
+let _heicJobId = 0
+const _heicCallbacks = new Map<number, {
+  resolve: (b: Blob) => void
+  reject: (e: Error) => void
+  timer: ReturnType<typeof setTimeout>
+}>()
+
+function getHeicWorker(): Worker {
+  if (_heicWorker) return _heicWorker
+  // Path MUST be a string literal — Turbopack/Webpack detect workers by static analysis of new URL(...)
+  _heicWorker = new Worker(new URL('../lib/heic-worker.ts', import.meta.url), { type: 'module' })
+  _heicWorker.onmessage = (e: MessageEvent<{ id: number; jpeg?: Blob; error?: string }>) => {
+    const { id, jpeg, error } = e.data
+    const cb = _heicCallbacks.get(id)
+    if (!cb) return
+    _heicCallbacks.delete(id)
+    clearTimeout(cb.timer)
+    if (jpeg) cb.resolve(jpeg)
+    else cb.reject(new Error(error ?? 'HEIC conversion failed'))
+  }
+  _heicWorker.onerror = () => {
+    // Null out the worker — getHeicWorker() will create a fresh one for the next file.
+    // No permanent broken flag: a transient crash (e.g. OOM on one large file) should
+    // not permanently disable the worker for subsequent (smaller) files.
+    for (const [, cb] of _heicCallbacks) { clearTimeout(cb.timer); cb.reject(new Error('HEIC worker crashed')) }
+    _heicCallbacks.clear()
+    _heicWorker = null
+  }
+  return _heicWorker
+}
+
+async function convertHeicViaWorker(file: File): Promise<Blob> {
+  const worker = getHeicWorker()
+  const id = ++_heicJobId
+  const buffer = await file.arrayBuffer()
+  return new Promise<Blob>((resolve, reject) => {
+    const timer = setTimeout(() => {
+      _heicCallbacks.delete(id)
+      reject(new Error('HEIC conversion timed out'))
+    }, 120_000)
+    _heicCallbacks.set(id, { resolve, reject, timer })
+    worker.postMessage({ id, buffer }, [buffer])
+  })
+}
+
+async function convertHeicMainThread(file: File): Promise<Blob> {
+  const heic2any = (await import('heic2any')).default as unknown as (
+    opts: { blob: Blob; toType: string; quality: number }
+  ) => Promise<Blob | Blob[]>
+  if (typeof heic2any !== 'function') throw new Error('heic2any failed to load')
+  const result = await heic2any({ blob: file, toType: 'image/jpeg', quality: 0.9 })
+  return Array.isArray(result) ? result[0] : result
+}
+
+// ─── Image processing helpers ─────────────────────────────────────────────────
+
+async function encodeCanvas(
+  canvas: HTMLCanvasElement | OffscreenCanvas,
+  mimeType: string,
+  quality: number,
+): Promise<Blob> {
+  if (canvas instanceof OffscreenCanvas) {
+    return canvas.convertToBlob({ type: mimeType, quality })
+  }
+  return new Promise<Blob>((resolve, reject) =>
+    (canvas as HTMLCanvasElement).toBlob(
+      b => (b ? resolve(b) : reject(new Error('canvas.toBlob returned null'))),
+      mimeType,
+      quality,
+    ),
+  )
+}
+
+async function resizeAndEncode(source: File | Blob, targetMime: string): Promise<Blob> {
+  // Try createImageBitmap with resize options — throws on Safari < 17.4
+  let bitmap: ImageBitmap | null = null
+  try {
+    bitmap = await createImageBitmap(source, { resizeWidth: MAX_IMG_DIM, resizeQuality: 'high' })
+  } catch {
+    try { bitmap = await createImageBitmap(source) } catch { /* bitmap stays null */ }
+  }
+
+  if (!bitmap) {
+    // createImageBitmap unavailable — return source unchanged
+    return source
+  }
+
+  const { width: bw, height: bh } = bitmap
+  const scale = Math.min(1, MAX_IMG_DIM / Math.max(bw, bh))
+  const w = Math.max(1, Math.round(bw * scale))
+  const h = Math.max(1, Math.round(bh * scale))
+
+  // Try OffscreenCanvas (convertToBlob missing on Safari < 16.4)
+  if (typeof OffscreenCanvas !== 'undefined') {
+    try {
+      const oc = new OffscreenCanvas(w, h)
+      const octx = oc.getContext('2d')
+      if (!octx) throw new Error('OffscreenCanvas 2D context unavailable')
+      octx.drawImage(bitmap, 0, 0, w, h)
+      const blob = await encodeCanvas(oc, targetMime, 0.88)
+      bitmap.close()
+      return blob
+    } catch { /* fall through */ }
+  }
+
+  // HTMLCanvasElement fallback (always available in a browser page context)
+  const canvas = document.createElement('canvas')
+  canvas.width = w
+  canvas.height = h
+  const ctx = canvas.getContext('2d')
+  if (!ctx) throw new Error('Could not get 2D canvas context')
+  ctx.drawImage(bitmap, 0, 0, w, h)
+  const blob = await encodeCanvas(canvas, targetMime, 0.88)
+  bitmap.close()
+  return blob
+}
+
+async function processImageFile(file: File): Promise<{ blob: Blob; mimeType: string; name: string }> {
+  const isHeic = /heic|heif/i.test(file.type) || /\.(heic|heif)$/i.test(file.name)
+
+  if (isHeic) {
+    let jpegBlob: Blob
+    try {
+      jpegBlob = await convertHeicViaWorker(file)
+    } catch {
+      // Worker failed (crash or per-file decode error) — always fall back to main thread
+      try {
+        jpegBlob = await convertHeicMainThread(file)
+      } catch (mainErr) {
+        throw new Error(`HEIC conversion failed: ${mainErr instanceof Error ? mainErr.message : String(mainErr)}`)
+      }
+    }
+    const buf = await jpegBlob.arrayBuffer()
+    const stripped = stripExifFromJpeg(new Uint8Array(buf))
+    let finalBlob: Blob = new Blob([stripped.buffer as unknown as ArrayBuffer], { type: 'image/jpeg' })
+    // HEIC→JPEG can inflate dramatically (50 MP ProRAW → 30+ MB JPEG) — resize if needed
+    if (finalBlob.size > 2 * 1024 * 1024) {
+      finalBlob = await resizeAndEncode(finalBlob, 'image/jpeg')
+    }
+    return {
+      blob: finalBlob,
+      mimeType: 'image/jpeg',
+      name: file.name.replace(/\.(heic|heif)$/i, '.jpg'),
+    }
+  }
+
+  const mimeType = (file.type || 'image/jpeg').toLowerCase()
+
+  // Resize images that might exceed MAX_IMG_DIM (> 2 MB is a reasonable heuristic)
+  if (file.size > 2 * 1024 * 1024 && mimeType !== 'image/gif') {
+    const outMime = mimeType === 'image/webp' ? 'image/webp' : 'image/jpeg'
+    const blob = await resizeAndEncode(file, outMime)
+    // resizeAndEncode returns the exact `file` reference when createImageBitmap is unavailable.
+    // In that fallback the bytes are the original format (e.g. PNG), NOT JPEG — wrapping
+    // them as image/jpeg would store corrupted data. Detect and pass through as original type.
+    if ((blob as unknown) === (file as unknown)) {
+      return { blob: file, mimeType, name: file.name }
+    }
+    if (outMime === 'image/jpeg') {
+      const buf = await blob.arrayBuffer()
+      const stripped = stripExifFromJpeg(new Uint8Array(buf))
+      return {
+        blob: new Blob([stripped.buffer as unknown as ArrayBuffer], { type: 'image/jpeg' }),
+        mimeType: 'image/jpeg',
+        name: file.name.replace(/\.[^.]+$/, '.jpg'),
+      }
+    }
+    // Use outMime (not blob.type) — blob.type may be '' if createImageBitmap fell back
+    return { blob, mimeType: outMime, name: file.name }
+  }
+
+  // Small JPEG: strip EXIF in-place (no canvas round-trip needed)
+  if (mimeType === 'image/jpeg' || mimeType === 'image/jpg') {
+    const buf = await file.arrayBuffer()
+    const stripped = stripExifFromJpeg(new Uint8Array(buf))
+    return { blob: new Blob([stripped.buffer as unknown as ArrayBuffer], { type: 'image/jpeg' }), mimeType: 'image/jpeg', name: file.name }
+  }
+
+  // PNG / WebP / GIF: pass through (no EXIF)
+  return { blob: file, mimeType, name: file.name }
+}
+
+async function generateThumbnail(blob: Blob): Promise<Blob | null> {
+  try {
+    let bitmap: ImageBitmap
+    try {
+      bitmap = await createImageBitmap(blob, { resizeWidth: 200, resizeQuality: 'high' })
+    } catch {
+      bitmap = await createImageBitmap(blob)
+    }
+    const { width: bw, height: bh } = bitmap
+    const scale = Math.min(1, 200 / Math.max(bw, bh))
+    const w = Math.max(1, Math.round(bw * scale))
+    const h = Math.max(1, Math.round(bh * scale))
+
+    if (typeof OffscreenCanvas !== 'undefined') {
+      try {
+        const oc = new OffscreenCanvas(w, h)
+        const octx = oc.getContext('2d')
+        if (!octx) throw new Error('OffscreenCanvas 2D context unavailable')
+        octx.drawImage(bitmap, 0, 0, w, h)
+        const thumb = await oc.convertToBlob({ type: 'image/jpeg', quality: 0.8 })
+        bitmap.close()
+        return thumb
+      } catch { /* fall through */ }
+    }
+    const canvas = document.createElement('canvas')
+    canvas.width = w
+    canvas.height = h
+    const thumbCtx = canvas.getContext('2d')
+    if (!thumbCtx) { bitmap.close(); return null }
+    thumbCtx.drawImage(bitmap, 0, 0, w, h)
+    bitmap.close()
+    return new Promise<Blob | null>(res => canvas.toBlob(res, 'image/jpeg', 0.8))
+  } catch {
+    return null
+  }
+}
+
+// ─── XHR PUT ──────────────────────────────────────────────────────────────────
+
+class HttpError extends Error {
+  constructor(public readonly status: number, message: string) { super(message) }
+}
+
+async function xhrPut(
+  url: string,
+  body: Blob,
+  contentType: string,
+  onProgress: (pct: number) => void,
+  signal?: AbortSignal,
+): Promise<void> {
+  return new Promise<void>((resolve, reject) => {
+    if (signal?.aborted) { reject(new DOMException('Upload aborted', 'AbortError')); return }
+    const xhr = new XMLHttpRequest()
+    const onAbort = () => {
+      xhr.abort()
+      reject(new DOMException('Upload aborted', 'AbortError'))
+    }
+    signal?.addEventListener('abort', onAbort, { once: true })
+    xhr.open('PUT', url)
+    xhr.setRequestHeader('Content-Type', contentType)
+    xhr.timeout = XHR_TIMEOUT_MS
+    xhr.upload.onprogress = (e) => {
+      if (e.lengthComputable) onProgress(Math.round((e.loaded / e.total) * 100))
+    }
+    xhr.onload = () => {
+      signal?.removeEventListener('abort', onAbort)
+      if (xhr.status >= 200 && xhr.status < 300) resolve()
+      else reject(new HttpError(xhr.status, `R2 PUT ${xhr.status}`))
+    }
+    xhr.onerror = () => {
+      signal?.removeEventListener('abort', onAbort)
+      reject(new Error('Network error during upload'))
+    }
+    xhr.ontimeout = () => {
+      signal?.removeEventListener('abort', onAbort)
+      reject(new Error('Upload timed out'))
+    }
+    xhr.send(body)
+  })
+}
+
+// ─── Types ────────────────────────────────────────────────────────────────────
+
+type FileEntry = {
+  id: string
+  file: File
+  status: 'pending' | 'uploading' | 'done' | 'error'
+  progress: number
+  error?: string
+}
+
+type PhotoRow = {
+  storage_backend: 'r2' | 'stream'
+  media_type: 'image' | 'video'
+  storage_path?: string
+  url?: string
+  thumb_url?: string | null
+  stream_uid?: string
+  stream_thumbnail_url?: string | null
+  poster_url: string | null
+  duration_seconds?: number | null
+}
+
+// ─── Upload image to R2 ───────────────────────────────────────────────────────
+
+async function uploadImageToR2(
+  file: File,
+  albumId: string,
+  onProgress: (pct: number) => void,
+  signal?: AbortSignal,
+): Promise<PhotoRow> {
+  // Process BEFORE presigning — fileSize in presign must match the actual blob we PUT
+  onProgress(2)
+  const { blob: processedBlob, mimeType, name: processedName } = await processImageFile(file)
+  onProgress(10)
+
+  const presignRes = await fetch('/api/upload/presign', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      albumId,
+      fileName: processedName,
+      contentType: mimeType,
+      fileSize: processedBlob.size,  // actual size of the blob we're about to PUT
+    }),
+  })
+  if (!presignRes.ok) {
+    const err = await presignRes.json().catch(() => ({})) as { error?: string }
+    throw new Error(err.error ?? `Presign failed (${presignRes.status})`)
+  }
+  const { presignedUrl, key, publicUrl } = await presignRes.json() as {
+    presignedUrl: string; key: string; publicUrl: string
+  }
+  onProgress(15)
+
+  // PUT with max 2 retries on network errors; never retry 4xx/5xx (server-decided)
+  let lastErr: Error | null = null
+  for (let attempt = 0; attempt <= 2; attempt++) {
+    try {
+      await xhrPut(presignedUrl, processedBlob, mimeType, pct => onProgress(15 + Math.round(pct * 0.7)), signal)
+      lastErr = null
+      break
+    } catch (e) {
+      if (e instanceof HttpError) throw e  // 4xx / 5xx — no retry
+      lastErr = e instanceof Error ? e : new Error(String(e))
+    }
+  }
+  if (lastErr) throw lastErr
+  onProgress(85)
+
+  // Thumbnail — failure is non-fatal
+  let thumbUrl: string | null = null
+  try {
+    const thumbBlob = await generateThumbnail(processedBlob)
+    if (thumbBlob) {
+      const tPresign = await fetch('/api/upload/presign', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          albumId,
+          fileName: 'thumb.jpg',
+          contentType: 'image/jpeg',
+          fileSize: thumbBlob.size,
+          isThumb: true,
+        }),
+      })
+      if (tPresign.ok) {
+        const { presignedUrl: tUrl, publicUrl: tPublicUrl } = await tPresign.json() as {
+          presignedUrl: string; key: string; publicUrl: string
+        }
+        await xhrPut(tUrl, thumbBlob, 'image/jpeg', () => {})
+        thumbUrl = tPublicUrl
+      }
+    }
+  } catch { /* non-fatal */ }
+  onProgress(96)
+
+  return {
+    storage_backend: 'r2',
+    media_type: 'image',
+    storage_path: key,
+    url: publicUrl,
+    thumb_url: thumbUrl,
+    poster_url: null,
+  }
+}
+
+// ─── Upload video to Cloudflare Stream ────────────────────────────────────────
+
+async function uploadVideoToStream(
+  file: File,
+  albumId: string,
+  onProgress: (pct: number) => void,
+  signal?: AbortSignal,
+): Promise<PhotoRow> {
+  onProgress(2)
+
+  // Generate a poster frame and upload it to R2 thumbs so it's immediately visible in the grid.
+  // isThumb:true places the key under thumbs/{albumId}/{uuid}.jpg which passes photos/create
+  // poster_url validation. Also captures duration — avoids a second video element decode.
+  let posterUrl: string | null = null
+  let durationSeconds = 0
+  try {
+    const posterResult = await generateVideoPoster(file)
+    if (posterResult) {
+      durationSeconds = posterResult.durationSeconds
+      const pPresign = await fetch('/api/upload/presign', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          albumId,
+          fileName: 'poster.jpg',
+          contentType: 'image/jpeg',
+          fileSize: posterResult.blob.size,
+          isThumb: true,
+        }),
+      })
+      if (pPresign.ok) {
+        const { presignedUrl: pUrl, publicUrl: pPublicUrl } = await pPresign.json() as {
+          presignedUrl: string; key: string; publicUrl: string
+        }
+        await xhrPut(pUrl, posterResult.blob, 'image/jpeg', () => {})
+        posterUrl = pPublicUrl  // R2 thumbs URL — passes photos/create poster_url validation
+      }
+    }
+  } catch { /* non-fatal */ }
+  onProgress(8)
+
+  // Init Cloudflare Stream TUS upload — 15s timeout (3s is too tight on slow mobile)
+  const initRes = await fetch('/api/upload/stream', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      albumId,
+      fileName: file.name,
+      contentType: file.type,
+      fileSize: file.size,  // raw file size — no processing for videos
+    }),
+    signal: AbortSignal.timeout(15_000),
+  })
+  if (!initRes.ok) {
+    const err = await initRes.json().catch(() => ({})) as { error?: string }
+    throw new Error(err.error ?? `Stream init failed (${initRes.status})`)
+  }
+  // Route returns camelCase: { uploadUrl, streamUid, iframeUrl, thumbnailUrl }
+  const { uploadUrl, streamUid, iframeUrl, thumbnailUrl } = await initRes.json() as {
+    uploadUrl: string; streamUid: string; iframeUrl: string; thumbnailUrl: string
+  }
+  if (!uploadUrl || !streamUid || !iframeUrl) throw new Error('Stream init returned incomplete response')
+  onProgress(12)
+
+  // TUS chunked upload — uploadUrl is a pre-created Cloudflare Stream upload URL
+  await new Promise<void>((resolve, reject) => {
+    if (signal?.aborted) { reject(new DOMException('Upload aborted', 'AbortError')); return }
+    let settled = false
+    const settle = (fn: () => void) => { if (!settled) { settled = true; fn() } }
+    const upload = new tus.Upload(file, {
+      uploadUrl,
+      chunkSize: STREAM_CHUNK_SIZE_BYTES,
+      retryDelays: [0, 0],
+      // Only retry on transport/network failures — never on HTTP error responses (4xx/5xx).
+      // Matches the XHR image upload policy: HttpError is never retried.
+      onShouldRetry: (err: unknown) => {
+        if (err && typeof (err as { originalResponse?: unknown }).originalResponse !== 'undefined') return false
+        return true
+      },
+      onProgress: (bytesUploaded, bytesTotal) => {
+        const pct = bytesTotal > 0 ? Math.round((bytesUploaded / bytesTotal) * 85) : 0
+        onProgress(12 + pct)
+      },
+      onSuccess: () => settle(resolve),
+      onError: (err) => settle(() => reject(err instanceof Error ? err : new Error(String(err)))),
+    })
+    signal?.addEventListener('abort', () => {
+      upload.abort()
+      settle(() => reject(new DOMException('Upload aborted', 'AbortError')))
+    }, { once: true })
+    upload.start()
+  })
+  onProgress(98)
+
+  return {
+    storage_backend: 'stream',
+    media_type: 'video',
+    stream_uid: streamUid,
+    url: iframeUrl,
+    stream_thumbnail_url: thumbnailUrl ?? null,
+    poster_url: posterUrl,  // null if poster upload failed; otherwise valid R2 thumbs URL
+    duration_seconds: Number.isFinite(durationSeconds) && durationSeconds > 0
+      ? Math.round(durationSeconds)
+      : null,
+  }
+}
+
+// ─── Batch DB save ────────────────────────────────────────────────────────────
+
+async function saveUploadedRows(albumId: string, rows: PhotoRow[]): Promise<{ inserted: number; skipped: number }> {
+  const res = await fetch('/api/album/photos/create', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    // albumId (camelCase) — route destructures { albumId, photos }
+    body: JSON.stringify({ albumId, photos: rows }),
+  })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({})) as { error?: string }
+    throw new Error(err.error ?? `Save failed (${res.status})`)
+  }
+  // Route returns { inserted: N, skipped: N } — NOT inserted_count / rejected_count
+  const body = await res.json() as { inserted?: number; skipped?: number }
+  return {
+    inserted: typeof body.inserted === 'number' ? body.inserted : rows.length,
+    skipped:  typeof body.skipped  === 'number' ? body.skipped  : 0,
+  }
+}
+
+// ─── Component ────────────────────────────────────────────────────────────────
+
+type Props = {
+  album: Album
+  userTier: Tier
+  onPhotosUploaded?: () => void
+}
+
+// Explicit video MIME types instead of video/* — avoids silently accepting
+// .avi/.mkv/etc. that would pass the file picker but be rejected at upload
+// Extensions .heic,.heif added alongside MIME types: Windows file pickers may not
+// recognize HEIC by MIME type alone and need the extension to filter correctly.
+const FILE_ACCEPT = 'image/jpeg,image/png,image/gif,image/webp,image/heic,image/heif,.heic,.heif,video/mp4,video/quicktime,video/webm'
+
+export default function UploadZone({ album, userTier, onPhotosUploaded }: Props) {
+  const [entries, setEntries] = useState<FileEntry[]>([])
+  const [isDragging, setIsDragging] = useState(false)
+  const [isUploading, setIsUploading] = useState(false)
+  const inputRef = useRef<HTMLInputElement>(null)
+
+  // Computed once at mount — userAgent never changes during a session
+  const isMobileRef = useRef(typeof navigator !== 'undefined' && /Mobi|Android/i.test(navigator.userAgent))
+  const concurrency = isMobileRef.current ? UPLOAD_CONCURRENCY_MOBILE : UPLOAD_CONCURRENCY_DESKTOP
+
+  // Memoized so startUploads/addFiles/retryEntry are not rebuilt on every progress flush
+  const caps = useMemo(() => uploadCapsForTier(userTier), [userTier])
+
+  // Tracks whether the component is still mounted — prevents onPhotosUploaded firing
+  // after unmount which would leak a setTimeout in AlbumPageClient
+  const mountedRef = useRef(true)
+  // Set (not single ref) so concurrent batches each get their own controller aborted on unmount.
+  const abortCtrlsRef = useRef<Set<AbortController>>(new Set())
+  useEffect(() => () => {
+    mountedRef.current = false
+    for (const ctrl of abortCtrlsRef.current) ctrl.abort()
+  }, [])
+
+  // Shared semaphore — persists across concurrent addFiles calls so multiple simultaneous
+  // drops never each spawn their own Semaphore and multiply the concurrency limit
+  const semRef = useRef<Semaphore | null>(null)
+
+  // Counter instead of boolean: multiple concurrent batches each increment on start and
+  // decrement on finish — isUploading stays true until the last batch completes
+  const activeBatchCountRef = useRef(0)
+
+  // Progress updates throttled to 4 Hz to avoid excessive re-renders
+  const pendingPatchRef = useRef<Map<string, Partial<FileEntry>>>(new Map())
+  const flushTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  const flushProgress = useCallback(() => {
+    if (!mountedRef.current) return
+    const pending = pendingPatchRef.current
+    if (pending.size === 0) return
+    pendingPatchRef.current = new Map()
+    setEntries(prev => prev.map(e => {
+      const patch = pending.get(e.id)
+      return patch ? { ...e, ...patch } : e
+    }))
+  }, [])
+
+  const patchEntry = useCallback((id: string, patch: Partial<FileEntry>) => {
+    if (!mountedRef.current) return
+    pendingPatchRef.current.set(id, { ...(pendingPatchRef.current.get(id) ?? {}), ...patch })
+    if (!flushTimerRef.current) {
+      flushTimerRef.current = setTimeout(() => {
+        flushTimerRef.current = null
+        flushProgress()
+      }, 250)
+    }
+  }, [flushProgress])
+
+  useEffect(() => () => {
+    if (flushTimerRef.current) clearTimeout(flushTimerRef.current)
+  }, [])
+
+  const startUploads = useCallback(async (toUpload: FileEntry[]) => {
+    if (toUpload.length === 0) return
+    activeBatchCountRef.current++
+    setIsUploading(true)
+
+    const abortCtrl = new AbortController()
+    abortCtrlsRef.current.add(abortCtrl)
+    const { signal } = abortCtrl
+
+    // Reuse shared semaphore — prevents concurrent addFiles calls from each spawning
+    // a fresh Semaphore instance that would multiply the concurrency limit
+    if (!semRef.current) semRef.current = new Semaphore(concurrency)
+    const sem = semRef.current
+    const rows: (PhotoRow | null)[] = new Array(toUpload.length).fill(null)
+
+    const run = async () => {
+      await Promise.all(toUpload.map(async (entry, i) => {
+        await sem.acquire()
+        try {
+          patchEntry(entry.id, { status: 'uploading', progress: 0 })
+
+          const kind = detectKind(entry.file)
+          if (!kind) throw new Error('Unsupported file type')
+
+          const cap = kind === 'image' ? caps.image : caps.video
+          if (entry.file.size > cap) {
+            throw new Error(`File too large (max ${Math.round(cap / 1024 / 1024)} MB for your tier)`)
+          }
+
+          rows[i] = kind === 'image'
+            ? await uploadImageToR2(entry.file, album.id, pct => patchEntry(entry.id, { progress: pct }), signal)
+            : await uploadVideoToStream(entry.file, album.id, pct => patchEntry(entry.id, { progress: pct }), signal)
+
+          patchEntry(entry.id, { status: 'done', progress: 100 })
+        } catch (e) {
+          patchEntry(entry.id, {
+            status: 'error',
+            error: e instanceof Error ? e.message : 'Upload failed',
+          })
+        } finally {
+          sem.release()
+        }
+      }))
+    }
+
+    // navigator.locks prevents Android from suspending the tab mid-upload.
+    // shared mode: multiple tabs can each hold the lock simultaneously —
+    // a second album tab never blocks waiting for the first to finish.
+    if (typeof navigator !== 'undefined' && 'locks' in navigator) {
+      await navigator.locks.request('hushare-upload', { mode: 'shared' }, run)
+    } else {
+      await run()
+    }
+
+    flushProgress()
+
+    const successRows = rows.filter((r): r is PhotoRow => r !== null)
+    const successEntries = toUpload.filter((_, i) => rows[i] !== null)
+
+    if (successRows.length > 0) {
+      try {
+        await saveUploadedRows(album.id, successRows)
+      } catch (e) {
+        // Files are in cloud storage but the DB record creation failed.
+        // Mark them as error so the user knows not to navigate away.
+        const msg = e instanceof Error ? e.message : 'Failed to save'
+        for (const entry of successEntries) {
+          patchEntry(entry.id, { status: 'error', error: `Cloud upload done but DB save failed: ${msg}` })
+        }
+        flushProgress()
+        activeBatchCountRef.current--
+        setIsUploading(activeBatchCountRef.current > 0)
+        abortCtrlsRef.current.delete(abortCtrl)
+        return
+      }
+    }
+
+    // Decrement before onPhotosUploaded so if the parent unmounts UploadZone
+    // the queued setState call is already the final one
+    activeBatchCountRef.current--
+    setIsUploading(activeBatchCountRef.current > 0)
+    // Only notify parent when at least one photo actually landed in the DB,
+    // and only if still mounted (prevents leaking a timer in AlbumPageClient)
+    if (mountedRef.current && successRows.length > 0) onPhotosUploaded?.()
+    abortCtrlsRef.current.delete(abortCtrl)
+  }, [album.id, caps, concurrency, patchEntry, flushProgress, onPhotosUploaded])
+
+  const addFiles = useCallback((files: File[]) => {
+    const valid = files.filter(f => detectKind(f) !== null)
+    if (valid.length === 0) return
+    const newEntries: FileEntry[] = valid.map(f => ({
+      id: crypto.randomUUID(),
+      file: f,
+      status: 'pending' as const,
+      progress: 0,
+    }))
+    setEntries(prev => [...prev, ...newEntries])
+    void startUploads(newEntries)
+  }, [startUploads])
+
+  const handleInputChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files ?? [])
+    e.target.value = ''  // allow re-selecting same file after error
+    addFiles(files)
+  }, [addFiles])
+
+  const handleDrop = useCallback((e: React.DragEvent) => {
+    e.preventDefault()
+    setIsDragging(false)
+    addFiles(Array.from(e.dataTransfer.files))
+  }, [addFiles])
+
+  const handleDragOver = useCallback((e: React.DragEvent) => {
+    e.preventDefault()
+    setIsDragging(true)
+  }, [])
+
+  const handleDragLeave = useCallback((e: React.DragEvent) => {
+    if (!e.currentTarget.contains(e.relatedTarget as Node)) setIsDragging(false)
+  }, [])
+
+  const retryEntry = useCallback((id: string) => {
+    // Functional updater: status check and state update are atomic — prevents a rapid
+    // double-click from using a stale closure to spawn two concurrent uploads of the same file
+    let fresh: FileEntry | null = null
+    setEntries(prev => {
+      const entry = prev.find(e => e.id === id)
+      if (!entry || entry.status !== 'error') return prev  // already retried or in progress
+      fresh = { ...entry, status: 'pending', progress: 0, error: undefined }
+      return prev.map(e => e.id === id ? fresh! : e)
+    })
+    if (fresh) void startUploads([fresh])
+  }, [startUploads])
+
+  const dismissDone = useCallback(() => {
+    setEntries(prev => prev.filter(e => e.status !== 'done'))
+  }, [])
+
+  const doneCount    = entries.filter(e => e.status === 'done').length
+  const errorCount   = entries.filter(e => e.status === 'error').length
+  const activeCount  = entries.filter(e => e.status === 'uploading' || e.status === 'pending').length
+
+  return (
+    <div className="hush-upload-zone px-4 pb-4">
+      {/* Drop zone */}
+      <div
+        role="button"
+        tabIndex={0}
+        onDrop={handleDrop}
+        onDragOver={handleDragOver}
+        onDragLeave={handleDragLeave}
+        onClick={() => inputRef.current?.click()}
+        onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') inputRef.current?.click() }}
+        className="flex flex-col items-center justify-center gap-2 rounded-2xl border-2 border-dashed cursor-pointer transition-colors py-6 select-none"
+        style={{
+          borderColor: isDragging ? '#254F22' : '#C8BAA8',
+          background: isDragging ? 'rgba(37,79,34,0.04)' : 'transparent',
+          color: '#7C6752',
+        }}
+        aria-label="Click or drag files to upload photos and videos"
+      >
+        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+          <polyline points="17 8 12 3 7 8" />
+          <line x1="12" y1="3" x2="12" y2="15" />
+        </svg>
+        <span style={{ fontSize: '0.875rem', fontWeight: 500 }}>
+          {isDragging ? 'Drop to upload' : 'Add photos & videos'}
+        </span>
+        <span style={{ fontSize: '0.75rem', opacity: 0.65 }}>
+          JPEG · PNG · GIF · WebP · HEIC · MP4 · MOV · WebM
+        </span>
+      </div>
+
+      <input
+        ref={inputRef}
+        type="file"
+        multiple
+        accept={FILE_ACCEPT}
+        className="sr-only"
+        onChange={handleInputChange}
+        aria-hidden="true"
+        tabIndex={-1}
+      />
+
+      {/* File list */}
+      {entries.length > 0 && (
+        <div className="mt-3 flex flex-col gap-1.5">
+          {entries.map(entry => (
+            <div
+              key={entry.id}
+              className="flex items-center gap-3 rounded-xl px-3 py-2"
+              style={{ background: 'rgba(0,0,0,0.03)' }}
+            >
+              {/* Status icon */}
+              <div className="flex-shrink-0 w-5 h-5 flex items-center justify-center">
+                {entry.status === 'done' && (
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#254F22" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-label="Done">
+                    <polyline points="20 6 9 17 4 12" />
+                  </svg>
+                )}
+                {entry.status === 'error' && (
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#C0392B" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-label="Error">
+                    <circle cx="12" cy="12" r="10" /><line x1="15" y1="9" x2="9" y2="15" /><line x1="9" y1="9" x2="15" y2="15" />
+                  </svg>
+                )}
+                {(entry.status === 'uploading' || entry.status === 'pending') && (
+                  <div
+                    className="w-4 h-4 rounded-full border-2 border-t-transparent animate-spin"
+                    style={{ borderColor: '#254F22', borderTopColor: 'transparent' }}
+                    aria-label="Uploading"
+                  />
+                )}
+              </div>
+
+              {/* Name + progress bar */}
+              <div className="flex-1 min-w-0">
+                <p className="truncate text-xs font-medium" style={{ color: '#3D2B1F' }}>
+                  {entry.file.name}
+                </p>
+                {entry.status === 'uploading' && (
+                  <div className="mt-1 h-1 rounded-full overflow-hidden" style={{ background: '#E8DDD2' }}>
+                    <div
+                      className="h-full rounded-full transition-all duration-300"
+                      style={{ width: `${entry.progress}%`, background: '#254F22' }}
+                    />
+                  </div>
+                )}
+                {entry.status === 'error' && (
+                  <p className="text-xs mt-0.5" style={{ color: '#C0392B' }}>{entry.error}</p>
+                )}
+              </div>
+
+              {/* Retry button */}
+              {entry.status === 'error' && (
+                <button
+                  type="button"
+                  onClick={e => { e.stopPropagation(); retryEntry(entry.id) }}
+                  className="flex-shrink-0 text-xs font-semibold underline"
+                  style={{ color: '#254F22' }}
+                >
+                  Retry
+                </button>
+              )}
+            </div>
+          ))}
+
+          {/* Summary row */}
+          {!isUploading && activeCount === 0 && (doneCount > 0 || errorCount > 0) && (
+            <div className="flex items-center justify-between pt-0.5 px-1">
+              <span className="text-xs" style={{ color: '#7C6752' }}>
+                {doneCount > 0 && `${doneCount} uploaded`}
+                {doneCount > 0 && errorCount > 0 && ' · '}
+                {errorCount > 0 && `${errorCount} failed`}
+              </span>
+              {doneCount > 0 && (
+                <button
+                  type="button"
+                  onClick={dismissDone}
+                  className="text-xs font-semibold"
+                  style={{ color: '#254F22' }}
+                >
+                  Clear
+                </button>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}

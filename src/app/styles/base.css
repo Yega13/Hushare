@@ -1,0 +1,138 @@
+:root {
+  --background: #FDFAF5;
+  --foreground: #254F22;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+}
+
+/* Force breakpoints to px so they fire at correct CSS pixels regardless of
+   browser font-size setting. 64rem = 1024px only at exactly 16px root font. */
+@theme {
+  --breakpoint-lg: 1024px;
+  --breakpoint-xl: 1280px;
+  --breakpoint-2xl: 1440px;
+}
+
+html,
+body {
+  max-width: 100%;
+  overflow-x: hidden;
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: Arial, Helvetica, sans-serif;
+}
+
+html.hush-scroll-locked,
+body.hush-scroll-locked {
+  overflow: hidden;
+  overscroll-behavior: none;
+}
+
+body.hush-page-preloading {
+  overflow: hidden;
+  overscroll-behavior: none;
+  touch-action: none;
+}
+
+a {
+  text-decoration-line: none;
+  transition:
+    color 160ms ease,
+    opacity 160ms ease,
+    transform 160ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+a:hover {
+  opacity: 0.76;
+  text-decoration-line: none !important;
+}
+
+img {
+  -webkit-user-drag: none;
+}
+
+input[type="range"] {
+  touch-action: none;
+}
+
+/* Global underline suppression — Tailwind's underline utilities add text-decoration,
+   but the design uses opacity for hover states instead. */
+a:hover,
+.hover\:underline:hover,
+.underline:hover {
+  text-decoration-line: none !important;
+}
+
+body.hush-page-preloading > main,
+body.hush-page-preloading > footer,
+body.hush-page-preloading .hush-back-to-top,
+body.hush-page-preloading [data-app-toast-viewport] {
+  opacity: 0;
+}
+
+body.hush-page-loaded > main,
+body.hush-page-loaded > footer,
+body.hush-page-loaded .hush-back-to-top,
+body.hush-page-loaded [data-app-toast-viewport] {
+  animation: hush-page-enter 560ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+html {
+  scroll-behavior: smooth;
+  scrollbar-width: thin;
+  scrollbar-color: #254F22 #EDE7DB;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+    transition-duration: 0.001ms !important;
+  }
+
+  .hush-line-reveal-logo-fill,
+  .hush-line-reveal-sweep {
+    opacity: 1 !important;
+    clip-path: none !important;
+    transform: none !important;
+  }
+}
+
+@keyframes hush-page-enter {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+    filter: blur(3px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+    filter: blur(0);
+  }
+}
+
+@keyframes hush-preloader-leave {
+  from {
+    opacity: 1;
+    transform: scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: scale(1.008);
+  }
+}

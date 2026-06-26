@@ -1,51 +1,135 @@
-import { NextResponse } from "next/server";
-import { createClient } from "@/lib/supabase/server";
-import { createStreamUpload } from "@/lib/cloudflare/stream";
-import { isAllowedVideo } from "@/lib/cloudflare/r2";
+import { NextResponse } from 'next/server'
+import { createAdminClient } from '@/lib/supabase/admin'
+import { isAllowedVideo } from '@/lib/cloudflare/r2'
+import { createStreamUpload } from '@/lib/cloudflare/stream'
+import { checkRateLimit, clientIpKey } from '@/lib/rate-limit'
+import { uploadCapsForTier, STUDIO_VIDEO_BYTES } from '@/lib/media'
+import { getUserTierById } from '@/lib/subscriptions'
+import { forbidCrossSiteRequest } from '@/lib/request-security'
 
-export const runtime = "nodejs";
+export const runtime = 'nodejs'
 
-// Returns a one-time TUS upload URL so the browser uploads the video
-// directly to Cloudflare Stream — our server never touches the video bytes.
+const NO_STORE = { 'Cache-Control': 'no-store' }
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+const MAX_VIDEO_HARD_CAP = STUDIO_VIDEO_BYTES // absolute ceiling = studio tier cap
+
+type Body = {
+  albumId?: unknown
+  fileName?: unknown
+  contentType?: unknown
+  fileSize?: unknown
+}
+
 export async function POST(req: Request) {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const csrfError = forbidCrossSiteRequest(req)
+  if (csrfError) return csrfError
 
-  if (!user) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const ipRl = await checkRateLimit(clientIpKey(req, 'stream_ip'), 3600, 200, { failOpen: false })
+  if (!ipRl.ok) {
+    return NextResponse.json(
+      { error: 'Too many requests' },
+      { status: 429, headers: { 'Retry-After': String(ipRl.retryAfterSeconds), ...NO_STORE } },
+    )
   }
 
-  const body = await req.json().catch(() => null);
-  const { albumId, fileName, contentType, fileSize } = body ?? {};
+  const body = await req.json().catch(() => null) as Body | null
+  const { albumId, fileName, contentType, fileSize } = body ?? {}
 
-  if (!albumId || !fileName || !contentType || !fileSize) {
-    return NextResponse.json({ error: "Missing fields" }, { status: 400 });
+  if (
+    typeof albumId !== 'string' || !UUID_RE.test(albumId) ||
+    typeof fileName !== 'string' || !fileName || fileName.length > 255 ||
+    typeof contentType !== 'string' || !contentType ||
+    typeof fileSize !== 'number' || !Number.isFinite(fileSize) || !Number.isInteger(fileSize) || fileSize <= 0
+  ) {
+    return NextResponse.json({ error: 'Missing or invalid fields' }, { status: 400, headers: NO_STORE })
   }
 
-  if (!isAllowedVideo(contentType)) {
-    return NextResponse.json({ error: "File type not allowed" }, { status: 415 });
+  const normalizedType = contentType.toLowerCase()
+  if (!isAllowedVideo(normalizedType)) {
+    return NextResponse.json({ error: 'File type not allowed' }, { status: 415, headers: NO_STORE })
   }
 
-  const MAX_BYTES = 4 * 1024 * 1024 * 1024; // 4 GB
-  if (fileSize > MAX_BYTES) {
-    return NextResponse.json({ error: "File too large" }, { status: 413 });
+  if (fileSize > MAX_VIDEO_HARD_CAP) {
+    return NextResponse.json({ error: 'File too large' }, { status: 413, headers: NO_STORE })
   }
 
-  // Verify the album belongs to this user
-  const { data: album, error: albumError } = await supabase
-    .from("albums")
-    .select("id")
-    .eq("id", albumId)
-    .eq("user_id", user.id)
-    .single();
+  const admin = createAdminClient()
+  const { data: album, error: albumError } = await admin
+    .from('albums')
+    .select('id, user_id, guest_uploads_enabled')
+    .eq('id', albumId)
+    .is('retired_at', null)
+    .maybeSingle<{ id: string; user_id: string | null; guest_uploads_enabled: boolean }>()
 
   if (albumError || !album) {
-    return NextResponse.json({ error: "Album not found" }, { status: 404 });
+    return NextResponse.json({ error: 'Album not found' }, { status: 404, headers: NO_STORE })
+  }
+  if (!album.guest_uploads_enabled) {
+    return NextResponse.json({ error: 'Uploads disabled for this album' }, { status: 403, headers: NO_STORE })
   }
 
-  const init = await createStreamUpload(fileSize, fileName);
+  // Rate-limit BEFORE subscription lookup — reject hammered albums without paying the tier cost
+  const albumRl = await checkRateLimit(`stream_album:${albumId}`, 3600, 200, { failOpen: false })
+  if (!albumRl.ok) {
+    return NextResponse.json(
+      { error: 'Album video upload rate limit reached' },
+      { status: 429, headers: { 'Retry-After': String(albumRl.retryAfterSeconds), ...NO_STORE } },
+    )
+  }
 
-  return NextResponse.json(init);
+  let tier: Awaited<ReturnType<typeof getUserTierById>>
+  try {
+    tier = await getUserTierById(album.user_id)
+  } catch (e) {
+    console.error('[stream] getUserTierById failed:', e instanceof Error ? e.message : String(e))
+    return NextResponse.json({ error: 'Service temporarily unavailable' }, { status: 503, headers: NO_STORE })
+  }
+
+  const caps = uploadCapsForTier(tier)
+  if (fileSize > caps.video) {
+    return NextResponse.json(
+      { error: `File too large (max ${caps.video / 1024 / 1024} MB for your tier)` },
+      { status: 413, headers: NO_STORE },
+    )
+  }
+
+  let uploadUrl: string
+  let streamUid: string
+  let iframeUrl: string
+  let thumbnailUrl: string
+  try {
+    // Sanitize fileName to printable ASCII before passing to Cloudflare Stream's metadata API.
+    const safeName = String(fileName).replace(/[^\w.\- ]/g, '_').slice(0, 255)
+    ;({ uploadUrl, streamUid, iframeUrl, thumbnailUrl } = await createStreamUpload(fileSize, safeName))
+  } catch (e) {
+    console.error('[stream] createStreamUpload failed:', e instanceof Error ? e.message : String(e))
+    return NextResponse.json({ error: 'Failed to initiate video upload' }, { status: 502, headers: NO_STORE })
+  }
+
+  // Guard against a compromised or misconfigured Cloudflare API returning a
+  // non-Cloudflare upload URL that would be forwarded to the client
+  if (!uploadUrl.startsWith('https://upload.videodelivery.net/')) {
+    console.error('[stream] Cloudflare returned unexpected uploadUrl origin:', uploadUrl.slice(0, 80))
+    return NextResponse.json({ error: 'Failed to initiate video upload' }, { status: 502, headers: NO_STORE })
+  }
+
+  // Bind stream_uid → albumId before returning to client.
+  // photos/create verifies and consumes this row — prevents a guest from calling
+  // /upload/stream for album A then injecting that uid into album B via photos/create.
+  const { error: pendingErr } = await admin
+    .from('pending_stream_uploads')
+    .insert({ stream_uid: streamUid, album_id: albumId })
+  if (pendingErr) {
+    console.error('[stream] pending_stream_uploads insert failed:', pendingErr.message)
+    return NextResponse.json({ error: 'Failed to initiate video upload' }, { status: 502, headers: NO_STORE })
+  }
+
+  // 1% chance — purge stale rows (video uploaded but photos/create never called, e.g. tab closed).
+  if (Math.random() < 0.01) {
+    const staleCutoff = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()
+    void admin.from('pending_stream_uploads').delete().lt('created_at', staleCutoff)
+  }
+
+  return NextResponse.json({ uploadUrl, streamUid, iframeUrl, thumbnailUrl }, { headers: NO_STORE })
 }

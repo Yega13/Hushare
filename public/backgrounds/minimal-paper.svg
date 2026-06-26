@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 1000" preserveAspectRatio="xMidYMid slice">
+  <defs>
+    <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#FFFFFF"/>
+      <stop offset="0.5" stop-color="#F4EFE5"/>
+      <stop offset="1" stop-color="#EEF2EA"/>
+    </linearGradient>
+    <filter id="paper">
+      <feTurbulence type="fractalNoise" baseFrequency="1.1" numOctaves="4" stitchTiles="stitch"/>
+      <feColorMatrix type="saturate" values="0.2"/>
+      <feComponentTransfer>
+        <feFuncA type="table" tableValues="0 0.14"/>
+      </feComponentTransfer>
+    </filter>
+  </defs>
+  <rect width="1600" height="1000" fill="url(#g)"/>
+  <rect x="150" y="130" width="1260" height="720" rx="120" fill="#FFFFFF" opacity="0.28"/>
+  <circle cx="1180" cy="210" r="250" fill="#D8E2D4" opacity="0.34"/>
+  <circle cx="330" cy="800" r="270" fill="#E7D9C6" opacity="0.34"/>
+  <rect width="1600" height="1000" filter="url(#paper)" opacity="0.55"/>
+</svg>

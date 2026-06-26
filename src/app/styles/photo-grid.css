@@ -1,0 +1,138 @@
+@layer utilities {
+  .hush-photo-grid {
+    grid-template-columns: repeat(var(--hush-grid-cols, 3), minmax(0, 1fr));
+  }
+
+  .hush-photo-tile,
+  .hush-photo-tile img,
+  .hush-photo-tile video {
+    -webkit-touch-callout: none;
+    user-select: none;
+  }
+
+  .hush-reorder-ring::after {
+    content: "";
+    position: absolute;
+    inset: 2px;
+    z-index: 3;
+    border-radius: inherit;
+    pointer-events: none;
+    background:
+      repeating-linear-gradient(90deg, #254F22 0 8px, transparent 8px 14px) top left / 200% 2px repeat-x,
+      repeating-linear-gradient(90deg, #254F22 0 8px, transparent 8px 14px) bottom right / 200% 2px repeat-x,
+      repeating-linear-gradient(0deg, #254F22 0 8px, transparent 8px 14px) left bottom / 2px 200% repeat-y,
+      repeating-linear-gradient(0deg, #254F22 0 8px, transparent 8px 14px) right top / 2px 200% repeat-y;
+    animation: hush-reorder-border 2400ms linear infinite;
+  }
+
+  .hush-reorder-ring-solid::after {
+    inset: 0;
+    border: 3px solid #254F22;
+    background: transparent;
+    animation: none;
+  }
+}
+
+.hush-photo-flip {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  /* No overflow:hidden — would clip the image when pinch-zoomed past its natural bounds. */
+}
+
+.hush-grid-photo-back {
+  position: absolute;
+  inset: 0;
+  z-index: 6;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: clamp(0.75rem, 2.4vw, 1.25rem);
+  text-align: center;
+  background: #F8F1E6;
+  color: #111111;
+  border: 1px solid rgba(124, 92, 62, 0.24);
+  box-shadow:
+    inset 0 0 0 7px rgba(255, 255, 255, 0.48),
+    inset 0 0 0 8px rgba(124, 92, 62, 0.10);
+  pointer-events: none;
+  animation: hush-photo-back-in 360ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.hush-grid-photo-back::before,
+.hush-grid-photo-back::after {
+  content: "";
+  position: absolute;
+  width: 38px;
+  height: 38px;
+  opacity: 0.42;
+  pointer-events: none;
+}
+
+.hush-grid-photo-back::before {
+  top: 13px;
+  left: 13px;
+  border-top: 1px solid #8B6F4E;
+  border-left: 1px solid #8B6F4E;
+}
+
+.hush-grid-photo-back::after {
+  right: 13px;
+  bottom: 13px;
+  border-right: 1px solid #8B6F4E;
+  border-bottom: 1px solid #8B6F4E;
+}
+
+.hush-photo-back-title {
+  max-width: 86%;
+  overflow-wrap: anywhere;
+  font-family: var(--font-hand), "Segoe Print", cursive;
+  font-size: clamp(1.05rem, 2.45vw, 2rem);
+  line-height: 1.1;
+  font-weight: 400;
+  color: #111111;
+  transform: rotate(-2deg);
+  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.32);
+}
+
+@media (max-width: 400px) {
+  .hush-photo-grid {
+    gap: 0.55rem !important;
+  }
+}
+
+@media (max-width: 360px) {
+  .hush-photo-grid {
+    gap: 0.55rem !important;
+  }
+}
+
+@keyframes hush-reorder-border {
+  from {
+    background-position:
+      0 0,
+      0 100%,
+      0 0,
+      100% 0;
+  }
+  to {
+    background-position:
+      14px 0,
+      -14px 100%,
+      0 -14px,
+      100% 14px;
+  }
+}
+
+@keyframes hush-photo-back-in {
+  from {
+    opacity: 0;
+    transform: rotateY(-14deg) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: rotateY(0deg) scale(1);
+  }
+}
