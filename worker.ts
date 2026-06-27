@@ -38,7 +38,18 @@ async function callCronRoute(baseUrl: string, path: string, secret: string): Pro
 }
 
 const worker = {
-  fetch: (handler as { fetch: typeof fetch }).fetch,
+  fetch: async (request: Request, env: Env, ctx: ExecutionContext): Promise<Response> => {
+    try {
+      return await (handler as { fetch: (r: Request, e: unknown, c: unknown) => Promise<Response> }).fetch(request, env, ctx)
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.stack ?? e.message : String(e)
+      console.error('[worker] unhandled fetch error:', msg)
+      return new Response(`[DEBUG] Worker error:\n${msg}`, {
+        status: 500,
+        headers: { 'content-type': 'text/plain' },
+      })
+    }
+  },
 
   async scheduled(_event: ScheduledEvent, env: Env, ctx: ExecutionContext): Promise<void> {
     const secret = env.ALBUM_RETIREMENT_SECRET
