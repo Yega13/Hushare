@@ -41,9 +41,15 @@ const worker = {
   fetch: async (request: Request, env: Env, ctx: ExecutionContext): Promise<Response> => {
     const captured: string[] = []
     const origError = console.error.bind(console)
+    const ser = (a: unknown): string => {
+      if (a instanceof Error) return `${a.stack ?? a.message} (name=${a.name})`
+      if (typeof a === 'object' && a !== null) { try { return JSON.stringify(a) } catch { return String(a) } }
+      // strip ANSI escape codes so the output is readable in a browser
+      return String(a).replace(/\x1B\[[0-9;]*m/g, '')
+    }
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     console.error = (...args: any[]) => {
-      captured.push(args.map((a: unknown) => (typeof a === 'object' ? JSON.stringify(a) : String(a))).join(' '))
+      captured.push(args.map(ser).join(' '))
       origError(...args)
     }
     try {
