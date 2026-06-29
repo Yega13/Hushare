@@ -13,7 +13,11 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          # Must be >=22: wrangler, miniflare and @opennextjs require Node 22+.
+          # Building on Node 20 produces a subtly broken worker bundle whose app-router
+          # page module loses its `handler` export (HTTP 500: ComponentMod.handler is
+          # not a function on every route).
+          node-version: 22
           cache: npm
 
       - run: npm ci
