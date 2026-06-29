@@ -56,14 +56,26 @@ const worker = {
     // GET responses the app explicitly marks `Cache-Control: public` with no Set-Cookie,
     // so all dynamic/album/API routes (which send `no-store`) and any authenticated
     // response are never cached.
-    if (request.method === 'GET') {
+    //
+    // RSC requests (client-side navigations / prefetches) are skipped entirely: they
+    // share the page URL but return a React Server Component payload instead of HTML
+    // (the page sends `Vary: RSC`). Rather than rely on the Cache API honouring Vary,
+    // we only ever cache full-document loads, so an RSC nav can never receive HTML.
+    const isRscRequest =
+      request.headers.has('rsc') || request.headers.has('next-router-prefetch')
+
+    if (request.method === 'GET' && !isRscRequest) {
       const cache = caches.default
       const hit = await cache.match(request)
       if (hit) return hit
 
       const response = await h.fetch(request, env, ctx)
       const cc = response.headers.get('cache-control') ?? ''
-      if (response.status === 200 && cc.includes('public') && !response.headers.has('set-cookie')) {
+      if (
+        response.status === 200 &&
+        cc.includes('public') &&
+        !response.headers.has('set-cookie')
+      ) {
         ctx.waitUntil(cache.put(request, response.clone()))
       }
       return response

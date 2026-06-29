@@ -52,7 +52,10 @@ function toPos(lat: number, lng: number, r: number): THREE.Vector3 {
   )
 }
 
-const CDN = 'https://unpkg.com/three-globe/example/img'
+// Served from /public/textures (same-origin). Loading from an external CDN (unpkg)
+// was blocked by our CSP `img-src` directive, which left the globe a black sphere.
+// Local hosting keeps the CSP tight and is faster / more reliable.
+const CDN = '/textures'
 
 // Reusable materials for all markers
 let _markerMats: {

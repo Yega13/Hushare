@@ -563,7 +563,7 @@ export default function AboutPage() {
       <section className="hush-container-xl mb-24">
         <div
           className="hush-reveal relative rounded-[24px] px-8 md:px-16 py-14 text-center overflow-hidden"
-          style={{ background: '#254F22', boxShadow: '0 24px 60px rgba(37,79,34,0.28)' }}
+          style={{ background: '#1B2E1A', boxShadow: '0 24px 60px rgba(10,20,10,0.28)' }}
         >
           <div
             className="absolute inset-0 pointer-events-none"
