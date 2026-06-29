@@ -1,58 +1,101 @@
-/**
- * Post-build patch for the Cloudflare Worker bundle.
- *
- * In Cloudflare Workers (ESM context), `__filename` is undefined — it's a CJS-only
- * global. The Turbopack runtime computes:
- *   RUNTIME_ROOT = path.resolve(__filename, relativePathToRuntimeRoot)
- * at module-init time. When __filename is undefined, path.resolve() throws a TypeError,
- * causing the turbopack runtime factory to abort. The esbuild __commonJS wrapper then
- * marks the module as "attempted" (mod = {exports:{}}), so every subsequent call
- * returns {} instead of re-running the factory. This cascades: require_page19() returns
- * {}, ComponentMod = {}, ComponentMod.handler is not a function → HTTP 500.
- *
- * Fix: replace path.resolve(__filename, with path.resolve("", so the path resolves
- * relative to CWD instead of an undefined filename. RUNTIME_ROOT is only used for
- * chunk loading paths that are already patched away by requireChunk, so a CWD-based
- * root has no functional impact.
- */
-
-import { readFileSync, writeFileSync } from "node:fs";
+import { readFileSync, writeFileSync, readdirSync, existsSync } from "node:fs";
 import { resolve, join } from "node:path";
 
-const handlerPath = resolve(
-  ".open-next/server-functions/default/handler.mjs"
-);
+const handlerPath = resolve(".open-next/server-functions/default/handler.mjs");
 
 let content;
 try {
   content = readFileSync(handlerPath, "utf-8");
 } catch {
-  console.error(`[patch-worker] handler.mjs not found at ${handlerPath}`);
+  console.error("[patch-worker] handler.mjs not found at " + handlerPath);
   process.exit(1);
 }
 
-// esbuild may alias `path` as `path2`, `path3`, etc. to avoid variable collisions,
-// so match any path-like alias name rather than a literal "path".
-const pattern = /(\bpath\w*)\.resolve\(__filename,/g;
+// ── 1. Add miss-logging before every requireChunk "Not found" throw ──────────
+//    Surfaces the actual failing chunkPath in Cloudflare logs / debug wrapper.
+const missPattern = /throw new Error\(`Not found \$\{chunkPath\}`\)/g;
+const missBefore = content;
+content = content.replace(
+  missPattern,
+  'console.error("[requireChunk] MISS:", chunkPath); throw new Error(`Not found ${chunkPath}`)'
+);
+const missCount = (missBefore.match(missPattern) || []).length;
+if (missCount > 0) {
+  console.log("[patch-worker] Injected miss-logging in " + missCount + " requireChunk default case(s).");
+} else {
+  console.warn("[patch-worker] WARNING: requireChunk 'Not found' pattern not found — is the format different?");
+}
 
-const before = content;
-content = content.replace(pattern, '$1.resolve("",');
+// ── 2. Detect whether chunks were inlined ────────────────────────────────────
+const hasAnyCases = content.includes('case "server/chunks/ssr/');
+if (hasAnyCases) {
+  const caseCount = (content.match(/case "server\/chunks\/ssr\//g) || []).length;
+  console.log("[patch-worker] requireChunk already has " + caseCount + " case(s) — chunks are inlined by the build. ✓");
+} else {
+  // ── 3. FALLBACK: inline all chunks from the output directory ───────────────
+  //    On Windows, getInlinableChunks() uses forward-slash filter that misses
+  //    backslash paths, so requireChunk ends up empty.  We rebuild it here.
+  console.warn("[patch-worker] requireChunk has NO cases — rebuilding it from output directory.");
+  const chunksDir = resolve(".open-next/server-functions/default/.next/server/chunks/ssr");
+  if (!existsSync(chunksDir)) {
+    console.error("[patch-worker] chunks/ssr dir not found: " + chunksDir);
+    process.exit(1);
+  }
+  const chunkFiles = readdirSync(chunksDir)
+    .filter(f => f.endsWith(".js") && f !== "[turbopack]_runtime.js");
+  console.log("[patch-worker] Inlining " + chunkFiles.length + " chunk(s).");
 
-const count = (before.match(pattern) || []).length;
+  // Build switch cases using string concatenation (safe if src has backticks/`${`).
+  let casesStr = "";
+  for (const name of chunkFiles) {
+    const src = readFileSync(join(chunksDir, name), "utf-8");
+    const key = JSON.stringify("server/chunks/ssr/" + name);
+    casesStr +=
+      "      case " + key + ": {\n" +
+      "        const __m = { exports: {} };\n" +
+      "        (function(module, exports) {\n" +
+      src + "\n" +
+      "        })(__m, __m.exports);\n" +
+      "        return __m.exports;\n" +
+      "      }\n";
+  }
 
-if (before === content) {
-  if (content.includes('.resolve("",')) {
-    console.log("[patch-worker] handler.mjs already patched — nothing to do");
-  } else {
-    console.warn(
-      "[patch-worker] WARNING: expected pattern not found in handler.mjs — " +
-        "the fix may not have applied. Double-check the runtime output."
+  const newFn =
+    "function requireChunk(chunkPath) {\n" +
+    "    switch(chunkPath) {\n" +
+    casesStr +
+    "      default:\n" +
+    "        console.error(\"[requireChunk] MISS:\", chunkPath);\n" +
+    '        throw new Error(`Not found ${chunkPath}`);\n' +
+    "    }\n" +
+    "  }";
+
+  // Replace both empty requireChunk functions (SSR and non-SSR runtimes).
+  // The empty pattern is: function requireChunk(chunkPath){ ... only default throw ... }
+  // After step 1, the throw has a console.error prefix, so we must handle that variant too.
+  let replaced = 0;
+  content = content.replace(
+    /function requireChunk\(chunkPath\) \{[\s\S]*?console\.error\("\[requireChunk\] MISS:",\s*chunkPath\);\s*throw new Error\(`Not found \$\{chunkPath\}`\);\s*\}/g,
+    () => { replaced++; return newFn; }
+  );
+  if (replaced === 0) {
+    // Fallback regex if whitespace differs
+    content = content.replace(
+      /function requireChunk\(chunkPath\)\{[\s\S]*?throw new Error\(`Not found \$\{chunkPath\}`\)\}/g,
+      () => { replaced++; return newFn; }
     );
   }
-} else {
-  writeFileSync(handlerPath, content);
-  console.log(
-    `[patch-worker] Patched handler.mjs: replaced ${count} occurrence(s) of ` +
-      "path[N].resolve(__filename, → path[N].resolve(\"\","
-  );
+  console.log("[patch-worker] Replaced " + replaced + " empty requireChunk function(s) with " + chunkFiles.length + " inlined chunks.");
 }
+
+// ── 4. Redundant __filename fix (harmless, init.js already sets it to "") ────
+const fnPattern = /(\bpath\w*)\.resolve\(__filename,/g;
+const fnBefore = content;
+content = content.replace(fnPattern, '$1.resolve("",');
+const fnCount = (fnBefore.match(fnPattern) || []).length;
+if (fnCount > 0) {
+  console.log("[patch-worker] Patched " + fnCount + " path.resolve(__filename, occurrence(s).");
+}
+
+writeFileSync(handlerPath, content);
+console.log("[patch-worker] Done.");
