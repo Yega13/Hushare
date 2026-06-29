@@ -7,7 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "cf:build": "opennextjs-cloudflare build && node scripts/patch-worker.mjs",
+    "cf:build": "node scripts/patch-opennext.mjs && opennextjs-cloudflare build && node scripts/patch-worker.mjs",
     "deploy": "npm run cf:build && wrangler deploy",
     "preview": "npm run cf:build && wrangler dev"
   },
