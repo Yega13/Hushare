@@ -38,43 +38,8 @@ async function callCronRoute(baseUrl: string, path: string, secret: string): Pro
 }
 
 const worker = {
-  fetch: async (request: Request, env: Env, ctx: ExecutionContext): Promise<Response> => {
-    const captured: string[] = []
-    const origError = console.error.bind(console)
-    const ser = (a: unknown): string => {
-      if (a instanceof Error) return `${a.stack ?? a.message} (name=${a.name})`
-      if (typeof a === 'object' && a !== null) { try { return JSON.stringify(a) } catch { return String(a) } }
-      // strip ANSI escape codes so the output is readable in a browser
-      return String(a).replace(/\x1B\[[0-9;]*m/g, '')
-    }
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    console.error = (...args: any[]) => {
-      captured.push(args.map(ser).join(' '))
-      origError(...args)
-    }
-    try {
-      const response = await (handler as { fetch: (r: Request, e: unknown, c: unknown) => Promise<Response> }).fetch(request, env, ctx)
-      if (response.status === 500) {
-        const body = await response.clone().text()
-        if (body.includes('Internal Server Error')) {
-          return new Response(
-            `[DEBUG 500]\n${captured.join('\n') || '(no console.error captured)'}`,
-            { status: 500, headers: { 'content-type': 'text/plain' } },
-          )
-        }
-      }
-      return response
-    } catch (e: unknown) {
-      const msg = e instanceof Error ? e.stack ?? e.message : String(e)
-      origError('[worker] unhandled fetch error:', msg)
-      return new Response(
-        `[DEBUG throw]\n${msg}\n\n--- console.error ---\n${captured.join('\n') || '(none)'}`,
-        { status: 500, headers: { 'content-type': 'text/plain' } },
-      )
-    } finally {
-      console.error = origError
-    }
-  },
+  fetch: (request: Request, env: Env, ctx: ExecutionContext): Promise<Response> =>
+    (handler as { fetch: (r: Request, e: unknown, c: unknown) => Promise<Response> }).fetch(request, env, ctx),
 
   async scheduled(_event: ScheduledEvent, env: Env, ctx: ExecutionContext): Promise<void> {
     const secret = env.ALBUM_RETIREMENT_SECRET
