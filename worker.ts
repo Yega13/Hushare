@@ -37,9 +37,40 @@ async function callCronRoute(baseUrl: string, path: string, secret: string): Pro
   }
 }
 
+// `caches.default` is the Cloudflare colo edge cache (a Workers runtime global).
+declare const caches: {
+  default: {
+    match(req: Request): Promise<Response | undefined>
+    put(req: Request, res: Response): Promise<void>
+  }
+}
+
 const worker = {
-  fetch: (request: Request, env: Env, ctx: ExecutionContext): Promise<Response> =>
-    (handler as { fetch: (r: Request, e: unknown, c: unknown) => Promise<Response> }).fetch(request, env, ctx),
+  fetch: async (request: Request, env: Env, ctx: ExecutionContext): Promise<Response> => {
+    const h = handler as { fetch: (r: Request, e: unknown, c: unknown) => Promise<Response> }
+
+    // Edge-cache static, publicly-cacheable GET pages (home + marketing) in the
+    // Cloudflare colo cache so repeat hits never invoke the Next worker. This is what
+    // lets those pages scale under load: without it every request runs the worker and
+    // the home page collapsed from 240→80 req/s at 150 concurrent. We only cache 200
+    // GET responses the app explicitly marks `Cache-Control: public` with no Set-Cookie,
+    // so all dynamic/album/API routes (which send `no-store`) and any authenticated
+    // response are never cached.
+    if (request.method === 'GET') {
+      const cache = caches.default
+      const hit = await cache.match(request)
+      if (hit) return hit
+
+      const response = await h.fetch(request, env, ctx)
+      const cc = response.headers.get('cache-control') ?? ''
+      if (response.status === 200 && cc.includes('public') && !response.headers.has('set-cookie')) {
+        ctx.waitUntil(cache.put(request, response.clone()))
+      }
+      return response
+    }
+
+    return h.fetch(request, env, ctx)
+  },
 
   async scheduled(_event: ScheduledEvent, env: Env, ctx: ExecutionContext): Promise<void> {
     const secret = env.ALBUM_RETIREMENT_SECRET

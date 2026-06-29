@@ -4,7 +4,7 @@ import Image from 'next/image'
 import { Heart, Zap, Shield, Mail, Phone } from 'lucide-react'
 import AccountNavLink from '@/components/AccountNavLink'
 import HamburgerMenu from '@/components/HamburgerMenu'
-import { Globe3D } from '@/components/ui/3d-globe'
+import { Globe3DLazy } from '@/components/ui/Globe3DLazy'
 
 const GLOBE_MARKERS = [
   { lat: 40.1792, lng:   44.4991, label: 'Armenia'       },
@@ -546,7 +546,7 @@ export default function AboutPage() {
           </div>
 
           <div className="relative z-10 mx-auto" style={{ maxWidth: '400px', padding: '1.5rem 2rem 2.5rem' }}>
-            <Globe3D
+            <Globe3DLazy
               markers={GLOBE_MARKERS}
               config={{
                 atmosphereColor:     '#4da6ff',

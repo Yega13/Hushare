@@ -52,7 +52,11 @@ export async function middleware(request: NextRequest) {
 }
 
 export const config = {
-  matcher: [
-    "/((?!_next/static|_next/image|favicon.ico|api/|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)",
-  ],
+  // Only run on the authenticated area. Previously this matched every route, so
+  // every anonymous visit to "/", "/about", "/pricing" and every public "/[slug]"
+  // album view paid a blocking Supabase auth.getUser() round-trip on its TTFB — a
+  // major contributor to the home-page slowdown under load. /account is the only
+  // route the middleware actually gates; token refresh for logged-in users still
+  // happens via server reads and API routes (which call getUser() themselves).
+  matcher: ["/account/:path*"],
 };

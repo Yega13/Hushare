@@ -57,6 +57,14 @@ const nextConfig: NextConfig = {
     return [
       { source: "/(.*)", headers: securityHeaders },
       {
+        // Home page: statically prerendered with client-side auth (AccountNavLink),
+        // so it is safe to edge-cache exactly like the other marketing pages. Without
+        // this it fell back to `no-store` — every visit hit the Worker cold, which is
+        // what made it collapse under load (240→80 req/s, p99 5.2s at 150 concurrent).
+        source: "/",
+        headers: [{ key: "Cache-Control", value: "public, max-age=3600, stale-while-revalidate=604800" }],
+      },
+      {
         source: "/(about|pricing|terms|privacy|collabs|support|shared-photo-album|wedding-photo-sharing|event-photo-sharing|qr-code-photo-album)(.*)",
         headers: [{ key: "Cache-Control", value: "public, max-age=86400, stale-while-revalidate=604800" }],
       },
