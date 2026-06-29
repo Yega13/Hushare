@@ -1,5 +1,5 @@
-import { readFileSync, writeFileSync, readdirSync, existsSync } from "node:fs";
-import { resolve, join } from "node:path";
+import { readFileSync, writeFileSync, readdirSync, existsSync, statSync } from "node:fs";
+import { resolve, join, relative } from "node:path";
 
 const handlerPath = resolve(".open-next/server-functions/default/handler.mjs");
 
@@ -11,8 +11,97 @@ try {
   process.exit(1);
 }
 
-// ── 1. Add miss-logging before every requireChunk "Not found" throw ──────────
-//    Surfaces the actual failing chunkPath in Cloudflare logs / debug wrapper.
+// ── 1. Detect whether requireChunk has switch cases ───────────────────────────
+const hasAnyCases = content.includes('case "server/chunks/');
+if (hasAnyCases) {
+  const caseCount = (content.match(/case "server\/chunks\//g) || []).length;
+  console.log("[patch-worker] requireChunk already has " + caseCount + " case(s). ✓");
+} else {
+  // ── 2. FALLBACK: add ESM import declarations and rebuild requireChunk ─────────
+  //    We do NOT inline chunk source — instead we add static import declarations
+  //    so that wrangler's own esbuild bundles the CJS chunk files correctly.
+  //    (CJS default-export = module.exports = the turbopack chunk array.)
+  console.warn("[patch-worker] requireChunk has NO cases — rebuilding via ESM imports.");
+
+  const chunksBase = resolve(".open-next/server-functions/default/.next/server/chunks");
+  if (!existsSync(chunksBase)) {
+    console.error("[patch-worker] chunks dir not found: " + chunksBase);
+    process.exit(1);
+  }
+
+  // Recursively collect all chunk .js files (excluding turbopack runtime files)
+  function collectChunks(dir, result) {
+    for (const entry of readdirSync(dir)) {
+      const full = join(dir, entry);
+      if (statSync(full).isDirectory()) {
+        collectChunks(full, result);
+      } else if (entry.endsWith(".js") && entry !== "[turbopack]_runtime.js") {
+        result.push(full);
+      }
+    }
+    return result;
+  }
+  const chunkFiles = collectChunks(chunksBase, []);
+  console.log("[patch-worker] Found " + chunkFiles.length + " chunk(s) to import.");
+
+  // handler.mjs lives in .open-next/server-functions/default/
+  const handlerDir = resolve(".open-next/server-functions/default");
+
+  const importLines = [];
+  const switchCases = [];
+  chunkFiles.forEach((absPath, i) => {
+    // Relative path from handler.mjs directory to the chunk (always forward-slashes)
+    const rel = "./" + relative(handlerDir, absPath).split("\\").join("/");
+    // Case key = path relative to .next/ (what loadRuntimeChunkPath passes)
+    const key = absPath.split(/[/\\]/).join("/").replace(/.*\/\.next\//, "");
+    const varName = "__hush_chunk_" + i;
+    importLines.push("import " + varName + " from " + JSON.stringify(rel) + ";");
+    switchCases.push("    case " + JSON.stringify(key) + ": return " + varName + ";");
+  });
+
+  const newRequireChunk =
+    "function requireChunk(chunkPath) {\n" +
+    "  switch(chunkPath) {\n" +
+    switchCases.join("\n") + "\n" +
+    "    default:\n" +
+    '      console.error("[requireChunk] MISS:", chunkPath);\n' +
+    "      throw new Error(`Not found ${chunkPath}`);\n" +
+    "  }\n" +
+    "}";
+
+  // Insert import declarations after the very first line of handler.mjs
+  // (which is the node:timers banner import added by bundle-server.js).
+  const firstNewline = content.indexOf("\n");
+  if (firstNewline === -1) {
+    console.error("[patch-worker] handler.mjs has no newlines — unexpected format.");
+    process.exit(1);
+  }
+  content =
+    content.slice(0, firstNewline + 1) +
+    importLines.join("\n") + "\n" +
+    content.slice(firstNewline + 1);
+  console.log("[patch-worker] Inserted " + importLines.length + " import declarations.");
+
+  // Replace empty requireChunk functions. The empty minified form is exactly:
+  //   function requireChunk(chunkPath){throw new Error(`Not found ${chunkPath}`)}
+  // We match the exact pattern (not [^}]* which would stop at } in ${chunkPath}).
+  let replaced = 0;
+  // Template-literal form (minifySyntax:false or esbuild keeps template literals)
+  content = content.replace(
+    /function requireChunk\(chunkPath\)\{throw new Error\(`Not found \$\{chunkPath\}`\)\}/g,
+    () => { replaced++; return newRequireChunk; }
+  );
+  if (replaced === 0) {
+    // String-concatenation form (minifySyntax:true may convert template → concat)
+    content = content.replace(
+      /function requireChunk\(chunkPath\)\{throw new Error\("Not found "\+chunkPath\)\}/g,
+      () => { replaced++; return newRequireChunk; }
+    );
+  }
+  console.log("[patch-worker] Replaced " + replaced + " empty requireChunk function(s).");
+}
+
+// ── 3. Add miss-logging before every requireChunk "Not found" default throw ───
 const missPattern = /throw new Error\(`Not found \$\{chunkPath\}`\)/g;
 const missBefore = content;
 content = content.replace(
@@ -22,73 +111,9 @@ content = content.replace(
 const missCount = (missBefore.match(missPattern) || []).length;
 if (missCount > 0) {
   console.log("[patch-worker] Injected miss-logging in " + missCount + " requireChunk default case(s).");
-} else {
-  console.warn("[patch-worker] WARNING: requireChunk 'Not found' pattern not found — is the format different?");
 }
 
-// ── 2. Detect whether chunks were inlined ────────────────────────────────────
-const hasAnyCases = content.includes('case "server/chunks/ssr/');
-if (hasAnyCases) {
-  const caseCount = (content.match(/case "server\/chunks\/ssr\//g) || []).length;
-  console.log("[patch-worker] requireChunk already has " + caseCount + " case(s) — chunks are inlined by the build. ✓");
-} else {
-  // ── 3. FALLBACK: inline all chunks from the output directory ───────────────
-  //    On Windows, getInlinableChunks() uses forward-slash filter that misses
-  //    backslash paths, so requireChunk ends up empty.  We rebuild it here.
-  console.warn("[patch-worker] requireChunk has NO cases — rebuilding it from output directory.");
-  const chunksDir = resolve(".open-next/server-functions/default/.next/server/chunks/ssr");
-  if (!existsSync(chunksDir)) {
-    console.error("[patch-worker] chunks/ssr dir not found: " + chunksDir);
-    process.exit(1);
-  }
-  const chunkFiles = readdirSync(chunksDir)
-    .filter(f => f.endsWith(".js") && f !== "[turbopack]_runtime.js");
-  console.log("[patch-worker] Inlining " + chunkFiles.length + " chunk(s).");
-
-  // Build switch cases using string concatenation (safe if src has backticks/`${`).
-  let casesStr = "";
-  for (const name of chunkFiles) {
-    const src = readFileSync(join(chunksDir, name), "utf-8");
-    const key = JSON.stringify("server/chunks/ssr/" + name);
-    casesStr +=
-      "      case " + key + ": {\n" +
-      "        const __m = { exports: {} };\n" +
-      "        (function(module, exports) {\n" +
-      src + "\n" +
-      "        })(__m, __m.exports);\n" +
-      "        return __m.exports;\n" +
-      "      }\n";
-  }
-
-  const newFn =
-    "function requireChunk(chunkPath) {\n" +
-    "    switch(chunkPath) {\n" +
-    casesStr +
-    "      default:\n" +
-    "        console.error(\"[requireChunk] MISS:\", chunkPath);\n" +
-    '        throw new Error(`Not found ${chunkPath}`);\n' +
-    "    }\n" +
-    "  }";
-
-  // Replace both empty requireChunk functions (SSR and non-SSR runtimes).
-  // The empty pattern is: function requireChunk(chunkPath){ ... only default throw ... }
-  // After step 1, the throw has a console.error prefix, so we must handle that variant too.
-  let replaced = 0;
-  content = content.replace(
-    /function requireChunk\(chunkPath\) \{[\s\S]*?console\.error\("\[requireChunk\] MISS:",\s*chunkPath\);\s*throw new Error\(`Not found \$\{chunkPath\}`\);\s*\}/g,
-    () => { replaced++; return newFn; }
-  );
-  if (replaced === 0) {
-    // Fallback regex if whitespace differs
-    content = content.replace(
-      /function requireChunk\(chunkPath\)\{[\s\S]*?throw new Error\(`Not found \$\{chunkPath\}`\)\}/g,
-      () => { replaced++; return newFn; }
-    );
-  }
-  console.log("[patch-worker] Replaced " + replaced + " empty requireChunk function(s) with " + chunkFiles.length + " inlined chunks.");
-}
-
-// ── 4. Redundant __filename fix (harmless, init.js already sets it to "") ────
+// ── 4. Redundant __filename fix (harmless; init.js already sets it to "") ─────
 const fnPattern = /(\bpath\w*)\.resolve\(__filename,/g;
 const fnBefore = content;
 content = content.replace(fnPattern, '$1.resolve("",');
