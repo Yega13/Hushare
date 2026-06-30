@@ -69,6 +69,13 @@ function getS3Client(): S3Client {
     region: 'auto',
     endpoint: `https://${accountId}.r2.cloudflarestorage.com`,
     credentials: { accessKeyId, secretAccessKey },
+    // AWS SDK v3 (>=3.729) adds a default CRC32 integrity checksum to PutObject.
+    // For a *presigned* browser PUT this bakes an x-amz-checksum requirement into the
+    // signature that the browser never satisfies, so R2 rejects the upload — which the
+    // browser surfaces as a CORS "Network error during upload". R2 doesn't need it;
+    // only compute checksums when an operation actually requires one.
+    requestChecksumCalculation: 'WHEN_REQUIRED',
+    responseChecksumValidation: 'WHEN_REQUIRED',
   })
   return _s3Client
 }
