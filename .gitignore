@@ -36,9 +36,19 @@ yarn-error.log*
 # env files (can opt-in for committing if needed)
 .env*
 
-# secret dumps — never commit credentials
-*Password*.txt
-*secret*.txt
+# secret dumps / credential files — never commit credentials
+# (scoped to credential file extensions so source files like album-password.ts
+#  and PasswordGate.tsx are never accidentally ignored)
+*[Pp]assword*.txt
+*[Pp]assword*.png
+*[Pp]assword*.csv
+*[Ss]ecret*.txt
+*[Ss]ecret*.csv
+*token*.txt
+*[Aa]ccess[Kk]ey*.csv
+*credentials*.csv
+*.pem
+*.key
 
 # vercel
 .vercel
