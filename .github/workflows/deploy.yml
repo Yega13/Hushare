@@ -30,6 +30,20 @@ jobs:
           NEXT_PUBLIC_SUPABASE_ANON_KEY: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InlxbmdteWpxdXdlbXdvZ2R5dXd2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODE4ODY1ODgsImV4cCI6MjA5NzQ2MjU4OH0.D6r3Qm4ihpzVqrDy8cFWoUyAETKVznA2kQl4cYlp-1k"
           NEXT_PUBLIC_TURNSTILE_SITE_KEY: "0x4AAAAAADDt-NIV2H4_FNKgornAUjbhM0g"
 
+      # Keep the database in sync with the code on every deploy. Applies any new
+      # supabase/migrations/*.sql (tracked + idempotent) then verifies no drift.
+      # Skips gracefully if SUPABASE_DB_URL isn't set, so it can never block a deploy.
+      # Set the secret to the Supabase pooler "session" connection string.
+      - name: Apply DB migrations (if configured)
+        run: |
+          if [ -n "$SUPABASE_DB_URL" ]; then
+            npm run db:migrate && npm run db:check
+          else
+            echo "::warning::SUPABASE_DB_URL secret not set — skipping DB migration + drift check"
+          fi
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+
       - name: Deploy via Wrangler
         uses: cloudflare/wrangler-action@v3
         with:

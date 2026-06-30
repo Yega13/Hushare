@@ -9,7 +9,9 @@
     "lint": "eslint",
     "cf:build": "node scripts/patch-opennext.mjs && opennextjs-cloudflare build && node scripts/patch-worker.mjs",
     "deploy": "npm run cf:build && wrangler deploy",
-    "preview": "npm run cf:build && wrangler dev"
+    "preview": "npm run cf:build && wrangler dev",
+    "db:migrate": "node scripts/db-migrate.mjs",
+    "db:check": "node scripts/check-db.mjs"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1071.0",
@@ -43,6 +45,7 @@
     "@types/three": "^0.184.1",
     "eslint": "^9",
     "eslint-config-next": "16.2.9",
+    "pg": "^8.22.0",
     "tailwindcss": "^4",
     "typescript": "^5",
     "wrangler": "^4.101.0"

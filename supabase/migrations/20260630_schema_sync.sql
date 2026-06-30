@@ -7,8 +7,7 @@
 --   * Video uploads failing — `pending_stream_uploads` table + the (album_id,
 --     stream_uid) unique constraint were missing.
 -- This migration is idempotent (safe to re-run) and brings the DB into sync.
-
-begin;
+-- (Transaction control is handled by the migration runner, not inline.)
 
 -- ── albums: missing columns ──────────────────────────────────────────────────
 alter table public.albums add column if not exists password_hash text;
@@ -95,5 +94,3 @@ create table if not exists public.pending_stream_uploads (
 create index if not exists pending_stream_uploads_album_id_idx on public.pending_stream_uploads(album_id);
 create index if not exists pending_stream_uploads_created_at_idx on public.pending_stream_uploads(created_at);
 alter table public.pending_stream_uploads enable row level security;
-
-commit;
