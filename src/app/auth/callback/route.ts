@@ -58,7 +58,15 @@ export async function GET(req: NextRequest) {
     return NextResponse.redirect(new URL('/login?error=invalid_code', url.origin))
   }
 
-  const allowed = await hasAccountAccess(data.user)
+  // Authentication has already succeeded here. Don't let a failure in the
+  // (admin-client) subscription lookup turn a successful login into a 500 — fall
+  // back to treating the user as a non-subscriber so they still land logged in.
+  let allowed = false
+  try {
+    allowed = await hasAccountAccess(data.user)
+  } catch (e) {
+    console.error('[auth/callback] access check failed; logging in anyway:', e instanceof Error ? e.message : String(e))
+  }
   const target = allowed
     ? requestedNext ?? '/account'
     : requestedNext && !requestedNext.startsWith('/account') ? requestedNext : '/'
