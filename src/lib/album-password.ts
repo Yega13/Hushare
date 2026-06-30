@@ -1,8 +1,12 @@
 const LEGACY_HASH_VERSION = 'hmac-sha256-v1'
 const KEY_BITS = 256
-const MIN_VERIFY_ITERATIONS = 10_000  // kept at 10k to accept existing hashes; new hashes use 600k
-const MAX_VERIFY_ITERATIONS = 1_000_000
-export const PBKDF2_ITERATIONS = 600_000  // OWASP 2023 minimum for PBKDF2-SHA-256
+const MIN_VERIFY_ITERATIONS = 10_000  // kept at 10k to accept existing hashes
+const MAX_VERIFY_ITERATIONS = 100_000 // workerd refuses to verify PBKDF2 above 100k
+// workerd (Cloudflare Workers runtime) caps PBKDF2 at 100k iterations — requesting
+// more throws `NotSupportedError: iteration counts above 100000 are not supported`,
+// which 500'd every album-password save. 100k PBKDF2-SHA-256 with a 16-byte random
+// salt + the server-side pepper remains strong for album (not account) passwords.
+export const PBKDF2_ITERATIONS = 100_000
 
 export const MIN_PASSWORD_LEN = 4
 export const MAX_PASSWORD_LEN = 128

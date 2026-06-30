@@ -108,8 +108,12 @@ export async function POST(req: Request) {
   }
 
   // Guard against a compromised or misconfigured Cloudflare API returning a
-  // non-Cloudflare upload URL that would be forwarded to the client
-  if (!uploadUrl.startsWith('https://upload.videodelivery.net/')) {
+  // non-Cloudflare upload URL that would be forwarded to the client. Cloudflare
+  // returns either upload.videodelivery.net (legacy) or upload.cloudflarestream.com.
+  if (
+    !uploadUrl.startsWith('https://upload.videodelivery.net/') &&
+    !uploadUrl.startsWith('https://upload.cloudflarestream.com/')
+  ) {
     console.error('[stream] Cloudflare returned unexpected uploadUrl origin:', uploadUrl.slice(0, 80))
     return NextResponse.json({ error: 'Failed to initiate video upload' }, { status: 502, headers: NO_STORE })
   }

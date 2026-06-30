@@ -79,9 +79,13 @@ export async function createStreamUpload(
   }
 
   // Guard against a compromised or misconfigured Cloudflare API returning an upload URL
-  // that points somewhere other than videodelivery.net — the client should never TUS-upload
-  // to an attacker-controlled endpoint.
-  if (!uploadUrl.startsWith('https://upload.videodelivery.net/')) {
+  // that points somewhere other than Cloudflare Stream's TUS endpoints — the client
+  // should never TUS-upload to an attacker-controlled endpoint. Cloudflare returns either
+  // upload.videodelivery.net (legacy) or upload.cloudflarestream.com (current).
+  if (
+    !uploadUrl.startsWith('https://upload.videodelivery.net/') &&
+    !uploadUrl.startsWith('https://upload.cloudflarestream.com/')
+  ) {
     throw new Error(`Unexpected Stream upload URL origin: ${uploadUrl.slice(0, 80)}`)
   }
 
