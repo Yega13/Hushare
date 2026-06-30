@@ -37,52 +37,17 @@ async function callCronRoute(baseUrl: string, path: string, secret: string): Pro
   }
 }
 
-// `caches.default` is the Cloudflare colo edge cache (a Workers runtime global).
-declare const caches: {
-  default: {
-    match(req: Request): Promise<Response | undefined>
-    put(req: Request, res: Response): Promise<void>
-  }
-}
-
 const worker = {
-  fetch: async (request: Request, env: Env, ctx: ExecutionContext): Promise<Response> => {
-    const h = handler as { fetch: (r: Request, e: unknown, c: unknown) => Promise<Response> }
-
-    // Edge-cache static, publicly-cacheable GET pages (home + marketing) in the
-    // Cloudflare colo cache so repeat hits never invoke the Next worker. This is what
-    // lets those pages scale under load: without it every request runs the worker and
-    // the home page collapsed from 240→80 req/s at 150 concurrent. We only cache 200
-    // GET responses the app explicitly marks `Cache-Control: public` with no Set-Cookie,
-    // so all dynamic/album/API routes (which send `no-store`) and any authenticated
-    // response are never cached.
-    //
-    // RSC requests (client-side navigations / prefetches) are skipped entirely: they
-    // share the page URL but return a React Server Component payload instead of HTML
-    // (the page sends `Vary: RSC`). Rather than rely on the Cache API honouring Vary,
-    // we only ever cache full-document loads, so an RSC nav can never receive HTML.
-    const isRscRequest =
-      request.headers.has('rsc') || request.headers.has('next-router-prefetch')
-
-    if (request.method === 'GET' && !isRscRequest) {
-      const cache = caches.default
-      const hit = await cache.match(request)
-      if (hit) return hit
-
-      const response = await h.fetch(request, env, ctx)
-      const cc = response.headers.get('cache-control') ?? ''
-      if (
-        response.status === 200 &&
-        cc.includes('public') &&
-        !response.headers.has('set-cookie')
-      ) {
-        ctx.waitUntil(cache.put(request, response.clone()))
-      }
-      return response
-    }
-
-    return h.fetch(request, env, ctx)
-  },
+  // NOTE: a worker-level `caches.default` HTML cache was removed here. It cached
+  // marketing/home HTML in the colo cache, but the colo cache is NOT cleared on
+  // deploy, so after a new build it kept serving stale HTML that referenced the
+  // previous build's hashed JS chunks (now 404) — which broke client-only
+  // components (e.g. the about-page globe) and hydration after every deploy.
+  // If we want that latency win back, it must be re-introduced with a cache key
+  // versioned by the build ID (so a new deploy can never serve old HTML), or via a
+  // zone-level Cache Rule with purge-on-deploy — not an unversioned worker cache.
+  fetch: (request: Request, env: Env, ctx: ExecutionContext): Promise<Response> =>
+    (handler as { fetch: (r: Request, e: unknown, c: unknown) => Promise<Response> }).fetch(request, env, ctx),
 
   async scheduled(_event: ScheduledEvent, env: Env, ctx: ExecutionContext): Promise<void> {
     const secret = env.ALBUM_RETIREMENT_SECRET
