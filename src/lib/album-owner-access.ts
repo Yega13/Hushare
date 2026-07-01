@@ -179,16 +179,22 @@ export async function verifyOwnerViaCookie<T extends AlbumOwnerBase = AlbumOwner
 
   const cookieStore = await cookies()
   const ownerCookie = (cookieStore.get(`hushare_owner_${album.id}`)?.value ?? '').trim()
-  // Reject empty cookies before comparison to avoid timing oracle on empty string
-  if (!ownerCookie) {
-    return { ok: false, status: 403, error: 'Forbidden', reason: 'bad_token' }
-  }
-  if (!timingSafeEqual(ownerCookie, album.owner_token)) {
-    return { ok: false, status: 403, error: 'Forbidden', reason: 'bad_token' }
-  }
+  // Empty cookie can never match — short-circuit avoids a timing oracle on the empty string.
+  const cookieMatches = ownerCookie.length > 0 && timingSafeEqual(ownerCookie, album.owner_token)
 
+  // getUser() validates the JWT server-side (never getSession()). Resolved unconditionally
+  // because it drives both the account-owner check below and album claiming.
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
+
+  // Account-based ownership: a logged-in user whose account created this album is the owner
+  // on ANY device, no owner cookie required. This lets every owner mutation route recognize
+  // the account owner directly, independent of /api/album/resolve having set the cookie first.
+  const accountMatches = !!user && !!album.user_id && user.id === album.user_id
+
+  if (!cookieMatches && !accountMatches) {
+    return { ok: false, status: 403, error: 'Forbidden', reason: 'bad_token' }
+  }
 
   if (user && !album.user_id) {
     await admin.from('albums').update({ user_id: user.id }).eq('id', album.id).is('user_id', null)
