@@ -13,6 +13,7 @@ const CSP = [
     "https://videodelivery.net",
     "https://iframe.videodelivery.net",
     "https://imagedelivery.net",
+    "https://images.pexels.com", // stock album backgrounds (customization panel)
     `https://${R2_ACCOUNT}.r2.cloudflarestorage.com`,
   ].join(" "),
   "font-src 'self' data:",

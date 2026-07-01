@@ -1,5 +1,5 @@
-export const UPLOAD_CONCURRENCY_MOBILE = 2;
-export const UPLOAD_CONCURRENCY_DESKTOP = 3;
+export const UPLOAD_CONCURRENCY_MOBILE = 4;
+export const UPLOAD_CONCURRENCY_DESKTOP = 8;
 
 // Cloudflare Stream TUS requires minimum 5 MB chunks (except the last)
 export const STREAM_CHUNK_SIZE_BYTES = 5 * 1024 * 1024;
