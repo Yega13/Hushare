@@ -712,8 +712,17 @@ export default function UploadZone({ album, userTier, onPhotosUploaded }: Props)
       preview: f.type.startsWith('image/') ? URL.createObjectURL(f) : undefined,
     }))
     setEntries(prev => [...prev, ...newEntries])
+    // Videos have no instant object-URL preview — generate a poster frame for the tile so it
+    // shows a thumbnail instead of a generic camera icon. Best-effort, async, non-blocking.
+    for (const entry of newEntries) {
+      if (detectKind(entry.file) === 'video') {
+        void generateVideoPoster(entry.file)
+          .then(poster => { if (poster) patchEntry(entry.id, { preview: URL.createObjectURL(poster.blob) }) })
+          .catch(() => {})
+      }
+    }
     void startUploads(newEntries)
-  }, [startUploads])
+  }, [startUploads, patchEntry])
 
   const handleInputChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files ?? [])
