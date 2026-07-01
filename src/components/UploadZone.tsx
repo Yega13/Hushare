@@ -307,6 +307,7 @@ type FileEntry = {
   status: 'pending' | 'uploading' | 'done' | 'error'
   progress: number
   error?: string
+  preview?: string  // object URL for the image thumbnail (revoked on clear/unmount)
 }
 
 type PhotoRow = {
@@ -703,6 +704,7 @@ export default function UploadZone({ album, userTier, onPhotosUploaded }: Props)
       file: f,
       status: 'pending' as const,
       progress: 0,
+      preview: f.type.startsWith('image/') ? URL.createObjectURL(f) : undefined,
     }))
     setEntries(prev => [...prev, ...newEntries])
     void startUploads(newEntries)
@@ -743,7 +745,17 @@ export default function UploadZone({ album, userTier, onPhotosUploaded }: Props)
   }, [startUploads])
 
   const dismissDone = useCallback(() => {
-    setEntries(prev => prev.filter(e => e.status !== 'done'))
+    setEntries(prev => {
+      for (const e of prev) if (e.status === 'done' && e.preview) URL.revokeObjectURL(e.preview)
+      return prev.filter(e => e.status !== 'done')
+    })
+  }, [])
+
+  // Revoke any remaining preview object URLs when the component unmounts.
+  const entriesRef = useRef(entries)
+  entriesRef.current = entries
+  useEffect(() => () => {
+    for (const e of entriesRef.current) if (e.preview) URL.revokeObjectURL(e.preview)
   }, [])
 
   const doneCount    = entries.filter(e => e.status === 'done').length
@@ -810,96 +822,79 @@ export default function UploadZone({ album, userTier, onPhotosUploaded }: Props)
         tabIndex={-1}
       />
 
-      {/* File list */}
+      {/* File grid — thumbnails upload in parallel with a progress overlay each */}
       {entries.length > 0 && (
-        <div className="mt-3 flex flex-col gap-1.5">
-          {entries.map(entry => (
-            <div
-              key={entry.id}
-              className="flex items-center gap-3 rounded-xl px-3 py-2.5"
-              style={{
-                background: '#FFFFFF',
-                border: `1px solid ${entry.status === 'error' ? 'rgba(192,57,43,0.28)' : entry.status === 'done' ? 'rgba(37,79,34,0.20)' : '#EBE1D3'}`,
-                boxShadow: '0 1px 3px rgba(60,43,31,0.05)',
-              }}
-            >
-              {/* Status badge */}
-              <div
-                className="flex-shrink-0 flex items-center justify-center rounded-full"
-                style={{
-                  width: 26, height: 26,
-                  background: entry.status === 'done' ? 'rgba(37,79,34,0.10)' : entry.status === 'error' ? 'rgba(192,57,43,0.10)' : 'rgba(37,79,34,0.06)',
-                }}
-              >
-                {entry.status === 'done' && (
-                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#254F22" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" aria-label="Done">
-                    <polyline points="20 6 9 17 4 12" />
-                  </svg>
-                )}
-                {entry.status === 'error' && (
-                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#C0392B" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-label="Error">
-                    <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
-                  </svg>
-                )}
-                {(entry.status === 'uploading' || entry.status === 'pending') && (
-                  <div
-                    className="w-4 h-4 rounded-full border-2 border-t-transparent animate-spin"
-                    style={{ borderColor: '#254F22', borderTopColor: 'transparent' }}
-                    aria-label="Uploading"
-                  />
-                )}
-              </div>
-
-              {/* Name + progress bar */}
-              <div className="flex-1 min-w-0">
-                <p className="truncate text-xs font-semibold" style={{ color: '#3D2B1F' }}>
-                  {entry.file.name}
-                </p>
-                {entry.status === 'uploading' && (
-                  <div className="mt-1.5 flex items-center gap-2">
-                    <div className="flex-1 h-1.5 rounded-full overflow-hidden" style={{ background: '#EDE4D6' }}>
-                      <div
-                        className="h-full rounded-full transition-all duration-300"
-                        style={{ width: `${entry.progress}%`, background: 'linear-gradient(90deg,#254F22,#3E7238)' }}
-                      />
-                    </div>
-                    <span className="text-xs tabular-nums" style={{ color: '#8A7A66' }}>{entry.progress}%</span>
-                  </div>
-                )}
-                {entry.status === 'error' && (
-                  <p className="text-xs mt-0.5" style={{ color: '#C0392B' }}>{entry.error}</p>
-                )}
-              </div>
-
-              {/* Retry button */}
-              {entry.status === 'error' && (
-                <button
-                  type="button"
-                  onClick={e => { e.stopPropagation(); retryEntry(entry.id) }}
-                  className="flex-shrink-0 rounded-full px-3 py-1 text-xs font-semibold transition-colors hover:brightness-95"
-                  style={{ color: '#254F22', background: 'rgba(37,79,34,0.09)' }}
+        <div className="mt-4">
+          <div className="flex flex-wrap gap-2">
+            {entries.map(entry => {
+              const isVid = entry.file.type.startsWith('video/') || /\.(mp4|mov|webm|m4v)$/i.test(entry.file.name)
+              const active = entry.status === 'uploading' || entry.status === 'pending'
+              return (
+                <div
+                  key={entry.id}
+                  className="relative rounded-xl overflow-hidden"
+                  style={{ width: 84, height: 84, background: '#EFE7DA', border: '1px solid #E3D8C7' }}
+                  title={entry.status === 'error' ? entry.error : entry.file.name}
                 >
-                  Retry
-                </button>
-              )}
-            </div>
-          ))}
+                  {entry.preview ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={entry.preview} alt="" className="w-full h-full object-cover" />
+                  ) : (
+                    <div className="w-full h-full flex items-center justify-center" style={{ color: '#A08B6E' }}>
+                      {isVid ? (
+                        <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><polygon points="23 7 16 12 23 17 23 7" /><rect x="1" y="5" width="15" height="14" rx="2" ry="2" /></svg>
+                      ) : (
+                        <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2" /><circle cx="8.5" cy="8.5" r="1.5" /><polyline points="21 15 16 10 5 21" /></svg>
+                      )}
+                    </div>
+                  )}
+
+                  {/* uploading overlay */}
+                  {active && (
+                    <div className="absolute inset-0 flex flex-col items-center justify-center" style={{ background: 'rgba(27,46,26,0.48)' }}>
+                      <div className="w-6 h-6 rounded-full border-2 border-t-transparent animate-spin" style={{ borderColor: '#FDFAF5', borderTopColor: 'transparent' }} aria-label="Uploading" />
+                      <span className="mt-1 text-[10px] font-bold tabular-nums" style={{ color: '#FDFAF5' }}>{entry.progress}%</span>
+                      <div className="absolute bottom-0 left-0 right-0" style={{ height: 3, background: 'rgba(255,255,255,0.25)' }}>
+                        <div className="h-full transition-all duration-300" style={{ width: `${entry.progress}%`, background: '#FDFAF5' }} />
+                      </div>
+                    </div>
+                  )}
+
+                  {/* done check */}
+                  {entry.status === 'done' && (
+                    <div className="absolute top-1 right-1 rounded-full flex items-center justify-center" style={{ width: 18, height: 18, background: '#254F22', boxShadow: '0 1px 3px rgba(0,0,0,0.3)' }} aria-label="Done">
+                      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#FDFAF5" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
+                    </div>
+                  )}
+
+                  {/* error overlay → click to retry */}
+                  {entry.status === 'error' && (
+                    <button
+                      type="button"
+                      onClick={e => { e.stopPropagation(); retryEntry(entry.id) }}
+                      className="absolute inset-0 flex flex-col items-center justify-center"
+                      style={{ background: 'rgba(150,32,22,0.66)' }}
+                      aria-label={`Retry ${entry.file.name}`}
+                    >
+                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#FDFAF5" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="23 4 23 10 17 10" /><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" /></svg>
+                      <span className="mt-0.5 text-[10px] font-bold" style={{ color: '#FDFAF5' }}>Retry</span>
+                    </button>
+                  )}
+                </div>
+              )
+            })}
+          </div>
 
           {/* Summary row */}
           {!isUploading && activeCount === 0 && (doneCount > 0 || errorCount > 0) && (
-            <div className="flex items-center justify-between pt-0.5 px-1">
+            <div className="flex items-center justify-between mt-3 px-1">
               <span className="text-xs" style={{ color: '#7C6752' }}>
                 {doneCount > 0 && `${doneCount} uploaded`}
                 {doneCount > 0 && errorCount > 0 && ' · '}
                 {errorCount > 0 && `${errorCount} failed`}
               </span>
               {doneCount > 0 && (
-                <button
-                  type="button"
-                  onClick={dismissDone}
-                  className="text-xs font-semibold"
-                  style={{ color: '#254F22' }}
-                >
+                <button type="button" onClick={dismissDone} className="text-xs font-semibold" style={{ color: '#254F22' }}>
                   Clear
                 </button>
               )}
