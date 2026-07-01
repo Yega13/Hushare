@@ -4,7 +4,6 @@ import { ensureCollection, indexPhotoFaces } from '@/lib/rekognition'
 import { forbidCrossSiteRequest } from '@/lib/request-security'
 import { getUserTierById } from '@/lib/subscriptions'
 import { checkRateLimit, clientIpKey } from '@/lib/rate-limit'
-import { verifyOwnerViaCookie } from '@/lib/album-owner-access'
 
 export const runtime = 'nodejs'
 export const maxDuration = 60
@@ -114,14 +113,13 @@ async function handlePost(req: Request) {
   const ipLimit = await checkRateLimit(clientIpKey(req, 'face_index'), INDEX_WINDOW_SECONDS, INDEX_IP_MAX, { failOpen: true })
   if (!ipLimit.ok) return rateLimitResponse(ipLimit.retryAfterSeconds)
 
-  // Paid Rekognition calls — verify the requester owns this album (owner cookie).
-  const ownerAccess = await verifyOwnerViaCookie<{ id: string; owner_token: string; user_id: string | null; face_finder_enabled: boolean }>(
-    slug, 'face_finder_enabled',
-  )
-  if (!ownerAccess.ok) return NextResponse.json({ error: ownerAccess.error }, { status: ownerAccess.status, headers: NO_STORE })
-
-  const admin = createAdminClient()
-  const album = ownerAccess.album
+  // NOT owner-gated: the Face Finder is guest-facing, so a guest (with no owner cookie) must be
+  // able to trigger indexing. This is safe because indexing only runs on albums the owner
+  // explicitly opted into (face_finder_enabled + Studio), each photo is indexed at most once
+  // (face_ids is then set, so repeat calls are no-ops), and the per-IP/per-album rate limits
+  // below bound the one-time cost the owner already opted into by enabling the feature.
+  const { admin, album } = await resolveAlbum(slug)
+  if (!album) return NextResponse.json({ error: 'Album not found' }, { status: 404, headers: NO_STORE })
   if (!await faceFinderAvailable(album)) {
     return NextResponse.json({ error: 'Face Finder is not enabled for this album' }, { status: 403, headers: NO_STORE })
   }
