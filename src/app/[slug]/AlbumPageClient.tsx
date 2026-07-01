@@ -192,12 +192,11 @@ export default function AlbumPageClient() {
         if (isCancelled() || !res.ok) return
         const result = await res.json() as { isOwner?: boolean }
         if (isCancelled()) return
-        // Set ref BEFORE setIsOwner to honour the documented invariant:
-        // "ref is always true whenever isOwner can become true" (line 116-118).
-        // React 18 batches the re-render so the ref is already true before the
-        // first render that sees isOwner===true — but setting it first is correct
-        // regardless of the React version and matches the URL-token path in Effect 1.
-        if (result.isOwner) ownerTokenFromUrlRef.current = true
+        // Do NOT set ownerTokenFromUrlRef here. Owner VIEW requires the #owner= management link
+        // in the current URL (the ref is set only by Effect 1 when that hash is present). A valid
+        // owner cookie alone authorizes owner mutations but does not flip the public album URL
+        // into owner view — the public URL is a guest experience for everyone, including the
+        // creator. The creator reaches owner view via their management link (dashboard / post-create).
         setIsOwner(!!result.isOwner)
         if (result.isOwner) {
           // Non-blocking — page renders before tier resolves
@@ -724,7 +723,7 @@ export default function AlbumPageClient() {
           <UploadZone album={album} userTier={userTier} onPhotosUploaded={handlePhotosUploaded} />
         )}
 
-        <div className="hush-container pb-6">
+        <div className="hush-container pb-6 px-4 sm:px-0">
           <PhotoGrid
             album={album}
             photos={photos}

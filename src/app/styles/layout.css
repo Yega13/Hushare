@@ -582,19 +582,6 @@
   }
 }
 
-/* ── Album page mobile gutters ─────────────────────────────────────────────────
-   On phones the global .hush-container gutters collapse to ~8–12px, which made the
-   album header, toolbar and photo grid hug the screen edges. Give every piece of album
-   chrome (all use .hush-container) one consistent, comfortable side margin so nothing
-   looks stuck to the edge. Uses padding-inline (not width) so it applies regardless of
-   the .hush-container width/margin cascade, and !important to win over @layer ordering.
-   Scoped to .hush-album-page so other pages are unaffected. */
-@media (max-width: 640px) {
-  .hush-album-page .hush-container {
-    padding-inline: 1rem !important;
-  }
-}
-
 /* ── Desktop home page (≥ 1024px) ──────────────────────────────────────────── */
 
 @media (min-width: 1024px) {

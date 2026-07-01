@@ -76,9 +76,12 @@ export async function POST(req: Request) {
       .single()
 
     if (!error) {
-      // Owner token is set as an HttpOnly cookie — never returned in the response body.
-      // SameSite=strict prevents the cookie from being sent on any cross-site navigation.
-      const res = NextResponse.json({ slug: data.slug }, { headers: NO_STORE })
+      // Owner token is set as an HttpOnly cookie AND returned to the creator so the client can
+      // redirect to the management link (/slug#owner=token). Returning it here is safe: the
+      // caller is the owner (they just created the album) — the same way the account dashboard
+      // exposes owner_token to the owner. Public album URLs are guest-only; owner access comes
+      // only from the #owner= management link, so the redirect must carry the token.
+      const res = NextResponse.json({ slug: data.slug, owner_token: ownerToken }, { headers: NO_STORE })
       res.cookies.set(`hushare_owner_${data.id}`, ownerToken, {
         httpOnly: true,
         secure: true,

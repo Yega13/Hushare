@@ -91,7 +91,7 @@ export default function GuestActionsBar({ album, photos, shareUrl, onOpenSlidesh
 
   return (
     <div style={{ background: '#F5F0E8', borderBottom: '1px solid #DDD5C5' }}>
-      <div className="hush-container py-3 flex flex-wrap items-center gap-2">
+      <div className="hush-container py-3 px-4 sm:px-0 flex flex-wrap items-center gap-2">
 
         {/* Slideshow */}
         <button

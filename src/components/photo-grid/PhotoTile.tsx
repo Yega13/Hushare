@@ -86,10 +86,17 @@ const PhotoTile = React.memo(function PhotoTile({
   handlers,
 }: Props) {
   const isVideo = photo.media_type === 'video'
-  // For videos, drop the poster src entirely if the poster failed to load so the tile
-  // shows the placeholder + Play icon instead of a broken-image icon under the overlay.
+  // Video thumbnail: prefer the R2 poster (uploaded on submit — immediate + reliable), and
+  // fall back to the Cloudflare Stream thumbnail (which 404s until Stream finishes processing)
+  // only if the poster is missing or fails. Prevents a blank video tile right after upload.
+  const [videoPosterFailed, setVideoPosterFailed] = React.useState(false)
+  const videoThumb = (!videoPosterFailed && photo.poster_url)
+    ? photo.poster_url
+    : (photo.stream_thumbnail_url || photo.poster_url || '')
+  // For videos, drop the src entirely once every source failed so the tile shows the
+  // placeholder + Play icon instead of a broken-image icon under the overlay.
   const thumbSrc = isVideo
-    ? (posterBroken.has(photo.id) ? '' : (photo.stream_thumbnail_url || photo.poster_url || ''))
+    ? (posterBroken.has(photo.id) ? '' : videoThumb)
     : (photo.thumb_url || photo.url)
   const isBroken = broken.has(photo.id)
   // In the new system all videos are Cloudflare Stream (stream_uid always set).
@@ -158,8 +165,13 @@ const PhotoTile = React.memo(function PhotoTile({
             } as React.CSSProperties}
             onError={() => {
               if (isVideo) {
-                // Poster failed but the video itself may still play — flag the poster
-                // only, not the whole photo, so the lightbox can still open the video.
+                // R2 poster failed — try the Stream thumbnail before giving up on a thumbnail.
+                if (!videoPosterFailed && photo.poster_url && photo.stream_thumbnail_url) {
+                  setVideoPosterFailed(true)
+                  return
+                }
+                // All sources failed — show the placeholder + Play icon (video may still play,
+                // so flag the poster only, not the whole photo, and the lightbox still opens it).
                 handlers.current.setPosterBroken((prev) => {
                   if (prev.has(photo.id)) return prev
                   const next = new Set(prev)

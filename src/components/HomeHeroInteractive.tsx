@@ -52,14 +52,16 @@ export default function HomeHeroInteractive() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ title: title.trim() }),
       })
-      const body = await res.json().catch(() => ({})) as { slug?: string; error?: string }
+      const body = await res.json().catch(() => ({})) as { slug?: string; owner_token?: string; error?: string }
       if (!res.ok || !body.slug) {
         setError(body.error ?? 'Something went wrong. Please try again.')
         setLoading(false)
         return
       }
-      // Cookie is set by the API response — no token in URL (prevents browser history / referer leakage).
-      router.push(`/${body.slug}`)
+      // Redirect via the #owner= management link so the creator lands in owner view. Public
+      // album URLs are guest-only, so the owner cookie alone no longer grants the owner view —
+      // the token in the hash does. The album page strips it from the URL after owner-login.
+      router.push(body.owner_token ? `/${body.slug}#owner=${body.owner_token}` : `/${body.slug}`)
     } catch {
       setError('Something went wrong. Please try again.')
       setLoading(false)
