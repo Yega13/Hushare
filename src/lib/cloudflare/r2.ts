@@ -69,6 +69,12 @@ function getS3Client(): S3Client {
     region: 'auto',
     endpoint: `https://${accountId}.r2.cloudflarestorage.com`,
     credentials: { accessKeyId, secretAccessKey },
+    // Path-style: presign as `<account>.r2.cloudflarestorage.com/<bucket>/<key>` instead
+    // of the default virtual-hosted `<bucket>.<account>.r2.cloudflarestorage.com`. The
+    // browser upload's CSP connect-src only allows the account host, so the bucket-
+    // subdomain host was blocked by CSP → every photo failed with "Network error during
+    // upload". Path-style keeps the host on the CSP allowlist.
+    forcePathStyle: true,
     // AWS SDK v3 (>=3.729) adds a default CRC32 integrity checksum to PutObject.
     // For a *presigned* browser PUT this bakes an x-amz-checksum requirement into the
     // signature that the browser never satisfies, so R2 rejects the upload — which the
