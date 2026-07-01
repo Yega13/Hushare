@@ -113,10 +113,6 @@ export default function AlbumPageClient() {
   const [ownerTokenReady, setOwnerTokenReady] = useState(false)
   const [ownerToken, setOwnerToken] = useState<string | null>(null)
   const [isOwner, setIsOwner] = useState(false)
-  // Account-based owner: /api/album/resolve verified (server-side) that the logged-in
-  // user's account owns this album, and set the owner cookie. Unlike the URL-token owner
-  // this is re-verified against album.user_id on every load, so it needs no URL guard.
-  const [accountOwner, setAccountOwner] = useState(false)
 
   // Display state — consumed by Phase 7–9 components
   const [userTier, setUserTier] = useState<Tier>('free')
@@ -140,9 +136,9 @@ export default function AlbumPageClient() {
   const fetchGenRef = useRef(0)
 
   // Computed at render — ref is always set before isOwner can become true.
-  // Account owners are server-verified against user_id every load, so they don't need
-  // the URL-token guard that protects the cookie-based owner path from stale cookies.
-  const effectiveIsOwner = (isOwner && ownerTokenFromUrlRef.current) || accountOwner
+  // Owner view requires the owner cookie (set via the #owner= management link or album
+  // creation). The public URL is a guest experience for everyone, including the creator.
+  const effectiveIsOwner = isOwner && ownerTokenFromUrlRef.current
 
   // ─── fetchPhotos ────────────────────────────────────────────────────────────
   // Returns the photos array instead of calling setPhotos directly.
@@ -214,7 +210,6 @@ export default function AlbumPageClient() {
     }
 
     try {
-      setAccountOwner(false)  // reset per load; only re-granted if resolve confirms it
       const res = await fetch(
         `/api/album/resolve?slug=${encodeURIComponent(slug)}`,
         { cache: 'no-store' },
@@ -266,9 +261,6 @@ export default function AlbumPageClient() {
 
       // Full album — resolve strips owner_token, password_hash, user_id, retired_at
       const data = json as unknown as Album
-      // Account-based owner: resolve verified this logged-in user owns the album (and set
-      // the owner cookie server-side) — grant the owner view: toolbar + management.
-      if (json.account_owner === true) setAccountOwner(true)
 
       // Auth check and photo fetch in parallel. Both results are guarded below by
       // isCancelled() so a superseded call never commits state to the new album.
@@ -722,7 +714,7 @@ export default function AlbumPageClient() {
           <UploadZone album={album} userTier={userTier} onPhotosUploaded={handlePhotosUploaded} />
         )}
 
-        <div className="hush-container pb-6 px-3 sm:px-0">
+        <div className="hush-container pb-6">
           <PhotoGrid
             album={album}
             photos={photos}

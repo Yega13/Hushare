@@ -74,6 +74,9 @@ type AccountAlbum = {
   title: string
   cover_photo_id: string | null
   created_at: string
+  // The owner_token is used to build the management link. Safe to include here: this is
+  // the signed-in user's OWN album, on their own authenticated dashboard page.
+  owner_token: string
 }
 
 type AccountMediaRow = {
@@ -176,7 +179,7 @@ export default async function AccountPage({ searchParams }: Props) {
       .returns<AccountCollection[]>(),
     admin
       .from('albums')
-      .select('id, slug, custom_slug, title, cover_photo_id, created_at')
+      .select('id, slug, custom_slug, title, cover_photo_id, created_at, owner_token')
       .eq('user_id', user.id)
       .order('created_at', { ascending: false })
       .returns<AccountAlbum[]>(),
@@ -462,7 +465,7 @@ export default async function AccountPage({ searchParams }: Props) {
               <div className="space-y-3">
                 {recentAlbums.map((album) => (
                   <div key={album.id} className="rounded-xl p-3" style={{ background: '#FDFAF5', border: '1px solid #E8E0D2' }}>
-                    <Link href={`/${album.slug}`} className="flex items-center gap-3 transition hover:opacity-80">
+                    <Link href={`/${album.slug}#owner=${album.owner_token}`} className="flex items-center gap-3 transition hover:opacity-80">
                       <span className="relative h-14 w-14 flex-none overflow-hidden rounded-lg" style={{ background: '#E8E0D2' }}>
                         {album.cover_url ? (
                           <Image src={album.cover_url} alt="" fill sizes="56px" className="object-cover" unoptimized />
