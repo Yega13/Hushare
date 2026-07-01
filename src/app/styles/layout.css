@@ -586,11 +586,12 @@
    On phones the global .hush-container gutters collapse to ~8–12px, which made the
    album header, toolbar and photo grid hug the screen edges. Give every piece of album
    chrome (all use .hush-container) one consistent, comfortable side margin so nothing
-   looks stuck to the edge. Scoped to .hush-album-page so other pages are unaffected;
-   more specific than the base .hush-container rule, so it wins without !important. */
+   looks stuck to the edge. Uses padding-inline (not width) so it applies regardless of
+   the .hush-container width/margin cascade, and !important to win over @layer ordering.
+   Scoped to .hush-album-page so other pages are unaffected. */
 @media (max-width: 640px) {
   .hush-album-page .hush-container {
-    width: min(calc(100% - 2rem), 100%);
+    padding-inline: 1rem !important;
   }
 }
 

@@ -142,10 +142,12 @@ export default function OwnerToolbar({ album, photos, ownerToken, userTier, medi
   useEffect(() => { setOrigin(window.location.origin) }, [])
   const shareUrl = origin ? `${origin}/${publicSlug}` : `/${publicSlug}`
 
-  // Lazily fetch the owner token when the Share menu opens and we don't have it yet
-  // (the account-owner case). Guarded so it runs at most once per album.
+  // Fetch the owner token eagerly when the toolbar mounts (owner view is already confirmed),
+  // so the management link is ready the instant the Share menu opens — not a few seconds
+  // later. Only needed when we arrived without the token in the URL (e.g. a page refresh:
+  // owner cookie present, no #owner= hash). Runs at most once per album.
   useEffect(() => {
-    if (!showShare || ownerToken || fetchedOwnerToken) return
+    if (ownerToken || fetchedOwnerToken) return
     let cancelled = false
     void fetch(`/api/album/owner-link?slug=${encodeURIComponent(album.slug)}`, { cache: 'no-store' })
       .then((r) => (r.ok ? r.json() : null))
@@ -154,7 +156,7 @@ export default function OwnerToolbar({ album, photos, ownerToken, userTier, medi
       })
       .catch(() => {})
     return () => { cancelled = true }
-  }, [showShare, ownerToken, fetchedOwnerToken, album.slug])
+  }, [ownerToken, fetchedOwnerToken, album.slug])
 
   // The owner link works whether the token came from the #owner= hash (ownerToken prop)
   // or was fetched for an account owner (fetchedOwnerToken).

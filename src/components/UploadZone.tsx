@@ -218,16 +218,21 @@ async function processImageFile(file: File): Promise<{ blob: Blob; mimeType: str
   return { blob: file, mimeType, name: file.name }
 }
 
+// 600px longest edge: sharp on the grid even at 2–3× DPR (a 3-col mobile tile is
+// ~120 CSS px = ~360 physical px on a 3× screen). Small enough to stay a fast-loading
+// thumbnail. The lightbox still swaps in the full-resolution original.
+const THUMB_MAX_DIM = 600
+
 async function generateThumbnail(blob: Blob): Promise<Blob | null> {
   try {
     let bitmap: ImageBitmap
     try {
-      bitmap = await createImageBitmap(blob, { resizeWidth: 200, resizeQuality: 'high' })
+      bitmap = await createImageBitmap(blob, { resizeWidth: THUMB_MAX_DIM, resizeQuality: 'high' })
     } catch {
       bitmap = await createImageBitmap(blob)
     }
     const { width: bw, height: bh } = bitmap
-    const scale = Math.min(1, 200 / Math.max(bw, bh))
+    const scale = Math.min(1, THUMB_MAX_DIM / Math.max(bw, bh))
     const w = Math.max(1, Math.round(bw * scale))
     const h = Math.max(1, Math.round(bh * scale))
 
@@ -237,7 +242,7 @@ async function generateThumbnail(blob: Blob): Promise<Blob | null> {
         const octx = oc.getContext('2d')
         if (!octx) throw new Error('OffscreenCanvas 2D context unavailable')
         octx.drawImage(bitmap, 0, 0, w, h)
-        const thumb = await oc.convertToBlob({ type: 'image/jpeg', quality: 0.8 })
+        const thumb = await oc.convertToBlob({ type: 'image/jpeg', quality: 0.85 })
         bitmap.close()
         return thumb
       } catch { /* fall through */ }
@@ -249,7 +254,7 @@ async function generateThumbnail(blob: Blob): Promise<Blob | null> {
     if (!thumbCtx) { bitmap.close(); return null }
     thumbCtx.drawImage(bitmap, 0, 0, w, h)
     bitmap.close()
-    return new Promise<Blob | null>(res => canvas.toBlob(res, 'image/jpeg', 0.8))
+    return new Promise<Blob | null>(res => canvas.toBlob(res, 'image/jpeg', 0.85))
   } catch {
     return null
   }
