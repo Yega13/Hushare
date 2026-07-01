@@ -183,27 +183,17 @@ export default function ShareMenu({ copied, ownerUrl, shareUrl, albumTitle, onCl
           </div>
 
           <button
-            className="hush-hover-lift w-full flex items-center justify-between gap-3 rounded-xl px-3 py-3 mb-2 text-left transition hover:opacity-90"
-            style={{ background: '#FDFAF5', border: '1px solid #DDD5C5', cursor: 'pointer' }}
-            onClick={handleShare}
-          >
-            <span>
-              <span className="block text-sm font-semibold" style={{ color: '#254F22' }}>Share album</span>
-              <span className="block text-xs" style={{ color: '#8B6F4E' }}>Send via messages, apps or copy</span>
-            </span>
-            <Share2 className="w-4 h-4 flex-none" style={{ color: '#7C5C3E' }} />
-          </button>
-
-          <button
             className="hush-hover-lift w-full flex items-center justify-between gap-3 rounded-xl px-3 py-3 text-left transition hover:opacity-90"
             style={{ background: '#FDFAF5', border: '1px solid #DDD5C5', cursor: 'pointer' }}
-            onClick={() => onCopy('share')}
+            onClick={handleShare}
           >
             <span>
               <span className="block text-sm font-semibold" style={{ color: '#254F22' }}>Guest share link</span>
               <span className="block text-xs truncate" style={{ color: '#8B6F4E', maxWidth: 220 }}>{shareUrl}</span>
             </span>
-            {copied === 'share' ? <Check className="w-4 h-4" style={{ color: '#254F22' }} /> : <Copy className="w-4 h-4" style={{ color: '#7C5C3E' }} />}
+            {copied === 'share'
+              ? <Check className="w-4 h-4 flex-none" style={{ color: '#254F22' }} />
+              : <Share2 className="w-4 h-4 flex-none" style={{ color: '#7C5C3E' }} />}
           </button>
 
           {ownerUrl && (

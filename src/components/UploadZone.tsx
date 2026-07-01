@@ -135,7 +135,7 @@ async function resizeAndEncode(source: File | Blob, targetMime: string): Promise
       const octx = oc.getContext('2d')
       if (!octx) throw new Error('OffscreenCanvas 2D context unavailable')
       octx.drawImage(bitmap, 0, 0, w, h)
-      const blob = await encodeCanvas(oc, targetMime, 0.88)
+      const blob = await encodeCanvas(oc, targetMime, 0.94)
       bitmap.close()
       return blob
     } catch { /* fall through */ }
@@ -148,7 +148,7 @@ async function resizeAndEncode(source: File | Blob, targetMime: string): Promise
   const ctx = canvas.getContext('2d')
   if (!ctx) throw new Error('Could not get 2D canvas context')
   ctx.drawImage(bitmap, 0, 0, w, h)
-  const blob = await encodeCanvas(canvas, targetMime, 0.88)
+  const blob = await encodeCanvas(canvas, targetMime, 0.94)
   bitmap.close()
   return blob
 }

@@ -34,7 +34,7 @@
   }
 
   .hush-modal-pop {
-    animation: hush-modal-pop 240ms cubic-bezier(0.16, 1, 0.3, 1) both;
+    animation: hush-modal-pop 340ms cubic-bezier(0.16, 1, 0.3, 1) both;
   }
 
   .hush-fade-up {

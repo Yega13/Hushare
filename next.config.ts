@@ -5,7 +5,7 @@ const R2_ACCOUNT   = "cd64a4cdd390c827e46bff2ff1ab30ed";
 
 const CSP = [
   "default-src 'self'",
-  "script-src 'self' 'unsafe-inline' https://www.googletagmanager.com https://challenges.cloudflare.com https://static.cloudflareinsights.com",
+  "script-src 'self' 'unsafe-inline' https://www.googletagmanager.com https://challenges.cloudflare.com https://static.cloudflareinsights.com https://embed.videodelivery.net",
   "style-src 'self' 'unsafe-inline'",
   [
     "img-src 'self' data: blob:",

@@ -76,6 +76,11 @@ function toDatetimeLocal(iso: string | null): string {
 export default function OwnerToolbar({ album, photos, ownerToken, userTier, mediaRadiusMax, onAlbumUpdated, onOpenSlideshow, arrangeMode, onToggleArrangeMode }: Props) {
   const [copied, setCopied] = useState<'share' | 'owner' | null>(null)
   const [showShare, setShowShare] = useState(false)
+  // Account owners have no #owner= link, so ownerToken (prop) is null for them. Fetch the
+  // token from the owner-verified endpoint the first time the Share menu opens so the
+  // management link can be shown. Never fetched for guests (this component only renders
+  // for owners) and never on mount — only when the owner actually opens Share.
+  const [fetchedOwnerToken, setFetchedOwnerToken] = useState<string | null>(null)
   const [showSettings, setShowSettings] = useState(false)
   const [openSection, setOpenSection] = useState<SettingsSection | null>(null)
 
@@ -136,10 +141,25 @@ export default function OwnerToolbar({ album, photos, ownerToken, userTier, medi
   const [origin, setOrigin] = useState('')
   useEffect(() => { setOrigin(window.location.origin) }, [])
   const shareUrl = origin ? `${origin}/${publicSlug}` : `/${publicSlug}`
-  // ownerToken is only available when the owner opened the page via the #owner= hash link.
-  // When authenticated via cookie (page refresh / direct navigation), the token is null —
-  // the management link is hidden in the Share menu in that case.
-  const ownerUrl = ownerToken && origin ? `${origin}/${album.slug}#owner=${ownerToken}` : null
+
+  // Lazily fetch the owner token when the Share menu opens and we don't have it yet
+  // (the account-owner case). Guarded so it runs at most once per album.
+  useEffect(() => {
+    if (!showShare || ownerToken || fetchedOwnerToken) return
+    let cancelled = false
+    void fetch(`/api/album/owner-link?slug=${encodeURIComponent(album.slug)}`, { cache: 'no-store' })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((j: { owner_token?: string } | null) => {
+        if (!cancelled && j?.owner_token) setFetchedOwnerToken(j.owner_token)
+      })
+      .catch(() => {})
+    return () => { cancelled = true }
+  }, [showShare, ownerToken, fetchedOwnerToken, album.slug])
+
+  // The owner link works whether the token came from the #owner= hash (ownerToken prop)
+  // or was fetched for an account owner (fetchedOwnerToken).
+  const effectiveOwnerToken = ownerToken ?? fetchedOwnerToken
+  const ownerUrl = effectiveOwnerToken && origin ? `${origin}/${album.slug}#owner=${effectiveOwnerToken}` : null
   const canCustomize = userTier === 'pro' || userTier === 'studio'
   const canUseCollections = userTier === 'studio'
   const bgChoice = album.background_theme ?? DEFAULT_BG

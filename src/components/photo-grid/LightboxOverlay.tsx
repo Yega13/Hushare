@@ -3,6 +3,7 @@
 import React from 'react'
 import { X, ChevronLeft, ChevronRight, Play, Pause, Download, Settings, Star, Trash2 } from 'lucide-react'
 import type { Photo } from '@/types'
+import { unmuteStreamVideo } from '@/lib/cloudflare/stream-player'
 
 function streamFrameSrc(photo: Photo, autoplay: boolean): string {
   const base = photo.stream_iframe_url || (photo.stream_uid ? `https://iframe.videodelivery.net/${photo.stream_uid}` : '')
@@ -236,7 +237,14 @@ export default function LightboxOverlay({
               className="block aspect-video max-h-[min(65vh,680px)] w-[min(92vw,1100px)] max-w-full"
               style={{ background: '#000', border: 0, borderRadius: previewRadiusFor(current) }}
               onClick={(e) => e.stopPropagation()}
-              onLoad={(e) => onMediaNodeChange(e.currentTarget)}
+              onLoad={(e) => {
+                onMediaNodeChange(e.currentTarget)
+                // When the video autoplays (muted, to satisfy browser policy), unmute it to a
+                // comfortable 50% once playback has started. The lightbox open gesture provides
+                // the user activation browsers require for the programmatic unmute.
+                const autoplaying = slideshowMode ? !slideshowPaused : videoAutoplay
+                if (autoplaying) void unmuteStreamVideo(e.currentTarget, 0.5)
+              }}
             />
           </div>
         ) : (
