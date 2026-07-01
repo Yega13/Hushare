@@ -229,7 +229,7 @@ export default function LightboxOverlay({
           </div>
         ) : current.media_type === 'video' && current.stream_uid ? (
           // All videos in the new system are Cloudflare Stream. There is no R2 video fallback.
-          <div className={`hush-photo-flip relative w-[min(92vw,1100px)]${slideshowFrameClass}`} key={current.id} onContextMenu={(e) => e.preventDefault()}>
+          <div className={`hush-photo-flip relative w-[min(92vw,1100px)]${slideshowMode ? '' : ' hush-lightbox-media'}${slideshowFrameClass}`} key={current.id} onContextMenu={(e) => e.preventDefault()}>
             <iframe
               src={streamFrameSrc(current, slideshowMode ? !slideshowPaused : videoAutoplay)}
               allow="accelerometer; gyroscope; autoplay; encrypted-media; picture-in-picture;"
@@ -249,7 +249,7 @@ export default function LightboxOverlay({
           </div>
         ) : (
           // Image branch (Branch 4 in old code, now Branch 3 — no native <video> branch exists)
-          <div className={`hush-photo-flip relative w-[min(92vw,1100px)]${slideshowFrameClass}`} key={current.id} onContextMenu={(e) => e.preventDefault()}>
+          <div className={`hush-photo-flip relative w-[min(92vw,1100px)]${slideshowMode ? '' : ' hush-lightbox-media'}${slideshowFrameClass}`} key={current.id} onContextMenu={(e) => e.preventDefault()}>
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
               src={

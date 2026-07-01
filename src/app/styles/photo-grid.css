@@ -41,6 +41,31 @@
   /* No overflow:hidden — would clip the image when pinch-zoomed past its natural bounds. */
 }
 
+/* Gentle settle-into-centre entrance for lightbox media. The container has key={photo.id}
+   so it remounts on open AND on every next/prev, replaying this each time. Scoped to the
+   non-slideshow lightbox only (slideshow has its own frame animations). ends at scale(1)
+   (identity) so it never interferes with the image's own pinch-zoom transform. */
+.hush-lightbox-media {
+  animation: hush-lightbox-media 300ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+@keyframes hush-lightbox-media {
+  from {
+    opacity: 0;
+    transform: scale(0.975);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hush-lightbox-media {
+    animation: none;
+  }
+}
+
 .hush-grid-photo-back {
   position: absolute;
   inset: 0;
