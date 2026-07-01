@@ -763,8 +763,8 @@ export default function UploadZone({ album, userTier, onPhotosUploaded }: Props)
   const activeCount  = entries.filter(e => e.status === 'uploading' || e.status === 'pending').length
 
   return (
-    <div className="hush-upload-zone px-4 pb-4">
-      {/* Drop zone */}
+    <div className="hush-upload-zone px-3 sm:px-4 pt-2 pb-4">
+      {/* Drop zone — compact on mobile, roomier on desktop */}
       <div
         role="button"
         tabIndex={0}
@@ -773,7 +773,7 @@ export default function UploadZone({ album, userTier, onPhotosUploaded }: Props)
         onDragLeave={handleDragLeave}
         onClick={() => inputRef.current?.click()}
         onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') inputRef.current?.click() }}
-        className="group flex flex-col items-center justify-center gap-3 rounded-2xl border-2 border-dashed cursor-pointer transition-all py-10 px-4 select-none"
+        className="group flex flex-col items-center justify-center gap-1.5 sm:gap-3 rounded-2xl border-2 border-dashed cursor-pointer transition-all py-4 sm:py-9 px-4 select-none"
         style={{
           borderColor: isDragging ? '#254F22' : '#D8CBB8',
           background: isDragging ? 'rgba(37,79,34,0.06)' : 'rgba(37,79,34,0.015)',
@@ -781,8 +781,8 @@ export default function UploadZone({ album, userTier, onPhotosUploaded }: Props)
         aria-label="Click or drag files to upload photos and videos"
       >
         <div
-          className="flex items-center justify-center rounded-full transition-transform group-hover:scale-105"
-          style={{ width: 52, height: 52, background: isDragging ? '#254F22' : 'rgba(37,79,34,0.10)' }}
+          className="flex items-center justify-center rounded-full transition-transform group-hover:scale-105 w-9 h-9 sm:w-[52px] sm:h-[52px]"
+          style={{ background: isDragging ? '#254F22' : 'rgba(37,79,34,0.10)' }}
         >
           <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke={isDragging ? '#FDFAF5' : '#254F22'} strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
             <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
@@ -791,14 +791,15 @@ export default function UploadZone({ album, userTier, onPhotosUploaded }: Props)
           </svg>
         </div>
         <div className="text-center">
-          <p style={{ fontSize: '0.95rem', fontWeight: 600, color: '#254F22' }}>
+          <p className="text-sm sm:text-[0.95rem]" style={{ fontWeight: 600, color: '#254F22' }}>
             {isDragging ? 'Drop to upload' : 'Add photos & videos'}
           </p>
-          <p style={{ fontSize: '0.8rem', color: '#8A7A66', marginTop: 2 }}>
+          <p className="text-xs sm:text-[0.8rem]" style={{ color: '#8A7A66', marginTop: 2 }}>
             Drag &amp; drop or <span style={{ color: '#254F22', fontWeight: 600 }}>click to browse</span>
           </p>
         </div>
-        <div className="flex flex-wrap items-center justify-center gap-1" style={{ maxWidth: 320 }}>
+        {/* Format pills — hidden on mobile to keep the drop zone compact */}
+        <div className="hidden sm:flex flex-wrap items-center justify-center gap-1" style={{ maxWidth: 320 }}>
           {['JPEG', 'PNG', 'GIF', 'WebP', 'HEIC', 'MP4', 'MOV', 'WebM'].map(f => (
             <span
               key={f}
