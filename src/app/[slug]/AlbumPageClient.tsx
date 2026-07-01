@@ -144,25 +144,24 @@ export default function AlbumPageClient() {
   // (generation counter for fetchAlbum; active flag for the realtime channel).
 
   const fetchPhotos = useCallback(async (albumId: string): Promise<Photo[]> => {
-    const { data, error } = await supabase
-      .from('photos')
-      .select(`
-        id, album_id, storage_path, storage_backend,
-        url, thumb_url, caption, author_name, created_at,
-        media_type, poster_url, stream_uid, stream_iframe_url,
-        stream_thumbnail_url, duration_seconds,
-        display_radius, display_filter, sort_order, face_ids
-      `)
-      .eq('album_id', albumId)
-      .order('sort_order', { ascending: true, nullsFirst: false })
-      .order('created_at', { ascending: true })
-      .limit(2000)
-    if (error) {
-      console.error('[AlbumPageClient] fetchPhotos error', error)
+    // Fetch via the authenticated API route (admin client, server-side access check)
+    // rather than the anon client. The anon client can only read photos of OPEN albums
+    // (RLS), so password-protected / reveal-gated albums — and the owner's own view of
+    // them — came back empty. The route returns photos when the caller is the owner, an
+    // unlocked guest, or the album is open.
+    try {
+      const res = await fetch(`/api/album/photos?albumId=${encodeURIComponent(albumId)}`, { cache: 'no-store' })
+      if (!res.ok) {
+        console.error('[AlbumPageClient] fetchPhotos failed', res.status)
+        return []
+      }
+      const json = await res.json() as { photos?: Photo[] }
+      return json.photos ?? []
+    } catch (e) {
+      console.error('[AlbumPageClient] fetchPhotos error', e)
       return []
     }
-    return (data as Photo[]) ?? []
-  }, [supabase])
+  }, [])
 
   // ─── fetchAlbum ─────────────────────────────────────────────────────────────
 
