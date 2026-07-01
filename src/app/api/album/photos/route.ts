@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { cookies } from 'next/headers'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { createClient as createServerSupabase } from '@/lib/supabase/server'
 import { verifyAccessToken } from '@/lib/album-password'
 import { timingSafeEqual } from '@/lib/timing-safe'
 
@@ -34,9 +35,9 @@ export async function GET(req: Request) {
   const admin = createAdminClient()
   const { data: album } = await admin
     .from('albums')
-    .select('id, owner_token, password_hash, reveal_at, retired_at')
+    .select('id, owner_token, user_id, password_hash, reveal_at, retired_at')
     .eq('id', albumId)
-    .maybeSingle<{ id: string; owner_token: string; password_hash: string | null; reveal_at: string | null; retired_at: string | null }>()
+    .maybeSingle<{ id: string; owner_token: string; user_id: string | null; password_hash: string | null; reveal_at: string | null; retired_at: string | null }>()
 
   if (!album || album.retired_at) {
     return NextResponse.json({ error: 'Album not found' }, { status: 404, headers: NO_STORE })
@@ -44,10 +45,22 @@ export async function GET(req: Request) {
 
   const cookieStore = await cookies()
 
-  // Owner?
+  // Owner via cookie?
   let authorized = false
   const ownerCookie = (cookieStore.get(`hushare_owner_${albumId}`)?.value ?? '').trim()
   if (ownerCookie) authorized = timingSafeEqual(ownerCookie, album.owner_token)
+
+  // Owner via account — a logged-in user whose account created this album (matches on
+  // request even before the owner cookie is set by /api/album/resolve).
+  if (!authorized && album.user_id && cookieStore.getAll().some(c => c.name.startsWith('sb-') && c.name.includes('auth-token'))) {
+    try {
+      const supabase = await createServerSupabase()
+      const { data: { user } } = await supabase.auth.getUser()
+      if (user && user.id === album.user_id) authorized = true
+    } catch (e) {
+      console.error('[album/photos] account-owner check failed:', e instanceof Error ? e.message : String(e))
+    }
+  }
 
   if (!authorized) {
     // Reveal gate — before the reveal time, nobody but the owner sees the media.

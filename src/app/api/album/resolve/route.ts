@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { cookies } from 'next/headers'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { createClient as createServerSupabase } from '@/lib/supabase/server'
 import { checkRateLimit, clientIpKey } from '@/lib/rate-limit'
 import { verifyAccessToken } from '@/lib/album-password'
 import { timingSafeEqual } from '@/lib/timing-safe'
@@ -98,6 +99,32 @@ export async function GET(req: Request) {
     isOwner = !!ownerRow && timingSafeEqual(ownerCookieVal, ownerRow.owner_token)
   }
 
+  // Account-based owner: a logged-in user whose account created this album gets owner
+  // management access on ANY device — no owner link/cookie required. Verified server-side
+  // against album.user_id, then we set the HttpOnly owner cookie so the toolbar and every
+  // owner mutation route (all cookie-verified) recognize them. The getUser() round-trip is
+  // only paid when a Supabase auth cookie is actually present (i.e. someone is logged in).
+  let ownerTokenToSet: string | null = null
+  if (!isOwner && cookieStore.getAll().some(c => c.name.startsWith('sb-') && c.name.includes('auth-token'))) {
+    try {
+      const supabase = await createServerSupabase()
+      const { data: { user } } = await supabase.auth.getUser()
+      if (user) {
+        const { data: ownerRow } = await admin
+          .from('albums')
+          .select('user_id, owner_token')
+          .eq('id', albumId)
+          .maybeSingle<{ user_id: string | null; owner_token: string }>()
+        if (ownerRow?.user_id && ownerRow.user_id === user.id) {
+          isOwner = true
+          ownerTokenToSet = ownerRow.owner_token
+        }
+      }
+    } catch (e) {
+      console.error('[resolve] account-owner check failed:', e instanceof Error ? e.message : String(e))
+    }
+  }
+
   if (!isOwner) {
     // Reveal gate
     if (album.reveal_at && new Date(album.reveal_at) > new Date()) {
@@ -135,5 +162,20 @@ export async function GET(req: Request) {
 
   // Strip internal columns — password_hash and retired_at are never sent to the client
   const { password_hash: _pw, retired_at: _ra, ...publicAlbum } = album
-  return NextResponse.json({ ...publicAlbum, password_protected: !!_pw }, { headers: NO_STORE })
+  const response = NextResponse.json(
+    { ...publicAlbum, password_protected: !!_pw, account_owner: ownerTokenToSet !== null },
+    { headers: NO_STORE },
+  )
+  // Grant owner access to the verified account owner by setting the HttpOnly owner cookie.
+  // owner_token is never placed in the response body — only in this HttpOnly cookie.
+  if (ownerTokenToSet) {
+    response.cookies.set(`hushare_owner_${albumId}`, ownerTokenToSet, {
+      httpOnly: true,
+      secure: true,
+      sameSite: 'strict',
+      path: '/',
+      maxAge: 60 * 60 * 24 * 365,
+    })
+  }
+  return response
 }
