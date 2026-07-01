@@ -761,25 +761,42 @@ export default function UploadZone({ album, userTier, onPhotosUploaded }: Props)
         onDragLeave={handleDragLeave}
         onClick={() => inputRef.current?.click()}
         onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') inputRef.current?.click() }}
-        className="flex flex-col items-center justify-center gap-2 rounded-2xl border-2 border-dashed cursor-pointer transition-colors py-6 select-none"
+        className="group flex flex-col items-center justify-center gap-3 rounded-2xl border-2 border-dashed cursor-pointer transition-all py-10 px-4 select-none"
         style={{
-          borderColor: isDragging ? '#254F22' : '#C8BAA8',
-          background: isDragging ? 'rgba(37,79,34,0.04)' : 'transparent',
-          color: '#7C6752',
+          borderColor: isDragging ? '#254F22' : '#D8CBB8',
+          background: isDragging ? 'rgba(37,79,34,0.06)' : 'rgba(37,79,34,0.015)',
         }}
         aria-label="Click or drag files to upload photos and videos"
       >
-        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-          <polyline points="17 8 12 3 7 8" />
-          <line x1="12" y1="3" x2="12" y2="15" />
-        </svg>
-        <span style={{ fontSize: '0.875rem', fontWeight: 500 }}>
-          {isDragging ? 'Drop to upload' : 'Add photos & videos'}
-        </span>
-        <span style={{ fontSize: '0.75rem', opacity: 0.65 }}>
-          JPEG · PNG · GIF · WebP · HEIC · MP4 · MOV · WebM
-        </span>
+        <div
+          className="flex items-center justify-center rounded-full transition-transform group-hover:scale-105"
+          style={{ width: 52, height: 52, background: isDragging ? '#254F22' : 'rgba(37,79,34,0.10)' }}
+        >
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke={isDragging ? '#FDFAF5' : '#254F22'} strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+            <polyline points="17 8 12 3 7 8" />
+            <line x1="12" y1="3" x2="12" y2="15" />
+          </svg>
+        </div>
+        <div className="text-center">
+          <p style={{ fontSize: '0.95rem', fontWeight: 600, color: '#254F22' }}>
+            {isDragging ? 'Drop to upload' : 'Add photos & videos'}
+          </p>
+          <p style={{ fontSize: '0.8rem', color: '#8A7A66', marginTop: 2 }}>
+            Drag &amp; drop or <span style={{ color: '#254F22', fontWeight: 600 }}>click to browse</span>
+          </p>
+        </div>
+        <div className="flex flex-wrap items-center justify-center gap-1" style={{ maxWidth: 320 }}>
+          {['JPEG', 'PNG', 'GIF', 'WebP', 'HEIC', 'MP4', 'MOV', 'WebM'].map(f => (
+            <span
+              key={f}
+              className="rounded-full px-2 py-0.5"
+              style={{ fontSize: '0.62rem', fontWeight: 600, letterSpacing: '0.02em', color: '#8A7A66', background: 'rgba(60,43,31,0.05)' }}
+            >
+              {f}
+            </span>
+          ))}
+        </div>
       </div>
 
       <input
@@ -799,19 +816,29 @@ export default function UploadZone({ album, userTier, onPhotosUploaded }: Props)
           {entries.map(entry => (
             <div
               key={entry.id}
-              className="flex items-center gap-3 rounded-xl px-3 py-2"
-              style={{ background: 'rgba(0,0,0,0.03)' }}
+              className="flex items-center gap-3 rounded-xl px-3 py-2.5"
+              style={{
+                background: '#FFFFFF',
+                border: `1px solid ${entry.status === 'error' ? 'rgba(192,57,43,0.28)' : entry.status === 'done' ? 'rgba(37,79,34,0.20)' : '#EBE1D3'}`,
+                boxShadow: '0 1px 3px rgba(60,43,31,0.05)',
+              }}
             >
-              {/* Status icon */}
-              <div className="flex-shrink-0 w-5 h-5 flex items-center justify-center">
+              {/* Status badge */}
+              <div
+                className="flex-shrink-0 flex items-center justify-center rounded-full"
+                style={{
+                  width: 26, height: 26,
+                  background: entry.status === 'done' ? 'rgba(37,79,34,0.10)' : entry.status === 'error' ? 'rgba(192,57,43,0.10)' : 'rgba(37,79,34,0.06)',
+                }}
+              >
                 {entry.status === 'done' && (
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#254F22" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-label="Done">
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#254F22" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" aria-label="Done">
                     <polyline points="20 6 9 17 4 12" />
                   </svg>
                 )}
                 {entry.status === 'error' && (
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#C0392B" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-label="Error">
-                    <circle cx="12" cy="12" r="10" /><line x1="15" y1="9" x2="9" y2="15" /><line x1="9" y1="9" x2="15" y2="15" />
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#C0392B" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-label="Error">
+                    <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
                   </svg>
                 )}
                 {(entry.status === 'uploading' || entry.status === 'pending') && (
@@ -825,15 +852,18 @@ export default function UploadZone({ album, userTier, onPhotosUploaded }: Props)
 
               {/* Name + progress bar */}
               <div className="flex-1 min-w-0">
-                <p className="truncate text-xs font-medium" style={{ color: '#3D2B1F' }}>
+                <p className="truncate text-xs font-semibold" style={{ color: '#3D2B1F' }}>
                   {entry.file.name}
                 </p>
                 {entry.status === 'uploading' && (
-                  <div className="mt-1 h-1 rounded-full overflow-hidden" style={{ background: '#E8DDD2' }}>
-                    <div
-                      className="h-full rounded-full transition-all duration-300"
-                      style={{ width: `${entry.progress}%`, background: '#254F22' }}
-                    />
+                  <div className="mt-1.5 flex items-center gap-2">
+                    <div className="flex-1 h-1.5 rounded-full overflow-hidden" style={{ background: '#EDE4D6' }}>
+                      <div
+                        className="h-full rounded-full transition-all duration-300"
+                        style={{ width: `${entry.progress}%`, background: 'linear-gradient(90deg,#254F22,#3E7238)' }}
+                      />
+                    </div>
+                    <span className="text-xs tabular-nums" style={{ color: '#8A7A66' }}>{entry.progress}%</span>
                   </div>
                 )}
                 {entry.status === 'error' && (
@@ -846,8 +876,8 @@ export default function UploadZone({ album, userTier, onPhotosUploaded }: Props)
                 <button
                   type="button"
                   onClick={e => { e.stopPropagation(); retryEntry(entry.id) }}
-                  className="flex-shrink-0 text-xs font-semibold underline"
-                  style={{ color: '#254F22' }}
+                  className="flex-shrink-0 rounded-full px-3 py-1 text-xs font-semibold transition-colors hover:brightness-95"
+                  style={{ color: '#254F22', background: 'rgba(37,79,34,0.09)' }}
                 >
                   Retry
                 </button>
