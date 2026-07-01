@@ -26,6 +26,8 @@ export type Album = {
   slideshow_animation: SlideshowAnimation;
   allow_guest_downloads: boolean;
   guest_uploads_enabled: boolean;
+  // Owner opt-in (Studio tier) for AI Face Finder — lets guests find photos of themselves.
+  face_finder_enabled: boolean;
   // Derived server-side from password_hash presence — the hash itself is never sent
   password_protected: boolean;
   last_activity_at: string;

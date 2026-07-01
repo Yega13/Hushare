@@ -29,6 +29,7 @@ type AlbumRow = {
   reveal_at: string | null
   guest_uploads_enabled: boolean
   allow_guest_downloads: boolean
+  face_finder_enabled: boolean
   last_activity_at: string
   created_at: string
   // Internal — stripped before response
@@ -41,6 +42,7 @@ const SELECT_COLS = [
   'media_radius', 'media_filter', 'media_hover', 'mobile_grid_columns',
   'slideshow_interval_ms', 'slideshow_animation', 'video_autoplay',
   'cover_photo_id', 'reveal_at', 'guest_uploads_enabled', 'allow_guest_downloads',
+  'face_finder_enabled',
   'last_activity_at', 'created_at',
   'password_hash', 'retired_at',
 ].join(', ')

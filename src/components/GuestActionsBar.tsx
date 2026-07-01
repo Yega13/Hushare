@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react'
 import Image from 'next/image'
-import { Check, Copy, Download, Loader2, Play, QrCode, Share2, X } from 'lucide-react'
+import { Check, Copy, Download, Loader2, Play, QrCode, ScanFace, Share2, X } from 'lucide-react'
 import { showAppToast } from '@/components/AppToast'
 import { useZipDownload } from '@/components/photo-grid/useZipDownload'
 import type { Album, Photo } from '@/types'
@@ -30,8 +30,11 @@ const btnBase: React.CSSProperties = {
   whiteSpace: 'nowrap' as const,
 }
 
-export default function GuestActionsBar({ album, photos, shareUrl, onOpenSlideshow, onOpenFaceFinder: _onOpenFaceFinder }: Props) {
+export default function GuestActionsBar({ album, photos, shareUrl, onOpenSlideshow, onOpenFaceFinder }: Props) {
   const { zipping, zipProgress, downloadZip } = useZipDownload(photos, album.title ?? '')
+
+  // Face Finder button appears only when the owner enabled it and there are images to search.
+  const hasFaceFinder = album.face_finder_enabled && photos.some((p) => p.media_type !== 'video')
 
   const [shareOpen, setShareOpen] = useState(false)
   const [copied, setCopied] = useState(false)
@@ -105,6 +108,18 @@ export default function GuestActionsBar({ album, photos, shareUrl, onOpenSlidesh
           <Play className="w-3.5 h-3.5" />
           Slideshow
         </button>
+
+        {/* Find my photos — AI face finder (owner-enabled, Studio) */}
+        {hasFaceFinder && (
+          <button
+            className="hush-press"
+            style={{ ...btnBase, background: '#254F22', color: '#FDFAF5', border: '1px solid #254F22' }}
+            onClick={onOpenFaceFinder}
+          >
+            <ScanFace className="w-3.5 h-3.5" />
+            Find my photos
+          </button>
+        )}
 
         {/* Download All — only if owner allows it and there are downloadable items */}
         {album.allow_guest_downloads && (

@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useZipDownload } from '@/components/photo-grid/useZipDownload'
-import { Check, ChevronDown, Clock, Copy, Download, FolderPlus, Images, Link2, Loader2, Lock, LockOpen, Move, Play, Settings, Trash2, X } from 'lucide-react'
+import { Check, ChevronDown, Clock, Copy, Download, FolderPlus, Images, Link2, Loader2, Lock, LockOpen, Move, Play, ScanFace, Settings, Trash2, X } from 'lucide-react'
 import type { Album, Photo, Tier } from '@/types'
 import {
   DEFAULT_SLIDESHOW_INTERVAL_MS,
@@ -129,6 +129,7 @@ export default function OwnerToolbar({ album, photos, ownerToken, userTier, medi
   const { zipping, zipProgress, downloadZip } = useZipDownload(photos, album.title ?? '')
 
   const [allowGuestDownloads, setAllowGuestDownloads] = useState(album.allow_guest_downloads !== false)
+  const [faceFinderEnabled, setFaceFinderEnabled] = useState(!!album.face_finder_enabled)
 
   const shareRef = useRef<HTMLDivElement>(null)
   const settingsRef = useRef<HTMLDivElement>(null)
@@ -225,6 +226,7 @@ export default function OwnerToolbar({ album, photos, ownerToken, userTier, medi
       setSavedMediaRadius(album.media_radius ?? 12)
       setVideoAutoplay(!!album.video_autoplay)
       setAllowGuestDownloads(album.allow_guest_downloads !== false)
+      setFaceFinderEnabled(!!album.face_finder_enabled)
       setMediaFilter(album.media_filter ?? 'none')
       setSavedMediaFilter(album.media_filter ?? 'none')
       setMediaHover(album.media_hover ?? 'none')
@@ -1088,6 +1090,47 @@ export default function OwnerToolbar({ album, photos, ownerToken, userTier, medi
                             showAppToast(message, 'error')
                             setAllowGuestDownloads(!next)
                             onAlbumUpdated({ allow_guest_downloads: !next })
+                          }
+                        }}
+                        className="h-4 w-4"
+                      />
+                    </label>
+
+                    <label
+                      className="flex items-center justify-between gap-4 rounded-xl px-3 py-3"
+                      style={{ background: '#FDFAF5', border: '1px solid #DDD5C5', cursor: canUseCollections ? 'pointer' : 'not-allowed', opacity: canUseCollections ? 1 : 0.6 }}
+                    >
+                      <span>
+                        <span className="flex items-center gap-2 text-sm font-semibold" style={{ color: '#254F22' }}>
+                          <ScanFace className="w-4 h-4" />
+                          AI Face Finder
+                          {!canUseCollections && <span className="text-[10px] font-semibold uppercase" style={{ color: '#7C4A2D', letterSpacing: '0.06em' }}>Studio</span>}
+                        </span>
+                        <span className="block text-xs" style={{ color: '#7C5C3E' }}>Guests can upload a selfie to find every photo they appear in.</span>
+                      </span>
+                      <input
+                        type="checkbox"
+                        checked={faceFinderEnabled}
+                        disabled={!canUseCollections}
+                        onChange={async (e) => {
+                          const next = e.target.checked
+                          setFaceFinderEnabled(next)
+                          onAlbumUpdated({ face_finder_enabled: next })
+                          try {
+                            const res = await fetch('/api/album/face-finder', {
+                              method: 'POST',
+                              headers: { 'Content-Type': 'application/json' },
+                              body: JSON.stringify({ slug: album.slug, enabled: next }),
+                            })
+                            if (!res.ok) {
+                              const body = await res.json().catch(() => ({})) as { error?: string }
+                              throw new Error(body.error ?? `Save failed (${res.status})`)
+                            }
+                          } catch (err) {
+                            const message = err instanceof Error ? err.message : 'Network error'
+                            showAppToast(message, 'error')
+                            setFaceFinderEnabled(!next)
+                            onAlbumUpdated({ face_finder_enabled: !next })
                           }
                         }}
                         className="h-4 w-4"

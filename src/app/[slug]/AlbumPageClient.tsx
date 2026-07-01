@@ -12,6 +12,7 @@ import UploadZone from '@/components/UploadZone'
 import PhotoGrid from '@/components/PhotoGrid'
 import AlbumHeader from '@/components/AlbumHeader'
 import OwnerToolbar from '@/components/OwnerToolbar'
+import FaceFinder from '@/components/FaceFinder'
 import GuestActionsBar from '@/components/GuestActionsBar'
 import { resolveAlbumBackgroundImage } from '@/lib/album-backgrounds'
 
@@ -113,6 +114,7 @@ export default function AlbumPageClient() {
   const [ownerTokenReady, setOwnerTokenReady] = useState(false)
   const [ownerToken, setOwnerToken] = useState<string | null>(null)
   const [isOwner, setIsOwner] = useState(false)
+  const [showFaceFinder, setShowFaceFinder] = useState(false)
 
   // Display state — consumed by Phase 7–9 components
   const [userTier, setUserTier] = useState<Tier>('free')
@@ -706,7 +708,15 @@ export default function AlbumPageClient() {
             photos={photos}
             shareUrl={`${SITE_ORIGIN}/${album.custom_slug ?? album.slug}`}
             onOpenSlideshow={() => setSlideshowRequestId(id => id + 1)}
-            onOpenFaceFinder={() => {}}
+            onOpenFaceFinder={() => setShowFaceFinder(true)}
+          />
+        )}
+
+        {showFaceFinder && (
+          <FaceFinder
+            albumSlug={album.custom_slug ?? album.slug}
+            photos={photos}
+            onClose={() => setShowFaceFinder(false)}
           />
         )}
 
