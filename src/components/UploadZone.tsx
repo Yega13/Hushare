@@ -709,20 +709,14 @@ export default function UploadZone({ album, userTier, onPhotosUploaded }: Props)
       file: f,
       status: 'pending' as const,
       progress: 0,
-      preview: f.type.startsWith('image/') ? URL.createObjectURL(f) : undefined,
+      // Object URL for both images and videos — the tile renders a <video> for videos (which
+      // shows its first frame). Cheaper and more reliable than decoding a poster here (which
+      // would double-decode against the poster generated during the actual upload).
+      preview: URL.createObjectURL(f),
     }))
     setEntries(prev => [...prev, ...newEntries])
-    // Videos have no instant object-URL preview — generate a poster frame for the tile so it
-    // shows a thumbnail instead of a generic camera icon. Best-effort, async, non-blocking.
-    for (const entry of newEntries) {
-      if (detectKind(entry.file) === 'video') {
-        void generateVideoPoster(entry.file)
-          .then(poster => { if (poster) patchEntry(entry.id, { preview: URL.createObjectURL(poster.blob) }) })
-          .catch(() => {})
-      }
-    }
     void startUploads(newEntries)
-  }, [startUploads, patchEntry])
+  }, [startUploads])
 
   const handleInputChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files ?? [])
@@ -851,7 +845,10 @@ export default function UploadZone({ album, userTier, onPhotosUploaded }: Props)
                   style={{ width: 84, height: 84, background: '#EFE7DA', border: '1px solid #E3D8C7' }}
                   title={entry.status === 'error' ? entry.error : entry.file.name}
                 >
-                  {entry.preview ? (
+                  {entry.preview && isVid ? (
+                    // eslint-disable-next-line jsx-a11y/media-has-caption
+                    <video src={entry.preview} muted playsInline preload="metadata" className="w-full h-full object-cover" />
+                  ) : entry.preview ? (
                     // eslint-disable-next-line @next/next/no-img-element
                     <img src={entry.preview} alt="" className="w-full h-full object-cover" />
                   ) : (

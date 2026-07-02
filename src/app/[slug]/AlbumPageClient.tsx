@@ -337,10 +337,11 @@ export default function AlbumPageClient() {
     ownerTokenFromUrlRef.current = true
     setOwnerToken(token)
 
-    // Strip the token from the URL immediately — before the async network call —
-    // so it is never visible in the address bar during the owner-login round-trip.
-    // Browser extensions, DevTools, and referrer headers cannot capture it after this point.
-    window.history.replaceState(window.history.state, '', window.location.pathname)
+    // Intentionally KEEP #owner=<token> in the URL. Owner view now requires the token in the
+    // URL (a bare cookie no longer flips the public link into owner view), so stripping it
+    // would drop the owner back to guest view on refresh. The token lives in the URL *fragment*,
+    // which browsers never send in the Referer header or to the server — so this is the distinct,
+    // persistent management link the owner keeps private (guest link = same path with no #owner=).
 
     void (async () => {
       // 10s timeout: if owner-login hangs, we fall through to guest view rather
@@ -723,7 +724,7 @@ export default function AlbumPageClient() {
           <UploadZone album={album} userTier={userTier} onPhotosUploaded={handlePhotosUploaded} />
         )}
 
-        <div className="hush-container pb-6 px-4 sm:px-0">
+        <div className="hush-container pb-6 px-3 sm:px-0">
           <PhotoGrid
             album={album}
             photos={photos}

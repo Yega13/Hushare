@@ -91,9 +91,10 @@ export default function FaceFinder({ albumSlug, photos, onClose }: Props) {
     try {
       const res = await fetch(`/api/album/face-index?slug=${encodeURIComponent(albumSlug)}`, { signal })
       if (!res.ok) {
+        const errBody = await res.json().catch(() => ({})) as { error?: string }
         errorOrigin.current = 'indexing'
         setStep('error')
-        setErrorMsg('Failed to start indexing. Please try again.')
+        setErrorMsg(errBody.error ?? 'Failed to start indexing. Please try again.')
         return
       }
       const data = (await res.json()) as { ids: string[]; total: number }
@@ -256,7 +257,7 @@ export default function FaceFinder({ albumSlug, photos, onClose }: Props) {
                 </button>
               )}
               <h2 className="font-bold text-lg" style={{ fontFamily: 'var(--font-serif)', color: '#FDFAF5' }}>
-                Find my photos
+                Face Finder
               </h2>
             </div>
             <button onClick={onClose} className="hush-press p-1.5 rounded-full hover:opacity-70 transition" style={{ color: '#7BAF76' }}>

@@ -47,9 +47,11 @@ function buildAmzDate(now: Date): { amzDate: string; dateStr: string } {
 }
 
 async function rekognitionPost(operation: string, body: unknown): Promise<unknown> {
-  const region = process.env.AWS_REGION ?? 'eu-west-1'
-  const accessKeyId = process.env.AWS_ACCESS_KEY_ID
-  const secretAccessKey = process.env.AWS_SECRET_ACCESS_KEY
+  // .trim() defends against a trailing newline/space in the secret — a common cause of
+  // InvalidSignatureException when the value was pasted or piped into `wrangler secret put`.
+  const region = (process.env.AWS_REGION ?? 'eu-west-1').trim()
+  const accessKeyId = process.env.AWS_ACCESS_KEY_ID?.trim()
+  const secretAccessKey = process.env.AWS_SECRET_ACCESS_KEY?.trim()
   if (!accessKeyId || !secretAccessKey) {
     throw new Error('[rekognition] AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY must be set')
   }

@@ -65,26 +65,38 @@ export async function GET(req: Request) {
     return NextResponse.json({ error: 'Face Finder is not enabled for this album' }, { status: 403, headers: NO_STORE })
   }
 
-  await ensureCollection(album.id)
+  try {
+    // ensureCollection hits AWS Rekognition — surface its error instead of letting an
+    // unhandled throw become an opaque 500 (Cloudflare HTML interstitial).
+    await ensureCollection(album.id)
 
-  const { data: unindexed } = await admin
-    .from('photos')
-    .select('id')
-    .eq('album_id', album.id)
-    .is('face_ids', null)
-    .neq('media_type', 'video')
-    .order('created_at', { ascending: true })
+    const { data: unindexed } = await admin
+      .from('photos')
+      .select('id')
+      .eq('album_id', album.id)
+      .is('face_ids', null)
+      .neq('media_type', 'video')
+      .order('created_at', { ascending: true })
 
-  const { count: total } = await admin
-    .from('photos')
-    .select('id', { count: 'exact', head: true })
-    .eq('album_id', album.id)
-    .neq('media_type', 'video')
+    const { count: total } = await admin
+      .from('photos')
+      .select('id', { count: 'exact', head: true })
+      .eq('album_id', album.id)
+      .neq('media_type', 'video')
 
-  return NextResponse.json(
-    { ids: unindexed?.map((p) => p.id) ?? [], total: total ?? 0 },
-    { headers: NO_STORE },
-  )
+    return NextResponse.json(
+      { ids: unindexed?.map((p) => p.id) ?? [], total: total ?? 0 },
+      { headers: NO_STORE },
+    )
+  } catch (err) {
+    const name = (err as { name?: string }).name ?? 'Unknown'
+    const message = err instanceof Error ? err.message : String(err)
+    console.error('[face-index GET] setup failed:', name, message)
+    return NextResponse.json(
+      { error: `Face Finder setup failed: ${name} — ${message.slice(0, 200)}` },
+      { status: 502, headers: NO_STORE },
+    )
+  }
 }
 
 export async function POST(req: Request) {
