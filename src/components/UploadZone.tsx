@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import * as tus from 'tus-js-client'
 import type { Album, Tier } from '@/types'
 import { stripExifFromJpeg } from '@/lib/exif'
+import { showAppToast } from '@/components/AppToast'
 import { detectKind, uploadCapsForTier, generateVideoPoster } from '@/lib/media'
 import {
   UPLOAD_CONCURRENCY_MOBILE,
@@ -663,10 +664,13 @@ export default function UploadZone({ album, userTier, onPhotosUploaded }: Props)
 
           patchEntry(entry.id, { status: 'done', progress: 100 })
         } catch (e) {
-          patchEntry(entry.id, {
-            status: 'error',
-            error: e instanceof Error ? e.message : 'Upload failed',
-          })
+          const msg = e instanceof Error ? e.message : 'Upload failed'
+          patchEntry(entry.id, { status: 'error', error: msg })
+          // Surface the real error (it was previously hidden in a title tooltip, invisible on
+          // mobile). AbortError is a deliberate cancel, not worth toasting.
+          if (!(e instanceof DOMException && e.name === 'AbortError')) {
+            showAppToast(`Upload failed: ${msg}`, 'error')
+          }
         } finally {
           sem.release()
         }
