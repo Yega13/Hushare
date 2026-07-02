@@ -619,7 +619,7 @@ export default function OwnerToolbar({ album, photos, ownerToken, userTier, medi
   return (
     <>
     <div className="hush-owner-toolbar" style={{ background: '#F5F0E8', borderBottom: '1px solid #DDD5C5' }}>
-      <div className="hush-container hush-owner-toolbar-inner py-3 px-3 sm:px-0 flex flex-wrap items-center gap-3">
+      <div className="hush-container hush-owner-toolbar-inner py-3 flex flex-wrap items-center gap-3" style={{ paddingInline: 'clamp(14px, 4vw, 20px)' }}>
         <div className="hush-owner-action-wrap relative" ref={shareRef}>
           <button
             className="hush-press hush-owner-action"

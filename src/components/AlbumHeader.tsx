@@ -65,7 +65,7 @@ export default function AlbumHeader({ album, photoCount, isOwner, onAlbumUpdated
 
   return (
     <div className="hush-album-header-shell" style={{ borderBottom: '1px solid #DDD5C5', background: '#FDFAF5' }}>
-      <div className="hush-container hush-album-header py-6 px-3 sm:px-0 flex items-center justify-between">
+      <div className="hush-container hush-album-header py-6 flex items-center justify-between" style={{ paddingInline: 'clamp(14px, 4vw, 20px)' }}>
         <Link href="/" className="hush-album-logo-link flex items-center transition hover:opacity-70" aria-label="Hushare home">
           <Image
             src="/logo/logo-dark-transparent.png"

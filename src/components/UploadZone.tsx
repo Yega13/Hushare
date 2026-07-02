@@ -188,30 +188,10 @@ async function processImageFile(file: File): Promise<{ blob: Blob; mimeType: str
 
   const mimeType = (file.type || 'image/jpeg').toLowerCase()
 
-  // Resize images that might exceed MAX_IMG_DIM (> 2 MB is a reasonable heuristic)
-  if (file.size > 2 * 1024 * 1024 && mimeType !== 'image/gif') {
-    const outMime = mimeType === 'image/webp' ? 'image/webp' : 'image/jpeg'
-    const blob = await resizeAndEncode(file, outMime)
-    // resizeAndEncode returns the exact `file` reference when createImageBitmap is unavailable.
-    // In that fallback the bytes are the original format (e.g. PNG), NOT JPEG — wrapping
-    // them as image/jpeg would store corrupted data. Detect and pass through as original type.
-    if ((blob as unknown) === (file as unknown)) {
-      return { blob: file, mimeType, name: file.name }
-    }
-    if (outMime === 'image/jpeg') {
-      const buf = await blob.arrayBuffer()
-      const stripped = stripExifFromJpeg(new Uint8Array(buf))
-      return {
-        blob: new Blob([stripped.buffer as unknown as ArrayBuffer], { type: 'image/jpeg' }),
-        mimeType: 'image/jpeg',
-        name: file.name.replace(/\.[^.]+$/, '.jpg'),
-      }
-    }
-    // Use outMime (not blob.type) — blob.type may be '' if createImageBitmap fell back
-    return { blob, mimeType: outMime, name: file.name }
-  }
-
-  // Small JPEG: strip EXIF in-place (no canvas round-trip needed)
+  // Upload the ORIGINAL bytes — highest quality, no downscale, no recompression. This also
+  // preserves PNG/WebP transparency, which the old JPEG re-encode turned into solid black
+  // ("black additions"). JPEGs get a lossless EXIF strip (removes location/camera metadata
+  // without touching a single pixel). Everything else is uploaded untouched.
   if (mimeType === 'image/jpeg' || mimeType === 'image/jpg') {
     const buf = await file.arrayBuffer()
     const stripped = stripExifFromJpeg(new Uint8Array(buf))

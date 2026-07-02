@@ -168,8 +168,8 @@ export default function ShareMenu({ copied, ownerUrl, shareUrl, albumTitle, onCl
 
   return (
     <div
-      className="hush-menu-pop absolute right-0 top-full mt-2 z-50 rounded-2xl shadow-xl"
-      style={{ background: '#FFFFFF', border: '1px solid #DDD5C5', width: 'min(320px, calc(100vw - 24px))', maxWidth: 'calc(100vw - 24px)', padding: 16, maxHeight: 'calc(100vh - 120px)', overflowY: 'auto' }}
+      className="hush-share-menu rounded-2xl shadow-xl"
+      style={{ background: '#FFFFFF', border: '1px solid #DDD5C5', padding: 16 }}
     >
       {view === 'tablecard' ? (
         <TableCardView shareUrl={shareUrl} albumTitle={albumTitle} onBack={() => setView('main')} />

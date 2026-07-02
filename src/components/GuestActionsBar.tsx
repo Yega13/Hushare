@@ -91,7 +91,7 @@ export default function GuestActionsBar({ album, photos, shareUrl, onOpenSlidesh
 
   return (
     <div style={{ background: '#F5F0E8', borderBottom: '1px solid #DDD5C5' }}>
-      <div className="hush-container py-3 px-3 sm:px-0 flex flex-wrap items-center gap-2">
+      <div className="hush-container py-3 flex flex-wrap items-center gap-2" style={{ paddingInline: 'clamp(14px, 4vw, 20px)' }}>
 
         {/* Slideshow */}
         <button
@@ -156,8 +156,8 @@ export default function GuestActionsBar({ album, photos, shareUrl, onOpenSlidesh
 
           {shareOpen && (
             <div
-              className="hush-menu-pop absolute right-0 top-full mt-2 z-50 rounded-2xl shadow-xl"
-              style={{ background: '#FFFFFF', border: '1px solid #DDD5C5', width: 'min(300px, calc(100vw - 24px))', maxWidth: 'calc(100vw - 24px)', padding: 16 }}
+              className="hush-share-menu rounded-2xl shadow-xl"
+              style={{ background: '#FFFFFF', border: '1px solid #DDD5C5', padding: 16 }}
             >
               <div className="flex items-center justify-between mb-3">
                 <span className="font-semibold text-sm" style={{ color: '#254F22' }}>Share album</span>
