@@ -113,7 +113,7 @@ export default function GuestActionsBar({ album, photos, shareUrl, onOpenSlidesh
         {hasFaceFinder && (
           <button
             className="hush-press"
-            style={{ ...btnBase, background: '#254F22', color: '#FDFAF5', border: '1px solid #254F22' }}
+            style={{ ...btnBase, background: '#630826', color: '#FFFFFF', border: '1px solid #630826' }}
             onClick={onOpenFaceFinder}
           >
             <ScanFace className="w-3.5 h-3.5" />
@@ -156,8 +156,8 @@ export default function GuestActionsBar({ album, photos, shareUrl, onOpenSlidesh
 
           {shareOpen && (
             <div
-              className="hush-menu-pop absolute left-0 top-full mt-2 z-50 rounded-2xl shadow-xl"
-              style={{ background: '#FFFFFF', border: '1px solid #DDD5C5', width: 300, padding: 16 }}
+              className="hush-menu-pop absolute right-0 top-full mt-2 z-50 rounded-2xl shadow-xl"
+              style={{ background: '#FFFFFF', border: '1px solid #DDD5C5', width: 'min(300px, calc(100vw - 24px))', maxWidth: 'calc(100vw - 24px)', padding: 16 }}
             >
               <div className="flex items-center justify-between mb-3">
                 <span className="font-semibold text-sm" style={{ color: '#254F22' }}>Share album</span>

@@ -211,8 +211,10 @@ export default function AlbumPageClient() {
     }
 
     try {
+      // owner=1 only when this load is via the #owner= management link — so a leftover owner
+      // cookie on the plain guest URL doesn't bypass the reveal/password gates.
       const res = await fetch(
-        `/api/album/resolve?slug=${encodeURIComponent(slug)}`,
+        `/api/album/resolve?slug=${encodeURIComponent(slug)}&owner=${ownerTokenFromUrlRef.current ? '1' : '0'}`,
         { cache: 'no-store' },
       )
       if (isCancelled()) return

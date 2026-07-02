@@ -118,8 +118,9 @@ export default function FaceFinder({ albumSlug, photos, onClose }: Props) {
       return
     }
 
-    // 5 concurrent workers, each assigned every 5th photo (interleaved).
-    const CONCURRENT = 5
+    // Concurrent workers, each assigned every Nth photo (interleaved). Higher = faster
+    // indexing; well within Rekognition's per-account TPS limits for typical album sizes.
+    const CONCURRENT = 8
     let done = 0
 
     async function indexWorker(startIdx: number) {
@@ -157,6 +158,14 @@ export default function FaceFinder({ albumSlug, photos, onClose }: Props) {
   // Cancel in-flight indexing if the modal closes mid-index.
   useEffect(() => {
     return () => { indexingAbort.current?.abort() }
+  }, [])
+
+  // Lock background scroll while the modal is open — otherwise the album grid behind the
+  // overlay scrolls under the finger. Restored on close/unmount.
+  useEffect(() => {
+    const prev = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    return () => { document.body.style.overflow = prev }
   }, [])
 
   // Revoke the current selfie object URL on unmount (tracked via ref for latest value).
@@ -247,20 +256,20 @@ export default function FaceFinder({ albumSlug, photos, onClose }: Props) {
       >
         <div
           className="relative w-full sm:max-w-lg rounded-t-3xl sm:rounded-3xl overflow-hidden flex flex-col"
-          style={{ background: '#1A2B1A', maxHeight: '92dvh' }}
+          style={{ background: '#2B0A15', maxHeight: '92dvh' }}
         >
           <div className="flex items-center justify-between px-5 pt-5 pb-3 shrink-0">
             <div className="flex items-center gap-2">
               {step === 'results' && (
-                <button onClick={reset} className="hush-press p-1 rounded-full hover:opacity-70 transition" style={{ color: '#7BAF76' }}>
+                <button onClick={reset} className="hush-press p-1 rounded-full hover:opacity-70 transition" style={{ color: '#C77690' }}>
                   <ChevronLeft className="w-5 h-5" />
                 </button>
               )}
-              <h2 className="font-bold text-lg" style={{ fontFamily: 'var(--font-serif)', color: '#FDFAF5' }}>
+              <h2 className="font-bold text-lg" style={{ fontFamily: 'var(--font-serif)', color: '#FFFFFF' }}>
                 Face Finder
               </h2>
             </div>
-            <button onClick={onClose} className="hush-press p-1.5 rounded-full hover:opacity-70 transition" style={{ color: '#7BAF76' }}>
+            <button onClick={onClose} className="hush-press p-1.5 rounded-full hover:opacity-70 transition" style={{ color: '#C77690' }}>
               <X className="w-5 h-5" />
             </button>
           </div>
@@ -271,28 +280,28 @@ export default function FaceFinder({ albumSlug, photos, onClose }: Props) {
               <div className="flex flex-col items-center gap-6 py-8 text-center">
                 <div className="relative w-16 h-16">
                   <svg className="w-16 h-16 -rotate-90" viewBox="0 0 64 64">
-                    <circle cx="32" cy="32" r="28" fill="none" stroke="rgba(123,175,118,0.2)" strokeWidth="6" />
+                    <circle cx="32" cy="32" r="28" fill="none" stroke="rgba(199,118,144,0.2)" strokeWidth="6" />
                     <circle
-                      cx="32" cy="32" r="28" fill="none" stroke="#7BAF76" strokeWidth="6"
+                      cx="32" cy="32" r="28" fill="none" stroke="#C77690" strokeWidth="6"
                       strokeDasharray={`${2 * Math.PI * 28}`}
                       strokeDashoffset={`${2 * Math.PI * 28 * (1 - (total > 0 ? indexed / total : 0))}`}
                       strokeLinecap="round"
                       style={{ transition: 'stroke-dashoffset 0.4s ease' }}
                     />
                   </svg>
-                  <span className="absolute inset-0 flex items-center justify-center text-xs font-bold" style={{ color: '#FDFAF5' }}>
+                  <span className="absolute inset-0 flex items-center justify-center text-xs font-bold" style={{ color: '#FFFFFF' }}>
                     {total > 0 ? Math.round((indexed / total) * 100) : 0}%
                   </span>
                 </div>
                 <div>
-                  <p className="font-semibold text-base mb-1" style={{ color: '#FDFAF5' }}>
+                  <p className="font-semibold text-base mb-1" style={{ color: '#FFFFFF' }}>
                     Scanning album photos
                   </p>
-                  <p className="text-sm" style={{ color: '#5C7A59' }}>
+                  <p className="text-sm" style={{ color: '#B0808F' }}>
                     {indexed} of {total} photos ready
                   </p>
                 </div>
-                <p className="text-xs max-w-xs leading-relaxed" style={{ color: '#3D5C3A' }}>
+                <p className="text-xs max-w-xs leading-relaxed" style={{ color: '#8A5A6A' }}>
                   This runs once. Future searches are instant.
                 </p>
               </div>
@@ -308,7 +317,7 @@ export default function FaceFinder({ albumSlug, photos, onClose }: Props) {
                     {errorMsg}
                   </div>
                 )}
-                <p className="text-sm text-center" style={{ color: '#A8C9A3' }}>
+                <p className="text-sm text-center" style={{ color: '#E8C4D0' }}>
                   Take or upload a photo of yourself — we&apos;ll find every photo you appear in.
                 </p>
 
@@ -320,21 +329,21 @@ export default function FaceFinder({ albumSlug, photos, onClose }: Props) {
                         src={selfiePreview}
                         alt="Your selfie"
                         className="w-40 h-40 rounded-2xl object-cover mx-auto"
-                        style={{ border: '2px solid rgba(123,175,118,0.4)' }}
+                        style={{ border: '2px solid rgba(199,118,144,0.4)' }}
                       />
                     </div>
                     <div className="flex items-center gap-3 w-full">
                       <button
                         onClick={reset}
                         className="hush-press flex-1 py-2.5 rounded-xl text-sm font-semibold transition hover:opacity-80"
-                        style={{ background: 'rgba(255,255,255,0.06)', color: '#A8C9A3', border: '1px solid rgba(255,255,255,0.1)' }}
+                        style={{ background: 'rgba(255,255,255,0.06)', color: '#E8C4D0', border: '1px solid rgba(255,255,255,0.1)' }}
                       >
                         Retake
                       </button>
                       <button
                         onClick={handleSearch}
                         className="hush-press flex-1 py-2.5 rounded-xl text-sm font-bold transition hover:opacity-90 flex items-center justify-center gap-2"
-                        style={{ background: '#254F22', color: '#FDFAF5' }}
+                        style={{ background: '#630826', color: '#FFFFFF' }}
                       >
                         <Search className="w-4 h-4" />
                         Search
@@ -346,18 +355,18 @@ export default function FaceFinder({ albumSlug, photos, onClose }: Props) {
                     <button
                       onClick={() => cameraInputRef.current?.click()}
                       className="hush-press w-full py-10 rounded-2xl flex flex-col items-center gap-3 transition hover:opacity-80"
-                      style={{ background: 'rgba(255,255,255,0.04)', border: '2px dashed rgba(123,175,118,0.3)' }}
+                      style={{ background: 'rgba(255,255,255,0.04)', border: '2px dashed rgba(199,118,144,0.3)' }}
                     >
-                      <Camera className="w-8 h-8" style={{ color: '#7BAF76' }} />
-                      <span className="text-sm font-semibold" style={{ color: '#A8C9A3' }}>Take a photo or choose from library</span>
-                      <span className="text-xs" style={{ color: '#3D5C3A' }}>JPG, PNG — max 5MB</span>
+                      <Camera className="w-8 h-8" style={{ color: '#C77690' }} />
+                      <span className="text-sm font-semibold" style={{ color: '#E8C4D0' }}>Take a photo or choose from library</span>
+                      <span className="text-xs" style={{ color: '#8A5A6A' }}>JPG, PNG — max 5MB</span>
                     </button>
                     <input ref={cameraInputRef} type="file" accept="image/*" capture="user" className="hidden" onChange={handleFileChange} />
                     <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={handleFileChange} />
                     <button
                       onClick={() => fileInputRef.current?.click()}
                       className="hush-press w-full py-3 rounded-xl flex items-center justify-center gap-2 text-sm font-medium transition hover:opacity-80"
-                      style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', color: '#7BAF76' }}
+                      style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', color: '#C77690' }}
                     >
                       <Upload className="w-4 h-4" />
                       Upload from files
@@ -369,8 +378,8 @@ export default function FaceFinder({ albumSlug, photos, onClose }: Props) {
 
             {step === 'searching' && (
               <div className="flex flex-col items-center gap-5 py-10 text-center">
-                <div className="w-12 h-12 rounded-full border-2 border-t-transparent animate-spin" style={{ borderColor: '#7BAF76', borderTopColor: 'transparent' }} />
-                <p className="font-semibold" style={{ color: '#FDFAF5' }}>Searching for your face…</p>
+                <div className="w-12 h-12 rounded-full border-2 border-t-transparent animate-spin" style={{ borderColor: '#C77690', borderTopColor: 'transparent' }} />
+                <p className="font-semibold" style={{ color: '#FFFFFF' }}>Searching for your face…</p>
               </div>
             )}
 
@@ -378,22 +387,22 @@ export default function FaceFinder({ albumSlug, photos, onClose }: Props) {
               <div className="flex flex-col gap-4 py-2">
                 {matchedPhotos.length === 0 ? (
                   <div className="text-center py-8">
-                    <p className="font-semibold mb-2" style={{ color: '#FDFAF5' }}>No matches found</p>
-                    <p className="text-sm mb-5" style={{ color: '#5C7A59' }}>
+                    <p className="font-semibold mb-2" style={{ color: '#FFFFFF' }}>No matches found</p>
+                    <p className="text-sm mb-5" style={{ color: '#B0808F' }}>
                       Try a clearer selfie facing the camera in good lighting.
                     </p>
                     <button
                       onClick={reset}
                       className="hush-press px-5 py-2.5 rounded-xl text-sm font-semibold transition hover:opacity-90"
-                      style={{ background: '#254F22', color: '#FDFAF5' }}
+                      style={{ background: '#630826', color: '#FFFFFF' }}
                     >
                       Try again
                     </button>
                   </div>
                 ) : (
                   <>
-                    <p className="text-sm" style={{ color: '#A8C9A3' }}>
-                      Found you in <strong style={{ color: '#FDFAF5' }}>{matchedPhotos.length}</strong> photo{matchedPhotos.length !== 1 ? 's' : ''}
+                    <p className="text-sm" style={{ color: '#E8C4D0' }}>
+                      Found you in <strong style={{ color: '#FFFFFF' }}>{matchedPhotos.length}</strong> photo{matchedPhotos.length !== 1 ? 's' : ''}
                     </p>
                     <div className="grid grid-cols-3 gap-1.5">
                       {matchedPhotos.map(({ photo, similarity }) => (
@@ -401,7 +410,7 @@ export default function FaceFinder({ albumSlug, photos, onClose }: Props) {
                           key={photo.id}
                           onClick={() => setLightbox(photo)}
                           className="relative aspect-square rounded-xl overflow-hidden hover:opacity-90 transition"
-                          style={{ border: '1px solid rgba(123,175,118,0.2)' }}
+                          style={{ border: '1px solid rgba(199,118,144,0.2)' }}
                         >
                           {/* eslint-disable-next-line @next/next/no-img-element */}
                           <img
@@ -411,7 +420,7 @@ export default function FaceFinder({ albumSlug, photos, onClose }: Props) {
                           />
                           <div
                             className="absolute bottom-0 left-0 right-0 px-1.5 py-1 text-[10px] font-semibold text-right"
-                            style={{ background: 'linear-gradient(transparent, rgba(0,0,0,0.55))', color: '#FDFAF5' }}
+                            style={{ background: 'linear-gradient(transparent, rgba(0,0,0,0.55))', color: '#FFFFFF' }}
                           >
                             {Math.round(similarity)}%
                           </div>
@@ -425,8 +434,8 @@ export default function FaceFinder({ albumSlug, photos, onClose }: Props) {
 
             {step === 'error' && (
               <div className="flex flex-col items-center gap-4 py-8 text-center">
-                <p className="font-semibold" style={{ color: '#FDFAF5' }}>Something went wrong</p>
-                <p className="text-sm max-w-xs" style={{ color: '#5C7A59' }}>{errorMsg}</p>
+                <p className="font-semibold" style={{ color: '#FFFFFF' }}>Something went wrong</p>
+                <p className="text-sm max-w-xs" style={{ color: '#B0808F' }}>{errorMsg}</p>
                 <button
                   onClick={() => {
                     setErrorMsg('')
@@ -441,7 +450,7 @@ export default function FaceFinder({ albumSlug, photos, onClose }: Props) {
                     }
                   }}
                   className="hush-press px-5 py-2.5 rounded-xl text-sm font-semibold transition hover:opacity-90"
-                  style={{ background: '#254F22', color: '#FDFAF5' }}
+                  style={{ background: '#630826', color: '#FFFFFF' }}
                 >
                   Try again
                 </button>

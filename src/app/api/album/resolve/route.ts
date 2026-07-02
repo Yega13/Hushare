@@ -86,12 +86,16 @@ export async function GET(req: Request) {
   const albumId = album.id
   const cookieStore = await cookies()
 
-  // Owner check: owner_token is fetched in a separate minimal query ONLY when an owner
-  // cookie is present. This means owner_token never enters memory on ordinary guest
-  // requests, eliminating accidental leak risk from the main query path.
+  // Owner check: the client passes owner=1 only when it is actually in owner view (the
+  // #owner= management link is in the URL this load). A leftover owner cookie on the plain
+  // (guest) URL must NOT be treated as owner — otherwise the reveal/password gates would be
+  // silently bypassed for a guest-looking view. owner_token is fetched in a separate minimal
+  // query ONLY when owner mode is requested and a cookie is present, so it never enters memory
+  // on ordinary guest requests.
+  const wantsOwner = url.searchParams.get('owner') === '1'
   let isOwner = false
   const ownerCookieVal = (cookieStore.get(`hushare_owner_${albumId}`)?.value ?? '').trim()
-  if (ownerCookieVal) {
+  if (wantsOwner && ownerCookieVal) {
     const { data: ownerRow } = await admin
       .from('albums')
       .select('owner_token')
