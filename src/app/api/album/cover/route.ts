@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { verifyOwnerViaCookieWithRateLimit } from '@/lib/album-owner-access'
 import { forbidCrossSiteRequest } from '@/lib/request-security'
+import { broadcastAlbumSettings } from '@/lib/broadcast'
 
 export const runtime = 'nodejs'
 
@@ -55,5 +56,6 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: 'Could not update cover photo' }, { status: 500, headers: NO_STORE })
   }
 
+  void broadcastAlbumSettings(access.album.id, { cover_photo_id: targetPhotoId })
   return NextResponse.json({ ok: true }, { headers: NO_STORE })
 }
