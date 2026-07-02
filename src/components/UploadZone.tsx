@@ -12,7 +12,10 @@ import {
 } from '@/lib/constants'
 
 // ─── XHR timeout ──────────────────────────────────────────────────────────────
-const XHR_TIMEOUT_MS = 120_000
+const XHR_TIMEOUT_MS = 60_000
+// If a PUT opens the socket but sends no bytes for this long (a flaky-mobile stall), abort
+// and let the retry loop try again — instead of waiting out the full XHR_TIMEOUT_MS.
+const STALL_TIMEOUT_MS = 20_000
 // ─── Max image dimension — images larger than this get downscaled before upload ─
 const MAX_IMG_DIM = 4096
 
@@ -276,30 +279,41 @@ async function xhrPut(
   return new Promise<void>((resolve, reject) => {
     if (signal?.aborted) { reject(new DOMException('Upload aborted', 'AbortError')); return }
     const xhr = new XMLHttpRequest()
-    const onAbort = () => {
-      xhr.abort()
-      reject(new DOMException('Upload aborted', 'AbortError'))
+    let settled = false
+    let lastActivity = Date.now()
+
+    // Stall watchdog: mobile connections sometimes open the socket then stop sending bytes.
+    // Rather than hang for the full XHR_TIMEOUT_MS, abort after STALL_TIMEOUT_MS of zero
+    // progress so the retry loop can try again quickly. Reset on every progress event.
+    const stallTimer = setInterval(() => {
+      if (Date.now() - lastActivity > STALL_TIMEOUT_MS) {
+        finish(() => { try { xhr.abort() } catch { /* ignore */ }; reject(new Error('Upload stalled — retrying')) })
+      }
+    }, 4000)
+
+    const finish = (fn: () => void) => {
+      if (settled) return
+      settled = true
+      clearInterval(stallTimer)
+      signal?.removeEventListener('abort', onAbort)
+      fn()
     }
+
+    const onAbort = () => finish(() => { try { xhr.abort() } catch { /* ignore */ }; reject(new DOMException('Upload aborted', 'AbortError')) })
     signal?.addEventListener('abort', onAbort, { once: true })
     xhr.open('PUT', url)
     xhr.setRequestHeader('Content-Type', contentType)
     xhr.timeout = XHR_TIMEOUT_MS
     xhr.upload.onprogress = (e) => {
+      lastActivity = Date.now()
       if (e.lengthComputable) onProgress(Math.round((e.loaded / e.total) * 100))
     }
-    xhr.onload = () => {
-      signal?.removeEventListener('abort', onAbort)
+    xhr.onload = () => finish(() => {
       if (xhr.status >= 200 && xhr.status < 300) resolve()
       else reject(new HttpError(xhr.status, `R2 PUT ${xhr.status}`))
-    }
-    xhr.onerror = () => {
-      signal?.removeEventListener('abort', onAbort)
-      reject(new Error('Network error during upload'))
-    }
-    xhr.ontimeout = () => {
-      signal?.removeEventListener('abort', onAbort)
-      reject(new Error('Upload timed out'))
-    }
+    })
+    xhr.onerror = () => finish(() => reject(new Error('Network error during upload')))
+    xhr.ontimeout = () => finish(() => reject(new Error('Upload timed out')))
     xhr.send(body)
   })
 }
