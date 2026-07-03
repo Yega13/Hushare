@@ -477,7 +477,9 @@ export default function AlbumPageClient() {
         // unauthenticated — any tab that knows the channel name can publish to it,
         // so accepting payload values directly creates a spoofing vector (UI-only
         // impact, but misleads users about the album's current state).
-        void fetch(`/api/album/resolve?slug=${encodeURIComponent(albumSlug)}`, { cache: 'no-store' })
+        // Pass owner mode so a gated album (reveal/password) the owner is viewing comes back
+        // as the full album, not the guest gate response.
+        void fetch(`/api/album/resolve?slug=${encodeURIComponent(albumSlug)}&owner=${ownerTokenFromUrlRef.current ? '1' : '0'}`, { cache: 'no-store' })
           .then(r => r.ok ? r.json() : null)
           .then((data: Album | null) => {
             if (data && typeof data.id === 'string') {

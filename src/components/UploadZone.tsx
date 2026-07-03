@@ -328,8 +328,13 @@ type PhotoRow = {
 // file could not be read... permission problems after a reference was acquired"). Reading the
 // bytes now — while the picker permission is still fresh — sidesteps that entirely. Falls back
 // to the original reference if the immediate read fails.
+// Buffering the bytes into memory is what makes the copy stable, so cap it: huge files
+// (large videos) would risk OOM on mobile if several were read at once. Those keep their
+// original reference — the stale-reference bug overwhelmingly hits image picks, not big videos.
+const SNAPSHOT_MAX_BYTES = 80 * 1024 * 1024
 async function snapshotFiles(files: File[]): Promise<File[]> {
   return Promise.all(files.map(async (f) => {
+    if (f.size > SNAPSHOT_MAX_BYTES) return f
     try {
       const buf = await f.arrayBuffer()
       return new File([buf], f.name, { type: f.type, lastModified: f.lastModified })
