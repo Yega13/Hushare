@@ -232,9 +232,11 @@ export function useGestureReorder({
 
   function handleTileTouchMove(e: React.TouchEvent<HTMLDivElement>) {
     if (!longPressOriginRef.current || reorderTimerRef.current == null) return
-    // Page-scroll check with a 25 px tolerance — mobile browsers shift scrollY by ~10 px when
-    // the address bar shows/hides, which is unrelated to the user dragging.
-    if (Math.abs(window.scrollY - longPressScrollYRef.current) > 25) {
+    // Page-scroll check with a generous 120 px tolerance — on Android, the first touch often
+    // hides the address bar, jumping scrollY by ~56 px, which is NOT the user scrolling. A real
+    // scroll also moves the finger, which the dx/dy check below catches, so this is just a
+    // backstop for momentum. Too tight a value here was cancelling every long-press.
+    if (Math.abs(window.scrollY - longPressScrollYRef.current) > 120) {
       clearReorderTimer()
       longPressOriginRef.current = null
       return
@@ -243,8 +245,9 @@ export function useGestureReorder({
     if (!t) return
     const dx = Math.abs(t.clientX - longPressOriginRef.current.x)
     const dy = Math.abs(t.clientY - longPressOriginRef.current.y)
-    // 12 px lets a finger settle without canceling, while still catching any real swipe.
-    if (dx > 12 || dy > 12) {
+    // 20 px lets a finger settle/jitter during a hold without canceling, while still catching
+    // any real swipe/scroll gesture.
+    if (dx > 20 || dy > 20) {
       clearReorderTimer()
       longPressOriginRef.current = null
     }
