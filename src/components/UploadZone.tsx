@@ -322,6 +322,23 @@ type PhotoRow = {
   duration_seconds?: number | null
 }
 
+// Snapshot each picked file into a stable in-memory copy the instant it is selected. On
+// Android the original File reference (especially from Google Photos / the gallery) goes
+// stale before the upload queue reads its bytes, throwing NotReadableError ("the requested
+// file could not be read... permission problems after a reference was acquired"). Reading the
+// bytes now — while the picker permission is still fresh — sidesteps that entirely. Falls back
+// to the original reference if the immediate read fails.
+async function snapshotFiles(files: File[]): Promise<File[]> {
+  return Promise.all(files.map(async (f) => {
+    try {
+      const buf = await f.arrayBuffer()
+      return new File([buf], f.name, { type: f.type, lastModified: f.lastModified })
+    } catch {
+      return f
+    }
+  }))
+}
+
 // ─── Upload image to R2 ───────────────────────────────────────────────────────
 
 async function uploadImageToR2(
@@ -716,16 +733,17 @@ export default function UploadZone({ album, userTier, onPhotosUploaded }: Props)
     void startUploads(newEntries)
   }, [startUploads])
 
-  const handleInputChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleInputChange = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files ?? [])
     e.target.value = ''  // allow re-selecting same file after error
-    addFiles(files)
+    addFiles(await snapshotFiles(files))
   }, [addFiles])
 
-  const handleDrop = useCallback((e: React.DragEvent) => {
+  const handleDrop = useCallback(async (e: React.DragEvent) => {
     e.preventDefault()
     setIsDragging(false)
-    addFiles(Array.from(e.dataTransfer.files))
+    const files = Array.from(e.dataTransfer.files)
+    addFiles(await snapshotFiles(files))
   }, [addFiles])
 
   const handleDragOver = useCallback((e: React.DragEvent) => {
