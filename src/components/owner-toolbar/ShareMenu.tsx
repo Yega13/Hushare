@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import Image from 'next/image'
 import { useRouter } from 'next/navigation'
 import { ArrowLeft, Check, Copy, Download, QrCode, Share2, SquareMenu, X } from 'lucide-react'
@@ -166,11 +167,14 @@ export default function ShareMenu({ copied, ownerUrl, shareUrl, albumTitle, onCl
     try { await navigator.clipboard.writeText(shareUrl); onCopy('share') } catch { /* ignore */ }
   }
 
-  return (
-    <div
-      className="hush-share-menu rounded-2xl shadow-xl"
-      style={{ background: '#FFFFFF', border: '1px solid #DDD5C5', padding: 16 }}
-    >
+  return createPortal(
+    <>
+      <div className="hush-share-backdrop" onClick={onClose} />
+      <div
+        className="hush-share-menu rounded-2xl shadow-xl"
+        style={{ background: '#FFFFFF', border: '1px solid #DDD5C5', padding: 16 }}
+        onMouseDown={(e) => e.stopPropagation()}
+      >
       {view === 'tablecard' ? (
         <TableCardView shareUrl={shareUrl} albumTitle={albumTitle} onBack={() => setView('main')} />
       ) : (
@@ -261,6 +265,8 @@ export default function ShareMenu({ copied, ownerUrl, shareUrl, albumTitle, onCl
           </div>
         </>
       )}
-    </div>
+      </div>
+    </>,
+    document.body,
   )
 }

@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import Image from 'next/image'
 import { Check, Copy, Download, Loader2, Play, QrCode, ScanFace, Share2, X } from 'lucide-react'
 import { showAppToast } from '@/components/AppToast'
@@ -51,15 +52,8 @@ export default function GuestActionsBar({ album, photos, shareUrl, onOpenSlidesh
     return () => { cancelled = true }
   }, [shareUrl])
 
-  // Close share popup on outside click
-  useEffect(() => {
-    if (!shareOpen) return
-    function onOutside(e: MouseEvent) {
-      if (shareRef.current && !shareRef.current.contains(e.target as Node)) setShareOpen(false)
-    }
-    document.addEventListener('mousedown', onOutside)
-    return () => document.removeEventListener('mousedown', onOutside)
-  }, [shareOpen])
+  // Closing is handled by the portal backdrop (the menu is rendered at <body>, so an
+  // outside-click listener keyed to shareRef would fire on the menu itself and close it).
 
   async function handleNativeShare() {
     if (typeof navigator !== 'undefined' && navigator.share) {
@@ -154,11 +148,13 @@ export default function GuestActionsBar({ album, photos, shareUrl, onOpenSlidesh
             Share
           </button>
 
-          {shareOpen && (
-            <div
-              className="hush-share-menu rounded-2xl shadow-xl"
-              style={{ background: '#FFFFFF', border: '1px solid #DDD5C5', padding: 16 }}
-            >
+          {shareOpen && createPortal(
+            <>
+              <div className="hush-share-backdrop" onClick={() => setShareOpen(false)} />
+              <div
+                className="hush-share-menu rounded-2xl shadow-xl"
+                style={{ background: '#FFFFFF', border: '1px solid #DDD5C5', padding: 16 }}
+              >
               <div className="flex items-center justify-between mb-3">
                 <span className="font-semibold text-sm" style={{ color: '#254F22' }}>Share album</span>
                 <button type="button" onClick={() => setShareOpen(false)} style={{ color: '#A89880' }} aria-label="Close">
@@ -202,7 +198,9 @@ export default function GuestActionsBar({ album, photos, shareUrl, onOpenSlidesh
                   </div>
                 </div>
               </div>
-            </div>
+              </div>
+            </>,
+            document.body,
           )}
         </div>
 

@@ -1,28 +1,22 @@
 /* ── Album page non-responsive base ─────────────────────────────────────────── */
 
-/* Share dropdown. On mobile it is a viewport-centred fixed panel so it can never run off
-   either screen edge; on desktop (>=640px) it is a right-aligned dropdown under the button. */
+/* Share panel — rendered in a portal at <body> (so no transformed ancestor can offset it)
+   and centred in the viewport, so it can never run off any screen edge. */
 .hush-share-menu {
   position: fixed;
   left: 50%;
   top: 50%;
   transform: translate(-50%, -50%);
-  width: min(340px, calc(100vw - 20px));
+  width: min(360px, calc(100vw - 20px));
   max-height: calc(100dvh - 4rem);
   overflow-y: auto;
-  z-index: 60;
+  z-index: 210;
 }
-@media (min-width: 640px) {
-  .hush-share-menu {
-    position: absolute;
-    left: auto;
-    right: 0;
-    top: 100%;
-    transform: none;
-    margin-top: 0.5rem;
-    max-height: calc(100vh - 120px);
-    z-index: 50;
-  }
+.hush-share-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  background: rgba(15, 20, 15, 0.35);
 }
 
 /* Arrange button used to be mobile-only. Now visible everywhere; mobile rules
