@@ -142,6 +142,16 @@ export default function AlbumPageClient() {
   // creation). The public URL is a guest experience for everyone, including the creator.
   const effectiveIsOwner = isOwner && ownerTokenFromUrlRef.current
 
+  // Tombstone recently-deleted photo IDs so a realtime reconnect/refetch (common on mobile)
+  // cannot reinstate a photo the user just deleted. Auto-expires after 60s.
+  const deletedIdsRef = useRef<Map<string, number>>(new Map())
+  const isRecentlyDeleted = useCallback((id: string) => {
+    const t = deletedIdsRef.current.get(id)
+    if (t == null) return false
+    if (Date.now() - t > 60_000) { deletedIdsRef.current.delete(id); return false }
+    return true
+  }, [])
+
   // ─── fetchPhotos ────────────────────────────────────────────────────────────
   // Returns the photos array instead of calling setPhotos directly.
   // This lets callers gate the state update with their own cancellation guard
@@ -160,12 +170,14 @@ export default function AlbumPageClient() {
         return []
       }
       const json = await res.json() as { photos?: Photo[] }
-      return json.photos ?? []
+      // Drop any photo the user just deleted — guards against a stale/racing refetch
+      // reinstating it before the delete has fully propagated.
+      return (json.photos ?? []).filter(p => !isRecentlyDeleted(p.id))
     } catch (e) {
       console.error('[AlbumPageClient] fetchPhotos error', e)
       return []
     }
-  }, [])
+  }, [isRecentlyDeleted])
 
   // ─── fetchAlbum ─────────────────────────────────────────────────────────────
 
@@ -401,6 +413,7 @@ export default function AlbumPageClient() {
           if (!active) return
           const photo = sanitizeRealtimePhoto(incoming as Record<string, unknown>, albumId)
           if (!photo || !photo.id) return
+          if (isRecentlyDeleted(photo.id)) return  // don't re-add a just-deleted photo
           setPhotos(prev =>
             prev.some(p => p.id === photo.id)
               ? prev
@@ -552,6 +565,7 @@ export default function AlbumPageClient() {
   }, [album?.id, fetchPhotos])
 
   const handlePhotoDeleted = useCallback((photoId: string) => {
+    deletedIdsRef.current.set(photoId, Date.now())  // tombstone against racing refetch
     setPhotos(prev => prev.filter(p => p.id !== photoId))
   }, [])
 

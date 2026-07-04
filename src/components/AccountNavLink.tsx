@@ -24,18 +24,23 @@ export default function AccountNavLink() {
     let cancelled = false
 
     async function refresh() {
-      // getUser() validates the JWT server-side; getSession() only reads the local cache
-      // and can be stale or tampered with.
-      const { data: { user } } = await supabase.auth.getUser()
+      // Fast path: read the LOCAL session (no network) so the nav resolves immediately
+      // instead of popping in after a getUser() round-trip. Security is unaffected — /api/me
+      // and the account page both validate server-side; this only decides which link to show.
+      const { data: { session } } = await supabase.auth.getSession()
       if (cancelled) return
-      if (!user) {
+      if (!session) {
         setState({ kind: 'signed-out' })
         return
       }
+      // Optimistically show the Account link right away; refine canAccess from the server.
+      setState(prev => (prev.kind === 'signed-in' ? prev : { kind: 'signed-in', canAccess: true }))
       try {
         const res = await fetch('/api/me', { cache: 'no-store' })
         if (cancelled) return
-        if (res.ok) {
+        if (res.status === 401) {
+          setState({ kind: 'signed-out' })  // local session was stale
+        } else if (res.ok) {
           const me = await res.json() as { canAccessAccount: boolean }
           setState({ kind: 'signed-in', canAccess: me.canAccessAccount })
         } else {

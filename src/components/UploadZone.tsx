@@ -139,7 +139,7 @@ async function resizeAndEncode(source: File | Blob, targetMime: string): Promise
       const octx = oc.getContext('2d')
       if (!octx) throw new Error('OffscreenCanvas 2D context unavailable')
       octx.drawImage(bitmap, 0, 0, w, h)
-      const blob = await encodeCanvas(oc, targetMime, 0.94)
+      const blob = await encodeCanvas(oc, targetMime, 0.9)
       bitmap.close()
       return blob
     } catch { /* fall through */ }
@@ -152,7 +152,7 @@ async function resizeAndEncode(source: File | Blob, targetMime: string): Promise
   const ctx = canvas.getContext('2d')
   if (!ctx) throw new Error('Could not get 2D canvas context')
   ctx.drawImage(bitmap, 0, 0, w, h)
-  const blob = await encodeCanvas(canvas, targetMime, 0.94)
+  const blob = await encodeCanvas(canvas, targetMime, 0.9)
   bitmap.close()
   return blob
 }
@@ -188,10 +188,28 @@ async function processImageFile(file: File): Promise<{ blob: Blob; mimeType: str
 
   const mimeType = (file.type || 'image/jpeg').toLowerCase()
 
-  // Upload the ORIGINAL bytes — highest quality, no downscale, no recompression. This also
-  // preserves PNG/WebP transparency, which the old JPEG re-encode turned into solid black
-  // ("black additions"). JPEGs get a lossless EXIF strip (removes location/camera metadata
-  // without touching a single pixel). Everything else is uploaded untouched.
+  // Resize/re-encode large images so uploads stay fast, at a quality (4096px, q0.9) that is
+  // visually indistinguishable. Crucially, PNG/WebP are re-encoded IN THEIR OWN FORMAT — never
+  // to JPEG — so transparency is preserved (a JPEG re-encode turned transparent areas solid
+  // black, the "black additions"). Animated GIFs are never touched (a canvas flattens them to
+  // one frame). Small files skip the canvas round-trip entirely.
+  if (file.size > 1.2 * 1024 * 1024 && mimeType !== 'image/gif') {
+    const outMime = mimeType === 'image/png' ? 'image/png'
+      : mimeType === 'image/webp' ? 'image/webp'
+      : 'image/jpeg'
+    const blob = await resizeAndEncode(file, outMime)
+    // resizeAndEncode returns the exact `file` reference if createImageBitmap is unavailable —
+    // upload it untouched in that fallback rather than mislabelling its format.
+    if ((blob as unknown) === (file as unknown)) return { blob: file, mimeType, name: file.name }
+    if (outMime === 'image/jpeg') {
+      const buf = await blob.arrayBuffer()
+      const stripped = stripExifFromJpeg(new Uint8Array(buf))
+      return { blob: new Blob([stripped.buffer as unknown as ArrayBuffer], { type: 'image/jpeg' }), mimeType: 'image/jpeg', name: file.name.replace(/\.[^.]+$/, '.jpg') }
+    }
+    return { blob, mimeType: outMime, name: file.name }
+  }
+
+  // Small JPEG: lossless EXIF strip only (no re-encode).
   if (mimeType === 'image/jpeg' || mimeType === 'image/jpg') {
     const buf = await file.arrayBuffer()
     const stripped = stripExifFromJpeg(new Uint8Array(buf))

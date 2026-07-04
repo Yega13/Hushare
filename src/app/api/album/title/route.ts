@@ -34,5 +34,7 @@ export async function POST(req: Request) {
   }
 
   void broadcastAlbumSettings(access.album.id, { title: cleanTitle })
-  return NextResponse.json({ ok: true }, { headers: NO_STORE })
+  // Client (AlbumHeader) reads body.title to confirm the rename — omitting it made a
+  // successful 200 look like "Rename failed (200)".
+  return NextResponse.json({ ok: true, title: cleanTitle }, { headers: NO_STORE })
 }
