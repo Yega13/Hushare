@@ -122,13 +122,13 @@
   text-shadow: 0 1px 0 rgba(255, 255, 255, 0.32);
 }
 
-/* Side margin for the photo grid on phones. Lives on the grid element itself (in the CSS
-   bundle) rather than a JS inline style on the wrapper, so it applies reliably. Nothing else
-   sets padding on .hush-photo-grid, so !important is unnecessary. Desktop uses the wide
-   .hush-container gutter instead. */
-@media (max-width: 640px) {
+/* Side margin for the photo grid on phones/tablets. Uses explicit padding-left/right (max
+   browser compatibility) at a clearly-visible size, and a wider 1024px breakpoint in case the
+   device reports a viewport above 640px. Desktop (>=1024px) uses the wide .hush-container gutter. */
+@media (max-width: 1024px) {
   .hush-photo-grid {
-    padding-inline: clamp(14px, 4vw, 20px) !important;
+    padding-left: clamp(18px, 5vw, 28px) !important;
+    padding-right: clamp(18px, 5vw, 28px) !important;
   }
 }
 
