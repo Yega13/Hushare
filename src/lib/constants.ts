@@ -1,6 +1,6 @@
-// Mobile kept modest: too many simultaneous connections on a flaky cellular link cause the
-// Cloudflare upload sockets to stall. The per-upload stall watchdog recovers the rest.
-export const UPLOAD_CONCURRENCY_MOBILE = 4;
+// Now that images are downscaled to <1MB, more can go at once without stalling the link.
+// The per-upload stall watchdog still recovers any that hang.
+export const UPLOAD_CONCURRENCY_MOBILE = 6;
 export const UPLOAD_CONCURRENCY_DESKTOP = 12;
 
 // Cloudflare Stream TUS requires minimum 5 MB chunks (except the last)

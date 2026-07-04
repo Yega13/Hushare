@@ -18,7 +18,10 @@ const XHR_TIMEOUT_MS = 60_000
 // and let the retry loop try again — instead of waiting out the full XHR_TIMEOUT_MS.
 const STALL_TIMEOUT_MS = 20_000
 // ─── Max image dimension — images larger than this get downscaled before upload ─
-const MAX_IMG_DIM = 4096
+// 2560px (≈QHD) keeps images crisp on any phone/laptop screen while cutting a 12-48MP phone
+// photo from several MB down to well under 1MB — uploads are bandwidth-bound, so this is the
+// single biggest lever on upload speed. The lightbox never needs more than this to look sharp.
+const MAX_IMG_DIM = 2560
 
 // ─── Semaphore ────────────────────────────────────────────────────────────────
 
@@ -139,7 +142,7 @@ async function resizeAndEncode(source: File | Blob, targetMime: string): Promise
       const octx = oc.getContext('2d')
       if (!octx) throw new Error('OffscreenCanvas 2D context unavailable')
       octx.drawImage(bitmap, 0, 0, w, h)
-      const blob = await encodeCanvas(oc, targetMime, 0.9)
+      const blob = await encodeCanvas(oc, targetMime, 0.86)
       bitmap.close()
       return blob
     } catch { /* fall through */ }
@@ -152,7 +155,7 @@ async function resizeAndEncode(source: File | Blob, targetMime: string): Promise
   const ctx = canvas.getContext('2d')
   if (!ctx) throw new Error('Could not get 2D canvas context')
   ctx.drawImage(bitmap, 0, 0, w, h)
-  const blob = await encodeCanvas(canvas, targetMime, 0.9)
+  const blob = await encodeCanvas(canvas, targetMime, 0.86)
   bitmap.close()
   return blob
 }
