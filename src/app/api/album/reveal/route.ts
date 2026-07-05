@@ -48,6 +48,6 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: 'Could not update reveal date' }, { status: 500, headers: NO_STORE })
   }
 
-  void broadcastAlbumSettings(access.album.id, { reveal_at: revealAt })
+  await broadcastAlbumSettings(access.album.id, { reveal_at: revealAt })
   return NextResponse.json({ ok: true, reveal_at: revealAt }, { headers: NO_STORE })
 }

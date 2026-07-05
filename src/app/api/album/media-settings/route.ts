@@ -105,7 +105,7 @@ export async function POST(req: Request) {
     if (fErr) console.error('[album/media-settings] reset_filter_overrides failed:', fErr.message)
   }
 
-  void broadcastAlbumSettings(access.album.id, updates)
+  await broadcastAlbumSettings(access.album.id, updates)
 
   // Echo back the applied values so the client can synchronise its state.
   // OwnerToolbar always sends all 7 fields, so updates always contains every key.

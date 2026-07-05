@@ -5,6 +5,7 @@ import { createPortal } from 'react-dom'
 import Image from 'next/image'
 import { useRouter } from 'next/navigation'
 import { ArrowLeft, Check, Copy, Download, QrCode, Share2, SquareMenu, X } from 'lucide-react'
+import { useIsNarrow } from '@/lib/useIsNarrow'
 import { renderBrandedCard, renderBWCard } from './TableCardModal'
 
 type CardStyle = 'branded' | 'bw'
@@ -167,14 +168,10 @@ export default function ShareMenu({ copied, ownerUrl, shareUrl, albumTitle, onCl
     try { await navigator.clipboard.writeText(shareUrl); onCopy('share') } catch { /* ignore */ }
   }
 
-  return createPortal(
+  const isNarrow = useIsNarrow()
+  const menuStyle = { background: '#FFFFFF', border: '1px solid #DDD5C5', padding: 16 } as const
+  const menuInner = (
     <>
-      <div className="hush-share-backdrop" onClick={onClose} />
-      <div
-        className="hush-share-menu rounded-2xl shadow-xl"
-        style={{ background: '#FFFFFF', border: '1px solid #DDD5C5', padding: 16 }}
-        onMouseDown={(e) => e.stopPropagation()}
-      >
       {view === 'tablecard' ? (
         <TableCardView shareUrl={shareUrl} albumTitle={albumTitle} onBack={() => setView('main')} />
       ) : (
@@ -265,6 +262,32 @@ export default function ShareMenu({ copied, ownerUrl, shareUrl, albumTitle, onCl
           </div>
         </>
       )}
+    </>
+  )
+
+  // Desktop: a dropdown anchored under the Share button (the parent wrap is position:relative).
+  if (!isNarrow) {
+    return (
+      <div
+        className="hush-share-dropdown absolute right-0 top-full mt-2 z-50 rounded-2xl shadow-xl"
+        style={{ ...menuStyle, width: 340 }}
+        onMouseDown={(e) => e.stopPropagation()}
+      >
+        {menuInner}
+      </div>
+    )
+  }
+
+  // Mobile: a centred panel over a backdrop, portaled to <body>.
+  return createPortal(
+    <>
+      <div className="hush-share-backdrop" onClick={onClose} />
+      <div
+        className="hush-share-menu rounded-2xl shadow-xl"
+        style={menuStyle}
+        onMouseDown={(e) => e.stopPropagation()}
+      >
+        {menuInner}
       </div>
     </>,
     document.body,

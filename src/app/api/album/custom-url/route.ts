@@ -77,6 +77,6 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: 'Could not update custom URL' }, { status: 500, headers: NO_STORE })
   }
 
-  void broadcastAlbumSettings(access.album.id, { custom_slug: newCustomSlug })
+  await broadcastAlbumSettings(access.album.id, { custom_slug: newCustomSlug })
   return NextResponse.json({ ok: true, custom_slug: newCustomSlug }, { headers: NO_STORE })
 }

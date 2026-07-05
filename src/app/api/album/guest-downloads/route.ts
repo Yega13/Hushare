@@ -37,7 +37,7 @@ export async function POST(req: Request) {
   }
 
   // Broadcast so guests see the change without a page refresh
-  void broadcastAlbumSettings(access.album.id, { allow_guest_downloads })
+  await broadcastAlbumSettings(access.album.id, { allow_guest_downloads })
 
   return NextResponse.json({ ok: true, allow_guest_downloads }, { headers: NO_STORE })
 }

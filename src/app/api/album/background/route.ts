@@ -101,7 +101,7 @@ export async function POST(req: Request) {
     }
   }
 
-  void broadcastAlbumSettings(access.album.id, { background_theme: theme })
+  await broadcastAlbumSettings(access.album.id, { background_theme: theme })
 
   return NextResponse.json({ ok: true }, { headers: NO_STORE })
 }

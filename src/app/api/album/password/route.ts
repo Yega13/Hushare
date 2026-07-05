@@ -48,6 +48,6 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: 'Could not update password' }, { status: 500, headers: NO_STORE })
   }
 
-  void broadcastAlbumSettings(access.album.id, { password_protected: passwordHash !== null })
+  await broadcastAlbumSettings(access.album.id, { password_protected: passwordHash !== null })
   return NextResponse.json({ ok: true, hasPassword: passwordHash !== null }, { headers: NO_STORE })
 }

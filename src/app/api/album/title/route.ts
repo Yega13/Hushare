@@ -33,7 +33,9 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: 'Could not update title' }, { status: 500, headers: NO_STORE })
   }
 
-  void broadcastAlbumSettings(access.album.id, { title: cleanTitle })
+  // Awaited (not fire-and-forget): a background promise can be killed when the Worker
+  // returns the response, which would silently drop the real-time broadcast.
+  await broadcastAlbumSettings(access.album.id, { title: cleanTitle })
   // Client (AlbumHeader) reads body.title to confirm the rename — omitting it made a
   // successful 200 look like "Rename failed (200)".
   return NextResponse.json({ ok: true, title: cleanTitle }, { headers: NO_STORE })

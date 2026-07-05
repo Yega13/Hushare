@@ -201,7 +201,9 @@ export default function OwnerToolbar({ album, photos, ownerToken, userTier, medi
   }, [showShare, showSettings])
 
   useEffect(() => {
-    if (showShare) document.body.classList.add('hush-scroll-locked')
+    // Only lock scroll for the mobile centred panel; the desktop dropdown must not freeze the page.
+    const lock = showShare && typeof window !== 'undefined' && window.innerWidth < 640
+    if (lock) document.body.classList.add('hush-scroll-locked')
     else document.body.classList.remove('hush-scroll-locked')
     return () => document.body.classList.remove('hush-scroll-locked')
   }, [showShare])

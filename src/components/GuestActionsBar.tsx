@@ -5,6 +5,7 @@ import { createPortal } from 'react-dom'
 import Image from 'next/image'
 import { Check, Copy, Download, Loader2, Play, QrCode, ScanFace, Share2, X } from 'lucide-react'
 import { showAppToast } from '@/components/AppToast'
+import { useIsNarrow } from '@/lib/useIsNarrow'
 import { useZipDownload } from '@/components/photo-grid/useZipDownload'
 import type { Album, Photo } from '@/types'
 
@@ -41,6 +42,7 @@ export default function GuestActionsBar({ album, photos, shareUrl, onOpenSlidesh
   const [copied, setCopied] = useState(false)
   const [qrDataUrl, setQrDataUrl] = useState('')
   const shareRef = useRef<HTMLDivElement>(null)
+  const isNarrow = useIsNarrow()
 
   // Pre-generate QR once
   useEffect(() => {
@@ -52,8 +54,16 @@ export default function GuestActionsBar({ album, photos, shareUrl, onOpenSlidesh
     return () => { cancelled = true }
   }, [shareUrl])
 
-  // Closing is handled by the portal backdrop (the menu is rendered at <body>, so an
-  // outside-click listener keyed to shareRef would fire on the menu itself and close it).
+  // Desktop dropdown closes on outside-click (it lives inside shareRef). The mobile panel is
+  // portaled to <body> and closes via its backdrop, so the shareRef listener is desktop-only.
+  useEffect(() => {
+    if (!shareOpen || isNarrow) return
+    function onOutside(e: MouseEvent) {
+      if (shareRef.current && !shareRef.current.contains(e.target as Node)) setShareOpen(false)
+    }
+    document.addEventListener('mousedown', onOutside)
+    return () => document.removeEventListener('mousedown', onOutside)
+  }, [shareOpen, isNarrow])
 
   async function handleNativeShare() {
     if (typeof navigator !== 'undefined' && navigator.share) {
@@ -148,13 +158,9 @@ export default function GuestActionsBar({ album, photos, shareUrl, onOpenSlidesh
             Share
           </button>
 
-          {shareOpen && createPortal(
-            <>
-              <div className="hush-share-backdrop" onClick={() => setShareOpen(false)} />
-              <div
-                className="hush-share-menu rounded-2xl shadow-xl"
-                style={{ background: '#FFFFFF', border: '1px solid #DDD5C5', padding: 16 }}
-              >
+          {shareOpen && (() => {
+            const menuInner = (
+              <>
               <div className="flex items-center justify-between mb-3">
                 <span className="font-semibold text-sm" style={{ color: '#254F22' }}>Share album</span>
                 <button type="button" onClick={() => setShareOpen(false)} style={{ color: '#A89880' }} aria-label="Close">
@@ -198,10 +204,26 @@ export default function GuestActionsBar({ album, photos, shareUrl, onOpenSlidesh
                   </div>
                 </div>
               </div>
-              </div>
-            </>,
-            document.body,
-          )}
+              </>
+            )
+            const menuStyle = { background: '#FFFFFF', border: '1px solid #DDD5C5', padding: 16 } as const
+            return isNarrow
+              ? createPortal(
+                  <>
+                    <div className="hush-share-backdrop" onClick={() => setShareOpen(false)} />
+                    <div className="hush-share-menu rounded-2xl shadow-xl" style={menuStyle}>{menuInner}</div>
+                  </>,
+                  document.body,
+                )
+              : (
+                  <div
+                    className="hush-share-dropdown absolute right-0 top-full mt-2 z-50 rounded-2xl shadow-xl"
+                    style={{ ...menuStyle, width: 300 }}
+                  >
+                    {menuInner}
+                  </div>
+                )
+          })()}
         </div>
 
       </div>
