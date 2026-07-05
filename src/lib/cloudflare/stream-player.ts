@@ -9,7 +9,7 @@
 
 const SDK_SRC = 'https://embed.videodelivery.net/embed/sdk.latest.js'
 
-type StreamPlayer = { muted: boolean; volume: number }
+type StreamPlayer = { muted: boolean; volume: number; paused?: boolean; play?: () => void; pause?: () => void }
 type StreamFactory = (iframe: HTMLIFrameElement) => StreamPlayer
 
 let sdkPromise: Promise<StreamFactory | null> | null = null
@@ -29,6 +29,19 @@ function loadStreamSdk(): Promise<StreamFactory | null> {
     document.head.appendChild(script)
   })
   return sdkPromise
+}
+
+// Toggle play/pause on a Stream iframe (used by the lightbox tap gesture). No-op on failure.
+export async function toggleStreamPlayback(iframe: HTMLIFrameElement): Promise<void> {
+  try {
+    const StreamFactory = await loadStreamSdk()
+    if (!StreamFactory) return
+    const player = StreamFactory(iframe)
+    if (player.paused) player.play?.()
+    else player.pause?.()
+  } catch {
+    // SDK/init failed — leave playback as-is.
+  }
 }
 
 // Unmute the given Stream iframe and set its volume (0–1). No-op on any failure.

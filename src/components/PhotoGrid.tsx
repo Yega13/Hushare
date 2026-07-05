@@ -19,6 +19,7 @@ import { downloadPhoto } from '@/components/photo-grid/downloadPhoto'
 import { useLightboxMedia } from '@/components/photo-grid/useLightboxMedia'
 import { useSlideshow } from '@/components/photo-grid/useSlideshow'
 import { useSwipeNavigation } from '@/components/photo-grid/useSwipeNavigation'
+import { useIsNarrow } from '@/lib/useIsNarrow'
 import PhotoTile, { type TileHandlers } from '@/components/photo-grid/PhotoTile'
 import { X, Play, Move } from 'lucide-react'
 
@@ -40,6 +41,9 @@ type Props = {
 
 export default function PhotoGrid({ album, photos, isOwner, slug, forceGlobalRadius, onRadiusMaxChange, onPhotoDeleted, onPhotoUpdated, onPhotosReordered, slideshowRequestId = 0, arrangeMode = false, coverPhotoId, onCoverSet }: Props) {
   const gridRef = useRef<HTMLDivElement>(null)
+  // Side inset for the grid on phones. Applied as an inline style (not a CSS class) because
+  // class-based padding/width was not reliably insetting the grid on some devices.
+  const isNarrow = useIsNarrow(768)
   const lightboxHistoryRef = useRef(false)
   const [lightbox, setLightbox] = useState<number | null>(null)
   const [flippedPhotoId, setFlippedPhotoId] = useState<string | null>(null)
@@ -433,7 +437,10 @@ export default function PhotoGrid({ album, photos, isOwner, slug, forceGlobalRad
       <div
         ref={gridRef}
         className="hush-photo-grid grid gap-3 xl:gap-4"
-        style={{ '--hush-grid-cols': album.mobile_grid_columns ?? 3 } as React.CSSProperties}
+        style={{
+          '--hush-grid-cols': album.mobile_grid_columns ?? 3,
+          ...(isNarrow ? { paddingInline: 14 } : null),
+        } as React.CSSProperties}
       >
         {photos.map((photo, index) => (
           <PhotoTile

@@ -119,6 +119,13 @@
     background-attachment: scroll !important;
   }
 
+  /* Use more of the screen on phones — the default container leaves too much empty space at
+     the sides. The photo grid adds its own small inline inset on top of this so it still reads
+     as having a margin while the header/toolbar sit wider. */
+  .hush-album-page .hush-container {
+    width: min(calc(100% - 0.75rem), 100%) !important;
+  }
+
   .hush-album-header-shell {
     background: rgba(253, 250, 245, 0.96) !important;
     backdrop-filter: blur(12px);

@@ -3,7 +3,7 @@
 import React from 'react'
 import { X, ChevronLeft, ChevronRight, Play, Pause, Download, Settings, Star, Trash2 } from 'lucide-react'
 import type { Photo } from '@/types'
-import { unmuteStreamVideo } from '@/lib/cloudflare/stream-player'
+import { unmuteStreamVideo, toggleStreamPlayback } from '@/lib/cloudflare/stream-player'
 
 function streamFrameSrc(photo: Photo, autoplay: boolean): string {
   const base = photo.stream_iframe_url || (photo.stream_uid ? `https://iframe.videodelivery.net/${photo.stream_uid}` : '')
@@ -134,6 +134,7 @@ export default function LightboxOverlay({
 }: Props) {
   // Detect the current video's real aspect ratio from its poster so the player box matches it
   // exactly — no black pillarbox/letterbox bars. Falls back to 16:9 until the poster loads.
+  const videoIframeRef = React.useRef<HTMLIFrameElement | null>(null)
   const [videoAspect, setVideoAspect] = React.useState<number | null>(null)
   React.useEffect(() => {
     setVideoAspect(null)
@@ -221,8 +222,11 @@ export default function LightboxOverlay({
           overflowX: 'hidden',
           scrollbarWidth: 'none',
           touchAction: 'pan-y',
-          transform: `translateX(${swipeOffset}px) scale(${Math.max(0.94, 1 - Math.min(Math.abs(swipeOffset), 180) / 1800)})`,
-          transition: swipeAnimating ? 'transform 150ms ease-out' : 'none',
+          // Follow the finger 1:1 with only a very subtle scale-down — the previous heavier
+          // scale made the swipe feel wobbly. Fade the item slightly as it leaves.
+          transform: `translateX(${swipeOffset}px) scale(${Math.max(0.975, 1 - Math.min(Math.abs(swipeOffset), 220) / 4400)})`,
+          opacity: 1 - Math.min(Math.abs(swipeOffset), 400) / 1400,
+          transition: swipeAnimating ? 'transform 200ms cubic-bezier(0.22, 1, 0.36, 1), opacity 200ms ease-out' : 'none',
         }}
         onClick={(e) => { e.stopPropagation(); onClose() }}
         onTouchStart={onSwipeStart}
@@ -254,13 +258,14 @@ export default function LightboxOverlay({
             onContextMenu={(e) => e.preventDefault()}
             style={{
               aspectRatio: String(videoBoxAspect),
-              maxWidth: '92vw',
-              maxHeight: 'min(80vh, 820px)',
-              width: isPortraitVideo ? 'auto' : 'min(92vw, 1100px)',
-              height: isPortraitVideo ? 'min(80vh, 820px)' : 'auto',
+              maxWidth: '88vw',
+              maxHeight: 'min(70vh, 680px)',
+              width: isPortraitVideo ? 'auto' : 'min(88vw, 960px)',
+              height: isPortraitVideo ? 'min(70vh, 680px)' : 'auto',
             }}
           >
             <iframe
+              ref={(node) => { videoIframeRef.current = node }}
               src={streamFrameSrc(current, slideshowMode ? !slideshowPaused : videoAutoplay)}
               allow="accelerometer; gyroscope; autoplay; encrypted-media; picture-in-picture;"
               allowFullScreen
@@ -269,12 +274,30 @@ export default function LightboxOverlay({
               onClick={(e) => e.stopPropagation()}
               onLoad={(e) => {
                 onMediaNodeChange(e.currentTarget)
+                videoIframeRef.current = e.currentTarget
                 // When the video autoplays (muted, to satisfy browser policy), unmute it to a
                 // comfortable 50% once playback has started. The lightbox open gesture provides
                 // the user activation browsers require for the programmatic unmute.
                 const autoplaying = slideshowMode ? !slideshowPaused : videoAutoplay
                 if (autoplaying) void unmuteStreamVideo(e.currentTarget, 0.5)
               }}
+            />
+            {/* Swipe-catcher: the Stream iframe swallows touch events, so without this an
+                overlaid layer, videos could not be swiped between. Covers the top ~80% (the
+                video image) and forwards touches to the swipe handlers; the bottom strip is
+                left clear so the player's control bar (seek/pause/fullscreen) stays usable.
+                A tap that isn't a swipe toggles play/pause. */}
+            <div
+              className="absolute inset-x-0 top-0"
+              style={{ height: '80%', zIndex: 3, touchAction: 'pan-y' }}
+              onClick={(e) => {
+                e.stopPropagation()
+                if (videoIframeRef.current) void toggleStreamPlayback(videoIframeRef.current)
+              }}
+              onTouchStart={(e) => { e.stopPropagation(); onSwipeStart(e) }}
+              onTouchMove={(e) => { e.stopPropagation(); onSwipeMove(e) }}
+              onTouchEnd={(e) => { e.stopPropagation(); onSwipeEnd(e) }}
+              onTouchCancel={() => onSwipeCancel()}
             />
           </div>
         ) : (
