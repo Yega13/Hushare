@@ -28,7 +28,7 @@
 /* Desktop dropdown: anchored under the Share button (position:absolute in the toolbar),
    fades/scales down from its top-right corner like a normal menu. */
 .hush-share-dropdown {
-  transform-origin: top right;
+  transform-origin: top left;
   animation: hush-share-dropdown-in 170ms cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 

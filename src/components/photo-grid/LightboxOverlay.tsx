@@ -132,6 +132,25 @@ export default function LightboxOverlay({
   onDelete,
   onToggleSlideshowPause,
 }: Props) {
+  // Detect the current video's real aspect ratio from its poster so the player box matches it
+  // exactly — no black pillarbox/letterbox bars. Falls back to 16:9 until the poster loads.
+  const [videoAspect, setVideoAspect] = React.useState<number | null>(null)
+  React.useEffect(() => {
+    setVideoAspect(null)
+    if (current.media_type !== 'video') return
+    const posterSrc = current.poster_url || current.stream_thumbnail_url
+    if (!posterSrc) return
+    const img = new window.Image()
+    img.onload = () => {
+      if (img.naturalWidth > 0 && img.naturalHeight > 0) setVideoAspect(img.naturalWidth / img.naturalHeight)
+    }
+    img.src = posterSrc
+    return () => { img.onload = null }
+  }, [current.id, current.media_type, current.poster_url, current.stream_thumbnail_url])
+
+  const videoBoxAspect = videoAspect ?? 16 / 9
+  const isPortraitVideo = videoBoxAspect < 1
+
   return (
     <div
       className={`fixed inset-0 z-50 flex items-center justify-center overflow-hidden${slideshowMode ? ' hush-slideshow-overlay' : ''}`}
@@ -229,12 +248,23 @@ export default function LightboxOverlay({
           </div>
         ) : current.media_type === 'video' && current.stream_uid ? (
           // All videos in the new system are Cloudflare Stream. There is no R2 video fallback.
-          <div className={`hush-photo-flip relative w-[min(92vw,1100px)]${slideshowMode ? '' : ' hush-lightbox-media'}${slideshowFrameClass}`} key={current.id} onContextMenu={(e) => e.preventDefault()}>
+          <div
+            className={`hush-photo-flip relative${slideshowMode ? '' : ' hush-lightbox-media'}${slideshowFrameClass}`}
+            key={current.id}
+            onContextMenu={(e) => e.preventDefault()}
+            style={{
+              aspectRatio: String(videoBoxAspect),
+              maxWidth: '92vw',
+              maxHeight: 'min(80vh, 820px)',
+              width: isPortraitVideo ? 'auto' : 'min(92vw, 1100px)',
+              height: isPortraitVideo ? 'min(80vh, 820px)' : 'auto',
+            }}
+          >
             <iframe
               src={streamFrameSrc(current, slideshowMode ? !slideshowPaused : videoAutoplay)}
               allow="accelerometer; gyroscope; autoplay; encrypted-media; picture-in-picture;"
               allowFullScreen
-              className="block aspect-video max-h-[min(65vh,680px)] w-[min(92vw,1100px)] max-w-full"
+              className="block w-full h-full max-w-full"
               style={{ background: '#000', border: 0, borderRadius: previewRadiusFor(current) }}
               onClick={(e) => e.stopPropagation()}
               onLoad={(e) => {

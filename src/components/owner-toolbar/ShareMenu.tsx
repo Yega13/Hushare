@@ -269,7 +269,7 @@ export default function ShareMenu({ copied, ownerUrl, shareUrl, albumTitle, onCl
   if (!isNarrow) {
     return (
       <div
-        className="hush-share-dropdown absolute right-0 top-full mt-2 z-50 rounded-2xl shadow-xl"
+        className="hush-share-dropdown absolute left-0 top-full mt-2 z-50 rounded-2xl shadow-xl"
         style={{ ...menuStyle, width: 340 }}
         onMouseDown={(e) => e.stopPropagation()}
       >

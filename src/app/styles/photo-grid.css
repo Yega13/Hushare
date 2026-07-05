@@ -122,18 +122,10 @@
   text-shadow: 0 1px 0 rgba(255, 255, 255, 0.32);
 }
 
-/* Side margin for the photo grid on phones/tablets. Uses WIDTH + auto margins (not padding)
-   because padding was somehow not insetting the grid on some devices. This narrows the grid
-   box itself and centres it, which cannot be defeated by the grid's own box sizing. */
-@media (max-width: 1024px) {
-  .hush-photo-grid {
-    width: 91% !important;
-    margin-left: auto !important;
-    margin-right: auto !important;
-    padding-left: 0 !important;
-    padding-right: 0 !important;
-  }
-}
+/* Side margin for the photo grid on phones is applied as `px-*` padding on the WRAPPER div
+   (in AlbumPageClient), not here — a plain Tailwind utility on the real element is the most
+   reliable way to inset it. The tile background is nearly the same cream as the gaps, so the
+   inset is deliberately larger than the inter-tile gap to read as an intentional margin. */
 
 @media (max-width: 400px) {
   .hush-photo-grid {

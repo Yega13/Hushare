@@ -217,7 +217,7 @@ export default function GuestActionsBar({ album, photos, shareUrl, onOpenSlidesh
                 )
               : (
                   <div
-                    className="hush-share-dropdown absolute right-0 top-full mt-2 z-50 rounded-2xl shadow-xl"
+                    className="hush-share-dropdown absolute left-0 top-full mt-2 z-50 rounded-2xl shadow-xl"
                     style={{ ...menuStyle, width: 300 }}
                   >
                     {menuInner}

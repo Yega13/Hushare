@@ -93,11 +93,15 @@ const PhotoTile = React.memo(function PhotoTile({
   const videoThumb = (!videoPosterFailed && photo.poster_url)
     ? photo.poster_url
     : (photo.stream_thumbnail_url || photo.poster_url || '')
+  // GIFs must animate in the grid (auto-loop) without opening the lightbox, so render the
+  // original animated file rather than the static thumbnail frame. A native <img> loops a GIF
+  // on its own.
+  const isGif = !isVideo && typeof photo.url === 'string' && /\.gif(\?|$)/i.test(photo.url)
   // For videos, drop the src entirely once every source failed so the tile shows the
   // placeholder + Play icon instead of a broken-image icon under the overlay.
   const thumbSrc = isVideo
     ? (posterBroken.has(photo.id) ? '' : videoThumb)
-    : (photo.thumb_url || photo.url)
+    : (isGif ? (photo.url || photo.thumb_url) : (photo.thumb_url || photo.url))
   const isBroken = broken.has(photo.id)
   // In the new system all videos are Cloudflare Stream (stream_uid always set).
   // There is no R2 video backup and no mirror_url — so videoThumbSrc is always null for
