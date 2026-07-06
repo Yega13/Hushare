@@ -83,7 +83,9 @@ export async function generateVideoPoster(file: File): Promise<PosterResult | nu
     const h = video.videoHeight
     if (!w || !h) return null
 
-    const MAX_POSTER_DIM = 720
+    // 1080px so the poster stays crisp on large/high-DPR tiles (a 720px frame looked soft in
+    // a 2-column grid on a retina phone). Still tiny next to the video file.
+    const MAX_POSTER_DIM = 1080
     const longest = Math.max(w, h)
     const scale = longest > MAX_POSTER_DIM ? MAX_POSTER_DIM / longest : 1
     const cw = Math.max(1, Math.round(w * scale))
@@ -94,10 +96,11 @@ export async function generateVideoPoster(file: File): Promise<PosterResult | nu
     canvas.height = ch
     const ctx = canvas.getContext('2d')
     if (!ctx) return null
+    ctx.imageSmoothingQuality = 'high'
     ctx.drawImage(video, 0, 0, cw, ch)
 
     const blob = await new Promise<Blob | null>((resolve) =>
-      canvas.toBlob((b) => resolve(b), 'image/jpeg', 0.85),
+      canvas.toBlob((b) => resolve(b), 'image/jpeg', 0.92),
     )
     if (!blob) return null
 

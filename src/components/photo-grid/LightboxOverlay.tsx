@@ -221,11 +221,11 @@ export default function LightboxOverlay({
           overflowX: 'hidden',
           scrollbarWidth: 'none',
           touchAction: 'pan-y',
-          // Follow the finger 1:1 with only a very subtle scale-down — the previous heavier
-          // scale made the swipe feel wobbly. Fade the item slightly as it leaves.
-          transform: `translateX(${swipeOffset}px) scale(${Math.max(0.975, 1 - Math.min(Math.abs(swipeOffset), 220) / 4400)})`,
-          opacity: 1 - Math.min(Math.abs(swipeOffset), 400) / 1400,
-          transition: swipeAnimating ? 'transform 200ms cubic-bezier(0.22, 1, 0.36, 1), opacity 200ms ease-out' : 'none',
+          // Clean horizontal slide that tracks the finger 1:1 (no scale — the scale-wobble read
+          // as dated). A light fade near the end keeps it feeling smooth as the item leaves.
+          transform: `translateX(${swipeOffset}px)`,
+          opacity: 1 - Math.min(Math.abs(swipeOffset), 520) / 1600,
+          transition: swipeAnimating ? 'transform 170ms cubic-bezier(0.4, 0, 0.2, 1), opacity 170ms ease-out' : 'none',
         }}
         onClick={(e) => { e.stopPropagation(); onClose() }}
         onTouchStart={onSwipeStart}

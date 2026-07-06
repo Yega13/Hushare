@@ -100,7 +100,7 @@ export function useSwipeNavigation({ zoomScale, currentId, onPrev, onNext }: Opt
       else onPrev()
       setSwipeAnimating(false)
       setSwipeOffset(0)
-    }, 150)
+    }, 150) // matches the 170ms slide transition — snappy without cutting the animation short
     swipeTimersRef.current.add(t)
   }
 
