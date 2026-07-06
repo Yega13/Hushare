@@ -3,7 +3,7 @@ import { getCloudflareContext } from '@opennextjs/cloudflare'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { verifyOwnerViaCookieWithRateLimit } from '@/lib/album-owner-access'
 import { forbidCrossSiteRequest } from '@/lib/request-security'
-import { broadcastAlbumSettings } from '@/lib/broadcast'
+import { queueAlbumSettingsBroadcast } from '@/lib/broadcast'
 
 export const runtime = 'nodejs'
 
@@ -101,7 +101,7 @@ export async function POST(req: Request) {
     }
   }
 
-  await broadcastAlbumSettings(access.album.id, { background_theme: theme })
+  queueAlbumSettingsBroadcast(access.album.id, { background_theme: theme })
 
   return NextResponse.json({ ok: true }, { headers: NO_STORE })
 }

@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { verifyOwnerViaCookieWithRateLimit } from '@/lib/album-owner-access'
 import { forbidCrossSiteRequest } from '@/lib/request-security'
-import { broadcastAlbumSettings } from '@/lib/broadcast'
+import { queueAlbumSettingsBroadcast } from '@/lib/broadcast'
 
 export const runtime = 'nodejs'
 
@@ -37,7 +37,7 @@ export async function POST(req: Request) {
   }
 
   // Broadcast so guests see the change without a page refresh
-  await broadcastAlbumSettings(access.album.id, { allow_guest_downloads })
+  queueAlbumSettingsBroadcast(access.album.id, { allow_guest_downloads })
 
   return NextResponse.json({ ok: true, allow_guest_downloads }, { headers: NO_STORE })
 }

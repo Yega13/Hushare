@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { verifyOwnerViaCookieWithRateLimit } from '@/lib/album-owner-access'
 import { forbidCrossSiteRequest } from '@/lib/request-security'
-import { broadcastAlbumSettings } from '@/lib/broadcast'
+import { queueAlbumSettingsBroadcast } from '@/lib/broadcast'
 
 export const runtime = 'nodejs'
 
@@ -105,7 +105,7 @@ export async function POST(req: Request) {
     if (fErr) console.error('[album/media-settings] reset_filter_overrides failed:', fErr.message)
   }
 
-  await broadcastAlbumSettings(access.album.id, updates)
+  queueAlbumSettingsBroadcast(access.album.id, updates)
 
   // Echo back the applied values so the client can synchronise its state.
   // OwnerToolbar always sends all 7 fields, so updates always contains every key.

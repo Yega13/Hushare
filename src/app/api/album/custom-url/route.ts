@@ -4,7 +4,7 @@ import { verifyOwnerViaCookieWithRateLimit } from '@/lib/album-owner-access'
 import { forbidCrossSiteRequest } from '@/lib/request-security'
 import { validateCustomSlug } from '@/lib/custom-slug'
 import { getUserTierById } from '@/lib/subscriptions'
-import { broadcastAlbumSettings } from '@/lib/broadcast'
+import { queueAlbumSettingsBroadcast } from '@/lib/broadcast'
 
 export const runtime = 'nodejs'
 
@@ -77,6 +77,6 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: 'Could not update custom URL' }, { status: 500, headers: NO_STORE })
   }
 
-  await broadcastAlbumSettings(access.album.id, { custom_slug: newCustomSlug })
+  queueAlbumSettingsBroadcast(access.album.id, { custom_slug: newCustomSlug })
   return NextResponse.json({ ok: true, custom_slug: newCustomSlug }, { headers: NO_STORE })
 }

@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { verifyOwnerViaCookieWithRateLimit } from '@/lib/album-owner-access'
 import { forbidCrossSiteRequest } from '@/lib/request-security'
-import { broadcastAlbumSettings } from '@/lib/broadcast'
+import { queueAlbumSettingsBroadcast } from '@/lib/broadcast'
 
 export const runtime = 'nodejs'
 
@@ -48,6 +48,6 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: 'Could not update reveal date' }, { status: 500, headers: NO_STORE })
   }
 
-  await broadcastAlbumSettings(access.album.id, { reveal_at: revealAt })
+  queueAlbumSettingsBroadcast(access.album.id, { reveal_at: revealAt })
   return NextResponse.json({ ok: true, reveal_at: revealAt }, { headers: NO_STORE })
 }

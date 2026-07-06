@@ -3,7 +3,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { verifyOwnerViaCookieWithRateLimit } from '@/lib/album-owner-access'
 import { forbidCrossSiteRequest } from '@/lib/request-security'
 import { hashPassword, MIN_PASSWORD_LEN, MAX_PASSWORD_LEN } from '@/lib/album-password'
-import { broadcastAlbumSettings } from '@/lib/broadcast'
+import { queueAlbumSettingsBroadcast } from '@/lib/broadcast'
 
 export const runtime = 'nodejs'
 
@@ -48,6 +48,6 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: 'Could not update password' }, { status: 500, headers: NO_STORE })
   }
 
-  await broadcastAlbumSettings(access.album.id, { password_protected: passwordHash !== null })
+  queueAlbumSettingsBroadcast(access.album.id, { password_protected: passwordHash !== null })
   return NextResponse.json({ ok: true, hasPassword: passwordHash !== null }, { headers: NO_STORE })
 }
