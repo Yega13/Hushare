@@ -19,7 +19,6 @@ import { downloadPhoto } from '@/components/photo-grid/downloadPhoto'
 import { useLightboxMedia } from '@/components/photo-grid/useLightboxMedia'
 import { useSlideshow } from '@/components/photo-grid/useSlideshow'
 import { useSwipeNavigation } from '@/components/photo-grid/useSwipeNavigation'
-import { useIsNarrow } from '@/lib/useIsNarrow'
 import PhotoTile, { type TileHandlers } from '@/components/photo-grid/PhotoTile'
 import { X, Play, Move } from 'lucide-react'
 
@@ -41,9 +40,6 @@ type Props = {
 
 export default function PhotoGrid({ album, photos, isOwner, slug, forceGlobalRadius, onRadiusMaxChange, onPhotoDeleted, onPhotoUpdated, onPhotosReordered, slideshowRequestId = 0, arrangeMode = false, coverPhotoId, onCoverSet }: Props) {
   const gridRef = useRef<HTMLDivElement>(null)
-  // Side inset for the grid on phones. Applied as an inline style (not a CSS class) because
-  // class-based padding/width was not reliably insetting the grid on some devices.
-  const isNarrow = useIsNarrow(768)
   const lightboxHistoryRef = useRef(false)
   const [lightbox, setLightbox] = useState<number | null>(null)
   const [flippedPhotoId, setFlippedPhotoId] = useState<string | null>(null)
@@ -439,7 +435,10 @@ export default function PhotoGrid({ album, photos, isOwner, slug, forceGlobalRad
         className="hush-photo-grid grid gap-3 xl:gap-4"
         style={{
           '--hush-grid-cols': album.mobile_grid_columns ?? 3,
-          ...(isNarrow ? { paddingInline: 14 } : null),
+          // Side inset for the grid, computed purely in CSS so it never depends on JS/hydration
+          // timing: below a 760px viewport it resolves to 18px, above it to 0. `* 1000` slams the
+          // sign difference past the clamp bounds so it acts as a hard breakpoint.
+          paddingInline: 'clamp(0px, calc((760px - 100vw) * 1000), 18px)',
         } as React.CSSProperties}
       >
         {photos.map((photo, index) => (

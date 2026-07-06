@@ -3,7 +3,7 @@
 import React from 'react'
 import { X, ChevronLeft, ChevronRight, Play, Pause, Download, Settings, Star, Trash2 } from 'lucide-react'
 import type { Photo } from '@/types'
-import { unmuteStreamVideo, toggleStreamPlayback } from '@/lib/cloudflare/stream-player'
+import { unmuteStreamVideo } from '@/lib/cloudflare/stream-player'
 
 function streamFrameSrc(photo: Photo, autoplay: boolean): string {
   const base = photo.stream_iframe_url || (photo.stream_uid ? `https://iframe.videodelivery.net/${photo.stream_uid}` : '')
@@ -134,7 +134,6 @@ export default function LightboxOverlay({
 }: Props) {
   // Detect the current video's real aspect ratio from its poster so the player box matches it
   // exactly — no black pillarbox/letterbox bars. Falls back to 16:9 until the poster loads.
-  const videoIframeRef = React.useRef<HTMLIFrameElement | null>(null)
   const [videoAspect, setVideoAspect] = React.useState<number | null>(null)
   React.useEffect(() => {
     setVideoAspect(null)
@@ -265,7 +264,6 @@ export default function LightboxOverlay({
             }}
           >
             <iframe
-              ref={(node) => { videoIframeRef.current = node }}
               src={streamFrameSrc(current, slideshowMode ? !slideshowPaused : videoAutoplay)}
               allow="accelerometer; gyroscope; autoplay; encrypted-media; picture-in-picture;"
               allowFullScreen
@@ -274,7 +272,6 @@ export default function LightboxOverlay({
               onClick={(e) => e.stopPropagation()}
               onLoad={(e) => {
                 onMediaNodeChange(e.currentTarget)
-                videoIframeRef.current = e.currentTarget
                 // When the video autoplays (muted, to satisfy browser policy), unmute it to a
                 // comfortable 50% once playback has started. The lightbox open gesture provides
                 // the user activation browsers require for the programmatic unmute.
@@ -282,23 +279,23 @@ export default function LightboxOverlay({
                 if (autoplaying) void unmuteStreamVideo(e.currentTarget, 0.5)
               }}
             />
-            {/* Swipe-catcher: the Stream iframe swallows touch events, so without this an
-                overlaid layer, videos could not be swiped between. Covers the top ~80% (the
-                video image) and forwards touches to the swipe handlers; the bottom strip is
-                left clear so the player's control bar (seek/pause/fullscreen) stays usable.
-                A tap that isn't a swipe toggles play/pause. */}
-            <div
-              className="absolute inset-x-0 top-0"
-              style={{ height: '80%', zIndex: 3, touchAction: 'pan-y' }}
-              onClick={(e) => {
-                e.stopPropagation()
-                if (videoIframeRef.current) void toggleStreamPlayback(videoIframeRef.current)
-              }}
-              onTouchStart={(e) => { e.stopPropagation(); onSwipeStart(e) }}
-              onTouchMove={(e) => { e.stopPropagation(); onSwipeMove(e) }}
-              onTouchEnd={(e) => { e.stopPropagation(); onSwipeEnd(e) }}
-              onTouchCancel={() => onSwipeCancel()}
-            />
+            {/* Swipe zones on the left/right edges only. The Stream iframe swallows touch events,
+                so these strips let the user swipe between videos — while the whole centre stays
+                free for the player's own play button and controls (an overlay over the middle
+                blocked the play button, so videos couldn't be started). A swipe that starts on an
+                edge keeps receiving touch events even as the finger crosses the centre. */}
+            {(['left', 'right'] as const).map((side) => (
+              <div
+                key={side}
+                className={`absolute top-0 bottom-0 ${side === 'left' ? 'left-0' : 'right-0'}`}
+                style={{ width: '20%', zIndex: 3, touchAction: 'pan-y' }}
+                onClick={(e) => e.stopPropagation()}
+                onTouchStart={(e) => { e.stopPropagation(); onSwipeStart(e) }}
+                onTouchMove={(e) => { e.stopPropagation(); onSwipeMove(e) }}
+                onTouchEnd={(e) => { e.stopPropagation(); onSwipeEnd(e) }}
+                onTouchCancel={() => onSwipeCancel()}
+              />
+            ))}
           </div>
         ) : (
           // Image branch (Branch 4 in old code, now Branch 3 — no native <video> branch exists)
