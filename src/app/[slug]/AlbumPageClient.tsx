@@ -742,7 +742,7 @@ export default function AlbumPageClient() {
           <UploadZone album={album} userTier={userTier} onPhotosUploaded={handlePhotosUploaded} />
         )}
 
-        <div className="hush-container pb-6">
+        <div className="hush-container pb-6" style={{ outline: '2px solid #00E5FF' }}>
           <PhotoGrid
             album={album}
             photos={photos}

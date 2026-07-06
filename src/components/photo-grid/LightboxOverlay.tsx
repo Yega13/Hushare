@@ -102,7 +102,6 @@ export default function LightboxOverlay({
   settingCover,
   coverPhotoId,
   deleting,
-  videoAutoplay,
   zoomPan,
   previewRadiusFor,
   mediaZoomStyle,
@@ -263,8 +262,13 @@ export default function LightboxOverlay({
               height: isPortraitVideo ? 'min(70vh, 680px)' : 'auto',
             }}
           >
+            {/* The lightbox always autoplays the video (muted, per browser policy, then unmuted).
+                This means the player opens already playing — no oversized centre play button — and
+                the native control bar (pause / sound / settings / fullscreen) is fully usable. No
+                touch overlay: an overlay was blocking the controls and the play button. Navigate
+                between videos with the on-screen arrows (swipe stays for images). */}
             <iframe
-              src={streamFrameSrc(current, slideshowMode ? !slideshowPaused : videoAutoplay)}
+              src={streamFrameSrc(current, slideshowMode ? !slideshowPaused : true)}
               allow="accelerometer; gyroscope; autoplay; encrypted-media; picture-in-picture;"
               allowFullScreen
               className="block w-full h-full max-w-full"
@@ -272,30 +276,11 @@ export default function LightboxOverlay({
               onClick={(e) => e.stopPropagation()}
               onLoad={(e) => {
                 onMediaNodeChange(e.currentTarget)
-                // When the video autoplays (muted, to satisfy browser policy), unmute it to a
-                // comfortable 50% once playback has started. The lightbox open gesture provides
-                // the user activation browsers require for the programmatic unmute.
-                const autoplaying = slideshowMode ? !slideshowPaused : videoAutoplay
-                if (autoplaying) void unmuteStreamVideo(e.currentTarget, 0.5)
+                // Autoplaying muted → unmute to a comfortable 50% once playback starts. Opening the
+                // lightbox is a user gesture, which satisfies the activation browsers require.
+                void unmuteStreamVideo(e.currentTarget, 0.5)
               }}
             />
-            {/* Swipe zones on the left/right edges only. The Stream iframe swallows touch events,
-                so these strips let the user swipe between videos — while the whole centre stays
-                free for the player's own play button and controls (an overlay over the middle
-                blocked the play button, so videos couldn't be started). A swipe that starts on an
-                edge keeps receiving touch events even as the finger crosses the centre. */}
-            {(['left', 'right'] as const).map((side) => (
-              <div
-                key={side}
-                className={`absolute top-0 bottom-0 ${side === 'left' ? 'left-0' : 'right-0'}`}
-                style={{ width: '20%', zIndex: 3, touchAction: 'pan-y' }}
-                onClick={(e) => e.stopPropagation()}
-                onTouchStart={(e) => { e.stopPropagation(); onSwipeStart(e) }}
-                onTouchMove={(e) => { e.stopPropagation(); onSwipeMove(e) }}
-                onTouchEnd={(e) => { e.stopPropagation(); onSwipeEnd(e) }}
-                onTouchCancel={() => onSwipeCancel()}
-              />
-            ))}
           </div>
         ) : (
           // Image branch (Branch 4 in old code, now Branch 3 — no native <video> branch exists)
