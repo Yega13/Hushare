@@ -102,6 +102,7 @@ export default function LightboxOverlay({
   settingCover,
   coverPhotoId,
   deleting,
+  videoAutoplay,
   zoomPan,
   previewRadiusFor,
   mediaZoomStyle,
@@ -262,13 +263,13 @@ export default function LightboxOverlay({
               height: isPortraitVideo ? 'min(70vh, 680px)' : 'auto',
             }}
           >
-            {/* The lightbox always autoplays the video (muted, per browser policy, then unmuted).
-                This means the player opens already playing — no oversized centre play button — and
-                the native control bar (pause / sound / settings / fullscreen) is fully usable. No
-                touch overlay: an overlay was blocking the controls and the play button. Navigate
-                between videos with the on-screen arrows (swipe stays for images). */}
+            {/* Autoplay follows the album's own video_autoplay setting. When it is off the player
+                shows its native play button (manual start); when on it autoplays muted per browser
+                policy. Either way we set the volume to 50% (and unmute) on load, so playback — auto
+                or manual — starts at a comfortable level rather than muted or full blast. No touch
+                overlay (it blocked the controls); navigate videos with the on-screen arrows. */}
             <iframe
-              src={streamFrameSrc(current, slideshowMode ? !slideshowPaused : true)}
+              src={streamFrameSrc(current, slideshowMode ? !slideshowPaused : videoAutoplay)}
               allow="accelerometer; gyroscope; autoplay; encrypted-media; picture-in-picture;"
               allowFullScreen
               className="block w-full h-full max-w-full"
@@ -276,8 +277,9 @@ export default function LightboxOverlay({
               onClick={(e) => e.stopPropagation()}
               onLoad={(e) => {
                 onMediaNodeChange(e.currentTarget)
-                // Autoplaying muted → unmute to a comfortable 50% once playback starts. Opening the
-                // lightbox is a user gesture, which satisfies the activation browsers require.
+                // Set volume to 50% and unmute. For an autoplaying (muted) video this unmutes it
+                // once playback starts; for a manual-start video it presets the volume so it plays
+                // at 50% when the user hits play. The lightbox open gesture provides user activation.
                 void unmuteStreamVideo(e.currentTarget, 0.5)
               }}
             />

@@ -119,7 +119,7 @@ const PhotoTile = React.memo(function PhotoTile({
   const isReorderTarget = reorderDraggingId != null && reorderTargetId === photo.id && reorderDraggingId !== photo.id
 
   return (
-    <div>
+    <div className="min-w-0">
       <div
         className={`${isReorderMode ? 'hush-reorder-ring ' : ''}${isReorderDragging || isReorderTarget ? 'hush-reorder-ring-solid ' : ''}hush-photo-tile relative aspect-square overflow-hidden cursor-pointer`}
         data-photo-id={photo.id}

@@ -441,8 +441,6 @@ export default function PhotoGrid({ album, photos, isOwner, slug, forceGlobalRad
           // by 0. `* 1000` slams the sign difference past the clamp so it acts as a hard breakpoint.
           width: 'calc(100% - clamp(0px, calc((760px - 100vw) * 1000), 40px))',
           marginInline: 'auto',
-          // TEMP DIAGNOSTIC: shows the grid element's actual box. Remove after diagnosing margin.
-          outline: '2px solid #39FF14',
         } as React.CSSProperties}
       >
         {photos.map((photo, index) => (
