@@ -4,9 +4,10 @@ import { useEffect, useRef, useState } from 'react'
 import type { Photo } from '@/types'
 
 // ── Aspect ratios ─────────────────────────────────────────────────────────────
-// Resolve each photo's aspect ratio (width / height). Stored upload dimensions are used
-// instantly; legacy media without them is measured once from its thumbnail/poster and cached.
-// Missing entries fall back to 1 at layout time.
+// Aspect ratios (width / height) for media that lacks stored upload dimensions (legacy rows).
+// Media WITH stored dimensions is read synchronously by the layout, so it never enters this map
+// and never triggers a re-render here. Legacy media is measured once from its thumbnail/poster
+// and cached; the layout falls back to a square while a measurement is still in flight.
 export function useMediaAspects(photos: Photo[], enabled: boolean): Map<string, number> {
   const [aspects, setAspects] = useState<Map<string, number>>(() => new Map())
   const measuredRef = useRef<Set<string>>(new Set())
@@ -15,19 +16,9 @@ export function useMediaAspects(photos: Photo[], enabled: boolean): Map<string, 
     if (!enabled) return
     let cancelled = false
 
-    // Apply stored dimensions immediately.
-    setAspects((prev) => {
-      const next = new Map(prev)
-      for (const p of photos) {
-        if (p.width && p.height && p.width > 0 && p.height > 0) next.set(p.id, p.width / p.height)
-      }
-      return next
-    })
-
-    // Measure anything without stored dimensions, once per id.
     for (const p of photos) {
-      if (p.width && p.height) continue
-      if (measuredRef.current.has(p.id)) continue
+      if (p.width && p.height) continue          // has stored dims — layout reads them directly
+      if (measuredRef.current.has(p.id)) continue // measured (or measuring) already
       measuredRef.current.add(p.id)
       const src = p.media_type === 'video' ? (p.poster_url || p.stream_thumbnail_url) : (p.thumb_url || p.url)
       if (!src) continue
@@ -80,15 +71,27 @@ export function computeJustifiedRows(
   const flush = (isLast: boolean) => {
     if (current.length === 0) return
     const totalGap = gap * (current.length - 1)
-    let h = (containerWidth - totalGap) / aspectSum
-    if (isLast && h > targetRowHeight) h = targetRowHeight
+    const rowContentWidth = containerWidth - totalGap
+    const hRaw = rowContentWidth / aspectSum
+    // A partial last row is NOT stretched to fill — it keeps the target height, natural widths,
+    // and a ragged right edge (expected justified behaviour). Full rows fill exactly.
+    const partial = isLast && hRaw > targetRowHeight
+    const h = partial ? targetRowHeight : hRaw
     const height = Math.round(h)
-    const items: JustifiedItem[] = current.map((r) => ({
-      photo: r.photo,
-      index: r.index,
-      width: Math.max(1, Math.round(r.aspect * h)),
-      height,
-    }))
+    let used = 0
+    const items: JustifiedItem[] = current.map((r, i) => {
+      let width: number
+      if (partial) {
+        width = Math.max(1, Math.round(r.aspect * h))
+      } else if (i === current.length - 1) {
+        // Last item of a full row absorbs the rounding remainder → the row fills width exactly.
+        width = Math.max(1, rowContentWidth - used)
+      } else {
+        width = Math.max(1, Math.round(r.aspect * h))
+        used += width
+      }
+      return { photo: r.photo, index: r.index, width, height }
+    })
     rows.push({ items, height })
     current = []
     aspectSum = 0

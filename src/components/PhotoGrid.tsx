@@ -53,16 +53,23 @@ export default function PhotoGrid({ album, photos, isOwner, slug, forceGlobalRad
   const [posterBroken, setPosterBroken] = useState<Set<string>>(new Set())
   const [settingCover, setSettingCover] = useState(false)
 
+  // ── Layout: justified (true aspect ratios) vs the default square grid ──
+  const justified = album.photo_layout === 'justified'
+
   // Stable key over the set of photo IDs. Lets effects depend on "did the tile set change?"
   // instead of "did the photos array reference change?" — the latter happens on every Realtime
   // UPDATE, which would otherwise force a full observer rebuild + re-firing all preloads.
-  const photoIdsKey = useMemo(() => photos.map((p) => p.id).join('|'), [photos])
+  // The layout is part of the key so the observers re-attach to the new tile elements when the
+  // owner switches grid ↔ justified (the tiles live in a different container per layout).
+  const photoIdsKey = useMemo(() => (justified ? 'j:' : 'g:') + photos.map((p) => p.id).join('|'), [photos, justified])
   const tileRadiusMaxById = usePhotoGridObservers(gridRef, photoIdsKey, onRadiusMaxChange)
 
-  // ── Layout: justified (true aspect ratios) vs the default square grid ──
-  const justified = album.photo_layout === 'justified'
   const aspects = useMediaAspects(photos, justified)
   const [containerWidth, setContainerWidth] = useState(0)
+  // `hasPhotos` is a dep because the grid element only exists once there are photos (an empty
+  // album early-returns without it). Without it, an album that starts empty then receives its
+  // first upload would never attach the observer, leaving containerWidth at 0 → nothing renders.
+  const hasPhotos = photos.length > 0
   useEffect(() => {
     const el = gridRef.current
     if (!justified || !el) return
@@ -71,7 +78,7 @@ export default function PhotoGrid({ album, photos, isOwner, slug, forceGlobalRad
     const ro = new ResizeObserver(measure)
     ro.observe(el)
     return () => ro.disconnect()
-  }, [justified])
+  }, [justified, hasPhotos])
   const justifiedRows = useMemo(
     () => (justified
       ? computeJustifiedRows(photos, aspects, containerWidth, targetRowHeightFor(containerWidth), JUSTIFIED_GAP)
