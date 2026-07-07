@@ -135,6 +135,14 @@ export default function LightboxOverlay({
   // Detect the current video's real aspect ratio from its poster so the player box matches it
   // exactly — no black pillarbox/letterbox bars. Falls back to 16:9 until the poster loads.
   const [videoAspect, setVideoAspect] = React.useState<number | null>(null)
+  // Whether the current video's player has been mounted. Starts as the album's autoplay setting
+  // (always on in slideshow); otherwise the poster + a small custom play button shows until tapped.
+  // Resetting per video means each new video starts on its poster (unless autoplay), which also
+  // keeps it swipeable (it's our <img>, not the touch-swallowing iframe).
+  const [videoStarted, setVideoStarted] = React.useState(false)
+  React.useEffect(() => {
+    setVideoStarted(slideshowMode ? !slideshowPaused : videoAutoplay)
+  }, [current.id, videoAutoplay, slideshowMode, slideshowPaused])
   React.useEffect(() => {
     setVideoAspect(null)
     if (current.media_type !== 'video') return
@@ -261,23 +269,53 @@ export default function LightboxOverlay({
               width: `min(92vw, calc(82vh * ${videoBoxAspect}))`,
             }}
           >
-            {/* Plain native Cloudflare Stream player. No overlay of any kind — tap, play, pause,
-                seek, sound, settings and fullscreen all behave exactly as the native player does,
-                so starting a video always works. Autoplay follows the album's video_autoplay
-                setting; volume is preset to 50%. Change videos with the ◀ ▶ arrows. */}
-            <iframe
-              src={streamFrameSrc(current, slideshowMode ? !slideshowPaused : videoAutoplay)}
-              allow="accelerometer; gyroscope; autoplay; encrypted-media; picture-in-picture;"
-              allowFullScreen
-              className="block w-full h-full max-w-full"
-              style={{ background: '#000', border: 0, borderRadius: previewRadiusFor(current) }}
-              onClick={(e) => e.stopPropagation()}
-              onLoad={(e) => {
-                onMediaNodeChange(e.currentTarget)
-                // Preset volume to 50% and unmute (autoplaying videos start muted per browser policy).
-                void unmuteStreamVideo(e.currentTarget, 0.5)
-              }}
-            />
+            {videoStarted ? (
+              /* Once started, mount the native Stream player with autoplay — it opens already
+                 playing, so Stream's oversized centre play button never appears, and all native
+                 controls (pause/seek/sound/settings/fullscreen) work. Volume preset to 50%. */
+              <iframe
+                src={streamFrameSrc(current, true)}
+                allow="accelerometer; gyroscope; autoplay; encrypted-media; picture-in-picture;"
+                allowFullScreen
+                className="block w-full h-full max-w-full"
+                style={{ background: '#000', border: 0, borderRadius: previewRadiusFor(current) }}
+                onClick={(e) => e.stopPropagation()}
+                onLoad={(e) => {
+                  onMediaNodeChange(e.currentTarget)
+                  void unmuteStreamVideo(e.currentTarget, 0.5)
+                }}
+              />
+            ) : (
+              /* Not started yet: show the poster with OUR OWN small play button. Tapping starts the
+                 video (loads the iframe above); swiping navigates — and because this is our <img>,
+                 not the iframe, the swipe actually works here. */
+              <div
+                className="absolute inset-0"
+                style={{ touchAction: 'pan-y', cursor: 'pointer' }}
+                onClick={(e) => { e.stopPropagation(); setVideoStarted(true) }}
+                onTouchStart={onSwipeStart}
+                onTouchMove={onSwipeMove}
+                onTouchEnd={onSwipeEnd}
+                onTouchCancel={onSwipeCancel}
+              >
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={current.poster_url || current.stream_thumbnail_url || ''}
+                  alt={current.caption || ''}
+                  draggable={false}
+                  className="block w-full h-full"
+                  style={{ objectFit: 'cover', borderRadius: previewRadiusFor(current), background: '#000' }}
+                />
+                <span className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                  <span
+                    className="rounded-full flex items-center justify-center"
+                    style={{ width: 56, height: 56, background: 'rgba(0,0,0,0.55)', backdropFilter: 'blur(4px)', WebkitBackdropFilter: 'blur(4px)' }}
+                  >
+                    <Play className="w-6 h-6" style={{ color: '#FDFAF5', marginLeft: 2 }} fill="#FDFAF5" />
+                  </span>
+                </span>
+              </div>
+            )}
           </div>
         ) : (
           // Image branch (Branch 4 in old code, now Branch 3 — no native <video> branch exists)
