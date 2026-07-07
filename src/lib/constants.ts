@@ -6,8 +6,8 @@ export const UPLOAD_CONCURRENCY_DESKTOP = 12;
 // Cloudflare Stream TUS requires minimum 5 MB chunks (except the last)
 export const STREAM_CHUNK_SIZE_BYTES = 5 * 1024 * 1024;
 
-export const SWIPE_THRESHOLD_PX = 30;
-export const SWIPE_VELOCITY_MIN = 0.3;
+export const SWIPE_THRESHOLD_PX = 22;
+export const SWIPE_VELOCITY_MIN = 0.22;
 export const SWIPE_RESET_ANIMATE_MS = 180;
 
 export const GRID_PRELOAD_MARGIN_PX = 2000;
