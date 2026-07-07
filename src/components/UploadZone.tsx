@@ -402,6 +402,10 @@ async function uploadImageToR2(
   const { blob: processedBlob, mimeType, name: processedName } = await processImageFile(file)
   onProgress(10)
 
+  // Read dimensions off the critical path: decode runs concurrently with presign + upload so it
+  // never adds latency. Awaited only at the very end.
+  const dimsPromise = readImageDimensions(processedBlob)
+
   const presignRes = await fetch('/api/upload/presign', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -463,7 +467,7 @@ async function uploadImageToR2(
   } catch { /* non-fatal */ }
   onProgress(96)
 
-  const dims = await readImageDimensions(processedBlob)
+  const dims = await dimsPromise
 
   return {
     storage_backend: 'r2',
