@@ -225,14 +225,14 @@ const PhotoTile = React.memo(function PhotoTile({
               <span
                 className="rounded-full flex items-center justify-center"
                 style={{
-                  width: 44,
-                  height: 44,
+                  width: 32,
+                  height: 32,
                   background: 'rgba(0,0,0,0.55)',
                   backdropFilter: 'blur(4px)',
                   WebkitBackdropFilter: 'blur(4px)',
                 }}
               >
-                <Play className="w-5 h-5" style={{ color: '#FDFAF5', marginLeft: 2 }} fill="#FDFAF5" />
+                <Play className="w-4 h-4" style={{ color: '#FDFAF5', marginLeft: 1.5 }} fill="#FDFAF5" />
               </span>
             </span>
             {photo.duration_seconds ? (
