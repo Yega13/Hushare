@@ -341,6 +341,30 @@ type PhotoRow = {
   stream_thumbnail_url?: string | null
   poster_url: string | null
   duration_seconds?: number | null
+  width?: number | null
+  height?: number | null
+}
+
+// Read the intrinsic pixel dimensions of an image blob. Best-effort — resolves null on any
+// failure so a missing size never blocks an upload. Used to store aspect ratio at upload time.
+async function readImageDimensions(blob: Blob): Promise<{ width: number; height: number } | null> {
+  const url = URL.createObjectURL(blob)
+  try {
+    const img = new Image()
+    await new Promise<void>((resolve, reject) => {
+      img.onload = () => resolve()
+      img.onerror = () => reject(new Error('image decode failed'))
+      img.src = url
+    })
+    if (img.naturalWidth > 0 && img.naturalHeight > 0) {
+      return { width: img.naturalWidth, height: img.naturalHeight }
+    }
+    return null
+  } catch {
+    return null
+  } finally {
+    URL.revokeObjectURL(url)
+  }
 }
 
 // Snapshot each picked file into a stable in-memory copy the instant it is selected. On
@@ -439,6 +463,8 @@ async function uploadImageToR2(
   } catch { /* non-fatal */ }
   onProgress(96)
 
+  const dims = await readImageDimensions(processedBlob)
+
   return {
     storage_backend: 'r2',
     media_type: 'image',
@@ -446,6 +472,8 @@ async function uploadImageToR2(
     url: publicUrl,
     thumb_url: thumbUrl,
     poster_url: null,
+    width: dims?.width ?? null,
+    height: dims?.height ?? null,
   }
 }
 
@@ -464,10 +492,16 @@ async function uploadVideoToStream(
   // poster_url validation. Also captures duration — avoids a second video element decode.
   let posterUrl: string | null = null
   let durationSeconds = 0
+  let videoWidth: number | null = null
+  let videoHeight: number | null = null
   try {
     const posterResult = await generateVideoPoster(file)
     if (posterResult) {
       durationSeconds = posterResult.durationSeconds
+      if (posterResult.videoWidth > 0 && posterResult.videoHeight > 0) {
+        videoWidth = posterResult.videoWidth
+        videoHeight = posterResult.videoHeight
+      }
       const pPresign = await fetch('/api/upload/presign', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -553,6 +587,8 @@ async function uploadVideoToStream(
     duration_seconds: Number.isFinite(durationSeconds) && durationSeconds > 0
       ? Math.round(durationSeconds)
       : null,
+    width: videoWidth,
+    height: videoHeight,
   }
 }
 

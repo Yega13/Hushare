@@ -13,7 +13,7 @@ const PHOTO_COLS = [
   'id', 'album_id', 'storage_path', 'storage_backend',
   'url', 'thumb_url', 'caption', 'author_name', 'created_at',
   'media_type', 'poster_url', 'stream_uid', 'stream_iframe_url',
-  'stream_thumbnail_url', 'duration_seconds',
+  'stream_thumbnail_url', 'duration_seconds', 'width', 'height',
   'display_radius', 'display_filter', 'sort_order', 'face_ids',
 ].join(', ')
 

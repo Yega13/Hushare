@@ -27,8 +27,24 @@ type PhotoInput = {
   stream_uid?: unknown
   poster_url?: unknown
   duration_seconds?: unknown
+  width?: unknown
+  height?: unknown
   caption?: unknown
   author_name?: unknown
+}
+
+// Intrinsic pixel dimensions are optional; when present both must be positive integers within a
+// sane ceiling (guards against absurd/hostile values). Returns the pair or null.
+function cleanDimensions(photo: PhotoInput): { width: number; height: number } | null {
+  const { width, height } = photo
+  if (
+    typeof width === 'number' && typeof height === 'number' &&
+    Number.isInteger(width) && Number.isInteger(height) &&
+    width > 0 && height > 0 && width <= 100_000 && height <= 100_000
+  ) {
+    return { width, height }
+  }
+  return null
 }
 
 type Body = {
@@ -253,6 +269,7 @@ export async function POST(req: Request) {
   }
 
   const rows = toInsert.map(p => {
+    const dims = cleanDimensions(p)
     if (p.storage_backend === 'stream') {
       const uid = p.stream_uid as string
       return {
@@ -264,6 +281,8 @@ export async function POST(req: Request) {
         poster_url: typeof p.poster_url === 'string' ? p.poster_url : null,
         // DB column is integer; duration from client is a float
         duration_seconds: typeof p.duration_seconds === 'number' ? Math.round(p.duration_seconds) : null,
+        width: dims?.width ?? null,
+        height: dims?.height ?? null,
         caption: typeof p.caption === 'string' ? p.caption.trim() : null,
         author_name: typeof p.author_name === 'string' ? p.author_name.trim() : null,
       }
@@ -275,6 +294,8 @@ export async function POST(req: Request) {
       storage_path: p.storage_path as string,
       url: p.url as string,
       thumb_url: typeof p.thumb_url === 'string' ? p.thumb_url : null,
+      width: dims?.width ?? null,
+      height: dims?.height ?? null,
       caption: typeof p.caption === 'string' ? p.caption.trim() : null,
       author_name: typeof p.author_name === 'string' ? p.author_name.trim() : null,
     }

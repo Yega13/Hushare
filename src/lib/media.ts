@@ -44,6 +44,10 @@ export type PosterResult = {
   blob: Blob
   width: number
   height: number
+  // Intrinsic dimensions of the source video (not the downscaled poster) — used to store the
+  // video's true aspect ratio at upload time.
+  videoWidth: number
+  videoHeight: number
   durationSeconds: number
 }
 
@@ -104,7 +108,7 @@ export async function generateVideoPoster(file: File): Promise<PosterResult | nu
     )
     if (!blob) return null
 
-    return { blob, width: cw, height: ch, durationSeconds: Number.isFinite(video.duration) ? video.duration : 0 }
+    return { blob, width: cw, height: ch, videoWidth: w, videoHeight: h, durationSeconds: Number.isFinite(video.duration) ? video.duration : 0 }
   } catch {
     return null
   } finally {

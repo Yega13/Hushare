@@ -57,6 +57,8 @@ function sanitizeRealtimePhoto(row: Record<string, unknown>, expectedAlbumId: st
     display_radius: _safeInt(row.display_radius),
     display_filter: _safeFilter(row.display_filter),
     duration_seconds: _safeInt(row.duration_seconds),
+    width: _safeInt(row.width),
+    height: _safeInt(row.height),
     face_ids: Array.isArray(row.face_ids)
       ? (row.face_ids as unknown[]).filter((x): x is string => typeof x === 'string')
       : null,

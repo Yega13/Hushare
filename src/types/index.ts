@@ -55,6 +55,10 @@ export type Photo = {
   display_radius: number | null;
   display_filter: MediaDisplayFilter | null;
   duration_seconds: number | null;
+  // Intrinsic pixel dimensions captured at upload — lets the UI know the exact aspect ratio
+  // without measuring a poster. Null for legacy rows / when capture failed.
+  width: number | null;
+  height: number | null;
   face_ids?: string[] | null;
   created_at: string;
 };

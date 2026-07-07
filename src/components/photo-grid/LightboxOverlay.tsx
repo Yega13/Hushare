@@ -132,8 +132,10 @@ export default function LightboxOverlay({
   onDelete,
   onToggleSlideshowPause,
 }: Props) {
-  // Detect the current video's real aspect ratio from its poster so the player box matches it
-  // exactly — no black pillarbox/letterbox bars. Falls back to 16:9 until the poster loads.
+  // Video aspect ratio drives the player box so it fills with no black bars. Prefer the exact
+  // dimensions captured at upload (instant, reliable); fall back to measuring the poster for
+  // legacy rows that predate the width/height columns.
+  const hasStoredDims = current.width != null && current.height != null && current.width > 0 && current.height > 0
   const [videoAspect, setVideoAspect] = React.useState<number | null>(null)
   // Whether the current video's player has been mounted. Starts as the album's autoplay setting
   // (always on in slideshow); otherwise the poster + a small custom play button shows until tapped.
@@ -145,7 +147,7 @@ export default function LightboxOverlay({
   }, [current.id, videoAutoplay, slideshowMode, slideshowPaused])
   React.useEffect(() => {
     setVideoAspect(null)
-    if (current.media_type !== 'video') return
+    if (current.media_type !== 'video' || hasStoredDims) return
     const posterSrc = current.poster_url || current.stream_thumbnail_url
     if (!posterSrc) return
     const img = new window.Image()
@@ -154,9 +156,25 @@ export default function LightboxOverlay({
     }
     img.src = posterSrc
     return () => { img.onload = null }
-  }, [current.id, current.media_type, current.poster_url, current.stream_thumbnail_url])
+  }, [current.id, current.media_type, current.poster_url, current.stream_thumbnail_url, hasStoredDims])
 
-  const videoBoxAspect = videoAspect ?? 16 / 9
+  // Preload the neighbouring lightbox items (image full-res / video poster) so moving to the
+  // next or previous one is instant instead of showing a blank frame while it downloads.
+  React.useEffect(() => {
+    if (lightboxIndex < 0) return
+    for (const i of [lightboxIndex - 1, lightboxIndex + 1]) {
+      const p = viewerPhotos[i]
+      if (!p) continue
+      const src = p.media_type === 'video' ? (p.poster_url || p.stream_thumbnail_url) : (p.url || p.thumb_url)
+      if (src) {
+        const img = new window.Image()
+        img.decoding = 'async'
+        img.src = src
+      }
+    }
+  }, [lightboxIndex, viewerPhotos])
+
+  const videoBoxAspect = hasStoredDims ? current.width! / current.height! : (videoAspect ?? 16 / 9)
 
   return (
     <div
