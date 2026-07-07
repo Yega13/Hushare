@@ -33,6 +33,13 @@
   }
 }
 
+/* Justified layout: a vertical stack of flex rows, each already sized (in JS) to fill the
+   container width at a shared height, so photos keep their true aspect ratio. */
+.hush-justified {
+  display: flex;
+  flex-direction: column;
+}
+
 .hush-photo-flip {
   position: relative;
   display: flex;
@@ -127,7 +134,8 @@
    auto-margins centre it. With minmax(0,1fr) columns the tiles cannot overflow the box, so this
    reliably insets them ~20px from each screen edge. */
 @media (max-width: 760px) {
-  .hush-photo-grid {
+  .hush-photo-grid,
+  .hush-justified {
     width: 88% !important;
     max-width: 88% !important;
     margin-left: auto !important;

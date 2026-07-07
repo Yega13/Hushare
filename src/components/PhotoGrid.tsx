@@ -20,6 +20,9 @@ import { useLightboxMedia } from '@/components/photo-grid/useLightboxMedia'
 import { useSlideshow } from '@/components/photo-grid/useSlideshow'
 import { useSwipeNavigation } from '@/components/photo-grid/useSwipeNavigation'
 import PhotoTile, { type TileHandlers } from '@/components/photo-grid/PhotoTile'
+import { useMediaAspects, computeJustifiedRows, targetRowHeightFor } from '@/components/photo-grid/justifiedLayout'
+
+const JUSTIFIED_GAP = 8
 import { X, Play, Move } from 'lucide-react'
 
 type Props = {
@@ -55,6 +58,26 @@ export default function PhotoGrid({ album, photos, isOwner, slug, forceGlobalRad
   // UPDATE, which would otherwise force a full observer rebuild + re-firing all preloads.
   const photoIdsKey = useMemo(() => photos.map((p) => p.id).join('|'), [photos])
   const tileRadiusMaxById = usePhotoGridObservers(gridRef, photoIdsKey, onRadiusMaxChange)
+
+  // ── Layout: justified (true aspect ratios) vs the default square grid ──
+  const justified = album.photo_layout === 'justified'
+  const aspects = useMediaAspects(photos, justified)
+  const [containerWidth, setContainerWidth] = useState(0)
+  useEffect(() => {
+    const el = gridRef.current
+    if (!justified || !el) return
+    const measure = () => setContainerWidth(el.clientWidth)
+    measure()
+    const ro = new ResizeObserver(measure)
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [justified])
+  const justifiedRows = useMemo(
+    () => (justified
+      ? computeJustifiedRows(photos, aspects, containerWidth, targetRowHeightFor(containerWidth), JUSTIFIED_GAP)
+      : []),
+    [justified, photos, aspects, containerWidth],
+  )
 
   const {
     selectMode, selectedIds, bulkDeleting,
@@ -430,12 +453,8 @@ export default function PhotoGrid({ album, photos, isOwner, slug, forceGlobalRad
           </button>
         </div>
       )}
-      <div
-        ref={gridRef}
-        className="hush-photo-grid grid gap-3 xl:gap-4"
-        style={{ '--hush-grid-cols': album.mobile_grid_columns ?? 3 } as React.CSSProperties}
-      >
-        {photos.map((photo, index) => (
+      {(() => {
+        const renderTile = (photo: Photo, index: number, boxW?: number, boxH?: number) => (
           <PhotoTile
             key={photo.id}
             photo={photo}
@@ -455,9 +474,33 @@ export default function PhotoGrid({ album, photos, isOwner, slug, forceGlobalRad
             selectMode={selectMode}
             selectedIds={selectedIds}
             handlers={tileHandlersRef}
+            boxW={boxW}
+            boxH={boxH}
           />
-        ))}
-      </div>
+        )
+
+        if (justified) {
+          return (
+            <div ref={gridRef} className="hush-justified" style={{ gap: JUSTIFIED_GAP }}>
+              {justifiedRows.map((row, ri) => (
+                <div key={ri} className="flex" style={{ gap: JUSTIFIED_GAP }}>
+                  {row.items.map((item) => renderTile(item.photo, item.index, item.width, item.height))}
+                </div>
+              ))}
+            </div>
+          )
+        }
+
+        return (
+          <div
+            ref={gridRef}
+            className="hush-photo-grid grid gap-3 xl:gap-4"
+            style={{ '--hush-grid-cols': album.mobile_grid_columns ?? 3 } as React.CSSProperties}
+          >
+            {photos.map((photo, index) => renderTile(photo, index))}
+          </div>
+        )
+      })()}
 
       {current && (
         <LightboxOverlay

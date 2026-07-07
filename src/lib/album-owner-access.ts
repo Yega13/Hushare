@@ -12,7 +12,7 @@ import { checkRateLimit, clientIpKey } from '@/lib/rate-limit'
 // the retired_at filter is enforced at SQL level in every lookup below.
 const ALLOWED_EXTRA_COLUMNS = new Set([
   'title', 'background_theme', 'cover_photo_id', 'reveal_at',
-  'media_radius', 'media_filter', 'media_hover', 'mobile_grid_columns',
+  'media_radius', 'media_filter', 'media_hover', 'mobile_grid_columns', 'photo_layout',
   'slideshow_interval_ms', 'slideshow_animation', 'video_autoplay',
   'guest_uploads_enabled', 'allow_guest_downloads', 'face_finder_enabled',
   'last_activity_at', 'last_notification_at', 'created_at',

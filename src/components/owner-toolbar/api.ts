@@ -190,6 +190,20 @@ export async function addAlbumToCollectionRequest(
   return { ok: true, slug: body.collection.slug }
 }
 
+export async function savePhotoLayoutRequest(
+  slug: string,
+  photoLayout: 'grid' | 'justified',
+): Promise<{ ok: true; photo_layout: 'grid' | 'justified' } | { ok: false; error: string }> {
+  const res = await fetch('/api/album/photo-layout', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ slug, photo_layout: photoLayout }),
+  })
+  const body = await jsonBody<{ error?: string; photo_layout?: 'grid' | 'justified' }>(res)
+  if (!res.ok) return { ok: false, error: body.error ?? `Save failed (${res.status})` }
+  return { ok: true, photo_layout: body.photo_layout ?? photoLayout }
+}
+
 export async function saveGuestDownloadsRequest(
   slug: string,
   allowGuestDownloads: boolean,

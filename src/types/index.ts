@@ -3,6 +3,7 @@ export type StorageBackend = "r2" | "stream";
 export type MediaDisplayFilter = "none" | "warm" | "cool" | "mono" | "vintage" | "soft";
 export type MediaHoverEffect = "none" | "mono" | "fade" | "zoom" | "lift";
 export type MobileGridColumns = 3 | 4 | 5 | 6;
+export type PhotoLayout = "grid" | "justified";
 export type SlideshowAnimation = "none" | "fade" | "rise" | "zoom";
 export type Tier = "free" | "pro" | "studio";
 export type UploadCaps = { image: number; video: number };
@@ -22,6 +23,7 @@ export type Album = {
   media_filter: MediaDisplayFilter;
   media_hover: MediaHoverEffect;
   mobile_grid_columns: MobileGridColumns;
+  photo_layout: PhotoLayout;
   slideshow_interval_ms: number;
   slideshow_animation: SlideshowAnimation;
   allow_guest_downloads: boolean;

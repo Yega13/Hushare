@@ -28,6 +28,7 @@ import {
   saveBackgroundRequest,
   saveCustomUrlRequest,
   saveGuestDownloadsRequest,
+  savePhotoLayoutRequest,
   saveMediaSettingsRequest,
   savePasswordRequest,
   uploadBackgroundRequest,
@@ -113,6 +114,7 @@ export default function OwnerToolbar({ album, photos, ownerToken, userTier, medi
   const [mediaRadiusEditing, setMediaRadiusEditing] = useState(false)
   const [savedMediaRadius, setSavedMediaRadius] = useState(album.media_radius ?? 12)
   const [videoAutoplay, setVideoAutoplay] = useState(!!album.video_autoplay)
+  const [photoLayout, setPhotoLayout] = useState<'grid' | 'justified'>(album.photo_layout === 'justified' ? 'justified' : 'grid')
   const [mediaFilter, setMediaFilter] = useState<MediaDisplayFilter>(album.media_filter ?? 'none')
   const [savedMediaFilter, setSavedMediaFilter] = useState<MediaDisplayFilter>(album.media_filter ?? 'none')
   const [mediaHover, setMediaHover] = useState<MediaHoverEffect>(album.media_hover ?? 'none')
@@ -227,6 +229,7 @@ export default function OwnerToolbar({ album, photos, ownerToken, userTier, medi
       setMediaRadiusEditing(false)
       setSavedMediaRadius(album.media_radius ?? 12)
       setVideoAutoplay(!!album.video_autoplay)
+      setPhotoLayout(album.photo_layout === 'justified' ? 'justified' : 'grid')
       setAllowGuestDownloads(album.allow_guest_downloads !== false)
       setFaceFinderEnabled(!!album.face_finder_enabled)
       setMediaFilter(album.media_filter ?? 'none')
@@ -959,6 +962,42 @@ export default function OwnerToolbar({ album, photos, ownerToken, userTier, medi
                       </div>
                       <p className="mt-2 text-xs" style={{ color: '#8B6F4E' }}>
                         Applies to album thumbnails on desktop and mobile.
+                      </p>
+                    </div>
+
+                    <div>
+                      <label className="mb-2 block text-xs font-medium" style={{ color: '#7C5C3E' }}>Layout</label>
+                      <div className="grid grid-cols-2 gap-2">
+                        {([
+                          { value: 'grid' as const, label: 'Square' },
+                          { value: 'justified' as const, label: 'Justified' },
+                        ]).map((option) => {
+                          const selected = photoLayout === option.value
+                          return (
+                            <button
+                              key={option.value}
+                              type="button"
+                              onClick={() => {
+                                setPhotoLayout(option.value)
+                                onAlbumUpdated({ photo_layout: option.value })
+                                void savePhotoLayoutRequest(album.slug, option.value).then((r) => {
+                                  if (!r.ok) showAppToast(r.error, 'error')
+                                })
+                              }}
+                              className="hush-press rounded-lg py-2 text-sm font-semibold"
+                              style={{
+                                background: selected ? '#254F22' : '#FDFAF5',
+                                border: '1px solid #DDD5C5',
+                                color: selected ? '#FDFAF5' : '#254F22',
+                              }}
+                            >
+                              {option.label}
+                            </button>
+                          )
+                        })}
+                      </div>
+                      <p className="mt-2 text-xs" style={{ color: '#8B6F4E' }}>
+                        Square crops every tile; Justified keeps each photo&rsquo;s real shape in tidy rows.
                       </p>
                     </div>
 

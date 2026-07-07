@@ -38,6 +38,11 @@ type Props = {
   selectMode: boolean
   selectedIds: Set<string>
   handlers: React.MutableRefObject<TileHandlers>
+  // Justified layout: when set, the tile fills a box of these exact pixel dimensions (its real
+  // aspect ratio) instead of being cropped to a square. Passed as primitives (not an object) so
+  // React.memo can still shallow-compare and skip re-renders.
+  boxW?: number
+  boxH?: number
 }
 
 function computeMediaRadius(
@@ -84,6 +89,8 @@ const PhotoTile = React.memo(function PhotoTile({
   selectMode,
   selectedIds,
   handlers,
+  boxW,
+  boxH,
 }: Props) {
   const isVideo = photo.media_type === 'video'
   // Video thumbnail: prefer the R2 poster (uploaded on submit — immediate + reliable), and
@@ -118,10 +125,11 @@ const PhotoTile = React.memo(function PhotoTile({
   const isReorderDragging = reorderDraggingId === photo.id
   const isReorderTarget = reorderDraggingId != null && reorderTargetId === photo.id && reorderDraggingId !== photo.id
 
+  const boxed = boxW != null && boxH != null
   return (
-    <div className="min-w-0">
+    <div className="min-w-0" style={boxed ? { width: boxW, height: boxH } : undefined}>
       <div
-        className={`${isReorderMode ? 'hush-reorder-ring ' : ''}${isReorderDragging || isReorderTarget ? 'hush-reorder-ring-solid ' : ''}hush-photo-tile relative aspect-square overflow-hidden cursor-pointer`}
+        className={`${isReorderMode ? 'hush-reorder-ring ' : ''}${isReorderDragging || isReorderTarget ? 'hush-reorder-ring-solid ' : ''}hush-photo-tile relative overflow-hidden cursor-pointer ${boxed ? 'w-full h-full' : 'aspect-square'}`}
         data-photo-id={photo.id}
         style={{
           background: '#EDE7DB',

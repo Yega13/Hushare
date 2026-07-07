@@ -22,6 +22,7 @@ type AlbumRow = {
   media_filter: string
   media_hover: string
   mobile_grid_columns: number
+  photo_layout: string
   slideshow_interval_ms: number
   slideshow_animation: string
   video_autoplay: boolean
@@ -39,7 +40,7 @@ type AlbumRow = {
 
 const SELECT_COLS = [
   'id', 'slug', 'custom_slug', 'title', 'background_theme',
-  'media_radius', 'media_filter', 'media_hover', 'mobile_grid_columns',
+  'media_radius', 'media_filter', 'media_hover', 'mobile_grid_columns', 'photo_layout',
   'slideshow_interval_ms', 'slideshow_animation', 'video_autoplay',
   'cover_photo_id', 'reveal_at', 'guest_uploads_enabled', 'allow_guest_downloads',
   'face_finder_enabled',
