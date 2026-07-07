@@ -18,16 +18,16 @@
     border-radius: inherit;
     pointer-events: none;
     background:
-      repeating-linear-gradient(90deg, #254F22 0 8px, transparent 8px 14px) top left / 200% 2px repeat-x,
-      repeating-linear-gradient(90deg, #254F22 0 8px, transparent 8px 14px) bottom right / 200% 2px repeat-x,
-      repeating-linear-gradient(0deg, #254F22 0 8px, transparent 8px 14px) left bottom / 2px 200% repeat-y,
-      repeating-linear-gradient(0deg, #254F22 0 8px, transparent 8px 14px) right top / 2px 200% repeat-y;
+      repeating-linear-gradient(90deg, #630826 0 8px, transparent 8px 14px) top left / 200% 2px repeat-x,
+      repeating-linear-gradient(90deg, #630826 0 8px, transparent 8px 14px) bottom right / 200% 2px repeat-x,
+      repeating-linear-gradient(0deg, #630826 0 8px, transparent 8px 14px) left bottom / 2px 200% repeat-y,
+      repeating-linear-gradient(0deg, #630826 0 8px, transparent 8px 14px) right top / 2px 200% repeat-y;
     animation: hush-reorder-border 2400ms linear infinite;
   }
 
   .hush-reorder-ring-solid::after {
     inset: 0;
-    border: 3px solid #254F22;
+    border: 3px solid #630826;
     background: transparent;
     animation: none;
   }

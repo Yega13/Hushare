@@ -158,6 +158,13 @@ export default function LightboxOverlay({
     return () => { img.onload = null }
   }, [current.id, current.media_type, current.poster_url, current.stream_thumbnail_url, hasStoredDims])
 
+  // Flag the body while the lightbox/slideshow is open so globally-fixed chrome (the Back-to-top
+  // button) hides behind it instead of floating on top and staying clickable.
+  React.useEffect(() => {
+    document.body.classList.add('hush-overlay-open')
+    return () => { document.body.classList.remove('hush-overlay-open') }
+  }, [])
+
   // Preload the neighbouring lightbox items (image full-res / video poster) so moving to the
   // next or previous one is instant instead of showing a blank frame while it downloads.
   React.useEffect(() => {

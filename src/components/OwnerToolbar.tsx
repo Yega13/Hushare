@@ -667,7 +667,7 @@ export default function OwnerToolbar({ album, photos, ownerToken, userTier, medi
 
         <button
           className="hush-press hush-owner-action hush-owner-arrange-action"
-          style={{ ...btnBase, background: arrangeMode ? '#254F22' : btnBase.background, color: arrangeMode ? '#FDFAF5' : btnBase.color }}
+          style={{ ...btnBase, background: arrangeMode ? '#630826' : btnBase.background, color: arrangeMode ? '#FDFAF5' : btnBase.color }}
           onClick={() => {
             setShowShare(false)
             setShowSettings(false)

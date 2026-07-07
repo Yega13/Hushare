@@ -36,6 +36,13 @@ body.hush-scroll-locked {
   overscroll-behavior: none;
 }
 
+/* While a full-screen overlay (lightbox / slideshow) is open, hide the floating Back-to-top
+   button so it does not sit on top of the overlay and stay clickable. */
+body.hush-overlay-open .hush-back-to-top {
+  opacity: 0 !important;
+  pointer-events: none !important;
+}
+
 body.hush-page-preloading {
   overflow: hidden;
   overscroll-behavior: none;

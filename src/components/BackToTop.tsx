@@ -44,6 +44,7 @@ export default function BackToTop() {
     <button
       type="button"
       aria-label="Back to top"
+      className="hush-back-to-top"
       onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
       style={{
         position:      'fixed',

@@ -409,7 +409,7 @@ export default function PhotoGrid({ album, photos, isOwner, slug, forceGlobalRad
       {showArrangeHint && (
         <div
           className="flex items-center gap-3 rounded-2xl px-4 py-3 mb-4"
-          style={{ background: '#254F22' }}
+          style={{ background: '#630826' }}
         >
           <span
             className="shrink-0 flex items-center justify-center rounded-lg"

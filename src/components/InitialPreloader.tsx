@@ -10,13 +10,13 @@ export default function InitialPreloader() {
 
   useEffect(() => {
     try {
-      if (window.sessionStorage.getItem(SEEN_KEY) === '1') {
+      if (window.localStorage.getItem(SEEN_KEY) === '1') {
         document.body.classList.remove('hush-page-preloading', 'hush-scroll-locked')
         setPhase('hidden')
         return
       }
 
-      window.sessionStorage.setItem(SEEN_KEY, '1')
+      window.localStorage.setItem(SEEN_KEY, '1')
     } catch {
       document.body.classList.add('hush-page-preloading', 'hush-scroll-locked')
     }

@@ -347,7 +347,7 @@ export default function RootLayout({
         <script
           dangerouslySetInnerHTML={{
             __html:
-              "try{if(window.sessionStorage.getItem('hushare.initialPreloaderSeen')!=='1'){document.body.classList.add('hush-page-preloading','hush-scroll-locked')}}catch(e){document.body.classList.add('hush-page-preloading','hush-scroll-locked')}",
+              "try{if(window.localStorage.getItem('hushare.initialPreloaderSeen')!=='1'){document.body.classList.add('hush-page-preloading','hush-scroll-locked')}}catch(e){document.body.classList.add('hush-page-preloading','hush-scroll-locked')}",
           }}
         />
         <script

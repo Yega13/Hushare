@@ -275,7 +275,7 @@ const PhotoTile = React.memo(function PhotoTile({
             data-drag-handle="true"
             style={{
               touchAction: 'none',
-              background: 'rgba(37,79,34,0.78)',
+              background: 'rgba(99,8,38,0.78)',
               backdropFilter: 'blur(4px)',
               WebkitBackdropFilter: 'blur(4px)',
               cursor: reorderDraggingId === photo.id ? 'grabbing' : 'grab',
