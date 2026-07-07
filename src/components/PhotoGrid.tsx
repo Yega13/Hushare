@@ -433,15 +433,7 @@ export default function PhotoGrid({ album, photos, isOwner, slug, forceGlobalRad
       <div
         ref={gridRef}
         className="hush-photo-grid grid gap-3 xl:gap-4"
-        style={{
-          '--hush-grid-cols': album.mobile_grid_columns ?? 3,
-          // Side inset via explicit WIDTH + auto margins (not padding): this moves the grid's own
-          // border box inward, which insets the tiles regardless of how padding/box-sizing
-          // resolve. Pure CSS (no JS): below a 760px viewport the width shrinks by 40px, above it
-          // by 0. `* 1000` slams the sign difference past the clamp so it acts as a hard breakpoint.
-          width: 'calc(100% - clamp(0px, calc((760px - 100vw) * 1000), 40px))',
-          marginInline: 'auto',
-        } as React.CSSProperties}
+        style={{ '--hush-grid-cols': album.mobile_grid_columns ?? 3 } as React.CSSProperties}
       >
         {photos.map((photo, index) => (
           <PhotoTile

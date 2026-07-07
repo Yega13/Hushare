@@ -3,7 +3,7 @@
 import React from 'react'
 import { X, ChevronLeft, ChevronRight, Play, Pause, Download, Settings, Star, Trash2 } from 'lucide-react'
 import type { Photo } from '@/types'
-import { createStreamController, type StreamController } from '@/lib/cloudflare/stream-player'
+import { unmuteStreamVideo } from '@/lib/cloudflare/stream-player'
 
 function streamFrameSrc(photo: Photo, autoplay: boolean): string {
   const base = photo.stream_iframe_url || (photo.stream_uid ? `https://iframe.videodelivery.net/${photo.stream_uid}` : '')
@@ -134,8 +134,6 @@ export default function LightboxOverlay({
 }: Props) {
   // Detect the current video's real aspect ratio from its poster so the player box matches it
   // exactly — no black pillarbox/letterbox bars. Falls back to 16:9 until the poster loads.
-  const videoControllerRef = React.useRef<StreamController | null>(null)
-  React.useEffect(() => () => { videoControllerRef.current?.destroy(); videoControllerRef.current = null }, [])
   const [videoAspect, setVideoAspect] = React.useState<number | null>(null)
   React.useEffect(() => {
     setVideoAspect(null)
@@ -265,9 +263,10 @@ export default function LightboxOverlay({
               height: isPortraitVideo ? 'min(70vh, 680px)' : 'auto',
             }}
           >
-            {/* Autoplay follows the album's video_autoplay setting; volume starts at 50%. The
-                native play button (shown through the transparent overlay when paused) is the visual
-                affordance. */}
+            {/* Plain native Cloudflare Stream player — no overlay. Tap / play / pause / seek /
+                sound / settings / fullscreen all behave exactly as the native player does.
+                Autoplay follows the album's video_autoplay setting; volume is preset to 50%.
+                Navigate between videos with the on-screen ◀ ▶ arrows. */}
             <iframe
               src={streamFrameSrc(current, slideshowMode ? !slideshowPaused : videoAutoplay)}
               allow="accelerometer; gyroscope; autoplay; encrypted-media; picture-in-picture;"
@@ -277,25 +276,9 @@ export default function LightboxOverlay({
               onClick={(e) => e.stopPropagation()}
               onLoad={(e) => {
                 onMediaNodeChange(e.currentTarget)
-                videoControllerRef.current?.destroy()
-                void createStreamController(e.currentTarget, {
-                  volume: 0.5,
-                  autoplay: slideshowMode ? !slideshowPaused : videoAutoplay,
-                }).then((c) => { videoControllerRef.current = c })
+                // Preset volume to 50% and unmute (autoplaying videos start muted per browser policy).
+                void unmuteStreamVideo(e.currentTarget, 0.5)
               }}
-            />
-            {/* Tap-to-play + swipe overlay. Covers the video except the bottom control bar (left
-                free at 48px so seek/sound/settings/fullscreen stay usable). A tap toggles play/pause
-                via the SDK (the native play button is visible underneath); a swipe navigates. The
-                ◀ ▶ arrows remain as a second way to change videos. */}
-            <div
-              className="absolute left-0 right-0 top-0"
-              style={{ bottom: 48, zIndex: 3, touchAction: 'pan-y', cursor: 'pointer' }}
-              onClick={(e) => { e.stopPropagation(); videoControllerRef.current?.toggle() }}
-              onTouchStart={(e) => { e.stopPropagation(); onSwipeStart(e) }}
-              onTouchMove={(e) => { e.stopPropagation(); onSwipeMove(e) }}
-              onTouchEnd={(e) => { e.stopPropagation(); onSwipeEnd(e) }}
-              onTouchCancel={() => onSwipeCancel()}
             />
           </div>
         ) : (

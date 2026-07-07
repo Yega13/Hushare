@@ -122,10 +122,17 @@
   text-shadow: 0 1px 0 rgba(255, 255, 255, 0.32);
 }
 
-/* Side margin for the photo grid on phones is applied as `px-*` padding on the WRAPPER div
-   (in AlbumPageClient), not here — a plain Tailwind utility on the real element is the most
-   reliable way to inset it. The tile background is nearly the same cream as the gaps, so the
-   inset is deliberately larger than the inter-tile gap to read as an intentional margin. */
+/* Side margin for the photo grid on phones. A dead-simple `calc(100% - 40px)` (no nested
+   calc/clamp — some mobile browsers dropped the nested form) narrows the grid's own box and
+   auto-margins centre it. With minmax(0,1fr) columns the tiles cannot overflow the box, so this
+   reliably insets them ~20px from each screen edge. */
+@media (max-width: 760px) {
+  .hush-photo-grid {
+    width: calc(100% - 40px) !important;
+    margin-left: auto !important;
+    margin-right: auto !important;
+  }
+}
 
 @media (max-width: 400px) {
   .hush-photo-grid {
