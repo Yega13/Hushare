@@ -3,7 +3,7 @@
 import React from 'react'
 import { X, ChevronLeft, ChevronRight, Play, Pause, Download, Settings, Star, Trash2 } from 'lucide-react'
 import type { Photo } from '@/types'
-import { createStreamController, type StreamController } from '@/lib/cloudflare/stream-player'
+import { unmuteStreamVideo } from '@/lib/cloudflare/stream-player'
 
 function streamFrameSrc(photo: Photo, autoplay: boolean): string {
   const base = photo.stream_iframe_url || (photo.stream_uid ? `https://iframe.videodelivery.net/${photo.stream_uid}` : '')
@@ -134,8 +134,6 @@ export default function LightboxOverlay({
 }: Props) {
   // Detect the current video's real aspect ratio from its poster so the player box matches it
   // exactly — no black pillarbox/letterbox bars. Falls back to 16:9 until the poster loads.
-  const videoControllerRef = React.useRef<StreamController | null>(null)
-  React.useEffect(() => () => { videoControllerRef.current?.destroy(); videoControllerRef.current = null }, [])
   const [videoAspect, setVideoAspect] = React.useState<number | null>(null)
   React.useEffect(() => {
     setVideoAspect(null)
@@ -183,9 +181,9 @@ export default function LightboxOverlay({
           <button
             className="absolute left-3 top-1/2 -translate-y-1/2 z-20 flex items-center justify-center rounded-full transition hover:opacity-80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white"
             style={{
-              width: 40, height: 40,
-              background: 'rgba(15,20,15,0.62)',
-              border: '1px solid rgba(253,250,245,0.30)',
+              width: 48, height: 48,
+              background: 'rgba(15,20,15,0.72)',
+              border: '1px solid rgba(253,250,245,0.40)',
               color: '#FDFAF5',
               backdropFilter: 'blur(8px)',
               WebkitBackdropFilter: 'blur(8px)',
@@ -198,9 +196,9 @@ export default function LightboxOverlay({
           <button
             className="absolute right-3 top-1/2 -translate-y-1/2 z-20 flex items-center justify-center rounded-full transition hover:opacity-80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white"
             style={{
-              width: 40, height: 40,
-              background: 'rgba(15,20,15,0.62)',
-              border: '1px solid rgba(253,250,245,0.30)',
+              width: 48, height: 48,
+              background: 'rgba(15,20,15,0.72)',
+              border: '1px solid rgba(253,250,245,0.40)',
               color: '#FDFAF5',
               backdropFilter: 'blur(8px)',
               WebkitBackdropFilter: 'blur(8px)',
@@ -263,6 +261,10 @@ export default function LightboxOverlay({
               width: `min(92vw, calc(82vh * ${videoBoxAspect}))`,
             }}
           >
+            {/* Plain native Cloudflare Stream player. No overlay of any kind — tap, play, pause,
+                seek, sound, settings and fullscreen all behave exactly as the native player does,
+                so starting a video always works. Autoplay follows the album's video_autoplay
+                setting; volume is preset to 50%. Change videos with the ◀ ▶ arrows. */}
             <iframe
               src={streamFrameSrc(current, slideshowMode ? !slideshowPaused : videoAutoplay)}
               allow="accelerometer; gyroscope; autoplay; encrypted-media; picture-in-picture;"
@@ -272,26 +274,9 @@ export default function LightboxOverlay({
               onClick={(e) => e.stopPropagation()}
               onLoad={(e) => {
                 onMediaNodeChange(e.currentTarget)
-                videoControllerRef.current?.destroy()
-                void createStreamController(e.currentTarget, {
-                  volume: 0.5,
-                  autoplay: slideshowMode ? !slideshowPaused : videoAutoplay,
-                }).then((c) => { videoControllerRef.current = c })
+                // Preset volume to 50% and unmute (autoplaying videos start muted per browser policy).
+                void unmuteStreamVideo(e.currentTarget, 0.5)
               }}
-            />
-            {/* Full-area gesture layer over the video (the Stream iframe swallows touch, so this is
-                the only way to swipe it). Covers everything except the bottom 52px control bar, so
-                seek / sound / settings / fullscreen stay usable. A swipe navigates; a tap toggles
-                play/pause via the SDK (the native play button shows through when paused). Arrows
-                remain as the other way to change videos. */}
-            <div
-              className="absolute left-0 right-0 top-0"
-              style={{ bottom: 52, zIndex: 3, touchAction: 'pan-y', cursor: 'pointer' }}
-              onClick={(e) => { e.stopPropagation(); videoControllerRef.current?.toggle() }}
-              onTouchStart={(e) => { e.stopPropagation(); onSwipeStart(e) }}
-              onTouchMove={(e) => { e.stopPropagation(); onSwipeMove(e) }}
-              onTouchEnd={(e) => { e.stopPropagation(); onSwipeEnd(e) }}
-              onTouchCancel={() => onSwipeCancel()}
             />
           </div>
         ) : (

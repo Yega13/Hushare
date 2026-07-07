@@ -9,14 +9,7 @@
 
 const SDK_SRC = 'https://embed.videodelivery.net/embed/sdk.latest.js'
 
-type StreamPlayer = {
-  muted: boolean
-  volume: number
-  play?: () => Promise<void> | void
-  pause?: () => void
-  addEventListener?: (event: string, cb: () => void) => void
-  removeEventListener?: (event: string, cb: () => void) => void
-}
+type StreamPlayer = { muted: boolean; volume: number }
 type StreamFactory = (iframe: HTMLIFrameElement) => StreamPlayer
 
 let sdkPromise: Promise<StreamFactory | null> | null = null
@@ -48,41 +41,5 @@ export async function unmuteStreamVideo(iframe: HTMLIFrameElement, volume = 0.5)
     player.muted = false
   } catch {
     // SDK/init failed — leave the video muted (its URL already has muted=true).
-  }
-}
-
-export type StreamController = {
-  toggle: () => void
-  play: () => void
-  destroy: () => void
-}
-
-// Controller for the lightbox tap overlay: sets volume, unmutes when autoplaying, and drives
-// play/pause. Tracks playing state from the player's own events (not the flaky `.paused` getter).
-export async function createStreamController(
-  iframe: HTMLIFrameElement,
-  opts: { volume?: number; autoplay?: boolean; onPlayingChange?: (playing: boolean) => void },
-): Promise<StreamController | null> {
-  try {
-    const StreamFactory = await loadStreamSdk()
-    if (!StreamFactory) return null
-    const player = StreamFactory(iframe)
-    player.volume = Math.min(1, Math.max(0, opts.volume ?? 0.5))
-    if (opts.autoplay) player.muted = false
-    let playing = !!opts.autoplay
-    const onPlay = () => { playing = true; opts.onPlayingChange?.(true) }
-    const onPause = () => { playing = false; opts.onPlayingChange?.(false) }
-    player.addEventListener?.('play', onPlay)
-    player.addEventListener?.('pause', onPause)
-    return {
-      toggle: () => { if (playing) player.pause?.(); else void player.play?.() },
-      play: () => { void player.play?.() },
-      destroy: () => {
-        player.removeEventListener?.('play', onPlay)
-        player.removeEventListener?.('pause', onPause)
-      },
-    }
-  } catch {
-    return null
   }
 }
