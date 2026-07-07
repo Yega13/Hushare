@@ -280,6 +280,23 @@ export default function LightboxOverlay({
                 void unmuteStreamVideo(e.currentTarget, 0.5)
               }}
             />
+            {/* Thin swipe strips on the far left/right edges only, and stopping short of the
+                bottom control bar. The Stream iframe swallows touch, so these give back edge-swipe
+                navigation without covering the centre play button or the bottom controls (which is
+                what broke the native player before). A swipe started on an edge keeps tracking as
+                the finger crosses the centre. Arrows remain as the other option. */}
+            {(['left', 'right'] as const).map((side) => (
+              <div
+                key={side}
+                className={`absolute top-0 ${side === 'left' ? 'left-0' : 'right-0'}`}
+                style={{ width: 40, bottom: 56, zIndex: 3, touchAction: 'pan-y' }}
+                onClick={(e) => e.stopPropagation()}
+                onTouchStart={(e) => { e.stopPropagation(); onSwipeStart(e) }}
+                onTouchMove={(e) => { e.stopPropagation(); onSwipeMove(e) }}
+                onTouchEnd={(e) => { e.stopPropagation(); onSwipeEnd(e) }}
+                onTouchCancel={() => onSwipeCancel()}
+              />
+            ))}
           </div>
         ) : (
           // Image branch (Branch 4 in old code, now Branch 3 — no native <video> branch exists)
