@@ -11,10 +11,25 @@ import type { Photo } from '@/types'
 export function useMediaAspects(photos: Photo[], enabled: boolean): Map<string, number> {
   const [aspects, setAspects] = useState<Map<string, number>>(() => new Map())
   const measuredRef = useRef<Set<string>>(new Set())
+  // Coalesce measurements that land in the same frame into a single state update, so a burst of
+  // legacy poster loads triggers one masonry re-pack instead of one per image (avoids thrashing).
+  const pendingRef = useRef<Map<string, number>>(new Map())
+  const rafRef = useRef<number | null>(null)
 
   useEffect(() => {
     if (!enabled) return
     let cancelled = false
+
+    const flush = () => {
+      rafRef.current = null
+      if (pendingRef.current.size === 0) return
+      setAspects((prev) => {
+        const next = new Map(prev)
+        for (const [id, a] of pendingRef.current) next.set(id, a)
+        pendingRef.current.clear()
+        return next
+      })
+    }
 
     for (const p of photos) {
       if (p.width && p.height) continue          // has stored dims — layout reads them directly
@@ -26,16 +41,19 @@ export function useMediaAspects(photos: Photo[], enabled: boolean): Map<string, 
       img.decoding = 'async'
       img.onload = () => {
         if (cancelled || img.naturalWidth <= 0 || img.naturalHeight <= 0) return
-        setAspects((prev) => {
-          const next = new Map(prev)
-          next.set(p.id, img.naturalWidth / img.naturalHeight)
-          return next
-        })
+        pendingRef.current.set(p.id, img.naturalWidth / img.naturalHeight)
+        if (rafRef.current == null) rafRef.current = requestAnimationFrame(flush)
       }
       img.src = src
     }
 
-    return () => { cancelled = true }
+    return () => {
+      cancelled = true
+      if (rafRef.current != null) { cancelAnimationFrame(rafRef.current); rafRef.current = null }
+      // Apply any measurement captured but not yet flushed, so a cancelled frame can't strand an
+      // aspect in the pending map and leave that tile stuck as a square.
+      if (pendingRef.current.size > 0) flush()
+    }
   }, [photos, enabled])
 
   return aspects
@@ -69,17 +87,20 @@ export function computeMasonryColumns(
 ): MasonryColumn[] {
   if (containerWidth <= 0 || photos.length === 0 || columnCount < 1) return []
 
-  const colWidth = (containerWidth - gap * (columnCount - 1)) / columnCount
+  // Never create more columns than there are photos, otherwise a tiny album (e.g. 2 photos with a
+  // 5-column setting) would leave empty flex columns and squeeze the tiles into a narrow strip.
+  const cols = Math.min(columnCount, photos.length)
+  const colWidth = (containerWidth - gap * (cols - 1)) / cols
   if (colWidth <= 0) return []
 
-  const columns: MasonryColumn[] = Array.from({ length: columnCount }, () => ({ items: [] }))
-  const heights = new Array<number>(columnCount).fill(0)
+  const columns: MasonryColumn[] = Array.from({ length: cols }, () => ({ items: [] }))
+  const heights = new Array<number>(cols).fill(0)
 
   photos.forEach((photo, index) => {
     const h = colWidth / aspectOf(photo, aspects)
     // Shortest column wins (ties → leftmost, preserving reading order).
     let col = 0
-    for (let i = 1; i < columnCount; i++) {
+    for (let i = 1; i < cols; i++) {
       if (heights[i] < heights[col]) col = i
     }
     columns[col].items.push({ photo, index, height: Math.max(1, Math.round(h)) })
