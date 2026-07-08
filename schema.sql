@@ -30,7 +30,7 @@ create table public.albums (
   owner_token          text        not null,
   password_hash        text,
   background_theme     text,
-  media_radius         integer     not null default 12  check (media_radius between 0 and 500),
+  media_radius         integer     not null default 16  check (media_radius between 0 and 500),
   media_filter         text        not null default 'none' check (media_filter in ('none','warm','cool','mono','vintage','soft')),
   media_hover          text        not null default 'none' check (media_hover in ('none','mono','fade','zoom','lift')),
   mobile_grid_columns  integer     not null default 3   check (mobile_grid_columns in (3,4,5,6)),

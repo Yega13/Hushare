@@ -125,7 +125,9 @@ const PhotoTile = React.memo(function PhotoTile({
   const isReorderDragging = reorderDraggingId === photo.id
   const isReorderTarget = reorderDraggingId != null && reorderTargetId === photo.id && reorderDraggingId !== photo.id
 
-  const boxed = boxW != null && boxH != null
+  // Box mode (masonry/justified): a fixed height, and either a fixed width or — when width is
+  // omitted — the tile stretches to fill its flex column (masonry). Falls back to a square tile.
+  const boxed = boxH != null
   return (
     <div className="min-w-0" style={boxed ? { width: boxW, height: boxH } : undefined}>
       <div

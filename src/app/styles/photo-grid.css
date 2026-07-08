@@ -33,11 +33,18 @@
   }
 }
 
-/* Justified layout: a vertical stack of flex rows, each already sized (in JS) to fill the
-   container width at a shared height, so photos keep their true aspect ratio. */
-.hush-justified {
+/* Masonry (Pinterest) layout: equal-width flex columns placed side by side; each column stacks
+   items whose heights come from their true aspect ratio (computed in JS). */
+.hush-masonry {
+  display: flex;
+  align-items: flex-start;
+}
+
+.hush-masonry-col {
   display: flex;
   flex-direction: column;
+  flex: 1 1 0;
+  min-width: 0;
 }
 
 .hush-photo-flip {
@@ -135,7 +142,7 @@
    reliably insets them ~20px from each screen edge. */
 @media (max-width: 760px) {
   .hush-photo-grid,
-  .hush-justified {
+  .hush-masonry {
     width: 88% !important;
     max-width: 88% !important;
     margin-left: auto !important;

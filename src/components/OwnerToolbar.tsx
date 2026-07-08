@@ -109,10 +109,10 @@ export default function OwnerToolbar({ album, photos, ownerToken, userTier, medi
   const [backgroundSaving, setBackgroundSaving] = useState(false)
   const [backgroundError, setBackgroundError] = useState('')
   const [showBackgroundLibrary, setShowBackgroundLibrary] = useState(false)
-  const [mediaRadius, setMediaRadius] = useState(album.media_radius ?? 12)
-  const [mediaRadiusDraft, setMediaRadiusDraft] = useState(String(album.media_radius ?? 12))
+  const [mediaRadius, setMediaRadius] = useState(album.media_radius ?? 16)
+  const [mediaRadiusDraft, setMediaRadiusDraft] = useState(String(album.media_radius ?? 16))
   const [mediaRadiusEditing, setMediaRadiusEditing] = useState(false)
-  const [savedMediaRadius, setSavedMediaRadius] = useState(album.media_radius ?? 12)
+  const [savedMediaRadius, setSavedMediaRadius] = useState(album.media_radius ?? 16)
   const [videoAutoplay, setVideoAutoplay] = useState(!!album.video_autoplay)
   const [photoLayout, setPhotoLayout] = useState<'grid' | 'justified'>(album.photo_layout === 'justified' ? 'justified' : 'grid')
   const [mediaFilter, setMediaFilter] = useState<MediaDisplayFilter>(album.media_filter ?? 'none')
@@ -224,10 +224,10 @@ export default function OwnerToolbar({ album, photos, ownerToken, userTier, medi
       setPasswordSaved(false)
       setPasswordInput('')
       setCollectionError('')
-      setMediaRadius(album.media_radius ?? 12)
-      setMediaRadiusDraft(String(album.media_radius ?? 12))
+      setMediaRadius(album.media_radius ?? 16)
+      setMediaRadiusDraft(String(album.media_radius ?? 16))
       setMediaRadiusEditing(false)
-      setSavedMediaRadius(album.media_radius ?? 12)
+      setSavedMediaRadius(album.media_radius ?? 16)
       setVideoAutoplay(!!album.video_autoplay)
       setPhotoLayout(album.photo_layout === 'justified' ? 'justified' : 'grid')
       setAllowGuestDownloads(album.allow_guest_downloads !== false)
@@ -970,7 +970,7 @@ export default function OwnerToolbar({ album, photos, ownerToken, userTier, medi
                       <div className="grid grid-cols-2 gap-2">
                         {([
                           { value: 'grid' as const, label: 'Square' },
-                          { value: 'justified' as const, label: 'Justified' },
+                          { value: 'justified' as const, label: 'Masonry' },
                         ]).map((option) => {
                           const selected = photoLayout === option.value
                           return (
@@ -997,7 +997,7 @@ export default function OwnerToolbar({ album, photos, ownerToken, userTier, medi
                         })}
                       </div>
                       <p className="mt-2 text-xs" style={{ color: '#8B6F4E' }}>
-                        Square crops every tile; Justified keeps each photo&rsquo;s real shape in tidy rows.
+                        Square crops every tile; Masonry keeps each photo&rsquo;s real shape in Pinterest-style columns.
                       </p>
                     </div>
 

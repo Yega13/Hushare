@@ -20,10 +20,10 @@ import { useLightboxMedia } from '@/components/photo-grid/useLightboxMedia'
 import { useSlideshow } from '@/components/photo-grid/useSlideshow'
 import { useSwipeNavigation } from '@/components/photo-grid/useSwipeNavigation'
 import PhotoTile, { type TileHandlers } from '@/components/photo-grid/PhotoTile'
-import { useMediaAspects, computeJustifiedRows, targetRowHeightFor } from '@/components/photo-grid/justifiedLayout'
-
-const JUSTIFIED_GAP = 8
+import { useMediaAspects, computeMasonryColumns, columnCountFor } from '@/components/photo-grid/mediaLayout'
 import { X, Play, Move } from 'lucide-react'
+
+const MASONRY_GAP = 8
 
 type Props = {
   album: Album
@@ -53,18 +53,19 @@ export default function PhotoGrid({ album, photos, isOwner, slug, forceGlobalRad
   const [posterBroken, setPosterBroken] = useState<Set<string>>(new Set())
   const [settingCover, setSettingCover] = useState(false)
 
-  // ── Layout: justified (true aspect ratios) vs the default square grid ──
-  const justified = album.photo_layout === 'justified'
+  // ── Layout: masonry (Pinterest, true aspect ratios) vs the default square grid ──
+  // DB value is 'justified' (kept to avoid a migration); it renders a masonry layout.
+  const masonry = album.photo_layout === 'justified'
 
   // Stable key over the set of photo IDs. Lets effects depend on "did the tile set change?"
   // instead of "did the photos array reference change?" — the latter happens on every Realtime
   // UPDATE, which would otherwise force a full observer rebuild + re-firing all preloads.
   // The layout is part of the key so the observers re-attach to the new tile elements when the
-  // owner switches grid ↔ justified (the tiles live in a different container per layout).
-  const photoIdsKey = useMemo(() => (justified ? 'j:' : 'g:') + photos.map((p) => p.id).join('|'), [photos, justified])
+  // owner switches grid ↔ masonry (the tiles live in a different container per layout).
+  const photoIdsKey = useMemo(() => (masonry ? 'm:' : 'g:') + photos.map((p) => p.id).join('|'), [photos, masonry])
   const tileRadiusMaxById = usePhotoGridObservers(gridRef, photoIdsKey, onRadiusMaxChange)
 
-  const aspects = useMediaAspects(photos, justified)
+  const aspects = useMediaAspects(photos, masonry)
   const [containerWidth, setContainerWidth] = useState(0)
   // `hasPhotos` is a dep because the grid element only exists once there are photos (an empty
   // album early-returns without it). Without it, an album that starts empty then receives its
@@ -72,18 +73,18 @@ export default function PhotoGrid({ album, photos, isOwner, slug, forceGlobalRad
   const hasPhotos = photos.length > 0
   useEffect(() => {
     const el = gridRef.current
-    if (!justified || !el) return
+    if (!masonry || !el) return
     const measure = () => setContainerWidth(el.clientWidth)
     measure()
     const ro = new ResizeObserver(measure)
     ro.observe(el)
     return () => ro.disconnect()
-  }, [justified, hasPhotos])
-  const justifiedRows = useMemo(
-    () => (justified
-      ? computeJustifiedRows(photos, aspects, containerWidth, targetRowHeightFor(containerWidth), JUSTIFIED_GAP)
+  }, [masonry, hasPhotos])
+  const masonryColumns = useMemo(
+    () => (masonry
+      ? computeMasonryColumns(photos, aspects, containerWidth, columnCountFor(containerWidth), MASONRY_GAP)
       : []),
-    [justified, photos, aspects, containerWidth],
+    [masonry, photos, aspects, containerWidth],
   )
 
   const {
@@ -486,12 +487,12 @@ export default function PhotoGrid({ album, photos, isOwner, slug, forceGlobalRad
           />
         )
 
-        if (justified) {
+        if (masonry) {
           return (
-            <div ref={gridRef} className="hush-justified" style={{ gap: JUSTIFIED_GAP }}>
-              {justifiedRows.map((row, ri) => (
-                <div key={ri} className="flex" style={{ gap: JUSTIFIED_GAP }}>
-                  {row.items.map((item) => renderTile(item.photo, item.index, item.width, item.height))}
+            <div ref={gridRef} className="hush-masonry" style={{ gap: MASONRY_GAP }}>
+              {masonryColumns.map((col, ci) => (
+                <div key={ci} className="hush-masonry-col" style={{ gap: MASONRY_GAP }}>
+                  {col.items.map((item) => renderTile(item.photo, item.index, undefined, item.height))}
                 </div>
               ))}
             </div>
