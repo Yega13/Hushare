@@ -57,14 +57,6 @@ function aspectOf(photo: Photo, aspects: Map<string, number>): number {
 export type MasonryItem = { photo: Photo; index: number; height: number }
 export type MasonryColumn = { items: MasonryItem[] }
 
-// Number of columns for the viewport width — narrow, Pinterest-like columns.
-export function columnCountFor(containerWidth: number): number {
-  if (containerWidth < 520) return 2
-  if (containerWidth < 900) return 3
-  if (containerWidth < 1300) return 4
-  return 5
-}
-
 // Place each photo (in order) into the currently-shortest column, keeping its true aspect ratio.
 // Equal-width columns, variable heights — the classic balanced masonry. Returns one item list per
 // column; each item carries only its pixel height (width is the column width, set by flex).

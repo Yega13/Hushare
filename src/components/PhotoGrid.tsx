@@ -20,7 +20,7 @@ import { useLightboxMedia } from '@/components/photo-grid/useLightboxMedia'
 import { useSlideshow } from '@/components/photo-grid/useSlideshow'
 import { useSwipeNavigation } from '@/components/photo-grid/useSwipeNavigation'
 import PhotoTile, { type TileHandlers } from '@/components/photo-grid/PhotoTile'
-import { useMediaAspects, computeMasonryColumns, columnCountFor } from '@/components/photo-grid/mediaLayout'
+import { useMediaAspects, computeMasonryColumns } from '@/components/photo-grid/mediaLayout'
 import { X, Play, Move } from 'lucide-react'
 
 const MASONRY_GAP = 8
@@ -80,11 +80,14 @@ export default function PhotoGrid({ album, photos, isOwner, slug, forceGlobalRad
     ro.observe(el)
     return () => ro.disconnect()
   }, [masonry, hasPhotos])
+  // Masonry column count follows the same "Grid" setting as the square layout, so changing it
+  // (3–6) affects both. Falls back to 3.
+  const masonryColumnCount = album.mobile_grid_columns ?? 3
   const masonryColumns = useMemo(
     () => (masonry
-      ? computeMasonryColumns(photos, aspects, containerWidth, columnCountFor(containerWidth), MASONRY_GAP)
+      ? computeMasonryColumns(photos, aspects, containerWidth, masonryColumnCount, MASONRY_GAP)
       : []),
-    [masonry, photos, aspects, containerWidth],
+    [masonry, photos, aspects, containerWidth, masonryColumnCount],
   )
 
   const {
