@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react'
+import React, { useState, useEffect, useLayoutEffect, useCallback, useMemo, useRef } from 'react'
 import type { Album, Photo } from '@/types'
 import type { SlideshowAnimation } from '@/types'
 import { DEFAULT_SLIDESHOW_INTERVAL_MS } from '@/lib/media-display'
@@ -71,7 +71,10 @@ export default function PhotoGrid({ album, photos, isOwner, slug, forceGlobalRad
   // album early-returns without it). Without it, an album that starts empty then receives its
   // first upload would never attach the observer, leaving containerWidth at 0 → nothing renders.
   const hasPhotos = photos.length > 0
-  useEffect(() => {
+  // useLayoutEffect (not useEffect) so the width is measured and tiles are laid out BEFORE the
+  // browser paints — otherwise the first paint shows an empty container (containerWidth 0) and
+  // the tiles pop in a frame later. PhotoGrid only ever renders client-side, so this is SSR-safe.
+  useLayoutEffect(() => {
     const el = gridRef.current
     if (!masonry || !el) return
     const measure = () => setContainerWidth(el.clientWidth)
@@ -443,7 +446,7 @@ export default function PhotoGrid({ album, photos, isOwner, slug, forceGlobalRad
       {showArrangeHint && (
         <div
           className="flex items-center gap-3 rounded-2xl px-4 py-3 mb-4"
-          style={{ background: '#630826' }}
+          style={{ background: '#254F22' }}
         >
           <span
             className="shrink-0 flex items-center justify-center rounded-lg"

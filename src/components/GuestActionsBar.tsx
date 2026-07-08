@@ -117,7 +117,7 @@ export default function GuestActionsBar({ album, photos, shareUrl, onOpenSlidesh
         {hasFaceFinder && (
           <button
             className="hush-press"
-            style={{ ...btnBase, background: '#630826', color: '#FFFFFF', border: '1px solid #630826' }}
+            style={{ ...btnBase, background: '#254F22', color: '#FDFAF5', border: '1px solid #254F22' }}
             onClick={onOpenFaceFinder}
           >
             <ScanFace className="w-3.5 h-3.5" />
