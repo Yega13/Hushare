@@ -81,9 +81,11 @@ export default function AppToastViewport() {
             key={toast.id}
             className="hush-menu-pop flex items-start gap-2 rounded-xl px-3 py-3 text-sm shadow-xl"
             style={{
-              background: isError ? '#FBEAE6' : '#FFFFFF',
-              border: `1px solid ${isError ? '#E8C2B8' : '#DDD5C5'}`,
-              color: isError ? '#7A2A1F' : '#630826',
+              // Semantic status colours (green = success, red = error) are kept conventional and
+              // independent of the burgundy brand accent, so the two toasts read unmistakably.
+              background: isError ? '#FBEAE6' : '#ECF5EA',
+              border: `1px solid ${isError ? '#E8C2B8' : '#C6DFC0'}`,
+              color: isError ? '#7A2A1F' : '#1E4A1C',
             }}
           >
             <Icon className="mt-0.5 h-4 w-4 flex-none" />
