@@ -71,7 +71,7 @@ export default function CollectionActions({ collection }: Props) {
             onChange={(e) => setName(e.target.value)}
             maxLength={80}
             className="w-full rounded-lg px-3 py-2 text-sm focus:outline-none"
-            style={{ background: '#FDFAF5', border: '1px solid #DDD5C5', color: '#254F22' }}
+            style={{ background: '#FDFAF5', border: '1px solid #DDD5C5', color: '#630826' }}
           />
           <input
             aria-label="Collection slug"
@@ -79,7 +79,7 @@ export default function CollectionActions({ collection }: Props) {
             onChange={(e) => setSlug(e.target.value)}
             maxLength={40}
             className="w-full rounded-lg px-3 py-2 text-sm focus:outline-none"
-            style={{ background: '#FDFAF5', border: '1px solid #DDD5C5', color: '#254F22' }}
+            style={{ background: '#FDFAF5', border: '1px solid #DDD5C5', color: '#630826' }}
           />
           <textarea
             aria-label="Collection description"
@@ -88,7 +88,7 @@ export default function CollectionActions({ collection }: Props) {
             maxLength={240}
             rows={3}
             className="w-full resize-none rounded-lg px-3 py-2 text-sm focus:outline-none"
-            style={{ background: '#FDFAF5', border: '1px solid #DDD5C5', color: '#254F22' }}
+            style={{ background: '#FDFAF5', border: '1px solid #DDD5C5', color: '#630826' }}
           />
         </div>
         <div className="mt-3 flex flex-wrap gap-2">
@@ -97,7 +97,7 @@ export default function CollectionActions({ collection }: Props) {
             onClick={saveEdit}
             disabled={saving || !name.trim() || !slug.trim()}
             className="hush-press inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-semibold transition disabled:cursor-not-allowed disabled:opacity-60"
-            style={{ background: '#254F22', color: '#FDFAF5' }}
+            style={{ background: '#630826', color: '#FDFAF5' }}
           >
             <Check className="h-3.5 w-3.5" />
             {saving ? 'Saving...' : 'Save'}
@@ -127,7 +127,7 @@ export default function CollectionActions({ collection }: Props) {
         type="button"
         onClick={copyLink}
         className="hush-press inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-semibold transition"
-        style={{ background: '#FFFFFF', border: '1px solid #DDD5C5', color: '#254F22' }}
+        style={{ background: '#FFFFFF', border: '1px solid #DDD5C5', color: '#630826' }}
       >
         <Copy className="h-3.5 w-3.5" />
         Copy link

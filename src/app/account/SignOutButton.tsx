@@ -28,7 +28,7 @@ export default function SignOutButton() {
       onClick={onClick}
       disabled={busy}
       className="w-full flex items-center justify-center gap-2 font-semibold rounded-xl py-3 transition hover:opacity-90 disabled:opacity-50"
-      style={{ background: '#254F22', color: '#FDFAF5' }}
+      style={{ background: '#630826', color: '#FDFAF5' }}
     >
       {busy ? 'Signing out...' : (
         <>

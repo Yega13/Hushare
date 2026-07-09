@@ -81,10 +81,10 @@ export default function CollabsPage() {
           />
         </Link>
         <HamburgerMenu>
-          <Link href="/pricing" className="text-sm font-medium hover:underline" style={{ color: '#254F22' }}>Pricing</Link>
-          <Link href="/about" className="text-sm font-medium hover:underline" style={{ color: '#254F22' }}>About</Link>
-          <span className="text-sm font-semibold underline underline-offset-4" style={{ color: '#254F22' }}>Collabs</span>
-          <Link href="/support" className="text-sm font-medium hover:underline" style={{ color: '#254F22' }}>Support</Link>
+          <Link href="/pricing" className="text-sm font-medium hover:underline" style={{ color: '#630826' }}>Pricing</Link>
+          <Link href="/about" className="text-sm font-medium hover:underline" style={{ color: '#630826' }}>About</Link>
+          <span className="text-sm font-semibold underline underline-offset-4" style={{ color: '#630826' }}>Collabs</span>
+          <Link href="/support" className="text-sm font-medium hover:underline" style={{ color: '#630826' }}>Support</Link>
           <AccountNavLink />
         </HamburgerMenu>
       </nav>
@@ -99,7 +99,7 @@ export default function CollabsPage() {
         </p>
         <h1
           className="text-3xl sm:text-4xl md:text-5xl font-bold mb-5 leading-tight"
-          style={{ ...SERIF, color: '#254F22' }}
+          style={{ ...SERIF, color: '#630826' }}
         >
           Communities who trust Hushare
         </h1>
@@ -121,7 +121,7 @@ export default function CollabsPage() {
               style={{
                 background: '#FFFFFF',
                 border: '1px solid #E4DDD2',
-                boxShadow: '0 8px 40px rgba(37,79,34,0.09), 0 1px 4px rgba(37,79,34,0.05)',
+                boxShadow: '0 8px 40px rgba(99,8,38,0.09), 0 1px 4px rgba(99,8,38,0.05)',
               }}
             >
               {/* Image */}
@@ -156,7 +156,7 @@ export default function CollabsPage() {
 
                 <h2
                   className="text-2xl sm:text-3xl font-bold leading-tight"
-                  style={{ ...SERIF, color: '#254F22' }}
+                  style={{ ...SERIF, color: '#630826' }}
                 >
                   {collab.name}
                 </h2>
@@ -172,7 +172,7 @@ export default function CollabsPage() {
                   target="_blank"
                   rel="noopener noreferrer"
                   className="inline-flex items-center gap-2 self-start rounded-xl px-5 py-2.5 text-sm font-semibold transition hover:opacity-85"
-                  style={{ background: '#254F22', color: '#FDFAF5' }}
+                  style={{ background: '#630826', color: '#FDFAF5' }}
                 >
                   {collab.hrefLabel}
                   <ArrowUpRight className="w-4 h-4" />
@@ -187,8 +187,8 @@ export default function CollabsPage() {
           <div
             className="rounded-[20px] px-8 py-10 text-center"
             style={{
-              background: 'linear-gradient(135deg, #254F22 0%, #1a3a18 100%)',
-              boxShadow: '0 8px 32px rgba(37,79,34,0.2)',
+              background: 'linear-gradient(135deg, #630826 0%, #1a3a18 100%)',
+              boxShadow: '0 8px 32px rgba(99,8,38,0.2)',
             }}
           >
             <p
@@ -209,7 +209,7 @@ export default function CollabsPage() {
             <a
               href="mailto:husharesupport@gmail.com"
               className="inline-block rounded-xl px-6 py-2.5 text-sm font-semibold transition hover:opacity-90"
-              style={{ background: '#FDFAF5', color: '#254F22' }}
+              style={{ background: '#FDFAF5', color: '#630826' }}
             >
               Get in touch
             </a>

@@ -616,7 +616,7 @@ export default function AlbumPageClient() {
         className="min-h-dvh flex flex-col items-center justify-center gap-5 px-6 text-center"
         style={{ background: '#FDFAF5' }}
       >
-        <p style={{ color: '#254F22', fontSize: '1rem', fontWeight: 500 }}>
+        <p style={{ color: '#630826', fontSize: '1rem', fontWeight: 500 }}>
           Something went wrong. Please check your connection and try again.
         </p>
         <button
@@ -636,7 +636,7 @@ export default function AlbumPageClient() {
             // which rebuilds the fetchAlbum closure, and the fetchAlbum effect fires it.
           }}
           className="rounded-xl px-6 py-2.5 font-semibold transition hover:opacity-85"
-          style={{ background: '#254F22', color: '#FDFAF5' }}
+          style={{ background: '#630826', color: '#FDFAF5' }}
         >
           Retry
         </button>

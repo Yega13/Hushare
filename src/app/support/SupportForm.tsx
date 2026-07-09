@@ -91,12 +91,12 @@ export default function SupportForm() {
         aria-live="polite"
         aria-atomic="true"
         className="hush-modal-pop hush-support-success rounded-2xl p-8 text-center"
-        style={{ background: '#EAF0E8', border: '1px solid #C8D6C2' }}
+        style={{ background: '#F6E9EE', border: '1px solid #C8D6C2' }}
       >
-        <CheckCircle2 className="w-10 h-10 mx-auto mb-3" style={{ color: '#254F22' }} />
+        <CheckCircle2 className="w-10 h-10 mx-auto mb-3" style={{ color: '#630826' }} />
         <h3
           className="text-xl font-bold mb-2"
-          style={{ color: '#254F22', fontFamily: 'var(--font-serif)' }}
+          style={{ color: '#630826', fontFamily: 'var(--font-serif)' }}
         >
           Message sent
         </h3>
@@ -107,7 +107,7 @@ export default function SupportForm() {
           type="button"
           onClick={() => setStatus('idle')}
           className="hush-press mt-5 text-sm font-semibold hover:underline"
-          style={{ color: '#254F22' }}
+          style={{ color: '#630826' }}
         >
           Send another message
         </button>
@@ -131,7 +131,7 @@ export default function SupportForm() {
         style={{
           background: '#FFFFFF',
           border: '1px solid #DDD5C5',
-          boxShadow: '0 4px 32px rgba(37,79,34,0.10)',
+          boxShadow: '0 4px 32px rgba(99,8,38,0.10)',
         }}
       >
         {/* Honeypot - hidden from real users and assistive tech */}
@@ -155,7 +155,7 @@ export default function SupportForm() {
               autoComplete="name"
               maxLength={80}
               className="w-full rounded-xl px-4 py-3 focus:outline-none transition text-base"
-              style={{ background: '#FDFAF5', border: '1px solid #DDD5C5', color: '#254F22' }}
+              style={{ background: '#FDFAF5', border: '1px solid #DDD5C5', color: '#630826' }}
             />
           </div>
           <div>
@@ -170,7 +170,7 @@ export default function SupportForm() {
               autoComplete="email"
               maxLength={120}
               className="w-full rounded-xl px-4 py-3 focus:outline-none transition text-base"
-              style={{ background: '#FDFAF5', border: '1px solid #DDD5C5', color: '#254F22' }}
+              style={{ background: '#FDFAF5', border: '1px solid #DDD5C5', color: '#630826' }}
             />
           </div>
         </div>
@@ -188,7 +188,7 @@ export default function SupportForm() {
             value={subject}
             onChange={(e) => setSubject(e.target.value)}
             className="w-full rounded-xl px-4 py-3 focus:outline-none transition text-base"
-            style={{ background: '#FDFAF5', border: '1px solid #DDD5C5', color: '#254F22' }}
+            style={{ background: '#FDFAF5', border: '1px solid #DDD5C5', color: '#630826' }}
           />
         </div>
 
@@ -206,7 +206,7 @@ export default function SupportForm() {
             value={message}
             onChange={(e) => setMessage(e.target.value)}
             className="w-full rounded-xl px-4 py-3 focus:outline-none transition text-base resize-y"
-            style={{ background: '#FDFAF5', border: '1px solid #DDD5C5', color: '#254F22', minHeight: '140px' }}
+            style={{ background: '#FDFAF5', border: '1px solid #DDD5C5', color: '#630826', minHeight: '140px' }}
           />
         </div>
 
@@ -247,7 +247,7 @@ export default function SupportForm() {
           type="submit"
           disabled={status === 'sending'}
           className="hush-press w-full flex items-center justify-center gap-2 font-semibold rounded-xl py-3 transition hover:opacity-90 disabled:opacity-50"
-          style={{ background: '#254F22', color: '#FDFAF5' }}
+          style={{ background: '#630826', color: '#FDFAF5' }}
         >
           {status === 'sending' ? (
             'Sending...'

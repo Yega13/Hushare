@@ -278,7 +278,7 @@ export default function LightboxOverlay({
             style={{ background: 'rgba(253,250,245,0.94)', borderRadius: previewRadiusFor(current) }}
             onClick={(e) => e.stopPropagation()}
           >
-            <p className="font-semibold" style={{ color: '#254F22' }}>This file is unavailable</p>
+            <p className="font-semibold" style={{ color: '#630826' }}>This file is unavailable</p>
             <p className="mt-2 text-sm" style={{ color: '#7C5C3E' }}>The album row still exists, but the storage object could not be loaded.</p>
           </div>
         ) : current.media_type === 'video' && current.stream_uid ? (
@@ -396,7 +396,7 @@ export default function LightboxOverlay({
                 style={{ background: 'rgba(253,250,245,0.97)', borderRadius: previewRadiusFor(current), backdropFilter: 'blur(6px)', WebkitBackdropFilter: 'blur(6px)' }}
                 onClick={(e) => { e.stopPropagation(); onSetLightboxFlipped(false) }}
               >
-                {current.caption && <p className="text-xl font-semibold text-center px-6 leading-snug" style={{ color: '#254F22' }}>{current.caption}</p>}
+                {current.caption && <p className="text-xl font-semibold text-center px-6 leading-snug" style={{ color: '#630826' }}>{current.caption}</p>}
                 {current.author_name && <p className={`text-sm${current.caption ? ' mt-2' : ''}`} style={{ color: '#7C5C3E' }}>by {current.author_name}</p>}
                 {!current.caption && !current.author_name && <p className="text-sm" style={{ color: '#A89880' }}>No info set</p>}
                 <p className="mt-4 text-xs" style={{ color: '#C5B9A8' }}>Tap to close</p>
@@ -420,7 +420,7 @@ export default function LightboxOverlay({
             <button
               onClick={(e) => { e.stopPropagation(); onToggleSlideshowPause() }}
               className="p-2 rounded-lg transition hover:opacity-80"
-              style={{ background: slideshowPaused ? 'rgba(253,250,245,0.92)' : 'rgba(138,181,133,0.28)', color: slideshowPaused ? '#254F22' : '#FDFAF5', border: '1px solid rgba(253,250,245,0.28)' }}
+              style={{ background: slideshowPaused ? 'rgba(253,250,245,0.92)' : 'rgba(138,181,133,0.28)', color: slideshowPaused ? '#630826' : '#FDFAF5', border: '1px solid rgba(253,250,245,0.28)' }}
               title={slideshowPaused ? 'Resume slideshow' : 'Pause slideshow'}
               aria-label={slideshowPaused ? 'Resume slideshow' : 'Pause slideshow'}
             >

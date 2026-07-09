@@ -13,7 +13,7 @@ const homeFaq = [
     q: 'Do guests need an account to add photos?',
     a: (
       <>
-        No. Anyone with your album link can view and add photos - <strong className="font-semibold" style={{ color: '#254F22' }}>no sign-up</strong>, no app, no download. Hushare is designed so the only friction between a guest and the album is tapping the link.
+        No. Anyone with your album link can view and add photos - <strong className="font-semibold" style={{ color: '#630826' }}>no sign-up</strong>, no app, no download. Hushare is designed so the only friction between a guest and the album is tapping the link.
       </>
     ),
   },
@@ -21,7 +21,7 @@ const homeFaq = [
     q: 'How long does Hushare keep my photos?',
     a: (
       <>
-        Free albums are preserved as long as they remain active. If an album sits untouched for <strong className="font-semibold" style={{ color: '#254F22' }}>12 months</strong>, it is automatically retired and its media is deleted. Active albums live on indefinitely. Paid tiers remove this inactivity rule.
+        Free albums are preserved as long as they remain active. If an album sits untouched for <strong className="font-semibold" style={{ color: '#630826' }}>12 months</strong>, it is automatically retired and its media is deleted. Active albums live on indefinitely. Paid tiers remove this inactivity rule.
       </>
     ),
   },
@@ -53,7 +53,7 @@ const homeFaq = [
     q: 'Can I use a QR code at a wedding or event?',
     a: (
       <>
-        Yes. Every album has a unique link you can turn into a <strong className="font-semibold" style={{ color: '#254F22' }}>QR code</strong> and print on table cards, invitations, programs, or a welcome sign. Guests scan it and start adding photos instantly.
+        Yes. Every album has a unique link you can turn into a <strong className="font-semibold" style={{ color: '#630826' }}>QR code</strong> and print on table cards, invitations, programs, or a welcome sign. Guests scan it and start adding photos instantly.
       </>
     ),
   },
@@ -61,7 +61,7 @@ const homeFaq = [
     q: 'Can I download all the photos at once?',
     a: (
       <>
-        Yes. From the owner view of your album, you can download the full collection as a single <strong className="font-semibold" style={{ color: '#254F22' }}>ZIP</strong> file - <strong className="font-semibold" style={{ color: '#254F22' }}>originals</strong>, not compressed thumbnails.
+        Yes. From the owner view of your album, you can download the full collection as a single <strong className="font-semibold" style={{ color: '#630826' }}>ZIP</strong> file - <strong className="font-semibold" style={{ color: '#630826' }}>originals</strong>, not compressed thumbnails.
       </>
     ),
   },
@@ -69,7 +69,7 @@ const homeFaq = [
     q: 'Who can see my album?',
     a: (
       <>
-        Only people with the link. Albums are <strong className="font-semibold" style={{ color: '#254F22' }}>unlisted</strong> - they are not indexed by search engines and cannot be discovered by browsing the site. Share the link only with the people you want to invite.
+        Only people with the link. Albums are <strong className="font-semibold" style={{ color: '#630826' }}>unlisted</strong> - they are not indexed by search engines and cannot be discovered by browsing the site. Share the link only with the people you want to invite.
       </>
     ),
   },
@@ -77,7 +77,7 @@ const homeFaq = [
     q: 'What happens if I lose my owner link?',
     a: (
       <>
-        The owner link is how Hushare recognises you as the album creator. <strong className="font-semibold" style={{ color: '#254F22' }}>Bookmark it</strong> as soon as you create an album, or forward it to yourself. If you do lose it, contact us with your album name and approximate creation date and we will verify you manually.
+        The owner link is how Hushare recognises you as the album creator. <strong className="font-semibold" style={{ color: '#630826' }}>Bookmark it</strong> as soon as you create an album, or forward it to yourself. If you do lose it, contact us with your album name and approximate creation date and we will verify you manually.
       </>
     ),
   },
@@ -85,7 +85,7 @@ const homeFaq = [
     q: 'What photo formats and sizes are supported?',
     a: (
       <>
-        Free albums support JPG, PNG, HEIC, and WebP images up to <strong className="font-semibold" style={{ color: '#254F22' }}>25 MB</strong> each, plus MP4, MOV, or WebM videos up to <strong className="font-semibold" style={{ color: '#254F22' }}>50 MB</strong>. Pro and Studio albums support uploads up to <strong className="font-semibold" style={{ color: '#254F22' }}>200 MB</strong>.
+        Free albums support JPG, PNG, HEIC, and WebP images up to <strong className="font-semibold" style={{ color: '#630826' }}>25 MB</strong> each, plus MP4, MOV, or WebM videos up to <strong className="font-semibold" style={{ color: '#630826' }}>50 MB</strong>. Pro and Studio albums support uploads up to <strong className="font-semibold" style={{ color: '#630826' }}>200 MB</strong>.
       </>
     ),
   },
@@ -116,16 +116,16 @@ export default function HomePage() {
           />
         </Link>
         <HamburgerMenu>
-          <Link href="/pricing" className="text-sm font-medium hover:underline" style={{ color: '#254F22' }}>
+          <Link href="/pricing" className="text-sm font-medium hover:underline" style={{ color: '#630826' }}>
             Pricing
           </Link>
-          <Link href="/about" className="text-sm font-medium hover:underline" style={{ color: '#254F22' }}>
+          <Link href="/about" className="text-sm font-medium hover:underline" style={{ color: '#630826' }}>
             About
           </Link>
-          <Link href="/collabs" className="text-sm font-medium hover:underline" style={{ color: '#254F22' }}>
+          <Link href="/collabs" className="text-sm font-medium hover:underline" style={{ color: '#630826' }}>
             Collabs
           </Link>
-          <Link href="/support" className="text-sm font-medium hover:underline" style={{ color: '#254F22' }}>
+          <Link href="/support" className="text-sm font-medium hover:underline" style={{ color: '#630826' }}>
             Support
           </Link>
           <AccountNavLink />
@@ -146,7 +146,7 @@ export default function HomePage() {
             className="absolute inset-0"
             style={{
               background:
-                'linear-gradient(160deg, rgba(20,40,18,0.78) 0%, rgba(37,79,34,0.62) 50%, rgba(27,58,107,0.55) 100%)',
+                'linear-gradient(160deg, rgba(20,40,18,0.78) 0%, rgba(99,8,38,0.62) 50%, rgba(27,58,107,0.55) 100%)',
             }}
           />
         </div>
@@ -160,7 +160,7 @@ export default function HomePage() {
             clipPath: 'polygon(20% 0%, 100% 0%, 100% 100%, 0% 100%)',
           }}
         >
-          <div className="absolute inset-0" style={{ background: 'linear-gradient(135deg, rgba(37,79,34,0.45) 0%, rgba(27,58,107,0.25) 100%)' }} />
+          <div className="absolute inset-0" style={{ background: 'linear-gradient(135deg, rgba(99,8,38,0.45) 0%, rgba(27,58,107,0.25) 100%)' }} />
         </div>
 
         <div
@@ -202,7 +202,7 @@ export default function HomePage() {
               rot: 2.5,
               lift: 32,
               tapeColor: 'rgba(120, 150, 110, 0.4)',
-              captionColor: '#254F22',
+              captionColor: '#630826',
               caption: '"Share it."',
               label: 'Then',
               desc: 'Text it, print a QR for the table, drop it in the group chat. One link, everyone in.',
@@ -232,7 +232,7 @@ export default function HomePage() {
                   width: 'clamp(220px, 18vw, 300px)',
                   padding: '14px 14px 56px 14px',
                   transform: `rotate(${step.rot}deg)`,
-                  boxShadow: '0 18px 44px rgba(37,79,34,0.16), 0 2px 8px rgba(37,79,34,0.08)',
+                  boxShadow: '0 18px 44px rgba(99,8,38,0.16), 0 2px 8px rgba(99,8,38,0.08)',
                 }}
               >
                 <div
@@ -292,7 +292,7 @@ export default function HomePage() {
           <div className="flex-1 h-px" style={{ background: '#E8E0D0' }} />
           <p
             style={{
-              color: '#254F22',
+              color: '#630826',
               fontFamily: 'var(--font-serif)',
               fontSize: '1.75rem',
               fontWeight: 700,
@@ -313,7 +313,7 @@ export default function HomePage() {
           style={{
             background: '#FBF4E4',
             border: '1px solid rgba(196,166,120,0.35)',
-            boxShadow: '0 10px 36px rgba(37,79,34,0.08)',
+            boxShadow: '0 10px 36px rgba(99,8,38,0.08)',
             backgroundImage:
               'repeating-linear-gradient(to bottom, transparent 0, transparent 47px, rgba(196,166,120,0.15) 47px, rgba(196,166,120,0.15) 48px)',
           }}
@@ -325,7 +325,7 @@ export default function HomePage() {
           className="text-center text-sm mt-8 italic"
           style={{ color: '#8B6F4E', fontFamily: 'var(--font-serif)' }}
         >
-          Still curious? Write to us at <span style={{ color: '#254F22', fontWeight: 600 }}>husharesupport@gmail.com</span>
+          Still curious? Write to us at <span style={{ color: '#630826', fontWeight: 600 }}>husharesupport@gmail.com</span>
         </p>
       </section>
 
@@ -337,7 +337,7 @@ export default function HomePage() {
             backgroundImage: 'url(/wedding.jpg)',
             backgroundSize: 'cover',
             backgroundPosition: 'center',
-            boxShadow: '0 24px 60px rgba(37,79,34,0.22)',
+            boxShadow: '0 24px 60px rgba(99,8,38,0.22)',
           }}
         >
           <div
@@ -421,7 +421,7 @@ export default function HomePage() {
                   style={{
                     fontFamily: 'var(--font-serif)',
                     fontStyle: 'italic',
-                    color: '#254F22',
+                    color: '#630826',
                     fontSize: 'clamp(1.9rem, 3.4vw, 2.5rem)',
                     lineHeight: 1.15,
                     fontWeight: 700,

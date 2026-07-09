@@ -26,7 +26,7 @@ const btnBase: React.CSSProperties = {
   fontSize: '0.8125rem',
   fontWeight: 600,
   background: '#FDFAF5',
-  color: '#254F22',
+  color: '#630826',
   border: '1px solid #DDD5C5',
   cursor: 'pointer',
   whiteSpace: 'nowrap' as const,
@@ -48,7 +48,7 @@ export default function GuestActionsBar({ album, photos, shareUrl, onOpenSlidesh
   useEffect(() => {
     let cancelled = false
     import('qrcode').then(({ default: QRCode }) => {
-      QRCode.toDataURL(shareUrl, { width: 300, margin: 2, color: { dark: '#254F22', light: '#FFFFFF' } })
+      QRCode.toDataURL(shareUrl, { width: 300, margin: 2, color: { dark: '#630826', light: '#FFFFFF' } })
         .then((url) => { if (!cancelled) setQrDataUrl(url) })
     })
     return () => { cancelled = true }
@@ -117,7 +117,7 @@ export default function GuestActionsBar({ album, photos, shareUrl, onOpenSlidesh
         {hasFaceFinder && (
           <button
             className="hush-press"
-            style={{ ...btnBase, background: '#254F22', color: '#FDFAF5', border: '1px solid #254F22' }}
+            style={{ ...btnBase, background: '#630826', color: '#FDFAF5', border: '1px solid #630826' }}
             onClick={onOpenFaceFinder}
           >
             <ScanFace className="w-3.5 h-3.5" />
@@ -162,7 +162,7 @@ export default function GuestActionsBar({ album, photos, shareUrl, onOpenSlidesh
             const menuInner = (
               <>
               <div className="flex items-center justify-between mb-3">
-                <span className="font-semibold text-sm" style={{ color: '#254F22' }}>Share album</span>
+                <span className="font-semibold text-sm" style={{ color: '#630826' }}>Share album</span>
                 <button type="button" onClick={() => setShareOpen(false)} style={{ color: '#A89880' }} aria-label="Close">
                   <X className="w-4 h-4" />
                 </button>
@@ -174,7 +174,7 @@ export default function GuestActionsBar({ album, photos, shareUrl, onOpenSlidesh
                 onClick={handleNativeShare}
               >
                 <span>
-                  <span className="block text-sm font-semibold" style={{ color: '#254F22' }}>Share album</span>
+                  <span className="block text-sm font-semibold" style={{ color: '#630826' }}>Share album</span>
                   <span className="block text-xs" style={{ color: '#8B6F4E' }}>Send via messages, apps or copy</span>
                 </span>
                 <Share2 className="w-4 h-4 flex-none" style={{ color: '#7C5C3E' }} />
@@ -186,17 +186,17 @@ export default function GuestActionsBar({ album, photos, shareUrl, onOpenSlidesh
                 onClick={copyLink}
               >
                 <span>
-                  <span className="block text-sm font-semibold" style={{ color: '#254F22' }}>Copy link</span>
+                  <span className="block text-sm font-semibold" style={{ color: '#630826' }}>Copy link</span>
                   <span className="block text-xs truncate" style={{ color: '#8B6F4E', maxWidth: 200 }}>{shareUrl}</span>
                 </span>
-                {copied ? <Check className="w-4 h-4" style={{ color: '#254F22' }} /> : <Copy className="w-4 h-4" style={{ color: '#7C5C3E' }} />}
+                {copied ? <Check className="w-4 h-4" style={{ color: '#630826' }} /> : <Copy className="w-4 h-4" style={{ color: '#7C5C3E' }} />}
               </button>
 
               <div className="mt-3 rounded-xl p-3" style={{ background: '#FFFFFF', border: '1px solid #DDD5C5' }}>
                 <div className="flex items-center gap-3">
                   {qrDataUrl && <Image src={qrDataUrl} alt="QR Code" width={80} height={80} unoptimized />}
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm font-semibold flex items-center gap-2" style={{ color: '#254F22' }}>
+                    <p className="text-sm font-semibold flex items-center gap-2" style={{ color: '#630826' }}>
                       <QrCode className="w-4 h-4" />
                       QR code
                     </p>

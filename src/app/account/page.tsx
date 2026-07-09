@@ -38,10 +38,10 @@ function AccountNav() {
         />
       </Link>
       <HamburgerMenu>
-        <Link href="/" className="text-sm font-medium hover:underline" style={{ color: '#254F22' }}>Home</Link>
-        <Link href="/pricing" className="text-sm font-medium hover:underline" style={{ color: '#254F22' }}>Pricing</Link>
-        <Link href="/about" className="text-sm font-medium hover:underline" style={{ color: '#254F22' }}>About</Link>
-        <Link href="/support" className="text-sm font-medium hover:underline" style={{ color: '#254F22' }}>Support</Link>
+        <Link href="/" className="text-sm font-medium hover:underline" style={{ color: '#630826' }}>Home</Link>
+        <Link href="/pricing" className="text-sm font-medium hover:underline" style={{ color: '#630826' }}>Pricing</Link>
+        <Link href="/about" className="text-sm font-medium hover:underline" style={{ color: '#630826' }}>About</Link>
+        <Link href="/support" className="text-sm font-medium hover:underline" style={{ color: '#630826' }}>Support</Link>
       </HamburgerMenu>
     </nav>
   )
@@ -108,12 +108,12 @@ export default async function AccountPage({ searchParams }: Props) {
         <main className="flex items-center justify-center px-4 py-16">
           <div
             className="max-w-md w-full rounded-2xl p-8 text-center"
-            style={{ background: '#FFFFFF', border: '1px solid #DDD5C5', boxShadow: '0 4px 32px rgba(37,79,34,0.10)' }}
+            style={{ background: '#FFFFFF', border: '1px solid #DDD5C5', boxShadow: '0 4px 32px rgba(99,8,38,0.10)' }}
           >
             <p className="text-xs uppercase mb-3" style={{ color: '#8B6F4E', letterSpacing: '0.18em', fontWeight: 600 }}>
               403 - Forbidden
             </p>
-            <h1 className="text-2xl font-bold mb-3" style={{ color: '#254F22', fontFamily: 'var(--font-serif)' }}>
+            <h1 className="text-2xl font-bold mb-3" style={{ color: '#630826', fontFamily: 'var(--font-serif)' }}>
               No account dashboard yet
             </h1>
             <p className="text-sm leading-relaxed mb-5" style={{ color: '#5C4A3C' }}>
@@ -158,7 +158,7 @@ export default async function AccountPage({ searchParams }: Props) {
         <main className="flex items-center justify-center px-4 py-16">
           <div className="max-w-md w-full rounded-2xl p-8 text-center" style={{ background: '#FFFFFF', border: '1px solid #DDD5C5' }}>
             <p className="text-xs uppercase mb-3" style={{ color: '#8B6F4E', letterSpacing: '0.18em', fontWeight: 600 }}>Service error</p>
-            <h1 className="text-2xl font-bold mb-3" style={{ color: '#254F22', fontFamily: 'var(--font-serif)' }}>Dashboard temporarily unavailable</h1>
+            <h1 className="text-2xl font-bold mb-3" style={{ color: '#630826', fontFamily: 'var(--font-serif)' }}>Dashboard temporarily unavailable</h1>
             <p className="text-sm leading-relaxed mb-5" style={{ color: '#5C4A3C' }}>
               We&apos;re having trouble connecting to our database. Your albums and data are safe. Please try again in a moment.
             </p>
@@ -193,7 +193,7 @@ export default async function AccountPage({ searchParams }: Props) {
         <main className="flex items-center justify-center px-4 py-16">
           <div className="max-w-md w-full rounded-2xl p-8 text-center" style={{ background: '#FFFFFF', border: '1px solid #DDD5C5' }}>
             <p className="text-xs uppercase mb-3" style={{ color: '#8B6F4E', letterSpacing: '0.18em', fontWeight: 600 }}>Service error</p>
-            <h1 className="text-2xl font-bold mb-3" style={{ color: '#254F22', fontFamily: 'var(--font-serif)' }}>Dashboard temporarily unavailable</h1>
+            <h1 className="text-2xl font-bold mb-3" style={{ color: '#630826', fontFamily: 'var(--font-serif)' }}>Dashboard temporarily unavailable</h1>
             <p className="text-sm leading-relaxed mb-5" style={{ color: '#5C4A3C' }}>
               We&apos;re having trouble loading your data. Your albums and data are safe. Please try again in a moment.
             </p>
@@ -212,7 +212,7 @@ export default async function AccountPage({ searchParams }: Props) {
         <main className="flex items-center justify-center px-4 py-16">
           <div className="max-w-md w-full rounded-2xl p-8 text-center" style={{ background: '#FFFFFF', border: '1px solid #DDD5C5' }}>
             <p className="text-xs uppercase mb-3" style={{ color: '#8B6F4E', letterSpacing: '0.18em', fontWeight: 600 }}>Service error</p>
-            <h1 className="text-2xl font-bold mb-3" style={{ color: '#254F22', fontFamily: 'var(--font-serif)' }}>Dashboard temporarily unavailable</h1>
+            <h1 className="text-2xl font-bold mb-3" style={{ color: '#630826', fontFamily: 'var(--font-serif)' }}>Dashboard temporarily unavailable</h1>
             <p className="text-sm leading-relaxed mb-5" style={{ color: '#5C4A3C' }}>
               We&apos;re having trouble loading your albums. Your data is safe. Please try again in a moment.
             </p>
@@ -291,12 +291,12 @@ export default async function AccountPage({ searchParams }: Props) {
           {/* Hero */}
           <section
             className="hush-account-hero hush-fade-up rounded-2xl p-6 sm:p-8 mb-6"
-            style={{ background: '#FFFFFF', border: '1px solid #DDD5C5', boxShadow: '0 4px 32px rgba(37,79,34,0.10)' }}
+            style={{ background: '#FFFFFF', border: '1px solid #DDD5C5', boxShadow: '0 4px 32px rgba(99,8,38,0.10)' }}
           >
             <div className="flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
               <div>
                 <p className="text-xs mb-3 uppercase tracking-[0.18em]" style={{ color: '#8B6F4E', fontWeight: 600 }}>Account</p>
-                <h1 className="text-3xl sm:text-4xl font-bold mb-3" style={{ color: '#254F22', fontFamily: 'var(--font-serif)' }}>
+                <h1 className="text-3xl sm:text-4xl font-bold mb-3" style={{ color: '#630826', fontFamily: 'var(--font-serif)' }}>
                   Your Hushare workspace
                 </h1>
                 <p className="text-sm break-all" style={{ color: '#5C4A3C' }}>
@@ -305,7 +305,7 @@ export default async function AccountPage({ searchParams }: Props) {
               </div>
               <div className="rounded-xl px-4 py-3" style={{ background: '#F5F0E8', border: '1px solid #DDD5C5' }}>
                 <p className="text-xs uppercase tracking-wide mb-1" style={{ color: '#8B6F4E' }}>Current access</p>
-                <p className="font-semibold" style={{ color: '#254F22' }}>{planName}</p>
+                <p className="font-semibold" style={{ color: '#630826' }}>{planName}</p>
               </div>
             </div>
           </section>
@@ -316,10 +316,10 @@ export default async function AccountPage({ searchParams }: Props) {
               <div
                 key={label}
                 className="rounded-2xl p-4"
-                style={{ background: '#FFFFFF', border: '1px solid #DDD5C5', boxShadow: '0 4px 22px rgba(37,79,34,0.06)' }}
+                style={{ background: '#FFFFFF', border: '1px solid #DDD5C5', boxShadow: '0 4px 22px rgba(99,8,38,0.06)' }}
               >
                 <p className="text-xs uppercase tracking-wide mb-2" style={{ color: '#8B6F4E' }}>{label}</p>
-                <p className="text-2xl font-bold" style={{ color: '#254F22', fontFamily: 'var(--font-serif)' }}>{value}</p>
+                <p className="text-2xl font-bold" style={{ color: '#630826', fontFamily: 'var(--font-serif)' }}>{value}</p>
                 <p className="mt-1 text-xs leading-snug" style={{ color: '#7C5C3E' }}>{detail}</p>
               </div>
             ))}
@@ -329,14 +329,14 @@ export default async function AccountPage({ searchParams }: Props) {
           <div className="hush-account-grid grid grid-cols-1 lg:grid-cols-[1.1fr_0.9fr] gap-6">
             <section
               className="hush-account-plan-card hush-hover-lift rounded-2xl p-6"
-              style={{ background: '#FFFFFF', border: '1px solid #DDD5C5', boxShadow: '0 4px 32px rgba(37,79,34,0.08)' }}
+              style={{ background: '#FFFFFF', border: '1px solid #DDD5C5', boxShadow: '0 4px 32px rgba(99,8,38,0.08)' }}
             >
               <div className="flex items-start justify-between gap-4 mb-5">
                 <div>
                   <p className="text-xs uppercase tracking-wide mb-1" style={{ color: '#8B6F4E' }}>Plan</p>
-                  <h2 className="text-xl font-semibold" style={{ color: '#254F22', fontFamily: 'var(--font-serif)' }}>{planName}</h2>
+                  <h2 className="text-xl font-semibold" style={{ color: '#630826', fontFamily: 'var(--font-serif)' }}>{planName}</h2>
                 </div>
-                <span className="rounded-full px-3 py-1 text-xs font-semibold capitalize" style={{ background: '#EAF0E8', color: '#254F22' }}>
+                <span className="rounded-full px-3 py-1 text-xs font-semibold capitalize" style={{ background: '#F6E9EE', color: '#630826' }}>
                   {isAdmin ? 'admin' : subscription?.status ?? 'test'}
                 </span>
               </div>
@@ -344,7 +344,7 @@ export default async function AccountPage({ searchParams }: Props) {
               <dl className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm mb-5" style={{ color: '#5C4A3C' }}>
                 <div className="rounded-xl p-4" style={{ background: '#FDFAF5', border: '1px solid #E8E0D2' }}>
                   <dt className="text-xs uppercase tracking-wide mb-1" style={{ color: '#8B6F4E' }}>Uploads</dt>
-                  <dd className="font-semibold" style={{ color: '#254F22' }}>
+                  <dd className="font-semibold" style={{ color: '#630826' }}>
                     {isAdmin ? 'Everything enabled' : subscription ? 'Up to 200 MB' : 'Studio limits enabled'}
                   </dd>
                 </div>
@@ -352,7 +352,7 @@ export default async function AccountPage({ searchParams }: Props) {
                   <dt className="text-xs uppercase tracking-wide mb-1" style={{ color: '#8B6F4E' }}>
                     {periodEnd ? nextLabel : 'Billing'}
                   </dt>
-                  <dd className="font-semibold" style={{ color: '#254F22' }}>
+                  <dd className="font-semibold" style={{ color: '#630826' }}>
                     {isAdmin ? 'Admin override' : periodEnd ?? 'No active paid subscription'}
                   </dd>
                 </div>
@@ -371,7 +371,7 @@ export default async function AccountPage({ searchParams }: Props) {
                   <button
                     type="submit"
                     className="w-full font-semibold rounded-xl py-3 text-sm transition hover:opacity-90"
-                    style={{ background: '#254F22', color: '#FDFAF5' }}
+                    style={{ background: '#630826', color: '#FDFAF5' }}
                   >
                     Manage subscription
                   </button>
@@ -384,7 +384,7 @@ export default async function AccountPage({ searchParams }: Props) {
               style={{ background: '#FBF4E4', border: '1px solid rgba(196,166,120,0.35)' }}
             >
               <p className="text-xs uppercase tracking-wide mb-2" style={{ color: '#8B6F4E' }}>Quick actions</p>
-              <h2 className="text-xl font-semibold mb-3" style={{ color: '#254F22', fontFamily: 'var(--font-serif)' }}>Keep building</h2>
+              <h2 className="text-xl font-semibold mb-3" style={{ color: '#630826', fontFamily: 'var(--font-serif)' }}>Keep building</h2>
               <p className="text-sm leading-relaxed mb-5" style={{ color: '#5C4A3C' }}>
                 Create new albums, open Studio pages, or get help without hunting around the site.
               </p>
@@ -392,14 +392,14 @@ export default async function AccountPage({ searchParams }: Props) {
                 <Link
                   href="/"
                   className="inline-flex w-full items-center justify-center rounded-xl py-3 text-sm font-semibold transition hover:opacity-90"
-                  style={{ background: '#254F22', color: '#FDFAF5' }}
+                  style={{ background: '#630826', color: '#FDFAF5' }}
                 >
                   Create a new album
                 </Link>
                 <Link
                   href="/support"
                   className="inline-flex w-full items-center justify-center rounded-xl py-3 text-sm font-semibold transition hover:opacity-90"
-                  style={{ background: '#FFFFFF', border: '1px solid #DDD5C5', color: '#254F22' }}
+                  style={{ background: '#FFFFFF', border: '1px solid #DDD5C5', color: '#630826' }}
                 >
                   Contact support
                 </Link>
@@ -409,11 +409,11 @@ export default async function AccountPage({ searchParams }: Props) {
 
           {/* Collections + Albums */}
           <section className="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-[1.15fr_0.85fr]">
-            <div className="rounded-2xl p-6" style={{ background: '#FFFFFF', border: '1px solid #DDD5C5', boxShadow: '0 4px 32px rgba(37,79,34,0.08)' }}>
+            <div className="rounded-2xl p-6" style={{ background: '#FFFFFF', border: '1px solid #DDD5C5', boxShadow: '0 4px 32px rgba(99,8,38,0.08)' }}>
               <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                 <div>
                   <p className="text-xs uppercase tracking-wide mb-1" style={{ color: '#8B6F4E' }}>Collections</p>
-                  <h2 className="text-xl font-semibold" style={{ color: '#254F22', fontFamily: 'var(--font-serif)' }}>Studio pages</h2>
+                  <h2 className="text-xl font-semibold" style={{ color: '#630826', fontFamily: 'var(--font-serif)' }}>Studio pages</h2>
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
                   <span className="text-xs rounded-full px-3 py-1" style={{ background: '#F5F0E8', color: '#7C5C3E', border: '1px solid #E8E0D2' }}>
@@ -428,7 +428,7 @@ export default async function AccountPage({ searchParams }: Props) {
                   <div key={collection.id} className="rounded-xl px-4 py-3" style={{ background: '#FDFAF5', border: '1px solid #E8E0D2' }}>
                     <Link href={`/c/${collection.slug}`} className="flex items-center justify-between gap-4 transition hover:opacity-80">
                       <span className="min-w-0">
-                        <span className="block truncate font-semibold" style={{ color: '#254F22' }}>{collection.name}</span>
+                        <span className="block truncate font-semibold" style={{ color: '#630826' }}>{collection.name}</span>
                         <span className="block truncate text-xs" style={{ color: '#8B6F4E' }}>/c/{collection.slug}</span>
                         {collection.description && (
                           <span
@@ -448,7 +448,7 @@ export default async function AccountPage({ searchParams }: Props) {
                 ))}
                 {collectionsWithCounts.length === 0 && (
                   <div className="rounded-xl px-4 py-6 text-center" style={{ background: '#FDFAF5', border: '1px solid #E8E0D2' }}>
-                    <p className="font-semibold" style={{ color: '#254F22' }}>No collections yet</p>
+                    <p className="font-semibold" style={{ color: '#630826' }}>No collections yet</p>
                     <p className="mx-auto mt-2 max-w-sm text-sm leading-relaxed" style={{ color: '#5C4A3C' }}>
                       Create your first collection above, then add albums to it from each album&apos;s Settings page.
                     </p>
@@ -457,10 +457,10 @@ export default async function AccountPage({ searchParams }: Props) {
               </div>
             </div>
 
-            <div className="rounded-2xl p-6" style={{ background: '#FFFFFF', border: '1px solid #DDD5C5', boxShadow: '0 4px 32px rgba(37,79,34,0.08)' }}>
+            <div className="rounded-2xl p-6" style={{ background: '#FFFFFF', border: '1px solid #DDD5C5', boxShadow: '0 4px 32px rgba(99,8,38,0.08)' }}>
               <div className="mb-5">
                 <p className="text-xs uppercase tracking-wide mb-1" style={{ color: '#8B6F4E' }}>Albums</p>
-                <h2 className="text-xl font-semibold" style={{ color: '#254F22', fontFamily: 'var(--font-serif)' }}>Recently linked</h2>
+                <h2 className="text-xl font-semibold" style={{ color: '#630826', fontFamily: 'var(--font-serif)' }}>Recently linked</h2>
               </div>
               <div className="space-y-3">
                 {recentAlbums.map((album) => (
@@ -476,7 +476,7 @@ export default async function AccountPage({ searchParams }: Props) {
                         )}
                       </span>
                       <span className="min-w-0">
-                        <span className="block truncate text-sm font-semibold" style={{ color: '#254F22' }}>{album.title}</span>
+                        <span className="block truncate text-sm font-semibold" style={{ color: '#630826' }}>{album.title}</span>
                         <span className="block text-xs" style={{ color: '#8B6F4E' }}>
                           {album.media_count} item{album.media_count === 1 ? '' : 's'} · Created {formatDate(album.created_at)}
                         </span>
@@ -488,14 +488,14 @@ export default async function AccountPage({ searchParams }: Props) {
                 ))}
                 {recentAlbums.length === 0 && (
                   <div className="rounded-xl px-4 py-6 text-center" style={{ background: '#FDFAF5', border: '1px solid #E8E0D2' }}>
-                    <p className="font-semibold" style={{ color: '#254F22' }}>No albums yet</p>
+                    <p className="font-semibold" style={{ color: '#630826' }}>No albums yet</p>
                     <p className="mx-auto mt-2 max-w-sm text-sm leading-relaxed" style={{ color: '#5C4A3C' }}>
                       Albums you create while signed in appear here automatically.
                     </p>
                     <Link
                       href="/"
                       className="mt-4 inline-flex items-center justify-center rounded-xl px-4 py-2 text-sm font-semibold transition hover:opacity-90"
-                      style={{ background: '#254F22', color: '#FDFAF5' }}
+                      style={{ background: '#630826', color: '#FDFAF5' }}
                     >
                       Start one now
                     </Link>
@@ -518,7 +518,7 @@ export default async function AccountPage({ searchParams }: Props) {
               ],
             ].map(([title, copy]) => (
               <div key={title} className="hush-hover-lift rounded-2xl p-5" style={{ background: '#FFFFFF', border: '1px solid #DDD5C5' }}>
-                <h3 className="font-semibold mb-2" style={{ color: '#254F22' }}>{title}</h3>
+                <h3 className="font-semibold mb-2" style={{ color: '#630826' }}>{title}</h3>
                 <p className="text-sm leading-relaxed" style={{ color: '#5C4A3C' }}>{copy}</p>
               </div>
             ))}

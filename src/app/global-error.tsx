@@ -35,7 +35,7 @@ export default function GlobalError({
         textAlign: 'center',
         boxSizing: 'border-box',
       }}>
-        <h1 style={{ fontSize: '1.5rem', fontWeight: 700, margin: '0 0 0.5rem', color: '#254F22' }}>
+        <h1 style={{ fontSize: '1.5rem', fontWeight: 700, margin: '0 0 0.5rem', color: '#630826' }}>
           Something went wrong
         </h1>
         <p style={{ fontSize: '0.875rem', margin: '0 0 1.5rem', color: '#5C4A3C', maxWidth: '24rem' }}>
@@ -49,7 +49,7 @@ export default function GlobalError({
               padding: '0.625rem 1.25rem',
               borderRadius: '0.75rem',
               border: 'none',
-              background: '#254F22',
+              background: '#630826',
               color: '#FDFAF5',
               fontWeight: 600,
               cursor: 'pointer',
@@ -64,7 +64,7 @@ export default function GlobalError({
               padding: '0.625rem 1.25rem',
               borderRadius: '0.75rem',
               background: '#F0EAE0',
-              color: '#254F22',
+              color: '#630826',
               fontWeight: 600,
               fontSize: '0.875rem',
               textDecoration: 'none',

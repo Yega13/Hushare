@@ -61,7 +61,7 @@ export default function PasswordGate({ slug, title, onUnlocked }: Props) {
   return (
     <div
       className="min-h-dvh flex flex-col items-center justify-center px-6 text-center"
-      style={{ background: '#254F22', color: '#FDFAF5' }}
+      style={{ background: '#630826', color: '#FDFAF5' }}
     >
       <div className="w-full max-w-sm">
         <Lock className="w-8 h-8 mx-auto mb-4" style={{ opacity: 0.9 }} aria-hidden="true" />
@@ -130,7 +130,7 @@ export default function PasswordGate({ slug, title, onUnlocked }: Props) {
             onClick={() => void handleSubmit()}
             disabled={submitting || !password}
             className="w-full rounded-xl py-3 font-semibold transition hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed"
-            style={{ background: '#FDFAF5', color: '#254F22' }}
+            style={{ background: '#FDFAF5', color: '#630826' }}
           >
             {submitting ? 'Checking…' : 'Unlock album'}
           </button>

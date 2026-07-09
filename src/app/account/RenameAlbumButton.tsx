@@ -51,7 +51,7 @@ export default function RenameAlbumButton({ albumId, title: initialTitle }: Prop
           maxLength={120}
           autoFocus
           className="w-full rounded-lg px-3 py-2 text-sm focus:outline-none"
-          style={{ background: '#FDFAF5', border: '1px solid #DDD5C5', color: '#254F22' }}
+          style={{ background: '#FDFAF5', border: '1px solid #DDD5C5', color: '#630826' }}
           onKeyDown={(e) => {
             if (e.key === 'Enter') void saveTitle()
             if (e.key === 'Escape') setEditing(false)
@@ -63,7 +63,7 @@ export default function RenameAlbumButton({ albumId, title: initialTitle }: Prop
             onClick={saveTitle}
             disabled={saving}
             className="hush-press inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-semibold transition disabled:opacity-60"
-            style={{ background: '#254F22', color: '#FDFAF5' }}
+            style={{ background: '#630826', color: '#FDFAF5' }}
           >
             <Check className="h-3.5 w-3.5" />
             {saving ? 'Saving...' : 'Save'}

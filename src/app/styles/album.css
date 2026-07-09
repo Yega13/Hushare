@@ -150,7 +150,7 @@
     border: 1px solid rgba(221, 213, 197, 0.9);
     border-radius: 1.1rem;
     background: rgba(255, 255, 255, 0.72);
-    box-shadow: 0 10px 28px rgba(37, 79, 34, 0.08);
+    box-shadow: 0 10px 28px rgba(99, 8, 38, 0.08);
     padding: 0.95rem 1rem !important;
   }
 
@@ -184,7 +184,7 @@
 
   .hush-upload-zone {
     background: rgba(253, 250, 245, 0.9) !important;
-    box-shadow: 0 12px 32px rgba(37, 79, 34, 0.1);
+    box-shadow: 0 12px 32px rgba(99, 8, 38, 0.1);
     backdrop-filter: blur(6px);
     -webkit-backdrop-filter: blur(6px);
   }
@@ -353,7 +353,7 @@
     padding: 1.1rem 0.95rem !important;
     border-radius: 1.15rem !important;
     background: rgba(253, 250, 245, 0.9) !important;
-    box-shadow: 0 12px 32px rgba(37, 79, 34, 0.1);
+    box-shadow: 0 12px 32px rgba(99, 8, 38, 0.1);
     backdrop-filter: blur(6px);
     -webkit-backdrop-filter: blur(6px);
   }

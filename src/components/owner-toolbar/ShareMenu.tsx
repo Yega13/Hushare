@@ -26,7 +26,7 @@ async function downloadQr(shareUrl: string, albumTitle: string, format: 'png' | 
   if (format === 'svg') {
     const svgString = await QRCode.toString(shareUrl, {
       type: 'svg', width: 600, margin: 2,
-      color: { dark: '#254F22', light: '#FFFFFF' },
+      color: { dark: '#630826', light: '#FFFFFF' },
     })
     const blob = new Blob([svgString], { type: 'image/svg+xml' })
     const url = URL.createObjectURL(blob)
@@ -41,7 +41,7 @@ async function downloadQr(shareUrl: string, albumTitle: string, format: 'png' | 
   }
 
   const canvas = document.createElement('canvas')
-  await QRCode.toCanvas(canvas, shareUrl, { width: 600, margin: 2, color: { dark: '#254F22', light: '#FFFFFF' } })
+  await QRCode.toCanvas(canvas, shareUrl, { width: 600, margin: 2, color: { dark: '#630826', light: '#FFFFFF' } })
   const link = document.createElement('a')
   link.download = `${slug}-qr.png`
   link.href = canvas.toDataURL('image/png')
@@ -97,14 +97,14 @@ function TableCardView({ shareUrl, albumTitle, onBack }: { shareUrl: string; alb
           style={{ color: '#7C5C3E', background: '#F5F0E8', border: '1px solid #DDD5C5' }}>
           <ArrowLeft className="w-3 h-3" /> Back
         </button>
-        <span className="text-sm font-semibold" style={{ color: '#254F22' }}>Table card</span>
+        <span className="text-sm font-semibold" style={{ color: '#630826' }}>Table card</span>
       </div>
 
       <div className="flex gap-1.5 mb-3">
         {(['branded', 'bw'] as CardStyle[]).map(s => (
           <button key={s} onClick={() => setStyle(s)}
             className="flex-1 py-2 text-xs font-semibold rounded-xl transition"
-            style={{ background: style === s ? '#254F22' : '#F5F0E8', color: style === s ? '#FDFAF5' : '#5C3D2E', border: '1px solid ' + (style === s ? '#254F22' : '#DDD5C5') }}>
+            style={{ background: style === s ? '#630826' : '#F5F0E8', color: style === s ? '#FDFAF5' : '#5C3D2E', border: '1px solid ' + (style === s ? '#630826' : '#DDD5C5') }}>
             {s === 'branded' ? 'Hushare Branded' : 'B&W'}
           </button>
         ))}
@@ -127,14 +127,14 @@ function TableCardView({ shareUrl, albumTitle, onBack }: { shareUrl: string; alb
             {(['png', 'pdf'] as const).map(f => (
               <button key={f} onClick={() => setDlFormat(f)}
                 className="flex-1 py-1 text-xs font-semibold transition"
-                style={{ background: dlFormat === f ? '#254F22' : '#F5F0E8', color: dlFormat === f ? '#FDFAF5' : '#5C3D2E' }}>
+                style={{ background: dlFormat === f ? '#630826' : '#F5F0E8', color: dlFormat === f ? '#FDFAF5' : '#5C3D2E' }}>
                 {f.toUpperCase()}
               </button>
             ))}
           </div>
           <button onClick={handleDownload} disabled={downloading}
             className="w-full flex items-center justify-center gap-1.5 text-xs font-semibold rounded-xl py-2.5 transition hover:opacity-90 disabled:opacity-50"
-            style={{ background: '#254F22', color: '#FDFAF5' }}>
+            style={{ background: '#630826', color: '#FDFAF5' }}>
             <Download className="w-3.5 h-3.5" />
             {downloading ? 'Generating…' : `Download ${dlFormat.toUpperCase()}`}
           </button>
@@ -155,7 +155,7 @@ export default function ShareMenu({ copied, ownerUrl, shareUrl, albumTitle, onCl
   useEffect(() => {
     let cancelled = false
     import('qrcode').then(({ default: QRCode }) => {
-      QRCode.toDataURL(shareUrl, { width: 300, margin: 2, color: { dark: '#254F22', light: '#FFFFFF' } })
+      QRCode.toDataURL(shareUrl, { width: 300, margin: 2, color: { dark: '#630826', light: '#FFFFFF' } })
         .then((url) => { if (!cancelled) setQrDataUrl(url) })
     })
     return () => { cancelled = true }
@@ -177,7 +177,7 @@ export default function ShareMenu({ copied, ownerUrl, shareUrl, albumTitle, onCl
       ) : (
         <>
           <div className="flex items-center justify-between mb-3">
-            <span className="font-semibold text-sm" style={{ color: '#254F22' }}>Send link</span>
+            <span className="font-semibold text-sm" style={{ color: '#630826' }}>Send link</span>
             <button onClick={onClose} style={{ color: '#A89880', cursor: 'pointer' }} aria-label="Close share menu">
               <X className="w-4 h-4" />
             </button>
@@ -189,7 +189,7 @@ export default function ShareMenu({ copied, ownerUrl, shareUrl, albumTitle, onCl
             onClick={handleShare}
           >
             <span>
-              <span className="block text-sm font-semibold" style={{ color: '#254F22' }}>Share album</span>
+              <span className="block text-sm font-semibold" style={{ color: '#630826' }}>Share album</span>
               <span className="block text-xs" style={{ color: '#8B6F4E' }}>Send via messages, apps or copy</span>
             </span>
             <Share2 className="w-4 h-4 flex-none" style={{ color: '#7C5C3E' }} />
@@ -201,10 +201,10 @@ export default function ShareMenu({ copied, ownerUrl, shareUrl, albumTitle, onCl
             onClick={() => onCopy('share')}
           >
             <span>
-              <span className="block text-sm font-semibold" style={{ color: '#254F22' }}>Guest share link</span>
+              <span className="block text-sm font-semibold" style={{ color: '#630826' }}>Guest share link</span>
               <span className="block text-xs truncate" style={{ color: '#8B6F4E', maxWidth: 220 }}>{shareUrl}</span>
             </span>
-            {copied === 'share' ? <Check className="w-4 h-4 flex-none" style={{ color: '#254F22' }} /> : <Copy className="w-4 h-4 flex-none" style={{ color: '#7C5C3E' }} />}
+            {copied === 'share' ? <Check className="w-4 h-4 flex-none" style={{ color: '#630826' }} /> : <Copy className="w-4 h-4 flex-none" style={{ color: '#7C5C3E' }} />}
           </button>
 
           {ownerUrl && (
@@ -225,7 +225,7 @@ export default function ShareMenu({ copied, ownerUrl, shareUrl, albumTitle, onCl
             <div className="flex items-center gap-3">
               {qrDataUrl && <Image src={qrDataUrl} alt="QR Code" width={92} height={92} unoptimized />}
               <div className="flex-1 min-w-0">
-                <p className="text-sm font-semibold flex items-center gap-2" style={{ color: '#254F22' }}>
+                <p className="text-sm font-semibold flex items-center gap-2" style={{ color: '#630826' }}>
                   <QrCode className="w-4 h-4" />
                   QR code
                 </p>
@@ -235,14 +235,14 @@ export default function ShareMenu({ copied, ownerUrl, shareUrl, albumTitle, onCl
                     {(['png', 'svg'] as const).map(f => (
                       <button key={f} onClick={() => setQrFormat(f)}
                         className="px-2.5 py-1 text-xs font-semibold transition"
-                        style={{ background: qrFormat === f ? '#254F22' : '#F5F0E8', color: qrFormat === f ? '#FDFAF5' : '#5C3D2E' }}>
+                        style={{ background: qrFormat === f ? '#630826' : '#F5F0E8', color: qrFormat === f ? '#FDFAF5' : '#5C3D2E' }}>
                         {f.toUpperCase()}
                       </button>
                     ))}
                   </div>
                   <button
                     className="flex items-center gap-1.5 text-xs font-semibold rounded-lg px-2.5 py-1.5 transition hover:opacity-80"
-                    style={{ background: '#254F22', color: '#FDFAF5' }}
+                    style={{ background: '#630826', color: '#FDFAF5' }}
                     onClick={() => downloadQr(shareUrl, albumTitle, qrFormat)}
                   >
                     <Download className="w-3 h-3" />

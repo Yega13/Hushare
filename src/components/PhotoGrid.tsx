@@ -446,7 +446,7 @@ export default function PhotoGrid({ album, photos, isOwner, slug, forceGlobalRad
       {showArrangeHint && (
         <div
           className="flex items-center gap-3 rounded-2xl px-4 py-3 mb-4"
-          style={{ background: '#254F22' }}
+          style={{ background: '#630826' }}
         >
           <span
             className="shrink-0 flex items-center justify-center rounded-lg"
@@ -630,12 +630,12 @@ export default function PhotoGrid({ album, photos, isOwner, slug, forceGlobalRad
             <button
               type="button"
               className="text-sm font-semibold rounded-xl px-3 py-1.5 transition hover:opacity-80"
-              style={{ background: '#EAF0E8', color: '#254F22' }}
+              style={{ background: '#F6E9EE', color: '#630826' }}
               onClick={() => selectAll(photos)}
             >
               All
             </button>
-            <span className="text-sm font-medium" style={{ color: '#254F22' }}>
+            <span className="text-sm font-medium" style={{ color: '#630826' }}>
               {selectedIds.size} selected
             </span>
           </div>

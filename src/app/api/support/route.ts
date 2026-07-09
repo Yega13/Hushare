@@ -126,7 +126,7 @@ export async function POST(req: Request) {
   ].join('\n')
 
   const html = `
-    <div style="font-family: -apple-system, system-ui, sans-serif; color: #254F22; max-width: 560px; margin: 0 auto; padding: 24px;">
+    <div style="font-family: -apple-system, system-ui, sans-serif; color: #630826; max-width: 560px; margin: 0 auto; padding: 24px;">
       <h2 style="margin: 0 0 16px; font-size: 18px;">New support message</h2>
       <p style="margin: 0 0 8px; color: #5C4A3C;"><strong>From:</strong> ${escapeHtml(safeName)} &lt;${escapeHtml(email)}&gt;</p>
       <p style="margin: 0 0 8px; color: #5C4A3C;"><strong>Subject:</strong> ${escapeHtml(subjectLine)}</p>

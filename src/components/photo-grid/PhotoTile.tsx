@@ -265,13 +265,13 @@ const PhotoTile = React.memo(function PhotoTile({
         {isOwner && selectMode && (
           <div
             className="absolute inset-0 pointer-events-none z-10"
-            style={{ background: selectedIds.has(photo.id) ? 'rgba(37,79,34,0.28)' : 'transparent' }}
+            style={{ background: selectedIds.has(photo.id) ? 'rgba(99,8,38,0.28)' : 'transparent' }}
           >
             <span
               className="absolute top-2 left-2 w-6 h-6 rounded-full flex items-center justify-center"
               style={{
-                background: selectedIds.has(photo.id) ? '#254F22' : 'rgba(253,250,245,0.88)',
-                border: `2px solid ${selectedIds.has(photo.id) ? '#254F22' : 'rgba(37,79,34,0.40)'}`,
+                background: selectedIds.has(photo.id) ? '#630826' : 'rgba(253,250,245,0.88)',
+                border: `2px solid ${selectedIds.has(photo.id) ? '#630826' : 'rgba(99,8,38,0.40)'}`,
               }}
             >
               {selectedIds.has(photo.id) && <Check className="w-3.5 h-3.5" style={{ color: '#FDFAF5' }} />}
@@ -285,7 +285,7 @@ const PhotoTile = React.memo(function PhotoTile({
             data-drag-handle="true"
             style={{
               touchAction: 'none',
-              background: 'rgba(37,79,34,0.78)',
+              background: 'rgba(99,8,38,0.78)',
               backdropFilter: 'blur(4px)',
               WebkitBackdropFilter: 'blur(4px)',
               cursor: reorderDraggingId === photo.id ? 'grabbing' : 'grab',

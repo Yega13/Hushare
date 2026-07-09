@@ -62,7 +62,7 @@ export default function SubscriptionPolling({ email }: { email: string }) {
           style={{
             background: '#FFFFFF',
             border: '1px solid #DDD5C5',
-            boxShadow: '0 4px 32px rgba(37,79,34,0.10)',
+            boxShadow: '0 4px 32px rgba(99,8,38,0.10)',
           }}
         >
           <p
@@ -73,7 +73,7 @@ export default function SubscriptionPolling({ email }: { email: string }) {
           </p>
           <h1
             className="text-2xl font-bold mb-3"
-            style={{ color: '#254F22', fontFamily: 'var(--font-serif)' }}
+            style={{ color: '#630826', fontFamily: 'var(--font-serif)' }}
           >
             We&apos;re still confirming your subscription
           </h1>
@@ -83,7 +83,7 @@ export default function SubscriptionPolling({ email }: { email: string }) {
             page shortly. If it&apos;s still not showing in 5 minutes, email{' '}
             <a
               href="mailto:husharesupport@gmail.com"
-              style={{ color: '#254F22', textDecoration: 'underline', textDecorationStyle: 'dotted' }}
+              style={{ color: '#630826', textDecoration: 'underline', textDecorationStyle: 'dotted' }}
             >
               husharesupport@gmail.com
             </a>{' '}
@@ -93,7 +93,7 @@ export default function SubscriptionPolling({ email }: { email: string }) {
             type="button"
             onClick={() => routerRef.current.refresh()}
             className="w-full font-semibold rounded-xl py-2.5 text-sm transition hover:opacity-90"
-            style={{ background: '#254F22', color: '#FDFAF5' }}
+            style={{ background: '#630826', color: '#FDFAF5' }}
           >
             Refresh
           </button>
@@ -115,7 +115,7 @@ export default function SubscriptionPolling({ email }: { email: string }) {
         style={{
           background: '#FFFFFF',
           border: '1px solid #DDD5C5',
-          boxShadow: '0 4px 32px rgba(37,79,34,0.10)',
+          boxShadow: '0 4px 32px rgba(99,8,38,0.10)',
         }}
       >
         <div
@@ -126,13 +126,13 @@ export default function SubscriptionPolling({ email }: { email: string }) {
             height: '40px',
             borderRadius: '50%',
             border: '3px solid #DDD5C5',
-            borderTopColor: '#254F22',
+            borderTopColor: '#630826',
             animation: 'spin 0.9s linear infinite',
           }}
         />
         <h1
           className="text-xl font-bold mb-2"
-          style={{ color: '#254F22', fontFamily: 'var(--font-serif)' }}
+          style={{ color: '#630826', fontFamily: 'var(--font-serif)' }}
         >
           Confirming your subscription...
         </h1>

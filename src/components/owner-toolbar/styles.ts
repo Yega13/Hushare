@@ -12,11 +12,11 @@ export const btnBase: CSSProperties = {
   transition: 'opacity 0.15s',
   background: '#FFFFFF',
   border: '1px solid #DDD5C5',
-  color: '#254F22',
+  color: '#630826',
 }
 
 export const sectionTitle: CSSProperties = {
-  color: '#254F22',
+  color: '#630826',
   fontSize: 11,
   fontWeight: 700,
   letterSpacing: '0.06em',
@@ -26,7 +26,7 @@ export const sectionTitle: CSSProperties = {
 export const inputStyle: CSSProperties = {
   background: '#FDFAF5',
   border: '1px solid #DDD5C5',
-  color: '#254F22',
+  color: '#630826',
 }
 
 export const accordionButton: CSSProperties = {
@@ -36,7 +36,7 @@ export const accordionButton: CSSProperties = {
   gap: 10,
   padding: '13px 14px',
   cursor: 'pointer',
-  color: '#254F22',
+  color: '#630826',
   background: 'transparent',
   border: 0,
   textAlign: 'left',

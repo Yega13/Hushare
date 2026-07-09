@@ -134,10 +134,10 @@ export default function RevealDatePicker({ value, onChange }: Props) {
                 disabled={isPast(day)}
                 className={`w-8 h-8 rounded-full text-xs flex items-center justify-center transition ${isPast(day) ? 'cursor-not-allowed' : 'hover:scale-110'}`}
                 style={{
-                  background: isPast(day) ? 'transparent' : isSelected(day) ? '#254F22' : isToday(day) ? 'rgba(37,79,34,0.1)' : 'transparent',
-                  color: isPast(day) ? '#C4B8A8' : isSelected(day) ? '#FDFAF5' : isToday(day) ? '#254F22' : '#5C3D1E',
+                  background: isPast(day) ? 'transparent' : isSelected(day) ? '#630826' : isToday(day) ? 'rgba(99,8,38,0.1)' : 'transparent',
+                  color: isPast(day) ? '#C4B8A8' : isSelected(day) ? '#FDFAF5' : isToday(day) ? '#630826' : '#5C3D1E',
                   fontWeight: isSelected(day) || isToday(day) ? '700' : '500',
-                  boxShadow: isSelected(day) ? '0 2px 8px rgba(37,79,34,0.35)' : 'none',
+                  boxShadow: isSelected(day) ? '0 2px 8px rgba(99,8,38,0.35)' : 'none',
                   opacity: isPast(day) ? 0.45 : 1,
                 }}
               >
@@ -170,9 +170,9 @@ export default function RevealDatePicker({ value, onChange }: Props) {
                       onClick={() => { changeHour(h, isPM); setOpenPicker(null) }}
                       className="h-7 rounded-lg text-[11px] font-semibold transition hover:scale-105"
                       style={{
-                        background: h === h12 ? '#254F22' : 'rgba(92,61,30,0.07)',
+                        background: h === h12 ? '#630826' : 'rgba(92,61,30,0.07)',
                         color: h === h12 ? '#FDFAF5' : '#5C3D1E',
-                        boxShadow: h === h12 ? '0 2px 6px rgba(37,79,34,0.3)' : 'none',
+                        boxShadow: h === h12 ? '0 2px 6px rgba(99,8,38,0.3)' : 'none',
                       }}
                     >
                       {String(h).padStart(2, '0')}
@@ -203,9 +203,9 @@ export default function RevealDatePicker({ value, onChange }: Props) {
                       onClick={() => { changeMinute(m); setOpenPicker(null) }}
                       className="h-7 rounded-lg text-[11px] font-semibold transition hover:scale-105"
                       style={{
-                        background: m === minute ? '#254F22' : 'rgba(92,61,30,0.07)',
+                        background: m === minute ? '#630826' : 'rgba(92,61,30,0.07)',
                         color: m === minute ? '#FDFAF5' : '#5C3D1E',
-                        boxShadow: m === minute ? '0 2px 6px rgba(37,79,34,0.3)' : 'none',
+                        boxShadow: m === minute ? '0 2px 6px rgba(99,8,38,0.3)' : 'none',
                       }}
                     >
                       :{String(m).padStart(2, '0')}
@@ -224,7 +224,7 @@ export default function RevealDatePicker({ value, onChange }: Props) {
                 disabled={!parsed}
                 className="text-[11px] px-2.5 py-1.5 font-bold transition"
                 style={{
-                  background: (period === 'PM') === isPM ? '#254F22' : 'rgba(92,61,30,0.07)',
+                  background: (period === 'PM') === isPM ? '#630826' : 'rgba(92,61,30,0.07)',
                   color: (period === 'PM') === isPM ? '#FDFAF5' : '#8B6F4E',
                 }}
               >

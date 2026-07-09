@@ -35,14 +35,14 @@ export default class ErrorBoundary extends Component<Props, State> {
         <div
           role="alert"
           className="flex flex-col items-center justify-center gap-3 rounded-2xl px-6 py-10 text-center"
-          style={{ background: 'rgba(253,250,245,0.9)', border: '1px solid #DDD5C5', color: '#254F22' }}
+          style={{ background: 'rgba(253,250,245,0.9)', border: '1px solid #DDD5C5', color: '#630826' }}
         >
           <p className="text-sm font-semibold">Something went wrong.</p>
           <button
             type="button"
             onClick={this.reset}
             className="rounded-full px-4 py-1.5 text-xs font-semibold transition hover:opacity-80"
-            style={{ background: '#254F22', color: '#FDFAF5' }}
+            style={{ background: '#630826', color: '#FDFAF5' }}
           >
             Try again
           </button>

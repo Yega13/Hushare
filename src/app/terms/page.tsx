@@ -56,7 +56,7 @@ const jsonLd = {
 }
 
 const SERIF = { fontFamily: 'var(--font-serif)' } as const
-const INK   = { color: '#254F22' } as const
+const INK   = { color: '#630826' } as const
 const BODY  = { color: '#5C4A3C' } as const
 const RULE  = { background: '#E8E0D0' } as const
 
@@ -114,10 +114,10 @@ export default function TermsPage() {
           />
         </Link>
         <HamburgerMenu>
-          <Link href="/pricing" className="text-sm font-medium hover:underline" style={{ color: '#254F22' }}>Pricing</Link>
-          <Link href="/about" className="text-sm font-medium hover:underline" style={{ color: '#254F22' }}>About</Link>
-          <Link href="/collabs" className="text-sm font-medium hover:underline" style={{ color: '#254F22' }}>Collabs</Link>
-          <Link href="/support" className="text-sm font-medium hover:underline" style={{ color: '#254F22' }}>Support</Link>
+          <Link href="/pricing" className="text-sm font-medium hover:underline" style={{ color: '#630826' }}>Pricing</Link>
+          <Link href="/about" className="text-sm font-medium hover:underline" style={{ color: '#630826' }}>About</Link>
+          <Link href="/collabs" className="text-sm font-medium hover:underline" style={{ color: '#630826' }}>Collabs</Link>
+          <Link href="/support" className="text-sm font-medium hover:underline" style={{ color: '#630826' }}>Support</Link>
           <AccountNavLink />
         </HamburgerMenu>
       </nav>
@@ -198,7 +198,7 @@ export default function TermsPage() {
             To submit a DMCA takedown notice, email{' '}
             <a
               href="mailto:husharesupport@gmail.com"
-              style={{ color: '#254F22', textDecoration: 'underline', textDecorationStyle: 'dotted' }}
+              style={{ color: '#630826', textDecoration: 'underline', textDecorationStyle: 'dotted' }}
             >
               husharesupport@gmail.com
             </a>{' '}
@@ -233,7 +233,7 @@ export default function TermsPage() {
             acceptance of the new terms. We may terminate or suspend access
             for users who violate these terms. You may stop using the service
             at any time; if you want your data deleted, see our{' '}
-            <Link href="/privacy" style={{ color: '#254F22', textDecoration: 'underline', textDecorationStyle: 'dotted' }}>
+            <Link href="/privacy" style={{ color: '#630826', textDecoration: 'underline', textDecorationStyle: 'dotted' }}>
               Privacy Policy
             </Link>
             .

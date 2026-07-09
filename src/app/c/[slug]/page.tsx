@@ -81,7 +81,7 @@ export default async function CollectionPage({ params }: Props) {
       <main className="min-h-screen flex items-center justify-center px-4" style={{ background: '#FDFAF5' }}>
         <div className="max-w-md w-full rounded-2xl p-8 text-center" style={{ background: '#FFFFFF', border: '1px solid #DDD5C5' }}>
           <p className="text-xs uppercase mb-3" style={{ color: '#8B6F4E', letterSpacing: '0.18em', fontWeight: 600 }}>Temporarily unavailable</p>
-          <h1 className="text-2xl font-bold mb-3" style={{ color: '#254F22', fontFamily: 'var(--font-serif)' }}>
+          <h1 className="text-2xl font-bold mb-3" style={{ color: '#630826', fontFamily: 'var(--font-serif)' }}>
             {collection.name}
           </h1>
           <p className="text-sm leading-relaxed" style={{ color: '#5C4A3C' }}>
@@ -126,7 +126,7 @@ export default async function CollectionPage({ params }: Props) {
       <main className="min-h-screen flex items-center justify-center px-4" style={{ background: '#FDFAF5' }}>
         <div className="max-w-md w-full rounded-2xl p-8 text-center" style={{ background: '#FFFFFF', border: '1px solid #DDD5C5' }}>
           <p className="text-xs uppercase mb-3" style={{ color: '#8B6F4E', letterSpacing: '0.18em', fontWeight: 600 }}>Service error</p>
-          <h1 className="text-2xl font-bold mb-3" style={{ color: '#254F22', fontFamily: 'var(--font-serif)' }}>
+          <h1 className="text-2xl font-bold mb-3" style={{ color: '#630826', fontFamily: 'var(--font-serif)' }}>
             Temporarily unavailable
           </h1>
           <p className="text-sm leading-relaxed" style={{ color: '#5C4A3C' }}>
@@ -193,10 +193,10 @@ export default async function CollectionPage({ params }: Props) {
           />
         </Link>
         <HamburgerMenu>
-          <Link href="/" className="text-sm font-medium hover:underline" style={{ color: '#254F22' }}>Home</Link>
-          <Link href="/pricing" className="text-sm font-medium hover:underline" style={{ color: '#254F22' }}>Pricing</Link>
-          <Link href="/about" className="text-sm font-medium hover:underline" style={{ color: '#254F22' }}>About</Link>
-          <Link href="/support" className="text-sm font-medium hover:underline" style={{ color: '#254F22' }}>Support</Link>
+          <Link href="/" className="text-sm font-medium hover:underline" style={{ color: '#630826' }}>Home</Link>
+          <Link href="/pricing" className="text-sm font-medium hover:underline" style={{ color: '#630826' }}>Pricing</Link>
+          <Link href="/about" className="text-sm font-medium hover:underline" style={{ color: '#630826' }}>About</Link>
+          <Link href="/support" className="text-sm font-medium hover:underline" style={{ color: '#630826' }}>Support</Link>
         </HamburgerMenu>
       </nav>
 
@@ -204,7 +204,7 @@ export default async function CollectionPage({ params }: Props) {
         {/* Hero banner */}
         <div
           className="relative overflow-hidden rounded-2xl px-5 py-10 sm:px-8 sm:py-14"
-          style={{ background: '#254F22', color: '#FDFAF5', boxShadow: '0 18px 56px rgba(37,79,34,0.16)' }}
+          style={{ background: '#630826', color: '#FDFAF5', boxShadow: '0 18px 56px rgba(99,8,38,0.16)' }}
         >
           {heroCover && (
             <Image
@@ -221,7 +221,7 @@ export default async function CollectionPage({ params }: Props) {
             className="absolute inset-0"
             style={{
               background:
-                'linear-gradient(105deg, rgba(37,79,34,0.94), rgba(37,79,34,0.78), rgba(124,74,45,0.35))',
+                'linear-gradient(105deg, rgba(99,8,38,0.94), rgba(99,8,38,0.78), rgba(124,74,45,0.35))',
             }}
           />
           <div className="relative z-10 max-w-3xl">
@@ -274,7 +274,7 @@ export default async function CollectionPage({ params }: Props) {
                 style={{
                   background: '#FFFFFF',
                   border: '1px solid #DDD5C5',
-                  boxShadow: '0 4px 20px rgba(37,79,34,0.06)',
+                  boxShadow: '0 4px 20px rgba(99,8,38,0.06)',
                 }}
               >
                 <div className="relative aspect-[4/3]" style={{ background: '#EDE7DB' }}>
@@ -297,13 +297,13 @@ export default async function CollectionPage({ params }: Props) {
                   )}
                   <span
                     className="absolute right-3 top-3 rounded-full px-2 py-1 text-xs font-semibold"
-                    style={{ background: 'rgba(253,250,245,0.92)', color: '#254F22' }}
+                    style={{ background: 'rgba(253,250,245,0.92)', color: '#630826' }}
                   >
                     {album.media_count} item{album.media_count === 1 ? '' : 's'}
                   </span>
                 </div>
                 <div className="p-4">
-                  <h2 className="font-semibold mb-2 truncate" style={{ color: '#254F22' }}>
+                  <h2 className="font-semibold mb-2 truncate" style={{ color: '#630826' }}>
                     {album.title}
                   </h2>
                   <p className="text-xs" style={{ color: '#8B6F4E' }}>
@@ -320,7 +320,7 @@ export default async function CollectionPage({ params }: Props) {
             className="mt-8 rounded-2xl px-5 py-8 text-center"
             style={{ background: '#FFFFFF', border: '1px solid #DDD5C5' }}
           >
-            <p className="font-semibold" style={{ color: '#254F22' }}>No albums here yet</p>
+            <p className="font-semibold" style={{ color: '#630826' }}>No albums here yet</p>
             <p className="mt-2 text-sm" style={{ color: '#8B6F4E' }}>
               The owner has not added any albums to this collection.
             </p>

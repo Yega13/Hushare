@@ -93,8 +93,8 @@
   width: 38px;
   height: 38px;
   border-radius: 999px;
-  border: 2px solid rgba(37, 79, 34, 0.18);
-  border-top-color: #254F22;
+  border: 2px solid rgba(99, 8, 38, 0.18);
+  border-top-color: #630826;
   animation: hush-route-loading-spin 720ms linear infinite;
 }
 

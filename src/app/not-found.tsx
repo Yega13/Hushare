@@ -35,7 +35,7 @@ export default function NotFound() {
           <h1
             style={{
               fontFamily: 'var(--font-serif)',
-              color: '#254F22',
+              color: '#630826',
               fontSize: 'clamp(1.6rem, 5vw, 2.4rem)',
               fontWeight: 700,
               lineHeight: 1.2,
@@ -51,7 +51,7 @@ export default function NotFound() {
         <Link
           href="/"
           className="rounded-xl px-6 py-3 font-semibold text-sm transition hover:opacity-85"
-          style={{ background: '#254F22', color: '#FDFAF5' }}
+          style={{ background: '#630826', color: '#FDFAF5' }}
         >
           Create a new album
         </Link>

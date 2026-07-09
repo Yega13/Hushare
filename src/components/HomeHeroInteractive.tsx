@@ -79,7 +79,7 @@ export default function HomeHeroInteractive() {
           No account - No friction
         </p>
         <h1
-          className="hush-home-title text-[#FDFAF5] lg:text-[#254F22] [text-shadow:0_2px_18px_rgba(0,0,0,0.35)] lg:[text-shadow:none]"
+          className="hush-home-title text-[#FDFAF5] lg:text-[#630826] [text-shadow:0_2px_18px_rgba(0,0,0,0.35)] lg:[text-shadow:none]"
           style={{ fontFamily: 'var(--font-serif)', fontSize: 'clamp(2rem, 7vw, 5.4rem)', lineHeight: 1.05, fontWeight: 700, marginBottom: '1.25rem' }}
         >
           Every moment,<br />
@@ -92,7 +92,7 @@ export default function HomeHeroInteractive() {
           Create a shared album and let anyone add photos with just a link - no sign-up, no app download.
         </p>
 
-        <div className="hush-album-create-card rounded-2xl hush-fluid-card" style={{ background: '#FFFFFF', border: '1px solid #DDD5C5', boxShadow: '0 4px 32px rgba(37,79,34,0.10)', maxWidth: '430px' }}>
+        <div className="hush-album-create-card rounded-2xl hush-fluid-card" style={{ background: '#FFFFFF', border: '1px solid #DDD5C5', boxShadow: '0 4px 32px rgba(99,8,38,0.10)', maxWidth: '430px' }}>
           <label className="block text-sm font-medium mb-2" style={{ color: '#8B6F4E' }}>
             Name your album
           </label>
@@ -103,7 +103,7 @@ export default function HomeHeroInteractive() {
             onChange={(e) => setTitle(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && createAlbum()}
             className="hush-home-input w-full rounded-xl px-4 py-3 mb-3 focus:outline-none transition text-base"
-            style={{ background: '#FDFAF5', border: '1px solid #DDD5C5', color: '#254F22' }}
+            style={{ background: '#FDFAF5', border: '1px solid #DDD5C5', color: '#630826' }}
             maxLength={120}
           />
           {error && <p className="text-sm mb-3" style={{ color: '#C0392B' }}>{error}</p>}
@@ -111,7 +111,7 @@ export default function HomeHeroInteractive() {
             onClick={createAlbum}
             disabled={loading}
             className="hush-home-button w-full flex items-center justify-center gap-2 font-semibold rounded-xl py-3 disabled:opacity-50"
-            style={{ background: '#254F22', color: '#FDFAF5' }}
+            style={{ background: '#630826', color: '#FDFAF5' }}
           >
             {loading ? 'Creating your album...' : <>Create Album <ArrowRight className="w-4 h-4" /></>}
           </button>
@@ -126,7 +126,7 @@ export default function HomeHeroInteractive() {
         {/* Top-left */}
         <div onPointerMove={tiltCard} onPointerLeave={resetTiltCard} className="hush-float-slow hush-tilt-card absolute rounded-2xl overflow-hidden shadow-2xl" style={{ ['--hush-rotate' as string]: '-5deg', top: '10%', left: '12%', width: 'clamp(160px, 11vw, 220px)', height: 'clamp(200px, 14vw, 280px)', border: '4px solid rgba(255,255,255,0.9)' }}>
           <Image src="/card1.jpg" alt="Sunlit forest trail captured on a morning hike - a Hushare album photo" fill sizes="200px" className="object-cover" draggable={false} />
-          <div className="absolute inset-0 flex items-end p-3" style={{ background: 'linear-gradient(to top, rgba(37,79,34,0.6) 0%, transparent 55%)' }}>
+          <div className="absolute inset-0 flex items-end p-3" style={{ background: 'linear-gradient(to top, rgba(99,8,38,0.6) 0%, transparent 55%)' }}>
             <span className="text-xs font-medium" style={{ color: '#FDFAF5', fontFamily: 'var(--font-serif)' }}>Morning hike</span>
           </div>
         </div>
@@ -156,7 +156,7 @@ export default function HomeHeroInteractive() {
         </div>
 
         <div className="absolute rounded-2xl px-4 py-3 shadow-xl" style={{ top: '62%', right: '10%', background: 'rgba(255,255,255,0.92)', border: '1px solid rgba(221,213,197,0.8)', zIndex: 20, backdropFilter: 'blur(8px)' }}>
-          <p className="text-xs font-semibold" style={{ color: '#254F22' }}>12 photos added</p>
+          <p className="text-xs font-semibold" style={{ color: '#630826' }}>12 photos added</p>
           <p className="text-xs" style={{ color: '#8B6F4E' }}>by 5 people</p>
         </div>
       </div>

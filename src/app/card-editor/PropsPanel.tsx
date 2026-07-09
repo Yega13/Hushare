@@ -118,13 +118,13 @@ function PropsPanel({
             {(['normal','bold','italic','bold italic'] as const).map(fs => (
               <button key={fs} onClick={() => updateEl(s.id, { fontStyle: fs })}
                 className="flex-1 text-xs rounded py-1 transition"
-                style={{ background: s.fontStyle === fs ? '#254F22' : '#F5F0E8', color: s.fontStyle === fs ? '#FDFAF5' : '#5C3D2E', border: '1px solid ' + (s.fontStyle === fs ? '#254F22' : '#DDD5C5'), fontWeight: fs.includes('bold') ? 700 : 400, fontStyle: fs.includes('italic') ? 'italic' : 'normal' }}>
+                style={{ background: s.fontStyle === fs ? '#630826' : '#F5F0E8', color: s.fontStyle === fs ? '#FDFAF5' : '#5C3D2E', border: '1px solid ' + (s.fontStyle === fs ? '#630826' : '#DDD5C5'), fontWeight: fs.includes('bold') ? 700 : 400, fontStyle: fs.includes('italic') ? 'italic' : 'normal' }}>
                 {fs === 'normal' ? 'Aa' : fs === 'bold' ? 'B' : fs === 'italic' ? 'I' : 'BI'}
               </button>
             ))}
             <button onClick={() => updateEl(s.id, { textDecoration: s.textDecoration === 'underline' ? '' : 'underline' })}
               className="flex-1 text-xs rounded py-1 transition"
-              style={{ background: s.textDecoration === 'underline' ? '#254F22' : '#F5F0E8', color: s.textDecoration === 'underline' ? '#FDFAF5' : '#5C3D2E', border: '1px solid ' + (s.textDecoration === 'underline' ? '#254F22' : '#DDD5C5'), textDecoration: 'underline' }}>
+              style={{ background: s.textDecoration === 'underline' ? '#630826' : '#F5F0E8', color: s.textDecoration === 'underline' ? '#FDFAF5' : '#5C3D2E', border: '1px solid ' + (s.textDecoration === 'underline' ? '#630826' : '#DDD5C5'), textDecoration: 'underline' }}>
               U
             </button>
           </div>
@@ -132,7 +132,7 @@ function PropsPanel({
             {(['left','center','right'] as const).map(a => (
               <button key={a} onClick={() => updateEl(s.id, { align: a })}
                 className="flex-1 py-1.5 rounded transition"
-                style={{ background: s.align === a ? '#254F22' : '#F5F0E8', color: s.align === a ? '#FDFAF5' : '#5C3D2E', border: '1px solid ' + (s.align === a ? '#254F22' : '#DDD5C5') }}>
+                style={{ background: s.align === a ? '#630826' : '#F5F0E8', color: s.align === a ? '#FDFAF5' : '#5C3D2E', border: '1px solid ' + (s.align === a ? '#630826' : '#DDD5C5') }}>
                 {a === 'left' ? <AlignLeft className="w-3.5 h-3.5 mx-auto" /> : a === 'center' ? <AlignCenter className="w-3.5 h-3.5 mx-auto" /> : <AlignRight className="w-3.5 h-3.5 mx-auto" />}
               </button>
             ))}
@@ -164,9 +164,9 @@ function PropsPanel({
           <div className="flex items-center gap-2"><span className="text-xs w-10" style={{ color: '#666' }}>Color</span><ColorSwatch value={s.stroke} onChange={v => updateEl(s.id, { stroke: v })} /></div>
           <SliderRow label="Thickness" value={s.strokeWidth} min={0.5} max={20} step={0.5} onChange={v => updateEl(s.id, { strokeWidth: v })} />
           <div className="flex gap-1">
-            <button onClick={() => updateEl(s.id, { lineCap: 'round' })} className="flex-1 text-xs rounded py-1" style={{ background: s.lineCap === 'round' ? '#254F22' : '#F5F0E8', color: s.lineCap === 'round' ? '#FDFAF5' : '#5C3D2E', border: '1px solid ' + (s.lineCap === 'round' ? '#254F22' : '#DDD5C5') }}>Rounded</button>
-            <button onClick={() => updateEl(s.id, { lineCap: 'butt' })} className="flex-1 text-xs rounded py-1" style={{ background: s.lineCap === 'butt' ? '#254F22' : '#F5F0E8', color: s.lineCap === 'butt' ? '#FDFAF5' : '#5C3D2E', border: '1px solid ' + (s.lineCap === 'butt' ? '#254F22' : '#DDD5C5') }}>Square</button>
-            <button onClick={() => updateEl(s.id, { dashed: !s.dashed })} className="flex-1 text-xs rounded py-1" style={{ background: s.dashed ? '#254F22' : '#F5F0E8', color: s.dashed ? '#FDFAF5' : '#5C3D2E', border: '1px solid ' + (s.dashed ? '#254F22' : '#DDD5C5') }}>Dashed</button>
+            <button onClick={() => updateEl(s.id, { lineCap: 'round' })} className="flex-1 text-xs rounded py-1" style={{ background: s.lineCap === 'round' ? '#630826' : '#F5F0E8', color: s.lineCap === 'round' ? '#FDFAF5' : '#5C3D2E', border: '1px solid ' + (s.lineCap === 'round' ? '#630826' : '#DDD5C5') }}>Rounded</button>
+            <button onClick={() => updateEl(s.id, { lineCap: 'butt' })} className="flex-1 text-xs rounded py-1" style={{ background: s.lineCap === 'butt' ? '#630826' : '#F5F0E8', color: s.lineCap === 'butt' ? '#FDFAF5' : '#5C3D2E', border: '1px solid ' + (s.lineCap === 'butt' ? '#630826' : '#DDD5C5') }}>Square</button>
+            <button onClick={() => updateEl(s.id, { dashed: !s.dashed })} className="flex-1 text-xs rounded py-1" style={{ background: s.dashed ? '#630826' : '#F5F0E8', color: s.dashed ? '#FDFAF5' : '#5C3D2E', border: '1px solid ' + (s.dashed ? '#630826' : '#DDD5C5') }}>Dashed</button>
           </div>
         </div>
       )}
@@ -244,7 +244,7 @@ function PropsPanel({
 
       {/* Transform toggle */}
       <button onClick={() => setTransforming(t => !t)} className="w-full text-xs font-semibold rounded-lg py-2 transition"
-        style={{ background: transforming ? '#E8F5E9' : '#F5F5F5', color: transforming ? '#254F22' : '#555', border: '1px solid ' + (transforming ? '#C8E6C9' : '#E0E0E0') }}>
+        style={{ background: transforming ? '#E8F5E9' : '#F5F5F5', color: transforming ? '#630826' : '#555', border: '1px solid ' + (transforming ? '#C8E6C9' : '#E0E0E0') }}>
         {transforming ? '✓ Handles on — dbl-click canvas to edit text' : 'Enable resize / rotate handles (dbl-click)'}
       </button>
     </div>

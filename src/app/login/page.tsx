@@ -42,7 +42,7 @@ export default async function LoginPage({ searchParams }: Props) {
     <main className="min-h-screen flex flex-col px-4" style={{ background: '#FDFAF5' }}>
       <div className="pt-8 text-center">
         <Link href="/" className="inline-block" aria-label="Go to Hushare home">
-          <span style={{ fontFamily: 'var(--font-serif)', color: '#254F22', fontSize: '28px', fontWeight: 700 }}>
+          <span style={{ fontFamily: 'var(--font-serif)', color: '#630826', fontSize: '28px', fontWeight: 700 }}>
             Hushare
           </span>
         </Link>
@@ -52,7 +52,7 @@ export default async function LoginPage({ searchParams }: Props) {
           <div className="text-center mb-8">
             <h1
               className="text-3xl font-bold mb-2"
-              style={{ color: '#254F22', fontFamily: 'var(--font-serif)' }}
+              style={{ color: '#630826', fontFamily: 'var(--font-serif)' }}
             >
               Sign in
             </h1>

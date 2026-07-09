@@ -865,27 +865,27 @@ export default function UploadZone({ album, userTier, onPhotosUploaded }: Props)
         onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') inputRef.current?.click() }}
         className="group flex flex-col items-center justify-center gap-1.5 sm:gap-3 rounded-2xl border-2 border-dashed cursor-pointer transition-all py-4 sm:py-9 px-4 select-none"
         style={{
-          borderColor: isDragging ? '#254F22' : '#D8CBB8',
-          background: isDragging ? 'rgba(37,79,34,0.06)' : 'rgba(37,79,34,0.015)',
+          borderColor: isDragging ? '#630826' : '#D8CBB8',
+          background: isDragging ? 'rgba(99,8,38,0.06)' : 'rgba(99,8,38,0.015)',
         }}
         aria-label="Click or drag files to upload photos and videos"
       >
         <div
           className="flex items-center justify-center rounded-full transition-transform group-hover:scale-105 w-9 h-9 sm:w-[52px] sm:h-[52px]"
-          style={{ background: isDragging ? '#254F22' : 'rgba(37,79,34,0.10)' }}
+          style={{ background: isDragging ? '#630826' : 'rgba(99,8,38,0.10)' }}
         >
-          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke={isDragging ? '#FDFAF5' : '#254F22'} strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke={isDragging ? '#FDFAF5' : '#630826'} strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
             <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
             <polyline points="17 8 12 3 7 8" />
             <line x1="12" y1="3" x2="12" y2="15" />
           </svg>
         </div>
         <div className="text-center">
-          <p className="text-sm sm:text-[0.95rem]" style={{ fontWeight: 600, color: '#254F22' }}>
+          <p className="text-sm sm:text-[0.95rem]" style={{ fontWeight: 600, color: '#630826' }}>
             {isDragging ? 'Drop to upload' : 'Add photos & videos'}
           </p>
           <p className="text-xs sm:text-[0.8rem]" style={{ color: '#8A7A66', marginTop: 2 }}>
-            Drag &amp; drop or <span style={{ color: '#254F22', fontWeight: 600 }}>click to browse</span>
+            Drag &amp; drop or <span style={{ color: '#630826', fontWeight: 600 }}>click to browse</span>
           </p>
         </div>
         {/* Format pills — hidden on mobile to keep the drop zone compact */}
@@ -956,7 +956,7 @@ export default function UploadZone({ album, userTier, onPhotosUploaded }: Props)
 
                   {/* done check */}
                   {entry.status === 'done' && (
-                    <div className="absolute top-1 right-1 rounded-full flex items-center justify-center" style={{ width: 18, height: 18, background: '#254F22', boxShadow: '0 1px 3px rgba(0,0,0,0.3)' }} aria-label="Done">
+                    <div className="absolute top-1 right-1 rounded-full flex items-center justify-center" style={{ width: 18, height: 18, background: '#630826', boxShadow: '0 1px 3px rgba(0,0,0,0.3)' }} aria-label="Done">
                       <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#FDFAF5" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
                     </div>
                   )}
@@ -988,7 +988,7 @@ export default function UploadZone({ album, userTier, onPhotosUploaded }: Props)
                 {errorCount > 0 && `${errorCount} failed`}
               </span>
               {doneCount > 0 && (
-                <button type="button" onClick={dismissDone} className="text-xs font-semibold" style={{ color: '#254F22' }}>
+                <button type="button" onClick={dismissDone} className="text-xs font-semibold" style={{ color: '#630826' }}>
                   Clear
                 </button>
               )}

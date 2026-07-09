@@ -83,7 +83,7 @@ export default function AppToastViewport() {
             style={{
               background: isError ? '#FBEAE6' : '#FFFFFF',
               border: `1px solid ${isError ? '#E8C2B8' : '#DDD5C5'}`,
-              color: isError ? '#7A2A1F' : '#254F22',
+              color: isError ? '#7A2A1F' : '#630826',
             }}
           >
             <Icon className="mt-0.5 h-4 w-4 flex-none" />

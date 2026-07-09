@@ -68,10 +68,10 @@ export default function AboutPage() {
           />
         </Link>
         <HamburgerMenu>
-          <Link href="/pricing" className="text-sm font-medium hover:underline" style={{ color: '#254F22' }}>Pricing</Link>
-          <span className="text-sm font-semibold underline underline-offset-4" style={{ color: '#254F22' }}>About</span>
-          <Link href="/collabs" className="text-sm font-medium hover:underline" style={{ color: '#254F22' }}>Collabs</Link>
-          <Link href="/support" className="text-sm font-medium hover:underline" style={{ color: '#254F22' }}>Support</Link>
+          <Link href="/pricing" className="text-sm font-medium hover:underline" style={{ color: '#630826' }}>Pricing</Link>
+          <span className="text-sm font-semibold underline underline-offset-4" style={{ color: '#630826' }}>About</span>
+          <Link href="/collabs" className="text-sm font-medium hover:underline" style={{ color: '#630826' }}>Collabs</Link>
+          <Link href="/support" className="text-sm font-medium hover:underline" style={{ color: '#630826' }}>Support</Link>
           <AccountNavLink />
         </HamburgerMenu>
       </nav>
@@ -92,7 +92,7 @@ export default function AboutPage() {
               style={{
                 fontFamily: 'var(--font-serif)',
                 fontStyle: 'italic',
-                color: '#254F22',
+                color: '#630826',
                 fontSize: 'clamp(2.4rem, 4.5vw, 4rem)',
                 lineHeight: 1.07,
                 fontWeight: 700,
@@ -117,7 +117,7 @@ export default function AboutPage() {
                 width: 'clamp(260px, 38vw, 420px)',
                 padding: '14px 14px 60px 14px',
                 transform: 'rotate(2.5deg)',
-                boxShadow: '0 24px 60px rgba(37,79,34,0.18), 0 4px 12px rgba(37,79,34,0.1)',
+                boxShadow: '0 24px 60px rgba(99,8,38,0.18), 0 4px 12px rgba(99,8,38,0.1)',
                 '--hush-rotate': '2.5deg',
               } as React.CSSProperties}
             >
@@ -220,7 +220,7 @@ export default function AboutPage() {
             style={{
               fontFamily: 'var(--font-serif)',
               fontStyle: 'italic',
-              color: '#254F22',
+              color: '#630826',
               fontSize: 'clamp(1.1rem, 1.8vw, 1.3rem)',
               lineHeight: 1.65,
             }}
@@ -274,9 +274,9 @@ export default function AboutPage() {
             },
             {
               icon: <Shield className="w-5 h-5" />,
-              accent: '#254F22',
+              accent: '#630826',
               bg: '#F0F6EE',
-              border: 'rgba(37, 79, 34, 0.2)',
+              border: 'rgba(99, 8, 38, 0.2)',
               title: 'Safe',
               desc: 'Albums are unlisted, link-protected, and never indexed. Your memories stay yours.',
               delay: '90ms',
@@ -297,7 +297,7 @@ export default function AboutPage() {
               style={{
                 background: v.bg,
                 border: `1px solid ${v.border}`,
-                boxShadow: '0 4px 20px rgba(37,79,34,0.07)',
+                boxShadow: '0 4px 20px rgba(99,8,38,0.07)',
                 animationDelay: v.delay,
               }}
             >
@@ -331,7 +331,7 @@ export default function AboutPage() {
               title: 'Face Recognition AI',
               desc: 'Find yourself in every photo instantly. Our AI scans the whole album and surfaces your moments without scrolling forever.',
               tag: 'Live',
-              tagColor: '#254F22',
+              tagColor: '#630826',
               tagBg: '#E4F0E2',
               delay: '0ms',
             },
@@ -339,7 +339,7 @@ export default function AboutPage() {
               title: 'Full Album Customization',
               desc: 'Your own background, your colors, your layout. Albums look the way you want — not the way a template decided.',
               tag: 'Live',
-              tagColor: '#254F22',
+              tagColor: '#630826',
               tagBg: '#E4F0E2',
               delay: '70ms',
             },
@@ -347,7 +347,7 @@ export default function AboutPage() {
               title: 'Highest Quality, Always',
               desc: 'No compression. No trade-offs. Photos and videos are stored and downloaded at the exact quality they were shot in.',
               tag: 'Live',
-              tagColor: '#254F22',
+              tagColor: '#630826',
               tagBg: '#E4F0E2',
               delay: '140ms',
             },
@@ -366,12 +366,12 @@ export default function AboutPage() {
               style={{
                 background: '#FFFFFF',
                 border: '1px solid #E8E0D0',
-                boxShadow: '0 4px 16px rgba(37,79,34,0.05)',
+                boxShadow: '0 4px 16px rgba(99,8,38,0.05)',
                 animationDelay: f.delay,
               }}
             >
               <div className="flex items-start justify-between gap-3 mb-3">
-                <h3 className="font-semibold" style={{ color: '#254F22' }}>{f.title}</h3>
+                <h3 className="font-semibold" style={{ color: '#630826' }}>{f.title}</h3>
                 <span
                   className="text-[11px] font-semibold px-2.5 py-1 rounded-full flex-none"
                   style={{ color: f.tagColor, background: f.tagBg }}
@@ -602,7 +602,7 @@ export default function AboutPage() {
               target="_blank"
               rel="noopener noreferrer"
               className="hush-press flex items-center gap-2.5 px-6 py-3 rounded-full font-semibold text-sm"
-              style={{ background: '#FDFAF5', color: '#254F22' }}
+              style={{ background: '#FDFAF5', color: '#630826' }}
             >
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                 <rect width="20" height="20" x="2" y="2" rx="5" ry="5"/>
@@ -616,7 +616,7 @@ export default function AboutPage() {
               target="_blank"
               rel="noopener noreferrer"
               className="hush-press flex items-center gap-2.5 px-6 py-3 rounded-full font-semibold text-sm"
-              style={{ background: '#FDFAF5', color: '#254F22' }}
+              style={{ background: '#FDFAF5', color: '#630826' }}
             >
               <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
                 <path d="M19.59 6.69a4.83 4.83 0 0 1-3.77-4.25V2h-3.45v13.67a2.89 2.89 0 0 1-2.88 2.5 2.89 2.89 0 0 1-2.89-2.89 2.89 2.89 0 0 1 2.89-2.89c.28 0 .54.04.79.1V9.01a6.33 6.33 0 0 0-.79-.05 6.34 6.34 0 0 0-6.34 6.34 6.34 6.34 0 0 0 6.34 6.34 6.34 6.34 0 0 0 6.33-6.34V8.69a8.18 8.18 0 0 0 4.78 1.52V6.76a4.85 4.85 0 0 1-1.01-.07z"/>

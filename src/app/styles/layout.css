@@ -123,8 +123,8 @@
     border: 1px solid rgba(221, 213, 197, 0.9);
     border-radius: 999px;
     background: rgba(253, 250, 245, 0.94);
-    color: #254F22;
-    box-shadow: 0 12px 30px rgba(37, 79, 34, 0.18);
+    color: #630826;
+    box-shadow: 0 12px 30px rgba(99, 8, 38, 0.18);
     opacity: 0;
     pointer-events: none;
     transform: translateY(10px) scale(0.96);
@@ -393,7 +393,7 @@
 .hamburger-inner::after {
   width: 26px;
   height: 2.5px;
-  background-color: #254F22;
+  background-color: #630826;
   border-radius: 4px;
   position: absolute;
   transition-property: transform;
@@ -609,7 +609,7 @@
     margin-bottom: clamp(0.7rem, 1.4vh, 1.1rem) !important;
   }
   .hush-home-title {
-    color: #254F22 !important;
+    color: #630826 !important;
     text-shadow: none !important;
     max-width: 760px;
     margin-bottom: clamp(0.8rem, 1.6vh, 1.25rem) !important;
@@ -675,7 +675,7 @@
 
   .hush-home-eyebrow { color: #8B6F4E !important; }
   .hush-home-title {
-    color: #254F22 !important;
+    color: #630826 !important;
     text-shadow: none !important;
     font-size: clamp(1.5rem, 3vw, 2.2rem) !important;
     line-height: 1.05 !important;

@@ -246,7 +246,7 @@ export default function TableCardModal({ shareUrl, albumTitle, onClose }: Props)
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between mb-4">
-          <span className="font-semibold text-sm" style={{ color: '#254F22' }}>Table card</span>
+          <span className="font-semibold text-sm" style={{ color: '#630826' }}>Table card</span>
           <button onClick={onClose} style={{ color: '#A89880' }}><X className="w-4 h-4" /></button>
         </div>
 
@@ -257,9 +257,9 @@ export default function TableCardModal({ shareUrl, albumTitle, onClose }: Props)
               onClick={() => setStyle(s)}
               className="flex-1 py-2.5 text-xs font-semibold rounded-xl transition"
               style={{
-                background: style === s ? '#254F22' : '#F5F0E8',
+                background: style === s ? '#630826' : '#F5F0E8',
                 color: style === s ? '#FDFAF5' : '#5C3D2E',
-                border: '1px solid ' + (style === s ? '#254F22' : '#DDD5C5'),
+                border: '1px solid ' + (style === s ? '#630826' : '#DDD5C5'),
               }}
             >
               {s === 'branded' ? 'Hushare Branded' : 'B&W'}
@@ -297,7 +297,7 @@ export default function TableCardModal({ shareUrl, albumTitle, onClose }: Props)
               {(['png', 'pdf'] as const).map(f => (
                 <button key={f} onClick={() => setDlFormat(f)}
                   className="flex-1 py-1.5 text-xs font-semibold transition"
-                  style={{ background: dlFormat === f ? '#254F22' : '#F5F0E8', color: dlFormat === f ? '#FDFAF5' : '#5C3D2E' }}>
+                  style={{ background: dlFormat === f ? '#630826' : '#F5F0E8', color: dlFormat === f ? '#FDFAF5' : '#5C3D2E' }}>
                   {f.toUpperCase()}
                 </button>
               ))}
@@ -306,7 +306,7 @@ export default function TableCardModal({ shareUrl, albumTitle, onClose }: Props)
               onClick={handleDownload}
               disabled={downloading}
               className="w-full flex items-center justify-center gap-2 font-semibold rounded-xl py-3 transition hover:opacity-90 disabled:opacity-50 text-sm"
-              style={{ background: '#254F22', color: '#FDFAF5' }}
+              style={{ background: '#630826', color: '#FDFAF5' }}
             >
               <Download className="w-4 h-4" />
               {downloading ? 'Generating…' : `Download ${dlFormat.toUpperCase()}`}

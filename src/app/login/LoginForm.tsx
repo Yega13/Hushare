@@ -106,12 +106,12 @@ export default function LoginForm() {
     return (
       <div
         className="rounded-2xl p-8 text-center"
-        style={{ background: '#EAF0E8', border: '1px solid #C8D6C2' }}
+        style={{ background: '#F6E9EE', border: '1px solid #C8D6C2' }}
       >
-        <CheckCircle2 className="w-10 h-10 mx-auto mb-3" style={{ color: '#254F22' }} />
+        <CheckCircle2 className="w-10 h-10 mx-auto mb-3" style={{ color: '#630826' }} />
         <h3
           className="text-xl font-bold mb-2"
-          style={{ color: '#254F22', fontFamily: 'var(--font-serif)' }}
+          style={{ color: '#630826', fontFamily: 'var(--font-serif)' }}
         >
           Check your inbox
         </h3>
@@ -129,14 +129,14 @@ export default function LoginForm() {
   return (
     <div
       className="rounded-2xl p-6 sm:p-8"
-      style={{ background: '#FFFFFF', border: '1px solid #DDD5C5', boxShadow: '0 4px 32px rgba(37,79,34,0.10)' }}
+      style={{ background: '#FFFFFF', border: '1px solid #DDD5C5', boxShadow: '0 4px 32px rgba(99,8,38,0.10)' }}
     >
       <button
         type="button"
         onClick={onGoogle}
         disabled={oauthBusy || status === 'sending'}
         className="w-full flex items-center justify-center gap-3 font-medium rounded-xl py-3 transition hover:bg-[#FDFAF5] disabled:opacity-50"
-        style={{ background: '#FFFFFF', color: '#254F22', border: '1px solid #DDD5C5' }}
+        style={{ background: '#FFFFFF', color: '#630826', border: '1px solid #DDD5C5' }}
       >
         <GoogleIcon />
         {oauthBusy ? 'Redirecting…' : 'Continue with Google'}
@@ -163,7 +163,7 @@ export default function LoginForm() {
           onChange={(e) => setEmail(e.target.value)}
           placeholder="you@example.com"
           className="w-full rounded-xl px-4 py-3 mb-4 focus:outline-none transition text-base"
-          style={{ background: '#FDFAF5', border: '1px solid #DDD5C5', color: '#254F22' }}
+          style={{ background: '#FDFAF5', border: '1px solid #DDD5C5', color: '#630826' }}
         />
         {status === 'error' && (
           <div
@@ -178,7 +178,7 @@ export default function LoginForm() {
           type="submit"
           disabled={status === 'sending' || oauthBusy}
           className="w-full flex items-center justify-center gap-2 font-semibold rounded-xl py-3 transition hover:opacity-90 disabled:opacity-50"
-          style={{ background: '#254F22', color: '#FDFAF5' }}
+          style={{ background: '#630826', color: '#FDFAF5' }}
         >
           {status === 'sending' ? 'Sending link…' : <><span>Send magic link</span> <Send className="w-4 h-4" /></>}
         </button>

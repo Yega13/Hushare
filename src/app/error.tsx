@@ -23,7 +23,7 @@ export default function AppError({
     >
       <h1
         className="text-3xl font-bold mb-3"
-        style={{ color: '#254F22', fontFamily: 'var(--font-serif)' }}
+        style={{ color: '#630826', fontFamily: 'var(--font-serif)' }}
       >
         Something went wrong
       </h1>
@@ -35,14 +35,14 @@ export default function AppError({
           type="button"
           onClick={reset}
           className="rounded-xl px-5 py-2.5 text-sm font-semibold transition hover:opacity-90"
-          style={{ background: '#254F22', color: '#FDFAF5' }}
+          style={{ background: '#630826', color: '#FDFAF5' }}
         >
           Try again
         </button>
         <Link
           href="/"
           className="rounded-xl px-5 py-2.5 text-sm font-semibold transition hover:opacity-80"
-          style={{ background: '#F0EAE0', color: '#254F22' }}
+          style={{ background: '#F0EAE0', color: '#630826' }}
         >
           Go home
         </Link>

@@ -70,10 +70,10 @@ export default function ReportPage() {
           />
         </Link>
         <HamburgerMenu>
-          <Link href="/pricing" className="text-sm font-medium hover:underline" style={{ color: '#254F22' }}>Pricing</Link>
-          <Link href="/about" className="text-sm font-medium hover:underline" style={{ color: '#254F22' }}>About</Link>
-          <Link href="/collabs" className="text-sm font-medium hover:underline" style={{ color: '#254F22' }}>Collabs</Link>
-          <Link href="/support" className="text-sm font-medium hover:underline" style={{ color: '#254F22' }}>Support</Link>
+          <Link href="/pricing" className="text-sm font-medium hover:underline" style={{ color: '#630826' }}>Pricing</Link>
+          <Link href="/about" className="text-sm font-medium hover:underline" style={{ color: '#630826' }}>About</Link>
+          <Link href="/collabs" className="text-sm font-medium hover:underline" style={{ color: '#630826' }}>Collabs</Link>
+          <Link href="/support" className="text-sm font-medium hover:underline" style={{ color: '#630826' }}>Support</Link>
           <AccountNavLink />
         </HamburgerMenu>
       </nav>
@@ -87,7 +87,7 @@ export default function ReportPage() {
         </p>
         <h1
           style={{
-            color: '#254F22',
+            color: '#630826',
             fontFamily: 'var(--font-serif)',
             fontSize: 'clamp(2.2rem, 6vw, 4.2rem)',
             fontWeight: 700,
@@ -102,8 +102,8 @@ export default function ReportPage() {
       </section>
 
       <section className="hush-form-width pb-24 pt-10">
-        <div className="mb-5 flex items-start gap-3 rounded-2xl p-4" style={{ background: '#EAF0E8', border: '1px solid #C8D6C2' }}>
-          <ShieldCheck className="mt-0.5 h-5 w-5 flex-none" style={{ color: '#254F22' }} />
+        <div className="mb-5 flex items-start gap-3 rounded-2xl p-4" style={{ background: '#F6E9EE', border: '1px solid #C8D6C2' }}>
+          <ShieldCheck className="mt-0.5 h-5 w-5 flex-none" style={{ color: '#630826' }} />
           <p className="text-sm leading-relaxed" style={{ color: '#5C4A3C' }}>
             If someone is in immediate danger, contact local emergency services first. This form is for Hushare album review.
           </p>

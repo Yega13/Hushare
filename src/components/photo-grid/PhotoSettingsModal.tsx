@@ -81,7 +81,7 @@ export default function PhotoSettingsModal({
       <div className="hush-modal-pop w-full max-w-sm rounded-2xl shadow-2xl" style={{ background: '#FFFFFF', border: '1px solid #DDD5C5' }}>
         <div className="flex items-center justify-between gap-3 px-5 py-4" style={{ borderBottom: '1px solid #E8E0D2' }}>
           <div>
-            <h2 className="text-base font-semibold" style={{ color: '#254F22' }}>Media settings</h2>
+            <h2 className="text-base font-semibold" style={{ color: '#630826' }}>Media settings</h2>
             <p className="text-xs" style={{ color: '#7C5C3E' }}>{caption || author || photo.caption || 'Only this item.'}</p>
           </div>
           <button type="button" onClick={onClose} className="rounded-full p-2 transition hover:opacity-80" style={{ color: '#7C5C3E', background: '#F5F0E8' }} aria-label="Close media settings">
@@ -102,7 +102,7 @@ export default function PhotoSettingsModal({
                 maxLength={captionMax}
                 onChange={(e) => onCaptionChange(e.target.value)}
                 className="w-full rounded-lg px-3 py-2 text-sm focus:outline-none"
-                style={{ background: '#FDFAF5', border: '1px solid #DDD5C5', color: '#254F22' }}
+                style={{ background: '#FDFAF5', border: '1px solid #DDD5C5', color: '#630826' }}
                 placeholder="Photo description"
               />
             </div>
@@ -117,7 +117,7 @@ export default function PhotoSettingsModal({
                 maxLength={authorMax}
                 onChange={(e) => onAuthorChange(e.target.value)}
                 className="w-full rounded-lg px-3 py-2 text-sm focus:outline-none"
-                style={{ background: '#FDFAF5', border: '1px solid #DDD5C5', color: '#254F22' }}
+                style={{ background: '#FDFAF5', border: '1px solid #DDD5C5', color: '#630826' }}
                 placeholder="Author name"
               />
             </div>
@@ -163,7 +163,7 @@ export default function PhotoSettingsModal({
               onPointerDown={(e) => e.stopPropagation()}
               onTouchStart={(e) => e.stopPropagation()}
               className="mt-2 w-full rounded-lg px-3 py-2 text-sm focus:outline-none"
-              style={{ background: '#FDFAF5', border: '1px solid #DDD5C5', color: '#254F22' }}
+              style={{ background: '#FDFAF5', border: '1px solid #DDD5C5', color: '#630826' }}
             />
             <button
               type="button"
@@ -185,7 +185,7 @@ export default function PhotoSettingsModal({
               value={filter}
               onChange={(e) => onFilterChange(e.target.value as PhotoFilterChoice)}
               className="w-full rounded-lg px-3 py-2 text-sm focus:outline-none"
-              style={{ background: '#FDFAF5', border: '1px solid #DDD5C5', color: '#254F22' }}
+              style={{ background: '#FDFAF5', border: '1px solid #DDD5C5', color: '#630826' }}
             >
               <option value="global">Use global ({MEDIA_DISPLAY_FILTER_OPTIONS.find((option) => option.value === (album.media_filter ?? 'none'))?.label ?? 'None'})</option>
               {MEDIA_DISPLAY_FILTER_OPTIONS.map((option) => (

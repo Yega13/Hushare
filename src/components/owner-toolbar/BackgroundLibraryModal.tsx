@@ -28,7 +28,7 @@ export default function BackgroundLibraryModal({ backgroundSaving, bgChoice, onC
           style={{ background: '#FFFFFF', borderBottom: '1px solid #E8E0D2' }}
         >
           <div>
-            <h2 className="text-base font-semibold" style={{ color: '#254F22' }}>Stock backgrounds</h2>
+            <h2 className="text-base font-semibold" style={{ color: '#630826' }}>Stock backgrounds</h2>
             <p className="text-xs" style={{ color: '#7C5C3E' }}>Pick a quiet image for this album.</p>
           </div>
           <button
@@ -50,7 +50,7 @@ export default function BackgroundLibraryModal({ backgroundSaving, bgChoice, onC
               onClick={() => onChoose(preset.value, true)}
               className="hush-hover-lift group overflow-hidden rounded-xl text-left transition hover:opacity-95 disabled:cursor-wait"
               style={{
-                border: (bgChoice === preset.value || bgChoice === preset.legacyValue || bgChoice === preset.imageValue) ? '2px solid #254F22' : '1px solid #DDD5C5',
+                border: (bgChoice === preset.value || bgChoice === preset.legacyValue || bgChoice === preset.imageValue) ? '2px solid #630826' : '1px solid #DDD5C5',
                 background: '#FDFAF5',
                 cursor: backgroundSaving ? 'wait' : 'pointer',
               }}
@@ -66,13 +66,13 @@ export default function BackgroundLibraryModal({ backgroundSaving, bgChoice, onC
                 {(bgChoice === preset.value || bgChoice === preset.legacyValue || bgChoice === preset.imageValue) && (
                   <span
                     className="absolute inset-0 flex items-center justify-center"
-                    style={{ background: 'rgba(37,79,34,0.28)', color: '#FFFFFF' }}
+                    style={{ background: 'rgba(99,8,38,0.28)', color: '#FFFFFF' }}
                   >
                     <Check className="h-6 w-6" />
                   </span>
                 )}
               </span>
-              <span className="block px-3 py-2 text-xs font-semibold" style={{ color: '#254F22' }}>
+              <span className="block px-3 py-2 text-xs font-semibold" style={{ color: '#630826' }}>
                 {preset.label}
               </span>
             </button>

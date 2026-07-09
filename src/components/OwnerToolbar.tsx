@@ -670,7 +670,7 @@ export default function OwnerToolbar({ album, photos, ownerToken, userTier, medi
 
         <button
           className="hush-press hush-owner-action hush-owner-arrange-action"
-          style={{ ...btnBase, background: arrangeMode ? '#254F22' : btnBase.background, color: arrangeMode ? '#FDFAF5' : btnBase.color }}
+          style={{ ...btnBase, background: arrangeMode ? '#630826' : btnBase.background, color: arrangeMode ? '#FDFAF5' : btnBase.color }}
           onClick={() => {
             setShowShare(false)
             setShowSettings(false)
@@ -711,7 +711,7 @@ export default function OwnerToolbar({ album, photos, ownerToken, userTier, medi
             >
               <div className="flex items-start justify-between gap-4 rounded-xl px-3 py-3 mb-3" style={{ background: '#FFFFFF', border: '1px solid #E8E0D2' }}>
                 <div>
-                  <span className="block font-semibold text-sm" style={{ color: '#254F22' }}>Album settings</span>
+                  <span className="block font-semibold text-sm" style={{ color: '#630826' }}>Album settings</span>
                   <span className="block text-xs mt-1" style={{ color: '#8B6F4E' }}>
                     Share, customize, protect, and organize this album.
                   </span>
@@ -747,14 +747,14 @@ export default function OwnerToolbar({ album, photos, ownerToken, userTier, medi
                             aspectRatio: '1',
                             borderRadius: 10,
                             background: preset.value,
-                            border: bgChoice === preset.value ? '2px solid #254F22' : '1.5px solid #DDD5C5',
+                            border: bgChoice === preset.value ? '2px solid #630826' : '1.5px solid #DDD5C5',
                             cursor: backgroundSaving ? 'wait' : 'pointer',
                             position: 'relative',
                           }}
                         >
                           {bgChoice === preset.value && (
                             <span className="absolute inset-0 flex items-center justify-center">
-                              <Check className="w-4 h-4" style={{ color: isDark ? '#FFFFFF' : '#254F22' }} />
+                              <Check className="w-4 h-4" style={{ color: isDark ? '#FFFFFF' : '#630826' }} />
                             </span>
                           )}
                         </button>
@@ -777,12 +777,12 @@ export default function OwnerToolbar({ album, photos, ownerToken, userTier, medi
                             backgroundImage: `url(${preset.src})`,
                             backgroundPosition: 'center',
                             backgroundSize: 'cover',
-                            border: (bgChoice === preset.value || bgChoice === preset.legacyValue || bgChoice === preset.imageValue) ? '2px solid #254F22' : '1.5px solid #DDD5C5',
+                            border: (bgChoice === preset.value || bgChoice === preset.legacyValue || bgChoice === preset.imageValue) ? '2px solid #630826' : '1.5px solid #DDD5C5',
                             cursor: backgroundSaving ? 'wait' : 'pointer',
                           }}
                         >
                           {(bgChoice === preset.value || bgChoice === preset.legacyValue || bgChoice === preset.imageValue) && (
-                            <span className="absolute inset-0 flex items-center justify-center" style={{ background: 'rgba(37,79,34,0.25)' }}>
+                            <span className="absolute inset-0 flex items-center justify-center" style={{ background: 'rgba(99,8,38,0.25)' }}>
                               <Check className="w-4 h-4" style={{ color: '#FFFFFF' }} />
                             </span>
                           )}
@@ -804,7 +804,7 @@ export default function OwnerToolbar({ album, photos, ownerToken, userTier, medi
                     <div className="grid grid-cols-2 gap-2 mb-3">
                       <button
                         className="hush-press flex w-full items-center justify-center gap-2 rounded-lg py-2 text-xs font-semibold transition hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed"
-                        style={{ background: '#254F22', border: '1px solid #254F22', color: '#FDFAF5', cursor: backgroundSaving ? 'wait' : 'pointer' }}
+                        style={{ background: '#630826', border: '1px solid #630826', color: '#FDFAF5', cursor: backgroundSaving ? 'wait' : 'pointer' }}
                         onClick={() => backgroundInputRef.current?.click()}
                         disabled={backgroundSaving}
                       >
@@ -813,7 +813,7 @@ export default function OwnerToolbar({ album, photos, ownerToken, userTier, medi
                       </button>
                       <button
                         className="hush-press flex w-full items-center justify-center gap-2 rounded-lg py-2 text-xs font-semibold transition hover:opacity-90"
-                        style={{ background: '#F5F0E8', border: '1px solid #DDD5C5', color: '#254F22', cursor: 'pointer' }}
+                        style={{ background: '#F5F0E8', border: '1px solid #DDD5C5', color: '#630826', cursor: 'pointer' }}
                         onClick={() => setShowBackgroundLibrary(true)}
                       >
                         <Images className="h-4 w-4" />
@@ -890,13 +890,13 @@ export default function OwnerToolbar({ album, photos, ownerToken, userTier, medi
                           }
                         }}
                         className="mt-2 w-full rounded-lg px-3 py-2 text-sm focus:outline-none"
-                        style={{ background: '#FDFAF5', border: '1px solid #DDD5C5', color: '#254F22' }}
+                        style={{ background: '#FDFAF5', border: '1px solid #DDD5C5', color: '#630826' }}
                       />
                     </div>
 
                     <label className="flex items-center justify-between gap-4 rounded-xl px-3 py-3" style={{ background: '#FDFAF5', border: '1px solid #DDD5C5', cursor: 'pointer' }}>
                       <span>
-                        <span className="block text-sm font-semibold" style={{ color: '#254F22' }}>Video autoplay</span>
+                        <span className="block text-sm font-semibold" style={{ color: '#630826' }}>Video autoplay</span>
                         <span className="block text-xs" style={{ color: '#7C5C3E' }}>Start videos automatically when opened.</span>
                       </span>
                       <input
@@ -925,7 +925,7 @@ export default function OwnerToolbar({ album, photos, ownerToken, userTier, medi
                           void saveMediaSettings(mediaRadius, videoAutoplay, nextFilter, mediaHover, mobileGridColumns, slideshowIntervalMs, slideshowAnimation)
                         }}
                         className="w-full rounded-lg px-3 py-2 text-sm focus:outline-none"
-                        style={{ background: '#FDFAF5', border: '1px solid #DDD5C5', color: '#254F22' }}
+                        style={{ background: '#FDFAF5', border: '1px solid #DDD5C5', color: '#630826' }}
                       >
                         {MEDIA_DISPLAY_FILTER_OPTIONS.map((option) => (
                           <option key={option.value} value={option.value}>{option.label}</option>
@@ -950,9 +950,9 @@ export default function OwnerToolbar({ album, photos, ownerToken, userTier, medi
                               }}
                               className="hush-press rounded-lg py-2 text-sm font-semibold"
                               style={{
-                                background: selected ? '#254F22' : '#FDFAF5',
+                                background: selected ? '#630826' : '#FDFAF5',
                                 border: '1px solid #DDD5C5',
-                                color: selected ? '#FDFAF5' : '#254F22',
+                                color: selected ? '#FDFAF5' : '#630826',
                               }}
                             >
                               {option.value}
@@ -986,9 +986,9 @@ export default function OwnerToolbar({ album, photos, ownerToken, userTier, medi
                               }}
                               className="hush-press rounded-lg py-2 text-sm font-semibold"
                               style={{
-                                background: selected ? '#254F22' : '#FDFAF5',
+                                background: selected ? '#630826' : '#FDFAF5',
                                 border: '1px solid #DDD5C5',
-                                color: selected ? '#FDFAF5' : '#254F22',
+                                color: selected ? '#FDFAF5' : '#630826',
                               }}
                             >
                               {option.label}
@@ -1036,7 +1036,7 @@ export default function OwnerToolbar({ album, photos, ownerToken, userTier, medi
                         <button
                           type="button"
                           className="hush-press rounded-lg py-2 text-xs font-semibold"
-                          style={{ background: slideshowIntervalMs === 3000 ? '#254F22' : '#FDFAF5', color: slideshowIntervalMs === 3000 ? '#FDFAF5' : '#254F22', border: '1px solid #DDD5C5' }}
+                          style={{ background: slideshowIntervalMs === 3000 ? '#630826' : '#FDFAF5', color: slideshowIntervalMs === 3000 ? '#FDFAF5' : '#630826', border: '1px solid #DDD5C5' }}
                           onClick={() => applySlideshowInterval(3000)}
                         >
                           Faster
@@ -1044,7 +1044,7 @@ export default function OwnerToolbar({ album, photos, ownerToken, userTier, medi
                         <button
                           type="button"
                           className="hush-press rounded-lg py-2 text-xs font-semibold"
-                          style={{ background: slideshowIntervalMs === 6000 ? '#254F22' : '#FDFAF5', color: slideshowIntervalMs === 6000 ? '#FDFAF5' : '#254F22', border: '1px solid #DDD5C5' }}
+                          style={{ background: slideshowIntervalMs === 6000 ? '#630826' : '#FDFAF5', color: slideshowIntervalMs === 6000 ? '#FDFAF5' : '#630826', border: '1px solid #DDD5C5' }}
                           onClick={() => applySlideshowInterval(6000)}
                         >
                           Slower
@@ -1063,7 +1063,7 @@ export default function OwnerToolbar({ album, photos, ownerToken, userTier, medi
                           void saveMediaSettings(mediaRadius, videoAutoplay, mediaFilter, mediaHover, mobileGridColumns, slideshowIntervalMs, nextAnimation)
                         }}
                         className="w-full rounded-lg px-3 py-2 text-sm focus:outline-none"
-                        style={{ background: '#FDFAF5', border: '1px solid #DDD5C5', color: '#254F22' }}
+                        style={{ background: '#FDFAF5', border: '1px solid #DDD5C5', color: '#630826' }}
                       >
                         {SLIDESHOW_ANIMATION_OPTIONS.map((option) => (
                           <option key={option.value} value={option.value}>{option.label}</option>
@@ -1090,7 +1090,7 @@ export default function OwnerToolbar({ album, photos, ownerToken, userTier, medi
                   <div className="px-4 pb-4 space-y-3">
                     <button
                       className="w-full flex items-center justify-center gap-2 font-semibold rounded-xl py-3 text-sm transition hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed"
-                      style={{ background: '#254F22', color: '#FDFAF5' }}
+                      style={{ background: '#630826', color: '#FDFAF5' }}
                       disabled={zipping || photos.length === 0}
                       onClick={downloadZip}
                     >
@@ -1109,7 +1109,7 @@ export default function OwnerToolbar({ album, photos, ownerToken, userTier, medi
 
                     <label className="flex items-center justify-between gap-4 rounded-xl px-3 py-3" style={{ background: '#FDFAF5', border: '1px solid #DDD5C5', cursor: 'pointer' }}>
                       <span>
-                        <span className="block text-sm font-semibold" style={{ color: '#254F22' }}>Allow guest downloads</span>
+                        <span className="block text-sm font-semibold" style={{ color: '#630826' }}>Allow guest downloads</span>
                         <span className="block text-xs" style={{ color: '#7C5C3E' }}>Guests can download all photos as a zip file.</span>
                       </span>
                       <input
@@ -1142,7 +1142,7 @@ export default function OwnerToolbar({ album, photos, ownerToken, userTier, medi
                       style={{ background: '#FDFAF5', border: '1px solid #DDD5C5', cursor: canUseCollections ? 'pointer' : 'not-allowed', opacity: canUseCollections ? 1 : 0.6 }}
                     >
                       <span>
-                        <span className="flex items-center gap-2 text-sm font-semibold" style={{ color: '#254F22' }}>
+                        <span className="flex items-center gap-2 text-sm font-semibold" style={{ color: '#630826' }}>
                           <ScanFace className="w-4 h-4" />
                           AI Face Finder
                           {!canUseCollections && <span className="text-[10px] font-semibold uppercase" style={{ color: '#7C4A2D', letterSpacing: '0.06em' }}>Studio</span>}
@@ -1207,20 +1207,20 @@ export default function OwnerToolbar({ album, photos, ownerToken, userTier, medi
                         maxLength={40}
                         disabled={!canCustomize}
                         className="flex-1 text-sm px-2 py-2 focus:outline-none disabled:cursor-not-allowed"
-                        style={{ background: 'transparent', color: '#254F22' }}
+                        style={{ background: 'transparent', color: '#630826' }}
                         onKeyDown={(e) => {
                           if (e.key === 'Enter' && canCustomize && !customUrlSaving && customUrlInput.trim()) void saveCustomUrl('set')
                         }}
                       />
                     </div>
                     {customUrlError && <p className="text-xs mt-2" style={{ color: '#C0392B' }}>{customUrlError}</p>}
-                    {customUrlSaved && !customUrlError && <p className="text-xs mt-2" style={{ color: '#254F22' }}>Saved.</p>}
+                    {customUrlSaved && !customUrlError && <p className="text-xs mt-2" style={{ color: '#630826' }}>Saved.</p>}
                     <div className="flex items-center gap-2 mt-3">
                       <button
                         onClick={() => void saveCustomUrl('set')}
                         disabled={!canCustomize || customUrlSaving || !customUrlInput.trim()}
                         className="hush-press flex-1 text-sm font-semibold rounded-lg py-2 transition hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed"
-                        style={{ background: '#254F22', color: '#FDFAF5' }}
+                        style={{ background: '#630826', color: '#FDFAF5' }}
                       >
                         {customUrlSaving ? 'Saving...' : 'Save'}
                       </button>
@@ -1243,7 +1243,7 @@ export default function OwnerToolbar({ album, photos, ownerToken, userTier, medi
               <section style={settingsSectionStyle}>
                 <button type="button" className="hush-motion" style={accordionButton} onClick={() => toggleSection('password')}>
                   {album.password_protected ? (
-                    <Lock className="w-4 h-4" style={{ color: canCustomize ? '#254F22' : '#A89880' }} />
+                    <Lock className="w-4 h-4" style={{ color: canCustomize ? '#630826' : '#A89880' }} />
                   ) : (
                     <LockOpen className="w-4 h-4" style={{ color: canCustomize ? '#7C5C3E' : '#A89880' }} />
                   )}
@@ -1280,13 +1280,13 @@ export default function OwnerToolbar({ album, photos, ownerToken, userTier, medi
                       }}
                     />
                     {passwordError && <p className="text-xs mt-2" style={{ color: '#C0392B' }}>{passwordError}</p>}
-                    {passwordSaved && !passwordError && <p className="text-xs mt-2" style={{ color: '#254F22' }}>Saved.</p>}
+                    {passwordSaved && !passwordError && <p className="text-xs mt-2" style={{ color: '#630826' }}>Saved.</p>}
                     <div className="flex items-center gap-2 mt-3">
                       <button
                         onClick={() => void savePassword('set')}
                         disabled={!canCustomize || passwordSaving || !passwordInput}
                         className="hush-press flex-1 text-sm font-semibold rounded-lg py-2 transition hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed"
-                        style={{ background: '#254F22', color: '#FDFAF5' }}
+                        style={{ background: '#630826', color: '#FDFAF5' }}
                       >
                         {passwordSaving ? 'Saving...' : 'Save'}
                       </button>
@@ -1336,7 +1336,7 @@ export default function OwnerToolbar({ album, photos, ownerToken, userTier, medi
                               onClick={() => void addAlbumToCollection(collection.id)}
                               disabled={collectionSaving || collection.contains_album}
                               className="hush-press flex w-full items-center justify-between gap-3 rounded-lg px-3 py-2 text-left text-xs transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-70"
-                              style={{ background: '#FFFFFF', border: '1px solid #DDD5C5', color: '#254F22' }}
+                              style={{ background: '#FFFFFF', border: '1px solid #DDD5C5', color: '#630826' }}
                             >
                               <span className="min-w-0">
                                 <span className="block truncate font-semibold">{collection.name}</span>
@@ -1344,7 +1344,7 @@ export default function OwnerToolbar({ album, photos, ownerToken, userTier, medi
                                   /c/{collection.slug} - {collection.album_count} album{collection.album_count === 1 ? '' : 's'}
                                 </span>
                               </span>
-                              <span className="shrink-0 font-semibold" style={{ color: collection.contains_album ? '#254F22' : '#7C5C3E' }}>
+                              <span className="shrink-0 font-semibold" style={{ color: collection.contains_album ? '#630826' : '#7C5C3E' }}>
                                 {collection.contains_album ? 'Added' : 'Add'}
                               </span>
                             </button>
@@ -1358,7 +1358,7 @@ export default function OwnerToolbar({ album, photos, ownerToken, userTier, medi
 
                     {collectionError && <p className="text-xs mt-2" style={{ color: '#C0392B' }}>{collectionError}</p>}
                     {collectionUrl && (
-                      <p className="text-xs mt-2 break-all" style={{ color: '#254F22' }}>
+                      <p className="text-xs mt-2 break-all" style={{ color: '#630826' }}>
                         Added: <a href={collectionUrl} className="underline">{collectionUrl}</a>
                       </p>
                     )}
@@ -1373,12 +1373,12 @@ export default function OwnerToolbar({ album, photos, ownerToken, userTier, medi
                   const revealIsFuture = !!(album.reveal_at && new Date(album.reveal_at) > now)
                   return (
                 <button type="button" className="hush-motion" style={accordionButton} onClick={() => toggleSection('reveal')}>
-                  <Clock className="w-4 h-4" style={{ color: revealIsFuture ? '#254F22' : '#7C5C3E' }} />
+                  <Clock className="w-4 h-4" style={{ color: revealIsFuture ? '#630826' : '#7C5C3E' }} />
                   <span style={sectionTitle}>Delayed reveal</span>
                   {revealIsFuture && (
                     <span
                       className="ml-auto text-[10px] font-semibold uppercase tracking-wide px-1.5 py-0.5 rounded-full"
-                      style={{ background: 'rgba(37,79,34,0.10)', color: '#254F22' }}
+                      style={{ background: 'rgba(99,8,38,0.10)', color: '#630826' }}
                     >
                       Active
                     </span>
@@ -1401,13 +1401,13 @@ export default function OwnerToolbar({ album, photos, ownerToken, userTier, medi
                         <div
                           className="flex items-start gap-2.5 rounded-xl px-3 py-2.5"
                           style={{
-                            background: isFuture ? 'rgba(37,79,34,0.07)' : 'rgba(139,111,78,0.09)',
-                            border: `1px solid ${isFuture ? 'rgba(37,79,34,0.18)' : 'rgba(139,111,78,0.22)'}`,
+                            background: isFuture ? 'rgba(99,8,38,0.07)' : 'rgba(139,111,78,0.09)',
+                            border: `1px solid ${isFuture ? 'rgba(99,8,38,0.18)' : 'rgba(139,111,78,0.22)'}`,
                           }}
                         >
-                          <Clock className="w-3.5 h-3.5 mt-0.5 shrink-0" style={{ color: isFuture ? '#254F22' : '#8B6F4E' }} />
+                          <Clock className="w-3.5 h-3.5 mt-0.5 shrink-0" style={{ color: isFuture ? '#630826' : '#8B6F4E' }} />
                           <div>
-                            <p className="text-[11px] font-semibold leading-none mb-1" style={{ color: isFuture ? '#254F22' : '#8B6F4E' }}>
+                            <p className="text-[11px] font-semibold leading-none mb-1" style={{ color: isFuture ? '#630826' : '#8B6F4E' }}>
                               {isFuture ? 'Unlocks on' : 'Already revealed'}
                             </p>
                             <p className="text-xs" style={{ color: '#5C4A3C' }}>
@@ -1441,7 +1441,7 @@ export default function OwnerToolbar({ album, photos, ownerToken, userTier, medi
                         onClick={() => void saveReveal('set')}
                         disabled={revealSaving || !revealInput}
                         className="hush-press flex-1 text-sm font-semibold rounded-lg py-2 transition hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed"
-                        style={{ background: '#254F22', color: '#FDFAF5' }}
+                        style={{ background: '#630826', color: '#FDFAF5' }}
                       >
                         {revealSaving ? 'Saving…' : revealSaved ? '✓ Saved' : 'Save'}
                       </button>

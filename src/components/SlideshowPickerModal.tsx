@@ -41,7 +41,7 @@ export default function SlideshowPickerModal({
             <h2
               id="slideshow-picker-title"
               className="text-lg font-semibold"
-              style={{ color: '#254F22', fontFamily: 'var(--font-serif)' }}
+              style={{ color: '#630826', fontFamily: 'var(--font-serif)' }}
             >
               Create slideshow
             </h2>
@@ -64,7 +64,7 @@ export default function SlideshowPickerModal({
           <button
             type="button"
             className="rounded-full px-3 py-1.5 text-sm font-semibold transition hover:opacity-80"
-            style={{ background: '#EAF0E8', color: '#254F22' }}
+            style={{ background: '#F6E9EE', color: '#630826' }}
             onClick={onSelectAll}
           >
             Select all
@@ -96,7 +96,7 @@ export default function SlideshowPickerModal({
                 type="button"
                 className="relative aspect-square overflow-hidden rounded-xl transition"
                 style={{
-                  border: selected ? '3px solid #254F22' : '1px solid #DDD5C5',
+                  border: selected ? '3px solid #630826' : '1px solid #DDD5C5',
                   background: '#E8E0D2',
                 }}
                 onClick={() => onToggle(photo.id)}
@@ -122,9 +122,9 @@ export default function SlideshowPickerModal({
                 <span
                   className="absolute right-2 top-2 flex h-6 w-6 items-center justify-center rounded-full"
                   style={{
-                    background: selected ? '#254F22' : 'rgba(253,250,245,0.82)',
+                    background: selected ? '#630826' : 'rgba(253,250,245,0.82)',
                     color: selected ? '#FDFAF5' : '#7C5C3E',
-                    border: '1px solid rgba(37,79,34,0.18)',
+                    border: '1px solid rgba(99,8,38,0.18)',
                   }}
                 >
                   {selected ? <Check className="h-4 w-4" /> : null}
@@ -146,7 +146,7 @@ export default function SlideshowPickerModal({
           <button
             type="button"
             className="rounded-xl px-4 py-2 font-semibold transition hover:opacity-90"
-            style={{ background: '#254F22', color: '#FDFAF5' }}
+            style={{ background: '#630826', color: '#FDFAF5' }}
             onClick={onCreate}
           >
             Create slideshow

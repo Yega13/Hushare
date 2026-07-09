@@ -64,14 +64,14 @@ export async function sendPhotoNotificationEmail(
   const subject = `${photoCount} new ${noun} added to "${safeSubjectField(albumTitle)}"`
 
   const html = `
-<div style="font-family:-apple-system,system-ui,sans-serif;color:#254F22;max-width:560px;margin:0 auto;padding:24px;">
+<div style="font-family:-apple-system,system-ui,sans-serif;color:#630826;max-width:560px;margin:0 auto;padding:24px;">
   <h2 style="margin:0 0 16px;font-size:18px;">${escapeHtml(String(photoCount))} new ${noun} added</h2>
   <p style="margin:0 0 16px;color:#5C4A3C;">
     Someone just added <strong>${escapeHtml(String(photoCount))} ${noun}</strong> to your album
     <strong>${escapeHtml(albumTitle)}</strong>.
   </p>
   <a href="${escapeHtml(albumUrl)}"
-     style="display:inline-block;background:#254F22;color:#FDFAF5;text-decoration:none;border-radius:10px;padding:10px 20px;font-size:14px;font-weight:600;">
+     style="display:inline-block;background:#630826;color:#FDFAF5;text-decoration:none;border-radius:10px;padding:10px 20px;font-size:14px;font-weight:600;">
     View album
   </a>
   <hr style="border:none;border-top:1px solid #E8E0D0;margin:24px 0 12px;" />
@@ -110,7 +110,7 @@ export async function sendBillingReminderEmail(
   const subject = `Your Hushare ${tierLabel} plan renews tomorrow`
 
   const html = `
-<div style="font-family:-apple-system,system-ui,sans-serif;color:#254F22;max-width:560px;margin:0 auto;padding:24px;">
+<div style="font-family:-apple-system,system-ui,sans-serif;color:#630826;max-width:560px;margin:0 auto;padding:24px;">
   <h2 style="margin:0 0 16px;font-size:18px;">Subscription renewing soon</h2>
   <p style="margin:0 0 16px;color:#5C4A3C;">
     Your <strong>Hushare ${escapeHtml(tierLabel)} plan</strong> is scheduled to renew on
@@ -121,7 +121,7 @@ export async function sendBillingReminderEmail(
     If you'd like to make changes, visit your account.
   </p>
   <a href="${escapeHtml(accountUrl)}"
-     style="display:inline-block;background:#254F22;color:#FDFAF5;text-decoration:none;border-radius:10px;padding:10px 20px;font-size:14px;font-weight:600;">
+     style="display:inline-block;background:#630826;color:#FDFAF5;text-decoration:none;border-radius:10px;padding:10px 20px;font-size:14px;font-weight:600;">
     Manage subscription
   </a>
   <hr style="border:none;border-top:1px solid #E8E0D0;margin:24px 0 12px;" />
@@ -162,7 +162,7 @@ export async function sendExpiryWarningEmail(
   const subject = `Your Hushare album "${safeSubjectField(albumTitle)}" will be deleted in ${daysLeft} days`
 
   const html = `
-<div style="font-family:-apple-system,system-ui,sans-serif;color:#254F22;max-width:560px;margin:0 auto;padding:24px;">
+<div style="font-family:-apple-system,system-ui,sans-serif;color:#630826;max-width:560px;margin:0 auto;padding:24px;">
   <h2 style="margin:0 0 16px;font-size:18px;">Your album is about to expire</h2>
   <p style="margin:0 0 16px;color:#5C4A3C;">
     Your Hushare album <strong>${escapeHtml(albumTitle)}</strong> hasn't had any activity
@@ -172,7 +172,7 @@ export async function sendExpiryWarningEmail(
     To keep it, just visit the album — any upload or view resets the timer.
   </p>
   <a href="${escapeHtml(albumUrl)}"
-     style="display:inline-block;background:#254F22;color:#FDFAF5;text-decoration:none;border-radius:10px;padding:10px 20px;font-size:14px;font-weight:600;">
+     style="display:inline-block;background:#630826;color:#FDFAF5;text-decoration:none;border-radius:10px;padding:10px 20px;font-size:14px;font-weight:600;">
     View album
   </a>
   <hr style="border:none;border-top:1px solid #E8E0D0;margin:24px 0 12px;" />

@@ -1,6 +1,6 @@
 :root {
   --background: #FDFAF5;
-  --foreground: #254F22;
+  --foreground: #630826;
 }
 
 @theme inline {
@@ -95,7 +95,7 @@ body.hush-page-loaded [data-app-toast-viewport] {
 html {
   scroll-behavior: smooth;
   scrollbar-width: thin;
-  scrollbar-color: #254F22 #EDE7DB;
+  scrollbar-color: #630826 #EDE7DB;
 }
 
 @media (prefers-reduced-motion: reduce) {

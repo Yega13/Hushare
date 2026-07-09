@@ -70,7 +70,7 @@ const jsonLd = {
 }
 
 const SERIF = { fontFamily: 'var(--font-serif)' } as const
-const INK   = { color: '#254F22' } as const
+const INK   = { color: '#630826' } as const
 const BODY  = { color: '#5C4A3C' } as const
 const RULE  = { background: '#E8E0D0' } as const
 
@@ -130,10 +130,10 @@ export default function PrivacyPage() {
           />
         </Link>
         <HamburgerMenu>
-          <Link href="/pricing" className="text-sm font-medium hover:underline" style={{ color: '#254F22' }}>Pricing</Link>
-          <Link href="/about" className="text-sm font-medium hover:underline" style={{ color: '#254F22' }}>About</Link>
-          <Link href="/collabs" className="text-sm font-medium hover:underline" style={{ color: '#254F22' }}>Collabs</Link>
-          <Link href="/support" className="text-sm font-medium hover:underline" style={{ color: '#254F22' }}>Support</Link>
+          <Link href="/pricing" className="text-sm font-medium hover:underline" style={{ color: '#630826' }}>Pricing</Link>
+          <Link href="/about" className="text-sm font-medium hover:underline" style={{ color: '#630826' }}>About</Link>
+          <Link href="/collabs" className="text-sm font-medium hover:underline" style={{ color: '#630826' }}>Collabs</Link>
+          <Link href="/support" className="text-sm font-medium hover:underline" style={{ color: '#630826' }}>Support</Link>
           <AccountNavLink />
         </HamburgerMenu>
       </nav>
@@ -280,7 +280,7 @@ export default function PrivacyPage() {
             To exercise any of these rights, email{' '}
             <a
               href="mailto:husharesupport@gmail.com"
-              style={{ color: '#254F22', textDecoration: 'underline', textDecorationStyle: 'dotted' }}
+              style={{ color: '#630826', textDecoration: 'underline', textDecorationStyle: 'dotted' }}
             >
               husharesupport@gmail.com
             </a>{' '}
@@ -332,7 +332,7 @@ export default function PrivacyPage() {
             address:{' '}
             <a
               href="mailto:husharesupport@gmail.com"
-              style={{ color: '#254F22', textDecoration: 'underline', textDecorationStyle: 'dotted' }}
+              style={{ color: '#630826', textDecoration: 'underline', textDecorationStyle: 'dotted' }}
             >
               husharesupport@gmail.com
             </a>

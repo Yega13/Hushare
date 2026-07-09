@@ -104,10 +104,10 @@ export default function ReportForm() {
         aria-live="polite"
         aria-atomic="true"
         className="hush-modal-pop rounded-2xl p-8 text-center"
-        style={{ background: '#EAF0E8', border: '1px solid #C8D6C2' }}
+        style={{ background: '#F6E9EE', border: '1px solid #C8D6C2' }}
       >
-        <CheckCircle2 className="mx-auto mb-3 h-10 w-10" style={{ color: '#254F22' }} />
-        <h2 className="mb-2 text-xl font-bold" style={{ color: '#254F22', fontFamily: 'var(--font-serif)' }}>
+        <CheckCircle2 className="mx-auto mb-3 h-10 w-10" style={{ color: '#630826' }} />
+        <h2 className="mb-2 text-xl font-bold" style={{ color: '#630826', fontFamily: 'var(--font-serif)' }}>
           Report sent
         </h2>
         <p className="text-sm" style={{ color: '#5C4A3C' }}>
@@ -117,7 +117,7 @@ export default function ReportForm() {
           type="button"
           onClick={() => setStatus('idle')}
           className="hush-press mt-5 text-sm font-semibold hover:underline"
-          style={{ color: '#254F22' }}
+          style={{ color: '#630826' }}
         >
           Send another report
         </button>
@@ -138,7 +138,7 @@ export default function ReportForm() {
       <form
         onSubmit={onSubmit}
         className="hush-support-form rounded-2xl p-6 sm:p-8"
-        style={{ background: '#FFFFFF', border: '1px solid #DDD5C5', boxShadow: '0 4px 32px rgba(37,79,34,0.10)' }}
+        style={{ background: '#FFFFFF', border: '1px solid #DDD5C5', boxShadow: '0 4px 32px rgba(99,8,38,0.10)' }}
       >
         <div aria-hidden="true" style={{ position: 'absolute', left: '-9999px', height: 0, overflow: 'hidden' }}>
           <label htmlFor="hp-website">Website (leave blank)</label>
@@ -150,7 +150,7 @@ export default function ReportForm() {
             <p className="text-xs font-semibold uppercase" style={{ color: '#8B6F4E', letterSpacing: '0.12em' }}>
               Reporting
             </p>
-            {albumTitle && <p className="mt-1 font-semibold" style={{ color: '#254F22' }}>{albumTitle}</p>}
+            {albumTitle && <p className="mt-1 font-semibold" style={{ color: '#630826' }}>{albumTitle}</p>}
             {albumUrl && <p className="mt-1 break-all text-xs" style={{ color: '#7C5C3E' }}>{albumUrl}</p>}
           </div>
         )}
@@ -165,9 +165,9 @@ export default function ReportForm() {
                 key={item}
                 className="flex cursor-pointer items-center gap-3 rounded-xl px-4 py-3 text-sm font-semibold transition"
                 style={{
-                  background: reason === item ? '#EAF0E8' : '#FDFAF5',
+                  background: reason === item ? '#F6E9EE' : '#FDFAF5',
                   border: reason === item ? '1px solid #9DBB99' : '1px solid #DDD5C5',
-                  color: '#254F22',
+                  color: '#630826',
                 }}
               >
                 <input
@@ -198,7 +198,7 @@ export default function ReportForm() {
             onChange={(e) => setDetails(e.target.value)}
             placeholder="Tell us what is wrong with this album."
             className="w-full resize-y rounded-xl px-4 py-3 text-base transition focus:outline-none"
-            style={{ minHeight: '140px', background: '#FDFAF5', border: '1px solid #DDD5C5', color: '#254F22' }}
+            style={{ minHeight: '140px', background: '#FDFAF5', border: '1px solid #DDD5C5', color: '#630826' }}
           />
         </div>
 
@@ -213,7 +213,7 @@ export default function ReportForm() {
             autoComplete="email"
             maxLength={120}
             className="w-full rounded-xl px-4 py-3 text-base transition focus:outline-none"
-            style={{ background: '#FDFAF5', border: '1px solid #DDD5C5', color: '#254F22' }}
+            style={{ background: '#FDFAF5', border: '1px solid #DDD5C5', color: '#630826' }}
           />
         </div>
 

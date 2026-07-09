@@ -65,7 +65,7 @@ export default function CreateCollectionButton() {
         type="button"
         onClick={() => setOpen(true)}
         className="hush-press inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-semibold transition"
-        style={{ background: '#EAF0E8', color: '#254F22', border: '1px solid #C8D8C4' }}
+        style={{ background: '#F6E9EE', color: '#630826', border: '1px solid #C8D8C4' }}
       >
         <Plus className="h-3.5 w-3.5" />
         New collection
@@ -84,7 +84,7 @@ export default function CreateCollectionButton() {
           maxLength={80}
           placeholder="Collection name"
           className="w-full rounded-lg px-3 py-2 text-sm focus:outline-none"
-          style={{ background: '#FDFAF5', border: '1px solid #DDD5C5', color: '#254F22' }}
+          style={{ background: '#FDFAF5', border: '1px solid #DDD5C5', color: '#630826' }}
           onKeyDown={(e) => {
             if (e.key === 'Enter') void create()
             if (e.key === 'Escape') reset()
@@ -98,7 +98,7 @@ export default function CreateCollectionButton() {
           rows={2}
           placeholder="Description (optional)"
           className="w-full resize-none rounded-lg px-3 py-2 text-sm focus:outline-none"
-          style={{ background: '#FDFAF5', border: '1px solid #DDD5C5', color: '#254F22' }}
+          style={{ background: '#FDFAF5', border: '1px solid #DDD5C5', color: '#630826' }}
         />
       </div>
       <div className="mt-3 flex flex-wrap gap-2">
@@ -107,7 +107,7 @@ export default function CreateCollectionButton() {
           onClick={() => void create()}
           disabled={saving || !name.trim()}
           className="hush-press inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-semibold transition disabled:cursor-not-allowed disabled:opacity-60"
-          style={{ background: '#254F22', color: '#FDFAF5' }}
+          style={{ background: '#630826', color: '#FDFAF5' }}
         >
           <Check className="h-3.5 w-3.5" />
           {saving ? 'Creating...' : 'Create'}

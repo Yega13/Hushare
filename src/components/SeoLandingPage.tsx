@@ -66,16 +66,16 @@ export default function SeoLandingPage({
           />
         </Link>
         <HamburgerMenu>
-          <Link href="/pricing" className="text-sm font-medium hover:underline" style={{ color: "#254F22" }}>
+          <Link href="/pricing" className="text-sm font-medium hover:underline" style={{ color: "#630826" }}>
             Pricing
           </Link>
-          <Link href="/about" className="text-sm font-medium hover:underline" style={{ color: "#254F22" }}>
+          <Link href="/about" className="text-sm font-medium hover:underline" style={{ color: "#630826" }}>
             About
           </Link>
-          <Link href="/collabs" className="text-sm font-medium hover:underline" style={{ color: "#254F22" }}>
+          <Link href="/collabs" className="text-sm font-medium hover:underline" style={{ color: "#630826" }}>
             Collabs
           </Link>
-          <Link href="/support" className="text-sm font-medium hover:underline" style={{ color: "#254F22" }}>
+          <Link href="/support" className="text-sm font-medium hover:underline" style={{ color: "#630826" }}>
             Support
           </Link>
           <AccountNavLink />
@@ -87,7 +87,7 @@ export default function SeoLandingPage({
           <p className="mb-4 text-xs font-semibold uppercase" style={{ color: "#8B6F4E", letterSpacing: "0.16em" }}>
             {eyebrow}
           </p>
-          <h1 style={{ color: "#254F22", fontFamily: "var(--font-serif)", fontSize: "clamp(2.4rem, 6vw, 5rem)", fontWeight: 700, lineHeight: 1.02 }}>
+          <h1 style={{ color: "#630826", fontFamily: "var(--font-serif)", fontSize: "clamp(2.4rem, 6vw, 5rem)", fontWeight: 700, lineHeight: 1.02 }}>
             {title}
           </h1>
           <p className="mt-5 max-w-2xl text-lg leading-relaxed" style={{ color: "#5C4A3C" }}>
@@ -97,14 +97,14 @@ export default function SeoLandingPage({
             <Link
               href="/"
               className="hush-press inline-flex items-center justify-center gap-2 rounded-full px-6 py-3 font-semibold"
-              style={{ background: "#254F22", color: "#FDFAF5" }}
+              style={{ background: "#630826", color: "#FDFAF5" }}
             >
               Create an album <ArrowRight className="h-4 w-4" />
             </Link>
             <Link
               href="/pricing"
               className="inline-flex items-center justify-center rounded-full px-6 py-3 font-semibold"
-              style={{ border: "1px solid #DDD5C5", color: "#254F22" }}
+              style={{ border: "1px solid #DDD5C5", color: "#630826" }}
             >
               Compare plans
             </Link>
@@ -112,17 +112,17 @@ export default function SeoLandingPage({
         </div>
         <div
           className="relative overflow-hidden rounded-[8px]"
-          style={{ minHeight: "clamp(360px, 48vw, 560px)", border: "1px solid rgba(221, 213, 197, 0.85)", boxShadow: "0 22px 60px rgba(37,79,34,0.16)" }}
+          style={{ minHeight: "clamp(360px, 48vw, 560px)", border: "1px solid rgba(221, 213, 197, 0.85)", boxShadow: "0 22px 60px rgba(99,8,38,0.16)" }}
         >
           <Image src={image} alt={imageAlt} fill sizes="(min-width: 768px) 40vw, 100vw" className="object-cover" priority draggable={false} />
-          <div className="absolute inset-0" style={{ background: "linear-gradient(to top, rgba(37,79,34,0.35), transparent 55%)" }} />
+          <div className="absolute inset-0" style={{ background: "linear-gradient(to top, rgba(99,8,38,0.35), transparent 55%)" }} />
         </div>
       </section>
 
       <section className="hush-container-xl grid gap-4 pb-12 md:grid-cols-3">
         {useCases.map((useCase) => (
           <div key={useCase} className="flex items-start gap-3 rounded-[8px] p-5" style={{ background: "#FFFFFF", border: "1px solid #E8E0D0" }}>
-            <Check className="mt-0.5 h-5 w-5 flex-none" style={{ color: "#254F22" }} />
+            <Check className="mt-0.5 h-5 w-5 flex-none" style={{ color: "#630826" }} />
             <p className="text-sm leading-relaxed" style={{ color: "#5C4A3C" }}>{useCase}</p>
           </div>
         ))}
@@ -134,7 +134,7 @@ export default function SeoLandingPage({
           return (
             <article key={detail.title} className="rounded-[8px] p-6" style={{ background: "#FBF4E4", border: "1px solid rgba(196,166,120,0.35)" }}>
               <Icon className="mb-5 h-6 w-6" style={{ color: "#7C4A2D" }} />
-              <h2 className="mb-3 text-xl font-semibold" style={{ color: "#254F22", fontFamily: "var(--font-serif)" }}>
+              <h2 className="mb-3 text-xl font-semibold" style={{ color: "#630826", fontFamily: "var(--font-serif)" }}>
                 {detail.title}
               </h2>
               <p className="text-sm leading-relaxed" style={{ color: "#5C4A3C" }}>
@@ -148,14 +148,14 @@ export default function SeoLandingPage({
       <section className="hush-readable pb-20">
         <div className="mb-8 flex items-center gap-6">
           <div className="h-px flex-1" style={{ background: "#E8E0D0" }} />
-          <h2 style={{ color: "#254F22", fontFamily: "var(--font-serif)", fontSize: "1.4rem", fontWeight: 700, letterSpacing: "0.22em", lineHeight: 1, whiteSpace: "nowrap" }}>
+          <h2 style={{ color: "#630826", fontFamily: "var(--font-serif)", fontSize: "1.4rem", fontWeight: 700, letterSpacing: "0.22em", lineHeight: 1, whiteSpace: "nowrap" }}>
             FAQ
           </h2>
           <div className="h-px flex-1" style={{ background: "#E8E0D0" }} />
         </div>
         <div
           className="hush-reveal rounded-[8px] px-6 py-2 sm:px-10 sm:py-4"
-          style={{ background: "#FBF4E4", border: "1px solid rgba(196,166,120,0.35)", boxShadow: "0 10px 36px rgba(37,79,34,0.08)" }}
+          style={{ background: "#FBF4E4", border: "1px solid rgba(196,166,120,0.35)", boxShadow: "0 10px 36px rgba(99,8,38,0.08)" }}
         >
           <FaqList items={faq.map((item) => ({ q: item.q, a: item.a }))} compactCount={6} plusSize={26} />
         </div>

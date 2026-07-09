@@ -57,7 +57,7 @@
 
   .hush-tilt-card:hover {
     filter: saturate(1.04);
-    box-shadow: 0 30px 70px rgba(37, 79, 34, 0.22), 0 10px 24px rgba(37, 79, 34, 0.12);
+    box-shadow: 0 30px 70px rgba(99, 8, 38, 0.22), 0 10px 24px rgba(99, 8, 38, 0.12);
   }
 
   .hush-tilt-card img {
@@ -79,7 +79,7 @@
 
   .hush-hover-lift:hover {
     transform: translateY(-6px);
-    box-shadow: 0 12px 32px rgba(37, 79, 34, 0.15);
+    box-shadow: 0 12px 32px rgba(99, 8, 38, 0.15);
   }
 }
 

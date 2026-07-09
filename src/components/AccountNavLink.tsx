@@ -12,7 +12,7 @@ type AuthState =
   | { kind: 'signed-in'; canAccess: boolean }
 
 const linkClass = 'text-sm font-medium hover:underline'
-const linkStyle = { color: '#254F22' } as const
+const linkStyle = { color: '#630826' } as const
 
 export default function AccountNavLink() {
   const router = useRouter()

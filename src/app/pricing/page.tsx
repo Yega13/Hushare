@@ -280,7 +280,7 @@ const jsonLd = {
 }
 
 const SERIF = { fontFamily: 'var(--font-serif)' } as const
-const INK   = { color: '#254F22' } as const
+const INK   = { color: '#630826' } as const
 
 export default function PricingPage() {
   return (
@@ -317,10 +317,10 @@ export default function PricingPage() {
           />
         </Link>
         <HamburgerMenu>
-          <span className="text-sm font-semibold underline underline-offset-4" style={{ color: '#254F22' }}>Pricing</span>
-          <Link href="/about" className="text-sm font-medium hover:underline" style={{ color: '#254F22' }}>About</Link>
-          <Link href="/collabs" className="text-sm font-medium hover:underline" style={{ color: '#254F22' }}>Collabs</Link>
-          <Link href="/support" className="text-sm font-medium hover:underline" style={{ color: '#254F22' }}>Support</Link>
+          <span className="text-sm font-semibold underline underline-offset-4" style={{ color: '#630826' }}>Pricing</span>
+          <Link href="/about" className="text-sm font-medium hover:underline" style={{ color: '#630826' }}>About</Link>
+          <Link href="/collabs" className="text-sm font-medium hover:underline" style={{ color: '#630826' }}>Collabs</Link>
+          <Link href="/support" className="text-sm font-medium hover:underline" style={{ color: '#630826' }}>Support</Link>
           <AccountNavLink />
         </HamburgerMenu>
       </nav>
@@ -363,12 +363,12 @@ export default function PricingPage() {
               id={t.name.toLowerCase()}
               className="hush-hover-lift relative rounded-3xl flex flex-col"
               style={{
-                background: t.highlight ? '#254F22' : '#FFFFFF',
-                color: t.highlight ? '#FDFAF5' : '#254F22',
-                border: t.highlight ? '1px solid #254F22' : '1px solid #DDD5C5',
+                background: t.highlight ? '#630826' : '#FFFFFF',
+                color: t.highlight ? '#FDFAF5' : '#630826',
+                border: t.highlight ? '1px solid #630826' : '1px solid #DDD5C5',
                 boxShadow: t.highlight
-                  ? '0 18px 48px rgba(37,79,34,0.30)'
-                  : '0 4px 24px rgba(37,79,34,0.08)',
+                  ? '0 18px 48px rgba(99,8,38,0.30)'
+                  : '0 4px 24px rgba(99,8,38,0.08)',
                 padding: '2rem 1.75rem',
               }}
             >
@@ -431,9 +431,9 @@ export default function PricingPage() {
                 <p
                   className="inline-block text-[11px] font-semibold tracking-wide uppercase mt-3 px-2.5 py-1 rounded-full"
                   style={{
-                    background: t.highlight ? '#F3E0BC' : '#EAF0E8',
-                    color: t.highlight ? '#7C4A2D' : '#254F22',
-                    border: t.highlight ? '1px solid #C4A678' : '1px solid rgba(37,79,34,0.18)',
+                    background: t.highlight ? '#F3E0BC' : '#F6E9EE',
+                    color: t.highlight ? '#7C4A2D' : '#630826',
+                    border: t.highlight ? '1px solid #C4A678' : '1px solid rgba(99,8,38,0.18)',
                   }}
                 >
                   {t.promo}
@@ -462,7 +462,7 @@ export default function PricingPage() {
                       {!isHeader && (
                         <Check
                           className="w-4 h-4 flex-none mt-0.5"
-                          style={{ color: t.highlight ? '#F3E0BC' : '#254F22' }}
+                          style={{ color: t.highlight ? '#F3E0BC' : '#630826' }}
                         />
                       )}
                       <span>{f}</span>
@@ -478,8 +478,8 @@ export default function PricingPage() {
                     type="submit"
                     className="w-full inline-flex items-center justify-center gap-2 font-semibold rounded-xl py-3 transition hover:opacity-90 cursor-pointer"
                     style={{
-                      background: t.highlight ? '#FDFAF5' : '#254F22',
-                      color: t.highlight ? '#254F22' : '#FDFAF5',
+                      background: t.highlight ? '#FDFAF5' : '#630826',
+                      color: t.highlight ? '#630826' : '#FDFAF5',
                       border: 'none',
                     }}
                   >
@@ -496,8 +496,8 @@ export default function PricingPage() {
                   href={t.href ?? '/'}
                   className="w-full inline-flex items-center justify-center gap-2 font-semibold rounded-xl py-3 transition hover:opacity-90"
                   style={{
-                    background: t.highlight ? '#FDFAF5' : '#254F22',
-                    color: t.highlight ? '#254F22' : '#FDFAF5',
+                    background: t.highlight ? '#FDFAF5' : '#630826',
+                    color: t.highlight ? '#630826' : '#FDFAF5',
                   }}
                 >
                   {t.cta} <ArrowRight className="w-4 h-4" />
@@ -569,7 +569,7 @@ export default function PricingPage() {
           style={{
             background: '#FBF4E4',
             border: '1px solid rgba(196,166,120,0.35)',
-            boxShadow: '0 10px 36px rgba(37,79,34,0.08)',
+            boxShadow: '0 10px 36px rgba(99,8,38,0.08)',
           }}
         >
           <FaqList items={billingFaq} compactCount={6} plusSize={26} />
@@ -580,7 +580,7 @@ export default function PricingPage() {
           style={{ color: '#8B6F4E', fontFamily: 'var(--font-serif)' }}
         >
           Other questions? Write to{' '}
-          <a href="mailto:husharesupport@gmail.com" style={{ color: '#254F22', fontWeight: 600 }}>
+          <a href="mailto:husharesupport@gmail.com" style={{ color: '#630826', fontWeight: 600 }}>
             husharesupport@gmail.com
           </a>
         </p>

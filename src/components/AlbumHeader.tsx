@@ -90,9 +90,9 @@ export default function AlbumHeader({ album, photoCount, isOwner, onAlbumUpdated
                   if (e.key === 'Escape') setEditing(false)
                 }}
                 className="hush-album-title-input min-w-0 flex-1 rounded-lg px-3 py-2 text-center text-lg font-bold focus:outline-none"
-                style={{ color: '#254F22', background: '#FDFAF5', border: '1px solid #DDD5C5' }}
+                style={{ color: '#630826', background: '#FDFAF5', border: '1px solid #DDD5C5' }}
               />
-              <button type="button" onClick={saveTitle} disabled={saving} className="hush-press rounded-lg p-2 disabled:opacity-50" style={{ background: '#254F22', color: '#FDFAF5' }} aria-label="Save album title">
+              <button type="button" onClick={saveTitle} disabled={saving} className="hush-press rounded-lg p-2 disabled:opacity-50" style={{ background: '#630826', color: '#FDFAF5' }} aria-label="Save album title">
                 <Check className="h-4 w-4" />
               </button>
               <button type="button" onClick={() => setEditing(false)} className="hush-press rounded-lg p-2" style={{ background: '#F5F0E8', color: '#7C5C3E', border: '1px solid #DDD5C5' }} aria-label="Cancel rename">
@@ -102,7 +102,7 @@ export default function AlbumHeader({ album, photoCount, isOwner, onAlbumUpdated
           ) : (
             <h1
               className={`hush-album-title text-xl font-bold truncate${isOwner ? ' hush-album-title-editable' : ''}`}
-              style={{ color: '#254F22' }}
+              style={{ color: '#630826' }}
               onDoubleClick={openEditor}
               onPointerDown={(e) => {
                 if (!isOwner || e.pointerType === 'mouse') return

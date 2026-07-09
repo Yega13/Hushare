@@ -73,11 +73,11 @@ function buildEmail(
 ): { html: string; text: string } {
   const MAILING_ADDRESS = process.env.MAILING_ADDRESS ?? 'Hushare, Yerevan, Armenia'
   const html = `
-<div style="font-family:-apple-system,system-ui,sans-serif;color:#254F22;max-width:560px;margin:0 auto;padding:24px;">
+<div style="font-family:-apple-system,system-ui,sans-serif;color:#630826;max-width:560px;margin:0 auto;padding:24px;">
   <h2 style="margin:0 0 16px;font-size:18px;">${escapeHtml(heading)}</h2>
   <p style="margin:0 0 20px;color:#5C4A3C;">${escapeHtml(body)}</p>
   <a href="${escapeHtml(ctaUrl)}"
-     style="display:inline-block;background:#254F22;color:#FDFAF5;text-decoration:none;border-radius:10px;padding:10px 22px;font-size:14px;font-weight:600;">
+     style="display:inline-block;background:#630826;color:#FDFAF5;text-decoration:none;border-radius:10px;padding:10px 22px;font-size:14px;font-weight:600;">
     ${escapeHtml(ctaLabel)}
   </a>
   <p style="margin:20px 0 0;color:#B0A090;font-size:12px;">

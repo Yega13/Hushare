@@ -68,7 +68,7 @@ const jsonLd = {
 }
 
 const SERIF = { fontFamily: 'var(--font-serif)' } as const
-const INK   = { color: '#254F22' } as const
+const INK   = { color: '#630826' } as const
 
 const helpCards = [
   {
@@ -127,10 +127,10 @@ export default function SupportPage() {
           />
         </Link>
         <HamburgerMenu>
-          <Link href="/pricing" className="text-sm font-medium hover:underline" style={{ color: '#254F22' }}>Pricing</Link>
-          <Link href="/about" className="text-sm font-medium hover:underline" style={{ color: '#254F22' }}>About</Link>
-          <Link href="/collabs" className="text-sm font-medium hover:underline" style={{ color: '#254F22' }}>Collabs</Link>
-          <span className="text-sm font-semibold underline underline-offset-4" style={{ color: '#254F22' }}>Support</span>
+          <Link href="/pricing" className="text-sm font-medium hover:underline" style={{ color: '#630826' }}>Pricing</Link>
+          <Link href="/about" className="text-sm font-medium hover:underline" style={{ color: '#630826' }}>About</Link>
+          <Link href="/collabs" className="text-sm font-medium hover:underline" style={{ color: '#630826' }}>Collabs</Link>
+          <span className="text-sm font-semibold underline underline-offset-4" style={{ color: '#630826' }}>Support</span>
           <AccountNavLink />
         </HamburgerMenu>
       </nav>
@@ -174,12 +174,12 @@ export default function SupportPage() {
               style={{
                 background: '#FFFFFF',
                 border: '1px solid #DDD5C5',
-                boxShadow: '0 4px 20px rgba(37,79,34,0.06)',
+                boxShadow: '0 4px 20px rgba(99,8,38,0.06)',
               }}
             >
               <div
                 className="w-10 h-10 rounded-xl flex items-center justify-center mb-4"
-                style={{ background: '#EAF0E8' }}
+                style={{ background: '#F6E9EE' }}
               >
                 <Icon className="w-5 h-5" style={INK} />
               </div>
@@ -193,9 +193,9 @@ export default function SupportPage() {
                 {body}
               </p>
               {href.startsWith('mailto:') ? (
-                <a href={href} className="text-sm font-semibold hover:underline" style={{ color: '#254F22' }}>{cta}</a>
+                <a href={href} className="text-sm font-semibold hover:underline" style={{ color: '#630826' }}>{cta}</a>
               ) : (
-                <Link href={href} className="text-sm font-semibold hover:underline" style={{ color: '#254F22' }}>{cta}</Link>
+                <Link href={href} className="text-sm font-semibold hover:underline" style={{ color: '#630826' }}>{cta}</Link>
               )}
             </article>
           ))}

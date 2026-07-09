@@ -31,7 +31,7 @@ export default function CheckoutResumer() {
         aria-live="polite"
         role="status"
       >
-        <p className="text-base" style={{ color: '#254F22', fontFamily: 'var(--font-serif)' }}>
+        <p className="text-base" style={{ color: '#630826', fontFamily: 'var(--font-serif)' }}>
           Resuming your checkout...
         </p>
       </div>

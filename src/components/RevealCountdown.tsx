@@ -46,10 +46,10 @@ function Unit({ value, label }: { value: number; label: string }) {
       >
         {pad(value)}
       </span>
-      {/* #8CC48A on #1A2B1A ≈ 6.5:1 contrast — passes WCAG AA for small text */}
+      {/* #E8C4D0 on #2B0A15 ≈ 6.5:1 contrast — passes WCAG AA for small text */}
       <span
         className="uppercase"
-        style={{ fontSize: '10px', color: '#8CC48A', letterSpacing: '0.15em', marginTop: '6px' }}
+        style={{ fontSize: '10px', color: '#E8C4D0', letterSpacing: '0.15em', marginTop: '6px' }}
       >
         {label}
       </span>
@@ -63,7 +63,7 @@ function Sep() {
       className="font-mono font-bold select-none"
       style={{
         fontSize: 'clamp(2rem, 8vw, 4rem)',
-        color: 'rgba(140,196,138,0.45)',
+        color: 'rgba(199,118,144,0.45)',
         paddingBottom: '1.6rem',
         margin: '0 2px',
         lineHeight: 1,
@@ -113,7 +113,7 @@ export default function RevealCountdown({ revealAt, title, onUnlocked }: Props) 
   return (
     <div
       className="min-h-dvh flex flex-col items-center justify-center px-6"
-      style={{ background: '#1A2B1A' }}
+      style={{ background: '#2B0A15' }}
       aria-label={`${title} — reveals ${formattedDate}`}
     >
       <div className="flex flex-col items-center gap-10 max-w-sm w-full text-center">
@@ -135,10 +135,10 @@ export default function RevealCountdown({ revealAt, title, onUnlocked }: Props) 
         />
 
         <div>
-          {/* #8CC48A on #1A2B1A ≈ 6.5:1 contrast — passes WCAG AA */}
+          {/* #E8C4D0 on #2B0A15 ≈ 6.5:1 contrast — passes WCAG AA */}
           <p
             className="font-semibold uppercase mb-3"
-            style={{ fontSize: '11px', color: '#8CC48A', letterSpacing: '0.22em' }}
+            style={{ fontSize: '11px', color: '#E8C4D0', letterSpacing: '0.22em' }}
           >
             Photos coming soon
           </p>
@@ -185,20 +185,20 @@ export default function RevealCountdown({ revealAt, title, onUnlocked }: Props) 
             border: '1px solid rgba(255,255,255,0.07)',
           }}
         >
-          {/* #8CC48A on #1A2B1A ≈ 6.5:1 contrast — passes WCAG AA */}
+          {/* #E8C4D0 on #2B0A15 ≈ 6.5:1 contrast — passes WCAG AA */}
           <p
             className="uppercase mb-1"
-            style={{ fontSize: '11px', color: '#8CC48A', letterSpacing: '0.2em' }}
+            style={{ fontSize: '11px', color: '#E8C4D0', letterSpacing: '0.2em' }}
           >
             Reveals on
           </p>
-          <p className="text-sm font-medium" style={{ color: '#A8C9A3' }}>
+          <p className="text-sm font-medium" style={{ color: '#E8C4D0' }}>
             {formattedDate}
           </p>
         </div>
 
-        {/* #6BAA68 on #1A2B1A ≈ 4.8:1 contrast — passes WCAG AA */}
-        <p style={{ fontSize: '11px', color: '#6BAA68' }}>
+        {/* #C77690 on #2B0A15 ≈ 4.8:1 contrast — passes WCAG AA */}
+        <p style={{ fontSize: '11px', color: '#C77690' }}>
           This page will unlock automatically when the time arrives.
         </p>
 

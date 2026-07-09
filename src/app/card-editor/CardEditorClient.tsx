@@ -49,14 +49,14 @@ function template(title: string, qr: string, style: 'branded'|'bw'|'clean'): { e
 
   if (style === 'clean') {
     const heading: TextEl = { ...base('Heading'), kind: 'text', x: CX - 200, y: 72, text: title || 'CAPTURE THE MOMENT', fontSize: 30, fontFamily: SERIF, fontStyle: 'bold', textDecoration: '', fill: '#111111', align: 'center', width: 400, letterSpacing: 1, lineHeight: 1.3 }
-    const sep: LineEl = { ...base('Divider'), kind: 'line', x: CX - 70, y: 148, length: 140, stroke: '#254F22', strokeWidth: 2, lineCap: 'round', dashed: false }
+    const sep: LineEl = { ...base('Divider'), kind: 'line', x: CX - 70, y: 148, length: 140, stroke: '#630826', strokeWidth: 2, lineCap: 'round', dashed: false }
     const body: TextEl = { ...base('Body'), kind: 'text', x: CX - 155, y: 162, text: 'Scan the QR code with your camera to upload your photos and videos.', fontSize: 13, fontFamily: SERIF, fontStyle: 'normal', textDecoration: '', fill: '#555555', align: 'center', width: 310, letterSpacing: 0, lineHeight: 1.5 }
     return { els: [footer, qrEl, body, sep, heading], bg: '#FFFFFF' }
   }
 
   // bw
   const heading: TextEl = { ...base('Heading'), kind: 'text', x: CX - 200, y: 72, text: title || 'CAPTURE THE MOMENT', fontSize: 30, fontFamily: SERIF, fontStyle: 'bold', textDecoration: '', fill: '#111111', align: 'center', width: 400, letterSpacing: 1, lineHeight: 1.3 }
-  const sep: LineEl = { ...base('Divider'), kind: 'line', x: CX - 70, y: 148, length: 140, stroke: '#254F22', strokeWidth: 2, lineCap: 'round', dashed: false }
+  const sep: LineEl = { ...base('Divider'), kind: 'line', x: CX - 70, y: 148, length: 140, stroke: '#630826', strokeWidth: 2, lineCap: 'round', dashed: false }
   const body: TextEl = { ...base('Body'), kind: 'text', x: CX - 155, y: 162, text: 'Scan the QR code with your camera to upload your photos and videos.', fontSize: 13, fontFamily: SERIF, fontStyle: 'normal', textDecoration: '', fill: '#555555', align: 'center', width: 310, letterSpacing: 0, lineHeight: 1.5 }
   const border: RectEl = { ...base('Border'), kind: 'rect', x: 20, y: 20, width: LW - 40, height: LH - 40, fill: 'transparent', stroke: '#111111', strokeWidth: 2, cornerRadius: 0 }
   const border2: RectEl = { ...base('Border inner'), kind: 'rect', x: 32, y: 32, width: LW - 64, height: LH - 64, fill: 'transparent', stroke: '#111111', strokeWidth: 1, cornerRadius: 0 }
@@ -367,17 +367,17 @@ export default function CardEditorClient() {
   }
 
   function addRect() {
-    const el: RectEl = { ...base('Rectangle'), kind: 'rect', x: CX - 80, y: CY - 50, width: 160, height: 100, fill: '#E8F5E9', stroke: '#254F22', strokeWidth: 2, cornerRadius: 8 }
+    const el: RectEl = { ...base('Rectangle'), kind: 'rect', x: CX - 80, y: CY - 50, width: 160, height: 100, fill: '#E8F5E9', stroke: '#630826', strokeWidth: 2, cornerRadius: 8 }
     setEls(p => [...p, el]); setSelectedId(el.id); setTool('select')
   }
 
   function addEllipse() {
-    const el: EllipseEl = { ...base('Circle'), kind: 'ellipse', x: CX, y: CY, radiusX: 70, radiusY: 70, fill: '#E8F5E9', stroke: '#254F22', strokeWidth: 2 }
+    const el: EllipseEl = { ...base('Circle'), kind: 'ellipse', x: CX, y: CY, radiusX: 70, radiusY: 70, fill: '#E8F5E9', stroke: '#630826', strokeWidth: 2 }
     setEls(p => [...p, el]); setSelectedId(el.id); setTool('select')
   }
 
   function addLine() {
-    const el: LineEl = { ...base('Line'), kind: 'line', x: CX - 80, y: CY, length: 160, stroke: '#254F22', strokeWidth: 2, lineCap: 'round', dashed: false }
+    const el: LineEl = { ...base('Line'), kind: 'line', x: CX - 80, y: CY, length: 160, stroke: '#630826', strokeWidth: 2, lineCap: 'round', dashed: false }
     setEls(p => [...p, el]); setSelectedId(el.id); setTool('select')
   }
 
@@ -657,13 +657,13 @@ export default function CardEditorClient() {
           {(['png', 'pdf'] as const).map(f => (
             <button key={f} onClick={() => setDlFormat(f)}
               className="px-2 py-2 text-[10px] font-bold transition"
-              style={{ background: dlFormat === f ? '#254F22' : 'transparent', color: dlFormat === f ? '#FDFAF5' : '#6EE7B7' }}>
+              style={{ background: dlFormat === f ? '#630826' : 'transparent', color: dlFormat === f ? '#FDFAF5' : '#6EE7B7' }}>
               {f.toUpperCase()}
             </button>
           ))}
           <button onClick={download} disabled={downloading}
             className="flex items-center gap-1.5 text-xs font-semibold px-3 py-2 transition hover:opacity-90 disabled:opacity-40"
-            style={{ background: '#254F22', color: '#FDFAF5' }}>
+            style={{ background: '#630826', color: '#FDFAF5' }}>
             <Download className="w-3.5 h-3.5" />
             {downloading ? '…' : <><span className="hidden sm:inline">Download</span> {dlFormat.toUpperCase()}</>}
           </button>
@@ -689,7 +689,7 @@ export default function CardEditorClient() {
               }}
               title={t.label}
               className="w-9 h-9 flex items-center justify-center rounded-lg transition"
-              style={{ background: tool === t.id ? '#254F22' : 'transparent', color: tool === t.id ? '#FDFAF5' : '#AAA' }}>
+              style={{ background: tool === t.id ? '#630826' : 'transparent', color: tool === t.id ? '#FDFAF5' : '#AAA' }}>
               {t.id === 'image' ? (
                 <label className="cursor-pointer flex items-center justify-center w-full h-full">
                   {t.icon}
@@ -824,7 +824,7 @@ export default function CardEditorClient() {
             {(['props','layers'] as const).map(tab => (
               <button key={tab} onClick={() => setRightTab(tab)}
                 className="flex-1 flex items-center justify-center gap-1.5 py-2.5 text-xs font-semibold transition"
-                style={{ borderBottom: rightTab === tab ? '2px solid #254F22' : '2px solid transparent', color: rightTab === tab ? '#254F22' : '#888' }}>
+                style={{ borderBottom: rightTab === tab ? '2px solid #630826' : '2px solid transparent', color: rightTab === tab ? '#630826' : '#888' }}>
                 {tab === 'layers' && <Layers className="w-3.5 h-3.5" />}
                 {tab === 'props' ? 'Properties' : 'Layers'}
               </button>
@@ -854,7 +854,7 @@ export default function CardEditorClient() {
                 else if (t.id === 'line') addLine()
               }}
               className="flex flex-col items-center gap-0.5 shrink-0 rounded-xl px-3 py-2 transition"
-              style={{ background: tool === t.id ? '#254F22' : '#F5F5F5', color: tool === t.id ? '#FDFAF5' : '#555' }}>
+              style={{ background: tool === t.id ? '#630826' : '#F5F5F5', color: tool === t.id ? '#FDFAF5' : '#555' }}>
               {t.id === 'image' ? (
                 <label className="cursor-pointer flex flex-col items-center gap-0.5">
                   {t.icon}<span className="text-[10px]">{t.label}</span>
