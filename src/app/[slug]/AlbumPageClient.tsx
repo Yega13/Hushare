@@ -2,19 +2,25 @@
 
 import { useCallback, useEffect, useRef, useState, type CSSProperties } from 'react'
 import { useParams, notFound } from 'next/navigation'
+import dynamic from 'next/dynamic'
 import type { RealtimeChannel } from '@supabase/supabase-js'
 import { createClient } from '@/lib/supabase/client'
 import type { Album, Photo, Tier } from '@/types'
 import AlbumSkeleton from '@/components/AlbumSkeleton'
 import PasswordGate from '@/components/PasswordGate'
 import RevealCountdown from '@/components/RevealCountdown'
-import UploadZone from '@/components/UploadZone'
 import PhotoGrid from '@/components/PhotoGrid'
 import AlbumHeader from '@/components/AlbumHeader'
-import OwnerToolbar from '@/components/OwnerToolbar'
-import FaceFinder from '@/components/FaceFinder'
 import GuestActionsBar from '@/components/GuestActionsBar'
 import { resolveAlbumBackgroundImage } from '@/lib/album-backgrounds'
+
+// Code-split out of the shared album bundle: OwnerToolbar (+ tus/JSZip-adjacent upload code) and
+// FaceFinder are only ever needed by the owner or by guests who opt in, never by an ordinary
+// guest viewing photos. UploadZone pulls in tus-js-client, which guests on view-only albums never
+// need either. This keeps the JS a first-time guest downloads to just what renders.
+const UploadZone = dynamic(() => import('@/components/UploadZone'))
+const OwnerToolbar = dynamic(() => import('@/components/OwnerToolbar'))
+const FaceFinder = dynamic(() => import('@/components/FaceFinder'))
 
 const SITE_ORIGIN = (process.env.NEXT_PUBLIC_SITE_URL ?? 'https://hushare.space').replace(/\/+$/, '')
 

@@ -3,9 +3,21 @@ import type { NextConfig } from "next";
 const SUPABASE_HOST = "yqngmyjquwemwogdyuwv.supabase.co";
 const R2_ACCOUNT   = "cd64a4cdd390c827e46bff2ff1ab30ed";
 
+// SHA-256 hashes (base64) of the exact text content of the two inline, non-JSON-LD <script>
+// tags in src/app/layout.tsx (PRELOADER_INIT_SCRIPT and GA_INIT_SCRIPT there). Hash-based CSP —
+// rather than 'unsafe-inline' — lets those two specific, static scripts run while blocking any
+// other inline script (e.g. one introduced by a future XSS bug), with NO per-request nonce and
+// therefore no need to force dynamic rendering on otherwise-static pages (a nonce would have to
+// be generated in middleware and threaded through the root layout via headers(), which opts
+// every route — including statically-generated marketing pages — out of static rendering).
+// If either script's content in layout.tsx changes, recompute its hash or it will be silently
+// blocked: printf '%s' '<exact script text>' | openssl dgst -sha256 -binary | openssl base64 -A
+const PRELOADER_INIT_SCRIPT_SHA256 = "sha256-6iTBit0keMot1bVVjMlvn5lQJTsPAsaY0DiIUJApADI=";
+const GA_INIT_SCRIPT_SHA256 = "sha256-GxFaOs/zqIPWoMpMEsQlVSnL1M2hUglLy2/YOntGl6k=";
+
 const CSP = [
   "default-src 'self'",
-  "script-src 'self' 'unsafe-inline' https://www.googletagmanager.com https://challenges.cloudflare.com https://static.cloudflareinsights.com https://embed.videodelivery.net",
+  `script-src 'self' ${PRELOADER_INIT_SCRIPT_SHA256} ${GA_INIT_SCRIPT_SHA256} https://www.googletagmanager.com https://challenges.cloudflare.com https://static.cloudflareinsights.com https://embed.videodelivery.net`,
   "style-src 'self' 'unsafe-inline'",
   [
     "img-src 'self' data: blob:",

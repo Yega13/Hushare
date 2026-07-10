@@ -1,9 +1,7 @@
 import React from 'react'
 import { Play, Check, Move } from 'lucide-react'
-import { cssMediaDisplayFilter } from '@/lib/media-display'
 import { formatDuration } from '@/lib/media'
-import type { Photo, Album } from '@/types'
-import type { PhotoFilterChoice } from '@/lib/media-display'
+import type { Photo } from '@/types'
 
 export type TileHandlers = {
   handleTileClick: (index: number) => void
@@ -20,23 +18,28 @@ export type TileHandlers = {
   reorderDraggingActive: boolean
 }
 
+// All state that varies per-photo (selection, reorder drag/target, broken flags, flipped caption,
+// settings-preview radius/filter) is resolved to PLAIN PRIMITIVES by the caller (PhotoGrid) before
+// reaching this component — never Sets/objects/ids that require an internal `.has()`/`===` check.
+// That is what lets React.memo's shallow prop comparison actually skip re-rendering the ~2000
+// other tiles when only one photo's selection/drag/flip state changes; passing the raw
+// `selectedIds`/`broken` Set (or `reorderTargetId` string) down to every tile would hand every
+// tile a "changed" prop on every interaction, defeating memoization entirely.
 type Props = {
   photo: Photo
   index: number
-  album: Pick<Album, 'media_radius' | 'media_filter'>
-  forceGlobalRadius: boolean
-  settingsPhoto: Photo | null
-  settingsRadius: number
-  settingsFilter: PhotoFilterChoice
+  mediaRadius: number
+  filter: string
   arrangeMode: boolean
-  reorderDraggingId: string | null
-  reorderTargetId: string | null
-  flippedPhotoId: string | null
-  broken: Set<string>
-  posterBroken: Set<string>
+  isReorderMode: boolean
+  isDragging: boolean
+  isDropTarget: boolean
+  isFlipped: boolean
+  isBroken: boolean
+  isPosterBroken: boolean
   isOwner: boolean
   selectMode: boolean
-  selectedIds: Set<string>
+  isSelected: boolean
   handlers: React.MutableRefObject<TileHandlers>
   // Justified layout: when set, the tile fills a box of these exact pixel dimensions (its real
   // aspect ratio) instead of being cropped to a square. Passed as primitives (not an object) so
@@ -45,49 +48,21 @@ type Props = {
   boxH?: number
 }
 
-function computeMediaRadius(
-  photo: Photo,
-  album: Pick<Album, 'media_radius'>,
-  forceGlobalRadius: boolean,
-  settingsPhoto: Photo | null,
-  settingsRadius: number,
-): number {
-  if (settingsPhoto?.id === photo.id) return settingsRadius
-  return forceGlobalRadius ? album.media_radius : photo.display_radius ?? album.media_radius
-}
-
-function computeMediaFilter(
-  photo: Photo,
-  album: Pick<Album, 'media_filter'>,
-  settingsPhoto: Photo | null,
-  settingsFilter: PhotoFilterChoice,
-): string {
-  let raw: string
-  if (settingsPhoto?.id === photo.id) {
-    raw = settingsFilter === 'global' ? album.media_filter : settingsFilter
-  } else {
-    raw = photo.display_filter ?? album.media_filter
-  }
-  return cssMediaDisplayFilter(raw as Parameters<typeof cssMediaDisplayFilter>[0])
-}
-
 const PhotoTile = React.memo(function PhotoTile({
   photo,
   index,
-  album,
-  forceGlobalRadius,
-  settingsPhoto,
-  settingsRadius,
-  settingsFilter,
+  mediaRadius,
+  filter,
   arrangeMode,
-  reorderDraggingId,
-  reorderTargetId,
-  flippedPhotoId,
-  broken,
-  posterBroken,
+  isReorderMode,
+  isDragging,
+  isDropTarget,
+  isFlipped,
+  isBroken,
+  isPosterBroken,
   isOwner,
   selectMode,
-  selectedIds,
+  isSelected,
   handlers,
   boxW,
   boxH,
@@ -107,9 +82,8 @@ const PhotoTile = React.memo(function PhotoTile({
   // For videos, drop the src entirely once every source failed so the tile shows the
   // placeholder + Play icon instead of a broken-image icon under the overlay.
   const thumbSrc = isVideo
-    ? (posterBroken.has(photo.id) ? '' : videoThumb)
+    ? (isPosterBroken ? '' : videoThumb)
     : (isGif ? (photo.url || photo.thumb_url) : (photo.thumb_url || photo.url))
-  const isBroken = broken.has(photo.id)
   // In the new system all videos are Cloudflare Stream (stream_uid always set).
   // There is no R2 video backup and no mirror_url — so videoThumbSrc is always null for
   // Stream videos. We keep the conditional for correctness in the unlikely case a legacy
@@ -117,13 +91,8 @@ const PhotoTile = React.memo(function PhotoTile({
   const videoThumbSrc = isVideo && !thumbSrc && !isBroken && photo.stream_uid === null
     ? photo.url
     : null
-  const mediaRadius = computeMediaRadius(photo, album, forceGlobalRadius, settingsPhoto, settingsRadius)
-  const filter = computeMediaFilter(photo, album, settingsPhoto, settingsFilter)
   const mediaName = photo.caption?.trim() || photo.author_name?.trim() || ''
-  const isGridFlipped = Boolean(mediaName && flippedPhotoId === photo.id)
-  const isReorderMode = arrangeMode || reorderDraggingId != null
-  const isReorderDragging = reorderDraggingId === photo.id
-  const isReorderTarget = reorderDraggingId != null && reorderTargetId === photo.id && reorderDraggingId !== photo.id
+  const isGridFlipped = Boolean(mediaName && isFlipped)
 
   // Box mode (masonry/justified): a fixed height, and either a fixed width or — when width is
   // omitted — the tile stretches to fill its flex column (masonry). Falls back to a square tile.
@@ -131,18 +100,18 @@ const PhotoTile = React.memo(function PhotoTile({
   return (
     <div className="min-w-0" style={boxed ? { width: boxW, height: boxH } : undefined}>
       <div
-        className={`${isReorderMode ? 'hush-reorder-ring ' : ''}${isReorderDragging || isReorderTarget ? 'hush-reorder-ring-solid ' : ''}hush-photo-tile relative overflow-hidden cursor-pointer ${boxed ? 'w-full h-full' : 'aspect-square'}`}
+        className={`${isReorderMode ? 'hush-reorder-ring ' : ''}${isDragging || isDropTarget ? 'hush-reorder-ring-solid ' : ''}hush-photo-tile relative overflow-hidden cursor-pointer ${boxed ? 'w-full h-full' : 'aspect-square'}`}
         data-photo-id={photo.id}
         style={{
           background: '#EDE7DB',
           borderRadius: mediaRadius,
-          opacity: isReorderDragging ? 0.58 : 1,
+          opacity: isDragging ? 0.58 : 1,
           // Block touch-based scrolling ONLY while a drag is in flight.
           // Keeping 'none' for the whole arrange session blocked page scroll on mobile,
           // making it impossible to reach photos below the fold before dragging.
           // Once a drag starts (reorderDraggingId set + setPointerCapture called),
           // the captured pointer ignores touchAction anyway.
-          touchAction: !!reorderDraggingId ? 'none' : 'manipulation',
+          touchAction: handlers.current.reorderDraggingActive ? 'none' : 'manipulation',
           WebkitTouchCallout: 'none',
           userSelect: 'none',
         }}
@@ -265,16 +234,16 @@ const PhotoTile = React.memo(function PhotoTile({
         {isOwner && selectMode && (
           <div
             className="absolute inset-0 pointer-events-none z-10"
-            style={{ background: selectedIds.has(photo.id) ? 'rgba(99,8,38,0.28)' : 'transparent' }}
+            style={{ background: isSelected ? 'rgba(99,8,38,0.28)' : 'transparent' }}
           >
             <span
               className="absolute top-2 left-2 w-6 h-6 rounded-full flex items-center justify-center"
               style={{
-                background: selectedIds.has(photo.id) ? '#630826' : 'rgba(253,250,245,0.88)',
-                border: `2px solid ${selectedIds.has(photo.id) ? '#630826' : 'rgba(99,8,38,0.40)'}`,
+                background: isSelected ? '#630826' : 'rgba(253,250,245,0.88)',
+                border: `2px solid ${isSelected ? '#630826' : 'rgba(99,8,38,0.40)'}`,
               }}
             >
-              {selectedIds.has(photo.id) && <Check className="w-3.5 h-3.5" style={{ color: '#FDFAF5' }} />}
+              {isSelected && <Check className="w-3.5 h-3.5" style={{ color: '#FDFAF5' }} />}
             </span>
           </div>
         )}
@@ -288,7 +257,7 @@ const PhotoTile = React.memo(function PhotoTile({
               background: 'rgba(99,8,38,0.78)',
               backdropFilter: 'blur(4px)',
               WebkitBackdropFilter: 'blur(4px)',
-              cursor: reorderDraggingId === photo.id ? 'grabbing' : 'grab',
+              cursor: isDragging ? 'grabbing' : 'grab',
             }}
           >
             <Move className="w-4 h-4 md:w-5 md:h-5" style={{ color: '#FDFAF5', pointerEvents: 'none' }} />

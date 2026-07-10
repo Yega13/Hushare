@@ -86,17 +86,23 @@ function getS3Client(): S3Client {
   return _s3Client
 }
 
+// Every key we presign a PUT for is a fresh uuid() — the object at a given key never changes —
+// so it is safe for browsers/CDN to cache indefinitely without revalidating on repeat visits.
+export const IMMUTABLE_CACHE_CONTROL = 'public, max-age=31536000, immutable'
+
 export async function createPresignedPut(
   key: string,
   contentType: string,
   expiresInSeconds = 3600,
   contentLength: number,  // required — constraining size in the signature prevents tier-cap bypass
+  cacheControl: string = IMMUTABLE_CACHE_CONTROL,
 ): Promise<string> {
   const command = new PutObjectCommand({
     Bucket: 'hushare-media',
     Key: key,
     ContentType: contentType,
     ContentLength: contentLength,
+    CacheControl: cacheControl,
   })
   return getSignedUrl(getS3Client(), command, { expiresIn: expiresInSeconds })
 }

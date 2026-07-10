@@ -271,6 +271,10 @@ class HttpError extends Error {
   constructor(public readonly status: number, message: string) { super(message) }
 }
 
+// Must match IMMUTABLE_CACHE_CONTROL in src/lib/cloudflare/r2.ts exactly — the presigned PUT's
+// signature binds this header's value, so any mismatch is rejected by R2 as SignatureDoesNotMatch.
+const IMMUTABLE_CACHE_CONTROL = 'public, max-age=31536000, immutable'
+
 async function xhrPut(
   url: string,
   body: Blob,
@@ -305,6 +309,7 @@ async function xhrPut(
     signal?.addEventListener('abort', onAbort, { once: true })
     xhr.open('PUT', url)
     xhr.setRequestHeader('Content-Type', contentType)
+    xhr.setRequestHeader('Cache-Control', IMMUTABLE_CACHE_CONTROL)
     xhr.timeout = XHR_TIMEOUT_MS
     xhr.upload.onprogress = (e) => {
       lastActivity = Date.now()

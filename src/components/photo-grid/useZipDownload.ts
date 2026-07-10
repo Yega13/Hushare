@@ -1,7 +1,6 @@
 'use client'
 
 import { useState, useRef } from 'react'
-import JSZip from 'jszip'
 import { showAppToast } from '@/components/AppToast'
 import type { Photo } from '@/types'
 
@@ -25,6 +24,9 @@ export function useZipDownload(photos: Photo[], albumTitle: string) {
     setZipping(true)
     setZipProgress(0)
     abortRef.current = false
+    // Lazy-loaded: JSZip (~28KB gzip) is only needed by the owner/guest who actually clicks
+    // download, not shipped to every album visitor.
+    const { default: JSZip } = await import('jszip')
     const zip = new JSZip()
 
     let done = 0

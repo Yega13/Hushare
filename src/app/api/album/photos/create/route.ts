@@ -230,36 +230,33 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: 'Album photo limit reached' }, { status: 429, headers: NO_STORE })
   }
 
-  // Targeted dedup: only query for the specific paths/uids we're about to insert
-  const incomingPaths = (photos as PhotoInput[])
-    .filter(p => p.storage_backend === 'r2')
-    .map(p => p.storage_path as string)
-
+  // R2 (image) dedup is intentionally NOT pre-checked here: the upsert below
+  // (onConflict: 'album_id,storage_path', ignoreDuplicates: true) already dedupes atomically, so
+  // a pre-check SELECT would just be a second round trip to learn what the upsert tells us anyway.
+  //
+  // Stream (video) dedup IS still pre-checked, because it's not purely a dedup optimization — the
+  // stream_uid verification below (pending_stream_uploads) CONSUMES (deletes) each uid's token
+  // exactly once. If an already-inserted uid were re-sent to that step (e.g. a client retry after
+  // the first attempt actually succeeded), its token would already be gone and the route would
+  // wrongly 403 the whole batch instead of silently no-op'ing the duplicate. Filtering already-
+  // existing uids out here keeps retries idempotent.
   const incomingUids = (photos as PhotoInput[])
     .filter(p => p.storage_backend === 'stream')
     .map(p => p.stream_uid as string)
 
-  const [pathCheck, uidCheck] = await Promise.all([
-    incomingPaths.length > 0
-      ? admin.from('photos').select('storage_path').eq('album_id', albumId).in('storage_path', incomingPaths)
-      : Promise.resolve({ data: [] as { storage_path: string }[], error: null }),
-    incomingUids.length > 0
-      ? admin.from('photos').select('stream_uid').eq('album_id', albumId).in('stream_uid', incomingUids)
-      : Promise.resolve({ data: [] as { stream_uid: string }[], error: null }),
-  ])
-
-  if (pathCheck.error || uidCheck.error) {
-    console.error('[photos/create] dedup query failed:', (pathCheck.error ?? uidCheck.error)?.message)
-    return NextResponse.json({ error: 'Failed to process photos' }, { status: 500, headers: NO_STORE })
+  const existingUids = new Set<string>()
+  if (incomingUids.length > 0) {
+    const { data, error } = await admin.from('photos').select('stream_uid').eq('album_id', albumId).in('stream_uid', incomingUids)
+    if (error) {
+      console.error('[photos/create] stream dedup query failed:', error.message)
+      return NextResponse.json({ error: 'Failed to process photos' }, { status: 500, headers: NO_STORE })
+    }
+    for (const r of data) existingUids.add(r.stream_uid)
   }
 
-  const existingPaths = new Set(pathCheck.data.map(r => r.storage_path))
-  const existingUids = new Set(uidCheck.data.map(r => r.stream_uid))
-
   const toInsert = (photos as PhotoInput[]).filter(p => {
-    if (p.storage_backend === 'r2') return !existingPaths.has(p.storage_path as string)
     if (p.storage_backend === 'stream') return !existingUids.has(p.stream_uid as string)
-    return false
+    return true
   })
 
   const skipped = photos.length - toInsert.length

@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useLayoutEffect, useCallback, useMemo, useRef } from 'react'
 import type { Album, Photo } from '@/types'
 import type { SlideshowAnimation } from '@/types'
-import { DEFAULT_SLIDESHOW_INTERVAL_MS } from '@/lib/media-display'
+import { DEFAULT_SLIDESHOW_INTERVAL_MS, cssMediaDisplayFilter } from '@/lib/media-display'
 import { MEDIA_AUTHOR_MAX, MEDIA_CAPTION_MAX, SUPPRESS_CLICK_AFTER_REORDER_MS, BTT_UPDATE_EVENT } from '@/lib/constants'
 import { showAppToast } from '@/components/AppToast'
 import PhotoSettingsModal from '@/components/photo-grid/PhotoSettingsModal'
@@ -468,25 +468,31 @@ export default function PhotoGrid({ album, photos, isOwner, slug, forceGlobalRad
         </div>
       )}
       {(() => {
+        // Reduce every collection (Sets, the currently-dragged/flipped/edited photo id) down to
+        // per-tile PRIMITIVES before handing props to PhotoTile. This is what lets React.memo's
+        // shallow prop comparison actually skip re-rendering the other ~2000 tiles when only one
+        // photo's selection/drag/flip/settings-preview state changes — see the note in
+        // PhotoTile.tsx. isReorderMode/isDragging only flip at drag start/end (rare); isDropTarget
+        // is the one that changes on every pointer move, and now only affects the 1-2 tiles it's
+        // actually true for instead of forcing every tile to re-render.
+        const isReorderMode = arrangeMode || reorderDraggingId != null
         const renderTile = (photo: Photo, index: number, boxW?: number, boxH?: number) => (
           <PhotoTile
             key={photo.id}
             photo={photo}
             index={index}
-            album={album}
-            forceGlobalRadius={forceGlobalRadius}
-            settingsPhoto={settingsPhoto}
-            settingsRadius={settingsRadius}
-            settingsFilter={settingsFilter}
+            mediaRadius={previewRadiusFor(photo)}
+            filter={cssMediaDisplayFilter(previewFilterFor(photo))}
             arrangeMode={arrangeMode}
-            reorderDraggingId={reorderDraggingId}
-            reorderTargetId={reorderTargetId}
-            flippedPhotoId={flippedPhotoId}
-            broken={broken}
-            posterBroken={posterBroken}
+            isReorderMode={isReorderMode}
+            isDragging={reorderDraggingId === photo.id}
+            isDropTarget={reorderDraggingId != null && reorderTargetId === photo.id && reorderDraggingId !== photo.id}
+            isFlipped={flippedPhotoId === photo.id}
+            isBroken={broken.has(photo.id)}
+            isPosterBroken={posterBroken.has(photo.id)}
             isOwner={isOwner}
             selectMode={selectMode}
-            selectedIds={selectedIds}
+            isSelected={selectedIds.has(photo.id)}
             handlers={tileHandlersRef}
             boxW={boxW}
             boxH={boxH}

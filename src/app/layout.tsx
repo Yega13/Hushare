@@ -1,5 +1,5 @@
 import type { Metadata, Viewport } from "next";
-import { Geist, Geist_Mono, Playfair_Display, Playwrite_GB_J, Montserrat, Raleway, Oswald, Dancing_Script } from "next/font/google";
+import { Geist, Geist_Mono, Playfair_Display, Playwrite_GB_J } from "next/font/google";
 import Script from "next/script";
 import AppToastViewport from "@/components/AppToast";
 import SiteFooter from "@/components/SiteFooter";
@@ -33,10 +33,9 @@ const handwriting = Playwrite_GB_J({
   display: "swap",
 });
 
-const montserrat = Montserrat({ variable: "--font-montserrat", subsets: ["latin"], display: "swap" });
-const raleway    = Raleway({    variable: "--font-raleway",    subsets: ["latin"], display: "swap" });
-const oswald     = Oswald({     variable: "--font-oswald",     subsets: ["latin"], display: "swap" });
-const dancingScript = Dancing_Script({ variable: "--font-dancing", subsets: ["latin"], display: "swap" });
+// Montserrat/Raleway/Oswald/Dancing Script used to load here too. They're only used as canvas
+// font-family choices in the /card-editor tool, which now loads them itself
+// (src/app/card-editor/layout.tsx) — every other page no longer pays for those 4 font fetches.
 
 export const runtime = "nodejs";
 
@@ -326,6 +325,16 @@ const jsonLd = {
   ],
 };
 
+// Exact text content of the two inline (non-JSON-LD) <script> tags below. Kept as named
+// constants — rather than inline template strings — so PRELOADER_INIT_SCRIPT_SHA256 /
+// GA_INIT_SCRIPT_SHA256 in next.config.ts can be computed from and verified against the exact
+// same string that gets rendered. If either script's content changes, its CSP hash must be
+// recomputed too, or the script will be silently blocked (see next.config.ts's comment).
+const PRELOADER_INIT_SCRIPT =
+  "try{if(window.localStorage.getItem('hushare.initialPreloaderSeen')!=='1'){document.body.classList.add('hush-page-preloading','hush-scroll-locked')}}catch(e){document.body.classList.add('hush-page-preloading','hush-scroll-locked')}"
+const GA_INIT_SCRIPT =
+  "window.dataLayer=window.dataLayer||[];function gtag(){dataLayer.push(arguments);}gtag('js',new Date());gtag('config','G-5JMF0RM5Q6');"
+
 export default function RootLayout({
   children,
 }: Readonly<{
@@ -334,7 +343,7 @@ export default function RootLayout({
   return (
     <html
       lang="en"
-      className={`${geistSans.variable} ${geistMono.variable} ${playfair.variable} ${handwriting.variable} ${montserrat.variable} ${raleway.variable} ${oswald.variable} ${dancingScript.variable} h-full antialiased`}
+      className={`${geistSans.variable} ${geistMono.variable} ${playfair.variable} ${handwriting.variable} h-full antialiased`}
     >
       <head>
         <link rel="preconnect" href="https://yqngmyjquwemwogdyuwv.supabase.co" />
@@ -344,12 +353,9 @@ export default function RootLayout({
         <link rel="dns-prefetch" href="https://challenges.cloudflare.com" />
       </head>
       <body className="min-h-full flex flex-col">
-        <script
-          dangerouslySetInnerHTML={{
-            __html:
-              "try{if(window.localStorage.getItem('hushare.initialPreloaderSeen')!=='1'){document.body.classList.add('hush-page-preloading','hush-scroll-locked')}}catch(e){document.body.classList.add('hush-page-preloading','hush-scroll-locked')}",
-          }}
-        />
+        <script dangerouslySetInnerHTML={{ __html: PRELOADER_INIT_SCRIPT }} />
+        {/* type="application/ld+json" is inert data, not executable script — browsers never run
+            it under script-src, so it is unaffected by CSP either way. */}
         <script
           type="application/ld+json"
           dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd).replace(/</g, '\\u003c') }}
@@ -361,9 +367,7 @@ export default function RootLayout({
               strategy="afterInteractive"
             />
             <Script id="google-analytics" strategy="afterInteractive"
-              dangerouslySetInnerHTML={{
-                __html: `window.dataLayer=window.dataLayer||[];function gtag(){dataLayer.push(arguments);}gtag('js',new Date());gtag('config','G-5JMF0RM5Q6');`,
-              }}
+              dangerouslySetInnerHTML={{ __html: GA_INIT_SCRIPT }}
             />
           </>
         )}

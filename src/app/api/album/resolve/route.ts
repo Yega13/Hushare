@@ -69,16 +69,20 @@ export async function GET(req: Request) {
 
   const admin = createAdminClient()
 
-  // Random slug takes priority over custom_slug in case of string overlap.
+  // Single round trip for both the random-slug and custom-slug lookup (both columns are unique,
+  // so at most 2 rows can ever match). Random slug takes priority over custom_slug in case of
+  // string overlap, resolved in JS since `.or()` can't express "prefer this match". `slug` was
+  // validated above against /^[a-z0-9-]+$/, which excludes the `,()` PostgREST's `.or()` filter
+  // syntax needs to be broken out of — safe to interpolate.
   // Filter retired_at at SQL level — JS check below is belt-and-suspenders only.
-  let album: AlbumRow | null = null
-  const { data: bySlug } = await admin.from('albums').select(SELECT_COLS).eq('slug', slug).is('retired_at', null).maybeSingle<AlbumRow>()
-  if (bySlug) {
-    album = bySlug
-  } else {
-    const { data: byCustom } = await admin.from('albums').select(SELECT_COLS).eq('custom_slug', slug).is('retired_at', null).maybeSingle<AlbumRow>()
-    album = byCustom
-  }
+  const { data: rows } = await admin.from('albums').select(SELECT_COLS)
+    .or(`slug.eq.${slug},custom_slug.eq.${slug}`)
+    .is('retired_at', null)
+    .limit(2)
+    .returns<AlbumRow[]>()
+  const album: AlbumRow | null = rows && rows.length > 0
+    ? (rows.find((r) => r.slug === slug) ?? rows[0])
+    : null
 
   if (!album || album.retired_at) {
     return NextResponse.json({ error: 'Album not found' }, { status: 404, headers: NO_STORE })
@@ -136,13 +140,19 @@ export async function GET(req: Request) {
     }
   }
 
-  // Fire-and-forget activity touch — errors are non-fatal, log and continue
-  void admin.from('albums')
-    .update({ last_activity_at: new Date().toISOString() })
-    .eq('id', albumId)
-    .then(({ error }) => {
-      if (error) console.error('[resolve] activity touch failed:', error.message)
-    })
+  // Fire-and-forget activity touch — errors are non-fatal, log and continue. Throttled: the
+  // retirement scan only needs coarse recency (it retires after months of inactivity), so
+  // writing on literally every page view is pure write amplification on hot albums. Skip once
+  // this album has already been touched within the last hour.
+  const lastActivityAgeMs = Date.now() - new Date(album.last_activity_at).getTime()
+  if (!Number.isFinite(lastActivityAgeMs) || lastActivityAgeMs > 60 * 60 * 1000) {
+    void admin.from('albums')
+      .update({ last_activity_at: new Date().toISOString() })
+      .eq('id', albumId)
+      .then(({ error }) => {
+        if (error) console.error('[resolve] activity touch failed:', error.message)
+      })
+  }
 
   // Strip internal columns — password_hash and retired_at are never sent to the client
   const { password_hash: _pw, retired_at: _ra, ...publicAlbum } = album

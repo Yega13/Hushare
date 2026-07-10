@@ -28,11 +28,11 @@ export default function InitialPreloader() {
       setPhase('leaving')
       document.body.classList.remove('hush-page-preloading', 'hush-scroll-locked')
       document.body.classList.add('hush-page-loaded')
-    }, 1750)
-    const hideTimeout = window.setTimeout(() => setPhase('hidden'), 2310)
+    }, 1500)
+    const hideTimeout = window.setTimeout(() => setPhase('hidden'), 2060)
     const cleanupLoadedTimeout = window.setTimeout(() => {
       document.body.classList.remove('hush-page-loaded')
-    }, 2400)
+    }, 2150)
 
     return () => {
       window.clearTimeout(leaveTimeout)

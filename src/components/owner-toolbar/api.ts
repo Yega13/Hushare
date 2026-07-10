@@ -150,11 +150,18 @@ export async function uploadBackgroundRequest(
     return { ok: false, error: presignBody.error ?? `Upload failed (${presignRes.status})` }
   }
 
-  // Step 2: PUT the file bytes directly to R2 via the presigned URL
+  // Step 2: PUT the file bytes directly to R2 via the presigned URL. Cache-Control must match
+  // IMMUTABLE_CACHE_CONTROL in src/lib/cloudflare/r2.ts exactly — it's bound into the presigned
+  // signature, so any mismatch is rejected by R2 as SignatureDoesNotMatch. Each background upload
+  // gets a fresh uuid() key (see background/upload/route.ts), so caching it forever is safe.
   const putRes = await fetch(presignBody.presignedUrl, {
     method: 'PUT',
     body: file,
-    headers: { 'Content-Type': file.type, 'Content-Length': String(file.size) },
+    headers: {
+      'Content-Type': file.type,
+      'Content-Length': String(file.size),
+      'Cache-Control': 'public, max-age=31536000, immutable',
+    },
   })
   if (!putRes.ok) {
     return { ok: false, error: `Upload to storage failed (${putRes.status})` }

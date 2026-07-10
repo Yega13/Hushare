@@ -42,6 +42,52 @@ type AccessFail = {
   reason: 'missing' | 'not_found' | 'bad_token' | 'access_denied' | 'rate_limited'
 }
 
+// Both `slug` and `custom_slug` columns are constrained by schema.sql to this exact charset
+// (`^[a-z0-9]{8}$` / `^[a-z0-9-]+$`). Validating the caller-supplied slug against it before use
+// serves two purposes: (1) it lets a single `.or()` lookup safely stand in for the old two-step
+// slug-then-custom_slug query, since the value is now guaranteed free of the `,().` characters
+// PostgREST's filter syntax treats as special; (2) a value that fails this check cannot possibly
+// match either column, so we skip the DB round trip entirely instead of querying and getting an
+// empty result.
+const SLUG_CHARSET_RE = /^[a-z0-9-]+$/
+
+// Shared slug/custom_slug lookup used by both verifyAlbumOwnerAccess (bearer token) and
+// verifyOwnerViaCookie (owner cookie) — previously duplicated verbatim in each. Kept as one
+// implementation so the two auth paths cannot drift out of sync on this security-critical logic.
+// Random slug takes priority over custom_slug in case of string overlap (both columns are
+// unique, so at most 2 rows can ever match — resolved here in JS since `.or()` can't express
+// "prefer this match").
+async function lookupOwnableAlbum<T extends AlbumOwnerBase>(cleanSlug: string, cols: string): Promise<T | null> {
+  if (!SLUG_CHARSET_RE.test(cleanSlug)) return null
+  const admin = createAdminClient()
+  const { data: rows, error } = await admin
+    .from('albums')
+    .select(cols)
+    .or(`slug.eq.${cleanSlug},custom_slug.eq.${cleanSlug}`)
+    .is('retired_at', null)
+    .limit(2)
+    .returns<T[]>()
+  if (error || !rows || rows.length === 0) return null
+  return rows.find((r) => (r as unknown as { slug?: string }).slug === cleanSlug) ?? rows[0]
+}
+
+// Claims an unclaimed album for the logged-in user on first owner access. Shared by both auth
+// paths below.
+async function claimAlbumIfNeeded<T extends AlbumOwnerBase>(album: T): Promise<{ album: T; userId: string | null }> {
+  // Only trust getUser() (server-validated JWT) — never fall back to getSession() (local cookie, unverified)
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+
+  if (user && !album.user_id) {
+    const admin = createAdminClient()
+    await admin.from('albums').update({ user_id: user.id }).eq('id', album.id).is('user_id', null)
+    album = { ...album, user_id: user.id }
+    console.info(`[album-owner-access] claimed album ${album.id} for user ${user.id}`)
+  }
+
+  return { album, userId: user?.id ?? null }
+}
+
 export async function verifyAlbumOwnerAccess<T extends AlbumOwnerBase = AlbumOwnerBase>(
   slug: string,
   ownerToken: string,
@@ -53,63 +99,24 @@ export async function verifyAlbumOwnerAccess<T extends AlbumOwnerBase = AlbumOwn
     return { ok: false, status: 400, error: 'Missing slug or owner_token', reason: 'missing' }
   }
 
-  const admin = createAdminClient()
   const cols = Array.from(new Set([
     'id', 'owner_token', 'user_id', 'custom_slug',
     ...validateExtraColumns(extraColumns),
   ])).join(', ')
 
-  // Two-step lookup: random slug takes priority over custom_slug in case of collision.
   // .is('retired_at', null) filters retired albums at SQL level — retired albums are
   // inaccessible even to owners so mutations cannot be applied to deleted content.
-  let album: T | null = null
-
-  const { data: bySlug, error: slugError } = await admin
-    .from('albums')
-    .select(cols)
-    .eq('slug', cleanSlug)
-    .is('retired_at', null)
-    .maybeSingle<T>()
-
-  if (slugError) {
+  const found = await lookupOwnableAlbum<T>(cleanSlug, cols)
+  if (!found) {
     return { ok: false, status: 404, error: 'Album not found', reason: 'not_found' }
   }
 
-  if (bySlug) {
-    album = bySlug
-  } else {
-    const { data: byCustom, error: customError } = await admin
-      .from('albums')
-      .select(cols)
-      .eq('custom_slug', cleanSlug)
-      .is('retired_at', null)
-      .maybeSingle<T>()
-
-    if (customError) {
-      return { ok: false, status: 404, error: 'Album not found', reason: 'not_found' }
-    }
-    album = byCustom
-  }
-
-  if (!album) {
-    return { ok: false, status: 404, error: 'Album not found', reason: 'not_found' }
-  }
-
-  if (!timingSafeEqual(cleanToken, album.owner_token)) {
+  if (!timingSafeEqual(cleanToken, found.owner_token)) {
     return { ok: false, status: 403, error: 'Forbidden', reason: 'bad_token' }
   }
 
-  // Only trust getUser() (server-validated JWT) — never fall back to getSession() (local cookie, unverified)
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-
-  if (user && !album.user_id) {
-    await admin.from('albums').update({ user_id: user.id }).eq('id', album.id).is('user_id', null)
-    album = { ...album, user_id: user.id }
-    console.info(`[album-owner-access] claimed album ${album.id} for user ${user.id}`)
-  }
-
-  return { ok: true, album, userId: user?.id ?? null }
+  const { album, userId } = await claimAlbumIfNeeded(found)
+  return { ok: true, album, userId }
 }
 
 export async function verifyOwnerWithRateLimit<T extends AlbumOwnerBase = AlbumOwnerBase>(
@@ -136,49 +143,19 @@ export async function verifyOwnerViaCookie<T extends AlbumOwnerBase = AlbumOwner
     return { ok: false, status: 400, error: 'Missing slug', reason: 'missing' }
   }
 
-  const admin = createAdminClient()
   const cols = Array.from(new Set([
     'id', 'owner_token', 'user_id', 'custom_slug',
     ...validateExtraColumns(extraColumns),
   ])).join(', ')
 
-  // Two-step lookup: random slug takes priority over custom_slug in case of collision.
   // .is('retired_at', null) prevents owner mutations on retired (soft-deleted) albums.
-  let album: T | null = null
-
-  const { data: bySlug, error: slugError } = await admin
-    .from('albums')
-    .select(cols)
-    .eq('slug', cleanSlug)
-    .is('retired_at', null)
-    .maybeSingle<T>()
-
-  if (slugError) {
-    return { ok: false, status: 404, error: 'Album not found', reason: 'not_found' }
-  }
-
-  if (bySlug) {
-    album = bySlug
-  } else {
-    const { data: byCustom, error: customError } = await admin
-      .from('albums')
-      .select(cols)
-      .eq('custom_slug', cleanSlug)
-      .is('retired_at', null)
-      .maybeSingle<T>()
-
-    if (customError) {
-      return { ok: false, status: 404, error: 'Album not found', reason: 'not_found' }
-    }
-    album = byCustom
-  }
-
-  if (!album) {
+  const found = await lookupOwnableAlbum<T>(cleanSlug, cols)
+  if (!found) {
     return { ok: false, status: 404, error: 'Album not found', reason: 'not_found' }
   }
 
   const cookieStore = await cookies()
-  const ownerCookie = (cookieStore.get(`hushare_owner_${album.id}`)?.value ?? '').trim()
+  const ownerCookie = (cookieStore.get(`hushare_owner_${found.id}`)?.value ?? '').trim()
   // Owner access is granted ONLY by the owner cookie, which is set when the owner opens the
   // management link (#owner=token) or right after creating the album. Account identity alone
   // does NOT grant owner access: the public album URL is a guest experience for everyone,
@@ -187,20 +164,12 @@ export async function verifyOwnerViaCookie<T extends AlbumOwnerBase = AlbumOwner
   if (!ownerCookie) {
     return { ok: false, status: 403, error: 'Forbidden', reason: 'bad_token' }
   }
-  if (!timingSafeEqual(ownerCookie, album.owner_token)) {
+  if (!timingSafeEqual(ownerCookie, found.owner_token)) {
     return { ok: false, status: 403, error: 'Forbidden', reason: 'bad_token' }
   }
 
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-
-  if (user && !album.user_id) {
-    await admin.from('albums').update({ user_id: user.id }).eq('id', album.id).is('user_id', null)
-    album = { ...album, user_id: user.id }
-    console.info(`[album-owner-access] claimed album ${album.id} for user ${user.id}`)
-  }
-
-  return { ok: true, album, userId: user?.id ?? null }
+  const { album, userId } = await claimAlbumIfNeeded(found)
+  return { ok: true, album, userId }
 }
 
 export async function verifyOwnerViaCookieWithRateLimit<T extends AlbumOwnerBase = AlbumOwnerBase>(
