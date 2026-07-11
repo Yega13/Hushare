@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import * as tus from 'tus-js-client'
 import type { Album, Tier } from '@/types'
-import { stripExifFromJpeg } from '@/lib/exif'
+import { stripExifFromJpeg, jpegOrientation } from '@/lib/exif'
 import { showAppToast } from '@/components/AppToast'
 import { detectKind, uploadCapsForTier, generateVideoPoster } from '@/lib/media'
 import {
@@ -116,152 +116,240 @@ async function encodeCanvas(
   )
 }
 
-async function resizeAndEncode(source: File | Blob, targetMime: string): Promise<Blob> {
-  // Try createImageBitmap with resize options — throws on Safari < 17.4
-  let bitmap: ImageBitmap | null = null
+// ─── Single-decode pipeline constants ────────────────────────────────────────
+
+const MAIN_QUALITY = 0.86
+const THUMB_QUALITY = 0.85
+// 600px longest edge: sharp on the grid even at 2–3× DPR (a 3-col mobile tile is
+// ~120 CSS px = ~360 physical px on a 3× screen). Small enough to stay a fast-loading
+// thumbnail. The lightbox still swaps in the full-resolution original.
+const THUMB_MAX_DIM = 600
+// Files at or under this size skip re-encoding (original bytes upload; JPEG gets a lossless
+// EXIF strip) — the canvas round-trip would cost quality for no meaningful size win.
+const RESIZE_THRESHOLD_BYTES = 1.2 * 1024 * 1024
+
+// Decoding a 48MP photo briefly holds a full-resolution bitmap (~190MB RGBA). Bound how many
+// decodes run at once — independently of upload concurrency — so network slots stay saturated
+// while at most N files' worth of bitmaps exist. Mobile gets 2; desktop can afford more.
+const decodeSem = new Semaphore(
+  typeof navigator !== 'undefined' && /Mobi|Android/i.test(navigator.userAgent) ? 2 : 4,
+)
+
+async function decodeBitmapSafe(source: Blob): Promise<ImageBitmap | null> {
   try {
-    bitmap = await createImageBitmap(source, { resizeWidth: MAX_IMG_DIM, resizeQuality: 'high' })
+    // Default imageOrientation ('from-image') applies EXIF rotation into the pixels.
+    return await createImageBitmap(source)
   } catch {
-    try { bitmap = await createImageBitmap(source) } catch { /* bitmap stays null */ }
+    return null
   }
+}
 
-  if (!bitmap) {
-    // createImageBitmap unavailable — return source unchanged
-    return source
-  }
-
-  const { width: bw, height: bh } = bitmap
-  const scale = Math.min(1, MAX_IMG_DIM / Math.max(bw, bh))
-  const w = Math.max(1, Math.round(bw * scale))
-  const h = Math.max(1, Math.round(bh * scale))
-
-  // Try OffscreenCanvas (convertToBlob missing on Safari < 16.4)
+async function bitmapToBlob(bitmap: ImageBitmap, w: number, h: number, mime: string, quality: number): Promise<Blob> {
+  // OffscreenCanvas first (convertToBlob missing on Safari < 16.4) — HTMLCanvas fallback.
   if (typeof OffscreenCanvas !== 'undefined') {
     try {
       const oc = new OffscreenCanvas(w, h)
       const octx = oc.getContext('2d')
       if (!octx) throw new Error('OffscreenCanvas 2D context unavailable')
+      octx.imageSmoothingQuality = 'high'
       octx.drawImage(bitmap, 0, 0, w, h)
-      const blob = await encodeCanvas(oc, targetMime, 0.86)
-      bitmap.close()
-      return blob
+      return await encodeCanvas(oc, mime, quality)
     } catch { /* fall through */ }
   }
-
-  // HTMLCanvasElement fallback (always available in a browser page context)
   const canvas = document.createElement('canvas')
   canvas.width = w
   canvas.height = h
   const ctx = canvas.getContext('2d')
   if (!ctx) throw new Error('Could not get 2D canvas context')
+  ctx.imageSmoothingQuality = 'high'
   ctx.drawImage(bitmap, 0, 0, w, h)
-  const blob = await encodeCanvas(canvas, targetMime, 0.86)
-  bitmap.close()
-  return blob
+  return encodeCanvas(canvas, mime, quality)
 }
 
-async function processImageFile(file: File): Promise<{ blob: Blob; mimeType: string; name: string }> {
+// Downscale to fit maxDim (never upscales) and encode. Prefers the fused high-quality
+// resample (createImageBitmap resize options — throws on Safari < 17.4), falling back to a
+// plain smoothed canvas draw. The caller owns `bitmap` and closes it.
+async function scaleAndEncode(
+  bitmap: ImageBitmap,
+  maxDim: number,
+  mime: string,
+  quality: number,
+): Promise<{ blob: Blob; width: number; height: number }> {
+  const scale = Math.min(1, maxDim / Math.max(bitmap.width, bitmap.height))
+  const w = Math.max(1, Math.round(bitmap.width * scale))
+  const h = Math.max(1, Math.round(bitmap.height * scale))
+  if (scale < 1) {
+    try {
+      const resized = await createImageBitmap(bitmap, { resizeWidth: w, resizeHeight: h, resizeQuality: 'high' })
+      try {
+        return { blob: await bitmapToBlob(resized, w, h, mime, quality), width: w, height: h }
+      } finally {
+        resized.close()
+      }
+    } catch { /* Safari < 17.4 — plain smoothed draw below */ }
+  }
+  return { blob: await bitmapToBlob(bitmap, w, h, mime, quality), width: w, height: h }
+}
+
+// Thumbnail is best-effort — on any failure the grid falls back to the full image.
+async function deriveThumb(bitmap: ImageBitmap): Promise<Blob | null> {
+  try {
+    return (await scaleAndEncode(bitmap, THUMB_MAX_DIM, 'image/jpeg', THUMB_QUALITY)).blob
+  } catch {
+    return null
+  }
+}
+
+async function strippedJpegBlob(source: Blob): Promise<Blob> {
+  const buf = await source.arrayBuffer()
+  const stripped = stripExifFromJpeg(new Uint8Array(buf))
+  return new Blob([stripped.buffer as unknown as ArrayBuffer], { type: 'image/jpeg' })
+}
+
+// ─── processImage — ONE decode produces everything ───────────────────────────
+// The upload blob, the 600px grid thumbnail AND the intrinsic dimensions all come from a
+// single createImageBitmap decode. The previous pipeline decoded every image up to three
+// times (resize, then thumbnail, then dimensions) — pure wasted CPU on the critical path.
+
+type ProcessedImage = {
+  blob: Blob
+  thumbBlob: Blob | null
+  mimeType: string
+  name: string
+  width: number | null
+  height: number | null
+}
+
+async function processImage(file: File): Promise<ProcessedImage> {
+  await decodeSem.acquire()
+  try {
+    return await processImageInner(file)
+  } finally {
+    decodeSem.release()
+  }
+}
+
+async function processImageInner(file: File): Promise<ProcessedImage> {
   const isHeic = /heic|heif/i.test(file.type) || /\.(heic|heif)$/i.test(file.name)
 
   if (isHeic) {
+    const jpgName = file.name.replace(/\.(heic|heif)$/i, '.jpg')
+
+    // Fast path: Safari decodes HEIC natively — skip the slow WASM converter entirely and
+    // encode straight from the native bitmap (also a single lossy generation, so better
+    // quality than converter-then-re-encode).
+    const native = await decodeBitmapSafe(file)
+    if (native) {
+      try {
+        const thumbBlob = await deriveThumb(native)
+        const main = await scaleAndEncode(native, MAX_IMG_DIM, 'image/jpeg', MAIN_QUALITY)
+        return { blob: main.blob, thumbBlob, mimeType: 'image/jpeg', name: jpgName, width: main.width, height: main.height }
+      } finally {
+        native.close()
+      }
+    }
+
+    // WASM converter: worker first (keeps the page responsive), main thread if it crashes.
     let jpegBlob: Blob
     try {
       jpegBlob = await convertHeicViaWorker(file)
     } catch {
-      // Worker failed (crash or per-file decode error) — always fall back to main thread
       try {
         jpegBlob = await convertHeicMainThread(file)
       } catch (mainErr) {
         throw new Error(`HEIC conversion failed: ${mainErr instanceof Error ? mainErr.message : String(mainErr)}`)
       }
     }
-    const buf = await jpegBlob.arrayBuffer()
-    const stripped = stripExifFromJpeg(new Uint8Array(buf))
-    let finalBlob: Blob = new Blob([stripped.buffer as unknown as ArrayBuffer], { type: 'image/jpeg' })
-    // HEIC→JPEG can inflate dramatically (50 MP ProRAW → 30+ MB JPEG) — resize if needed
-    if (finalBlob.size > 2 * 1024 * 1024) {
-      finalBlob = await resizeAndEncode(finalBlob, 'image/jpeg')
+
+    const bitmap = await decodeBitmapSafe(jpegBlob)
+    if (!bitmap) {
+      // Converted but locally undecodable (rare) — upload the converted JPEG as-is, stripped.
+      return { blob: await strippedJpegBlob(jpegBlob), thumbBlob: null, mimeType: 'image/jpeg', name: jpgName, width: null, height: null }
     }
-    return {
-      blob: finalBlob,
-      mimeType: 'image/jpeg',
-      name: file.name.replace(/\.(heic|heif)$/i, '.jpg'),
+    try {
+      const thumbBlob = await deriveThumb(bitmap)
+      // HEIC→JPEG can inflate dramatically (48MP ProRAW → 30+MB JPEG) — re-encode when large.
+      if (jpegBlob.size > 2 * 1024 * 1024 || Math.max(bitmap.width, bitmap.height) > MAX_IMG_DIM) {
+        const main = await scaleAndEncode(bitmap, MAX_IMG_DIM, 'image/jpeg', MAIN_QUALITY)
+        return { blob: main.blob, thumbBlob, mimeType: 'image/jpeg', name: jpgName, width: main.width, height: main.height }
+      }
+      // Small conversion output: keep it losslessly (single lossy generation), EXIF-stripped.
+      // heic2any renders through a canvas, so its output carries no orientation tag to lose.
+      return { blob: await strippedJpegBlob(jpegBlob), thumbBlob, mimeType: 'image/jpeg', name: jpgName, width: bitmap.width, height: bitmap.height }
+    } finally {
+      bitmap.close()
     }
   }
 
   const mimeType = (file.type || 'image/jpeg').toLowerCase()
 
-  // Resize/re-encode large images so uploads stay fast, at a quality (4096px, q0.9) that is
-  // visually indistinguishable. Crucially, PNG/WebP are re-encoded IN THEIR OWN FORMAT — never
-  // to JPEG — so transparency is preserved (a JPEG re-encode turned transparent areas solid
-  // black, the "black additions"). Animated GIFs are never touched (a canvas flattens them to
-  // one frame). Small files skip the canvas round-trip entirely.
-  if (file.size > 1.2 * 1024 * 1024 && mimeType !== 'image/gif') {
-    const outMime = mimeType === 'image/png' ? 'image/png'
-      : mimeType === 'image/webp' ? 'image/webp'
-      : 'image/jpeg'
-    const blob = await resizeAndEncode(file, outMime)
-    // resizeAndEncode returns the exact `file` reference if createImageBitmap is unavailable —
-    // upload it untouched in that fallback rather than mislabelling its format.
-    if ((blob as unknown) === (file as unknown)) return { blob: file, mimeType, name: file.name }
-    if (outMime === 'image/jpeg') {
-      const buf = await blob.arrayBuffer()
-      const stripped = stripExifFromJpeg(new Uint8Array(buf))
-      return { blob: new Blob([stripped.buffer as unknown as ArrayBuffer], { type: 'image/jpeg' }), mimeType: 'image/jpeg', name: file.name.replace(/\.[^.]+$/, '.jpg') }
-    }
-    return { blob, mimeType: outMime, name: file.name }
-  }
-
-  // Small JPEG: lossless EXIF strip only (no re-encode).
-  if (mimeType === 'image/jpeg' || mimeType === 'image/jpg') {
-    const buf = await file.arrayBuffer()
-    const stripped = stripExifFromJpeg(new Uint8Array(buf))
-    return { blob: new Blob([stripped.buffer as unknown as ArrayBuffer], { type: 'image/jpeg' }), mimeType: 'image/jpeg', name: file.name }
-  }
-
-  // PNG / WebP / GIF: pass through (no EXIF)
-  return { blob: file, mimeType, name: file.name }
-}
-
-// 600px longest edge: sharp on the grid even at 2–3× DPR (a 3-col mobile tile is
-// ~120 CSS px = ~360 physical px on a 3× screen). Small enough to stay a fast-loading
-// thumbnail. The lightbox still swaps in the full-resolution original.
-const THUMB_MAX_DIM = 600
-
-async function generateThumbnail(blob: Blob): Promise<Blob | null> {
-  try {
-    let bitmap: ImageBitmap
+  // Animated GIF: NEVER re-encoded (a canvas flattens it to one frame). Decode only for the
+  // static first-frame thumbnail + dimensions; the grid plays the original.
+  if (mimeType === 'image/gif') {
+    const bitmap = await decodeBitmapSafe(file)
     try {
-      bitmap = await createImageBitmap(blob, { resizeWidth: THUMB_MAX_DIM, resizeQuality: 'high' })
-    } catch {
-      bitmap = await createImageBitmap(blob)
+      return {
+        blob: file,
+        thumbBlob: bitmap ? await deriveThumb(bitmap) : null,
+        mimeType,
+        name: file.name,
+        width: bitmap?.width ?? null,
+        height: bitmap?.height ?? null,
+      }
+    } finally {
+      bitmap?.close()
     }
-    const { width: bw, height: bh } = bitmap
-    const scale = Math.min(1, THUMB_MAX_DIM / Math.max(bw, bh))
-    const w = Math.max(1, Math.round(bw * scale))
-    const h = Math.max(1, Math.round(bh * scale))
+  }
 
-    if (typeof OffscreenCanvas !== 'undefined') {
-      try {
-        const oc = new OffscreenCanvas(w, h)
-        const octx = oc.getContext('2d')
-        if (!octx) throw new Error('OffscreenCanvas 2D context unavailable')
-        octx.drawImage(bitmap, 0, 0, w, h)
-        const thumb = await oc.convertToBlob({ type: 'image/jpeg', quality: 0.85 })
-        bitmap.close()
-        return thumb
-      } catch { /* fall through */ }
+  const bitmap = await decodeBitmapSafe(file)
+  if (!bitmap) {
+    // Undecodable in this browser — upload untouched (the server validates the type); a JPEG
+    // still gets its lossless metadata strip.
+    if (mimeType === 'image/jpeg' || mimeType === 'image/jpg') {
+      return { blob: await strippedJpegBlob(file), thumbBlob: null, mimeType: 'image/jpeg', name: file.name, width: null, height: null }
     }
-    const canvas = document.createElement('canvas')
-    canvas.width = w
-    canvas.height = h
-    const thumbCtx = canvas.getContext('2d')
-    if (!thumbCtx) { bitmap.close(); return null }
-    thumbCtx.drawImage(bitmap, 0, 0, w, h)
+    return { blob: file, thumbBlob: null, mimeType, name: file.name, width: null, height: null }
+  }
+
+  try {
+    const thumbBlob = await deriveThumb(bitmap)
+
+    if (file.size > RESIZE_THRESHOLD_BYTES) {
+      // PNG/WebP are re-encoded IN THEIR OWN FORMAT — never to JPEG — so transparency is
+      // preserved (a JPEG re-encode turned transparent areas solid black). Canvas re-encode
+      // needs no EXIF strip (metadata never survives it) and bakes orientation into pixels.
+      const outMime = mimeType === 'image/png' ? 'image/png'
+        : mimeType === 'image/webp' ? 'image/webp'
+        : 'image/jpeg'
+      const main = await scaleAndEncode(bitmap, MAX_IMG_DIM, outMime, MAIN_QUALITY)
+      const name = outMime === 'image/jpeg' ? file.name.replace(/\.[^.]+$/, '.jpg') : file.name
+      return { blob: main.blob, thumbBlob, mimeType: outMime, name, width: main.width, height: main.height }
+    }
+
+    if (mimeType === 'image/jpeg' || mimeType === 'image/jpg') {
+      const raw = new Uint8Array(await file.arrayBuffer())
+      if (jpegOrientation(raw) !== 1) {
+        // The lossless strip drops APP1 — including the EXIF orientation tag — so a rotated
+        // photo would upload sideways. Re-encode instead: createImageBitmap already baked the
+        // rotation into the pixels. Higher quality (0.92) since these files are small anyway.
+        const main = await scaleAndEncode(bitmap, MAX_IMG_DIM, 'image/jpeg', 0.92)
+        return { blob: main.blob, thumbBlob, mimeType: 'image/jpeg', name: file.name, width: main.width, height: main.height }
+      }
+      const stripped = stripExifFromJpeg(raw)
+      return {
+        blob: new Blob([stripped.buffer as unknown as ArrayBuffer], { type: 'image/jpeg' }),
+        thumbBlob,
+        mimeType: 'image/jpeg',
+        name: file.name,
+        width: bitmap.width,
+        height: bitmap.height,
+      }
+    }
+
+    // Small PNG/WebP: original bytes untouched (no EXIF concern).
+    return { blob: file, thumbBlob, mimeType, name: file.name, width: bitmap.width, height: bitmap.height }
+  } finally {
     bitmap.close()
-    return new Promise<Blob | null>(res => canvas.toBlob(res, 'image/jpeg', 0.85))
-  } catch {
-    return null
   }
 }
 
@@ -325,6 +413,61 @@ async function xhrPut(
   })
 }
 
+// ─── Transient-failure retry helpers ─────────────────────────────────────────
+// 4xx responses are deterministic server verdicts (validation, caps, auth) — never retried.
+// Network failures, timeouts, stalls and 5xx are transient — retried with jittered
+// exponential backoff. A deliberate cancel (AbortError) always propagates immediately.
+
+function backoffDelay(attempt: number): number {
+  return 400 * 2 ** (attempt - 1) + Math.random() * 300
+}
+
+async function fetchWithRetry(url: string, init: RequestInit, attempts = 3): Promise<Response> {
+  let lastErr: Error | null = null
+  for (let attempt = 0; attempt < attempts; attempt++) {
+    if (attempt > 0) await new Promise(r => setTimeout(r, backoffDelay(attempt)))
+    try {
+      // Per-attempt timeout: a hung request should burn 20s, not hang the file forever.
+      const res = await fetch(url, { ...init, signal: AbortSignal.timeout(20_000) })
+      if (res.status >= 500 && attempt < attempts - 1) {
+        lastErr = new Error(`HTTP ${res.status}`)
+        continue
+      }
+      return res
+    } catch (e) {
+      // TimeoutError (per-attempt cap above) and network TypeErrors are both retryable.
+      lastErr = e instanceof Error ? e : new Error(String(e))
+    }
+  }
+  throw lastErr ?? new Error('Network request failed')
+}
+
+// The old policy threw on ANY HTTP error — including R2's transient 500/502/503s, which are
+// exactly the errors a retry fixes. Only 4xx (bad/expired signature, too large) is deterministic.
+async function putWithRetry(
+  url: string,
+  body: Blob,
+  contentType: string,
+  onProgress: (pct: number) => void,
+  signal?: AbortSignal,
+  attempts = 3,
+): Promise<void> {
+  let lastErr: Error | null = null
+  for (let attempt = 0; attempt < attempts; attempt++) {
+    if (signal?.aborted) throw new DOMException('Upload aborted', 'AbortError')
+    if (attempt > 0) await new Promise(r => setTimeout(r, backoffDelay(attempt)))
+    try {
+      await xhrPut(url, body, contentType, onProgress, signal)
+      return
+    } catch (e) {
+      if (e instanceof DOMException && e.name === 'AbortError') throw e
+      if (e instanceof HttpError && e.status < 500) throw e
+      lastErr = e instanceof Error ? e : new Error(String(e))
+    }
+  }
+  throw lastErr ?? new Error('Upload failed')
+}
+
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 type FileEntry = {
@@ -350,28 +493,6 @@ type PhotoRow = {
   height?: number | null
 }
 
-// Read the intrinsic pixel dimensions of an image blob. Best-effort — resolves null on any
-// failure so a missing size never blocks an upload. Used to store aspect ratio at upload time.
-async function readImageDimensions(blob: Blob): Promise<{ width: number; height: number } | null> {
-  const url = URL.createObjectURL(blob)
-  try {
-    const img = new Image()
-    await new Promise<void>((resolve, reject) => {
-      img.onload = () => resolve()
-      img.onerror = () => reject(new Error('image decode failed'))
-      img.src = url
-    })
-    if (img.naturalWidth > 0 && img.naturalHeight > 0) {
-      return { width: img.naturalWidth, height: img.naturalHeight }
-    }
-    return null
-  } catch {
-    return null
-  } finally {
-    URL.revokeObjectURL(url)
-  }
-}
-
 // Snapshot each picked file into a stable in-memory copy the instant it is selected. On
 // Android the original File reference (especially from Google Photos / the gallery) goes
 // stale before the upload queue reads its bytes, throwing NotReadableError ("the requested
@@ -382,16 +503,27 @@ async function readImageDimensions(blob: Blob): Promise<{ width: number; height:
 // (large videos) would risk OOM on mobile if several were read at once. Those keep their
 // original reference — the stale-reference bug overwhelmingly hits image picks, not big videos.
 const SNAPSHOT_MAX_BYTES = 80 * 1024 * 1024
+// Bounded workers, NOT Promise.all over everything: a 200-photo drop would otherwise buffer
+// every file's bytes into memory simultaneously — an OOM on mobile before uploading starts.
+const SNAPSHOT_CONCURRENCY = 4
 async function snapshotFiles(files: File[]): Promise<File[]> {
-  return Promise.all(files.map(async (f) => {
-    if (f.size > SNAPSHOT_MAX_BYTES) return f
-    try {
-      const buf = await f.arrayBuffer()
-      return new File([buf], f.name, { type: f.type, lastModified: f.lastModified })
-    } catch {
-      return f
+  const out = new Array<File>(files.length)
+  let next = 0
+  const worker = async () => {
+    while (next < files.length) {
+      const i = next++
+      const f = files[i]
+      if (f.size > SNAPSHOT_MAX_BYTES) { out[i] = f; continue }
+      try {
+        const buf = await f.arrayBuffer()
+        out[i] = new File([buf], f.name, { type: f.type, lastModified: f.lastModified })
+      } catch {
+        out[i] = f
+      }
     }
-  }))
+  }
+  await Promise.all(Array.from({ length: Math.min(SNAPSHOT_CONCURRENCY, files.length) }, worker))
+  return out
 }
 
 // ─── Upload image to R2 ───────────────────────────────────────────────────────
@@ -399,80 +531,63 @@ async function snapshotFiles(files: File[]): Promise<File[]> {
 async function uploadImageToR2(
   file: File,
   albumId: string,
+  imageCapBytes: number,
   onProgress: (pct: number) => void,
   signal?: AbortSignal,
 ): Promise<PhotoRow> {
-  // Process BEFORE presigning — fileSize in presign must match the actual blob we PUT
+  // Process BEFORE presigning — fileSize in presign must match the actual blob we PUT.
+  // One decode yields the upload blob, the thumbnail AND the dimensions (see processImage).
   onProgress(2)
-  const { blob: processedBlob, mimeType, name: processedName } = await processImageFile(file)
-  onProgress(10)
+  const processed = await processImage(file)
+  onProgress(12)
 
-  // Read dimensions off the critical path: decode runs concurrently with presign + upload so it
-  // never adds latency. Awaited only at the very end.
-  const dimsPromise = readImageDimensions(processedBlob)
+  // Cap enforced on the PROCESSED size — what actually uploads. A 30MB phone photo that
+  // compresses to <1MB should not bounce off a 25MB tier cap. The server enforces the same
+  // cap on the presigned size, so this is UX, not security.
+  if (processed.blob.size > imageCapBytes) {
+    throw new Error(`File too large (max ${Math.round(imageCapBytes / 1024 / 1024)} MB for your tier)`)
+  }
 
-  const presignRes = await fetch('/api/upload/presign', {
+  // ONE presign round trip covers both the image and its thumbnail (the old flow made two,
+  // each paying the server's full rate-limit + album + tier lookup cost).
+  const presignRes = await fetchWithRetry('/api/upload/presign', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       albumId,
-      fileName: processedName,
-      contentType: mimeType,
-      fileSize: processedBlob.size,  // actual size of the blob we're about to PUT
+      fileName: processed.name,
+      contentType: processed.mimeType,
+      fileSize: processed.blob.size,  // actual size of the blob we're about to PUT
+      ...(processed.thumbBlob ? { thumbSize: processed.thumbBlob.size } : {}),
     }),
   })
   if (!presignRes.ok) {
     const err = await presignRes.json().catch(() => ({})) as { error?: string }
     throw new Error(err.error ?? `Presign failed (${presignRes.status})`)
   }
-  const { presignedUrl, key, publicUrl } = await presignRes.json() as {
-    presignedUrl: string; key: string; publicUrl: string
+  const { presignedUrl, key, publicUrl, thumb } = await presignRes.json() as {
+    presignedUrl: string
+    key: string
+    publicUrl: string
+    thumb?: { presignedUrl: string; key: string; publicUrl: string }
   }
-  onProgress(15)
+  onProgress(16)
 
-  // PUT with max 2 retries on network errors; never retry 4xx/5xx (server-decided)
-  let lastErr: Error | null = null
-  for (let attempt = 0; attempt <= 2; attempt++) {
-    try {
-      await xhrPut(presignedUrl, processedBlob, mimeType, pct => onProgress(15 + Math.round(pct * 0.7)), signal)
-      lastErr = null
-      break
-    } catch (e) {
-      if (e instanceof HttpError) throw e  // 4xx / 5xx — no retry
-      lastErr = e instanceof Error ? e : new Error(String(e))
-    }
-  }
-  if (lastErr) throw lastErr
-  onProgress(85)
+  // Main and thumbnail PUT in PARALLEL — the ~30KB thumb rides along for free instead of
+  // adding its own serial round trip. This promise NEVER rejects: thumb failure is non-fatal
+  // (the grid falls back to the full image), and if the main PUT throws first this promise may
+  // go un-awaited — a rejection here would surface as an unhandled rejection. An abort during
+  // the thumb phase also resolves null: the main image is already in R2 at that point, so
+  // saving its row (thumb-less) beats orphaning the uploaded bytes.
+  const thumbPut: Promise<string | null> = (processed.thumbBlob && thumb)
+    ? putWithRetry(thumb.presignedUrl, processed.thumbBlob, 'image/jpeg', () => {}, signal)
+        .then(() => thumb.publicUrl)
+        .catch(() => null)
+    : Promise.resolve(null)
 
-  // Thumbnail — failure is non-fatal
-  let thumbUrl: string | null = null
-  try {
-    const thumbBlob = await generateThumbnail(processedBlob)
-    if (thumbBlob) {
-      const tPresign = await fetch('/api/upload/presign', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          albumId,
-          fileName: 'thumb.jpg',
-          contentType: 'image/jpeg',
-          fileSize: thumbBlob.size,
-          isThumb: true,
-        }),
-      })
-      if (tPresign.ok) {
-        const { presignedUrl: tUrl, publicUrl: tPublicUrl } = await tPresign.json() as {
-          presignedUrl: string; key: string; publicUrl: string
-        }
-        await xhrPut(tUrl, thumbBlob, 'image/jpeg', () => {})
-        thumbUrl = tPublicUrl
-      }
-    }
-  } catch { /* non-fatal */ }
-  onProgress(96)
-
-  const dims = await dimsPromise
+  await putWithRetry(presignedUrl, processed.blob, processed.mimeType, pct => onProgress(16 + Math.round(pct * 0.8)), signal)
+  const thumbUrl = await thumbPut
+  onProgress(98)
 
   return {
     storage_backend: 'r2',
@@ -481,12 +596,26 @@ async function uploadImageToR2(
     url: publicUrl,
     thumb_url: thumbUrl,
     poster_url: null,
-    width: dims?.width ?? null,
-    height: dims?.height ?? null,
+    width: processed.width,
+    height: processed.height,
   }
 }
 
 // ─── Upload video to Cloudflare Stream ────────────────────────────────────────
+
+// Presign + PUT one poster JPEG into R2 thumbs (isThumb:true → thumbs/{albumId}/{uuid}.jpg,
+// which passes photos/create poster_url validation). Throws on failure — callers decide fatality.
+async function uploadPosterToR2(albumId: string, blob: Blob, signal?: AbortSignal): Promise<string> {
+  const presign = await fetchWithRetry('/api/upload/presign', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ albumId, fileName: 'poster.jpg', contentType: 'image/jpeg', fileSize: blob.size, isThumb: true }),
+  })
+  if (!presign.ok) throw new Error(`Poster presign failed (${presign.status})`)
+  const { presignedUrl, publicUrl } = await presign.json() as { presignedUrl: string; publicUrl: string }
+  await putWithRetry(presignedUrl, blob, 'image/jpeg', () => {}, signal)
+  return publicUrl
+}
 
 async function uploadVideoToStream(
   file: File,
@@ -496,45 +625,35 @@ async function uploadVideoToStream(
 ): Promise<PhotoRow> {
   onProgress(2)
 
-  // Generate a poster frame and upload it to R2 thumbs so it's immediately visible in the grid.
-  // isThumb:true places the key under thumbs/{albumId}/{uuid}.jpg which passes photos/create
-  // poster_url validation. Also captures duration — avoids a second video element decode.
-  let posterUrl: string | null = null
+  // Poster frame: gives the grid an immediate thumbnail and captures the duration + true
+  // dimensions in the same decode.
+  let posterBlob: Blob | null = null
   let durationSeconds = 0
   let videoWidth: number | null = null
   let videoHeight: number | null = null
   try {
     const posterResult = await generateVideoPoster(file)
     if (posterResult) {
+      posterBlob = posterResult.blob
       durationSeconds = posterResult.durationSeconds
       if (posterResult.videoWidth > 0 && posterResult.videoHeight > 0) {
         videoWidth = posterResult.videoWidth
         videoHeight = posterResult.videoHeight
       }
-      const pPresign = await fetch('/api/upload/presign', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          albumId,
-          fileName: 'poster.jpg',
-          contentType: 'image/jpeg',
-          fileSize: posterResult.blob.size,
-          isThumb: true,
-        }),
-      })
-      if (pPresign.ok) {
-        const { presignedUrl: pUrl, publicUrl: pPublicUrl } = await pPresign.json() as {
-          presignedUrl: string; key: string; publicUrl: string
-        }
-        await xhrPut(pUrl, posterResult.blob, 'image/jpeg', () => {})
-        posterUrl = pPublicUrl  // R2 thumbs URL — passes photos/create poster_url validation
-      }
     }
-  } catch { /* non-fatal */ }
-  onProgress(8)
+  } catch { /* non-fatal — the Stream thumbnail covers a missing poster */ }
+  onProgress(6)
 
-  // Init Cloudflare Stream TUS upload — 15s timeout (3s is too tight on slow mobile)
-  const initRes = await fetch('/api/upload/stream', {
+  // Poster presign+PUT runs CONCURRENTLY with the Stream init + TUS upload below — it used to
+  // run serially before them, adding its full round-trip time to every video. This promise
+  // NEVER rejects (poster is best-effort, and if TUS throws first it goes un-awaited — a
+  // rejection here would surface as an unhandled rejection).
+  const posterPromise: Promise<string | null> = posterBlob
+    ? uploadPosterToR2(albumId, posterBlob, signal).catch(() => null)
+    : Promise.resolve(null)
+
+  // Init Cloudflare Stream TUS upload (fetchWithRetry gives 20s-per-attempt timeout + retries)
+  const initRes = await fetchWithRetry('/api/upload/stream', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -543,7 +662,6 @@ async function uploadVideoToStream(
       contentType: file.type,
       fileSize: file.size,  // raw file size — no processing for videos
     }),
-    signal: AbortSignal.timeout(15_000),
   })
   if (!initRes.ok) {
     const err = await initRes.json().catch(() => ({})) as { error?: string }
@@ -554,9 +672,10 @@ async function uploadVideoToStream(
     uploadUrl: string; streamUid: string; iframeUrl: string; thumbnailUrl: string
   }
   if (!uploadUrl || !streamUid || !iframeUrl) throw new Error('Stream init returned incomplete response')
-  onProgress(12)
+  onProgress(10)
 
-  // TUS chunked upload — uploadUrl is a pre-created Cloudflare Stream upload URL
+  // TUS chunked upload — uploadUrl is a pre-created Cloudflare Stream upload URL. TUS is
+  // resumable by design: a retried chunk resumes from the last confirmed offset.
   await new Promise<void>((resolve, reject) => {
     if (signal?.aborted) { reject(new DOMException('Upload aborted', 'AbortError')); return }
     let settled = false
@@ -564,16 +683,19 @@ async function uploadVideoToStream(
     const upload = new tus.Upload(file, {
       uploadUrl,
       chunkSize: STREAM_CHUNK_SIZE_BYTES,
-      retryDelays: [0, 0],
-      // Only retry on transport/network failures — never on HTTP error responses (4xx/5xx).
-      // Matches the XHR image upload policy: HttpError is never retried.
+      // Real backoff (the old [0, 0] fired two instant retries into the same congestion).
+      retryDelays: [0, 1000, 3000, 5000],
+      // Retry transport/network failures AND transient server states (5xx). Deterministic
+      // 4xx verdicts are final — mirrors putWithRetry's policy for images.
       onShouldRetry: (err: unknown) => {
-        if (err && typeof (err as { originalResponse?: unknown }).originalResponse !== 'undefined') return false
-        return true
+        const resp = (err as { originalResponse?: { getStatus?: () => number } | null })?.originalResponse
+        if (!resp) return true
+        const status = resp.getStatus?.() ?? 0
+        return status >= 500
       },
       onProgress: (bytesUploaded, bytesTotal) => {
-        const pct = bytesTotal > 0 ? Math.round((bytesUploaded / bytesTotal) * 85) : 0
-        onProgress(12 + pct)
+        const pct = bytesTotal > 0 ? Math.round((bytesUploaded / bytesTotal) * 86) : 0
+        onProgress(10 + pct)
       },
       onSuccess: () => settle(resolve),
       onError: (err) => settle(() => reject(err instanceof Error ? err : new Error(String(err)))),
@@ -584,6 +706,7 @@ async function uploadVideoToStream(
     }, { once: true })
     upload.start()
   })
+  const posterUrl = await posterPromise
   onProgress(98)
 
   return {
@@ -601,10 +724,10 @@ async function uploadVideoToStream(
   }
 }
 
-// ─── Batch DB save ────────────────────────────────────────────────────────────
+// ─── Incremental DB save ──────────────────────────────────────────────────────
 
-async function saveUploadedRows(albumId: string, rows: PhotoRow[]): Promise<{ inserted: number; skipped: number }> {
-  const res = await fetch('/api/album/photos/create', {
+async function saveUploadedRows(albumId: string, rows: PhotoRow[]): Promise<void> {
+  const res = await fetchWithRetry('/api/album/photos/create', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     // albumId (camelCase) — route destructures { albumId, photos }
@@ -614,11 +737,54 @@ async function saveUploadedRows(albumId: string, rows: PhotoRow[]): Promise<{ in
     const err = await res.json().catch(() => ({})) as { error?: string }
     throw new Error(err.error ?? `Save failed (${res.status})`)
   }
-  // Route returns { inserted: N, skipped: N } — NOT inserted_count / rejected_count
-  const body = await res.json() as { inserted?: number; skipped?: number }
+}
+
+// Rows are written to the DB in small batches moments after each file finishes uploading —
+// NOT in one save after the whole batch. Two wins:
+//   - photos appear in the album (via realtime) while the rest of the batch is still uploading
+//   - closing the tab mid-batch loses only in-flight files, not every already-uploaded one
+//     (bytes in storage with no DB row are permanently orphaned)
+// photos/create dedupes on storage_path/stream_uid, so a retried flush is idempotent.
+const SAVE_DEBOUNCE_MS = 1200
+
+function createRowSaver(
+  albumId: string,
+  onSaved: (entryIds: string[]) => void,
+  onFailed: (entryIds: string[], message: string) => void,
+) {
+  let queue: { row: PhotoRow; entryId: string }[] = []
+  let timer: ReturnType<typeof setTimeout> | null = null
+  // Flushes chain serially — a slow save never interleaves with the next one.
+  let chain: Promise<void> = Promise.resolve()
+  let savedCount = 0
+
+  const flush = () => {
+    if (timer) { clearTimeout(timer); timer = null }
+    if (queue.length === 0) return
+    const batch = queue
+    queue = []
+    chain = chain.then(async () => {
+      try {
+        await saveUploadedRows(albumId, batch.map(b => b.row))
+        savedCount += batch.length
+        onSaved(batch.map(b => b.entryId))
+      } catch (e) {
+        onFailed(batch.map(b => b.entryId), e instanceof Error ? e.message : 'Failed to save')
+      }
+    })
+  }
+
   return {
-    inserted: typeof body.inserted === 'number' ? body.inserted : rows.length,
-    skipped:  typeof body.skipped  === 'number' ? body.skipped  : 0,
+    add(row: PhotoRow, entryId: string) {
+      queue.push({ row, entryId })
+      if (!timer) timer = setTimeout(flush, SAVE_DEBOUNCE_MS)
+    },
+    // Flush the remainder and resolve once every pending save settles.
+    async finish(): Promise<number> {
+      flush()
+      await chain
+      return savedCount
+    },
   }
 }
 
@@ -710,10 +876,18 @@ export default function UploadZone({ album, userTier, onPhotosUploaded }: Props)
     // a fresh Semaphore instance that would multiply the concurrency limit
     if (!semRef.current) semRef.current = new Semaphore(concurrency)
     const sem = semRef.current
-    const rows: (PhotoRow | null)[] = new Array(toUpload.length).fill(null)
+
+    // Incremental saver: each file's row is written within ~1.2s of its upload finishing.
+    // A tile flips to 'done' only once its row is actually IN the database — before that a
+    // "done" tile could still be lost by closing the tab.
+    const saver = createRowSaver(
+      album.id,
+      (ids) => { for (const id of ids) patchEntry(id, { status: 'done', progress: 100 }) },
+      (ids, msg) => { for (const id of ids) patchEntry(id, { status: 'error', error: `Uploaded, but saving to the album failed: ${msg}` }) },
+    )
 
     const run = async () => {
-      await Promise.all(toUpload.map(async (entry, i) => {
+      await Promise.all(toUpload.map(async (entry) => {
         await sem.acquire()
         try {
           patchEntry(entry.id, { status: 'uploading', progress: 0 })
@@ -721,16 +895,20 @@ export default function UploadZone({ album, userTier, onPhotosUploaded }: Props)
           const kind = detectKind(entry.file)
           if (!kind) throw new Error('Unsupported file type')
 
-          const cap = kind === 'image' ? caps.image : caps.video
-          if (entry.file.size > cap) {
-            throw new Error(`File too large (max ${Math.round(cap / 1024 / 1024)} MB for your tier)`)
+          // Videos upload their raw bytes — cap the original size. Images are compressed
+          // client-side first, so their cap is enforced on the processed size inside
+          // uploadImageToR2 (a 30MB photo that compresses to 1MB should upload fine).
+          if (kind === 'video' && entry.file.size > caps.video) {
+            throw new Error(`File too large (max ${Math.round(caps.video / 1024 / 1024)} MB for your tier)`)
           }
 
-          rows[i] = kind === 'image'
-            ? await uploadImageToR2(entry.file, album.id, pct => patchEntry(entry.id, { progress: pct }), signal)
+          const row = kind === 'image'
+            ? await uploadImageToR2(entry.file, album.id, caps.image, pct => patchEntry(entry.id, { progress: pct }), signal)
             : await uploadVideoToStream(entry.file, album.id, pct => patchEntry(entry.id, { progress: pct }), signal)
 
-          patchEntry(entry.id, { status: 'done', progress: 100 })
+          // Bytes are in storage; the saver flips this tile to 'done' when the row commits.
+          patchEntry(entry.id, { progress: 100 })
+          saver.add(row, entry.id)
         } catch (e) {
           const msg = e instanceof Error ? e.message : 'Upload failed'
           patchEntry(entry.id, { status: 'error', error: msg })
@@ -754,28 +932,8 @@ export default function UploadZone({ album, userTier, onPhotosUploaded }: Props)
       await run()
     }
 
+    const savedCount = await saver.finish()
     flushProgress()
-
-    const successRows = rows.filter((r): r is PhotoRow => r !== null)
-    const successEntries = toUpload.filter((_, i) => rows[i] !== null)
-
-    if (successRows.length > 0) {
-      try {
-        await saveUploadedRows(album.id, successRows)
-      } catch (e) {
-        // Files are in cloud storage but the DB record creation failed.
-        // Mark them as error so the user knows not to navigate away.
-        const msg = e instanceof Error ? e.message : 'Failed to save'
-        for (const entry of successEntries) {
-          patchEntry(entry.id, { status: 'error', error: `Cloud upload done but DB save failed: ${msg}` })
-        }
-        flushProgress()
-        activeBatchCountRef.current--
-        setIsUploading(activeBatchCountRef.current > 0)
-        abortCtrlsRef.current.delete(abortCtrl)
-        return
-      }
-    }
 
     // Decrement before onPhotosUploaded so if the parent unmounts UploadZone
     // the queued setState call is already the final one
@@ -783,7 +941,7 @@ export default function UploadZone({ album, userTier, onPhotosUploaded }: Props)
     setIsUploading(activeBatchCountRef.current > 0)
     // Only notify parent when at least one photo actually landed in the DB,
     // and only if still mounted (prevents leaking a timer in AlbumPageClient)
-    if (mountedRef.current && successRows.length > 0) onPhotosUploaded?.()
+    if (mountedRef.current && savedCount > 0) onPhotosUploaded?.()
     abortCtrlsRef.current.delete(abortCtrl)
   }, [album.id, caps, concurrency, patchEntry, flushProgress, onPhotosUploaded])
 

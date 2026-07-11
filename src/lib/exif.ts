@@ -20,6 +20,60 @@ const JFIF_APP0 = new Uint8Array([
   0x00, 0x00, // no thumbnail
 ])
 
+// Returns the EXIF orientation (1–8) of a JPEG, or 1 when absent/unparseable.
+// Needed because stripExifFromJpeg drops APP1 wholesale — including the orientation tag.
+// A JPEG whose display depends on that tag must be re-encoded (pixels rotated) rather than
+// losslessly stripped, or it uploads sideways. Callers check this BEFORE stripping.
+export function jpegOrientation(bytes: Uint8Array): number {
+  if (bytes.length < 4 || bytes[0] !== 0xff || bytes[1] !== 0xd8) return 1
+  let i = 2
+  while (i < bytes.length - 1) {
+    while (i < bytes.length - 1 && bytes[i] === 0xff && bytes[i + 1] === 0xff) i++
+    if (i >= bytes.length - 1 || bytes[i] !== 0xff) break
+    const marker = bytes[i + 1]
+    if (marker === 0xda) break // SOS — EXIF never appears after scan data starts
+    if ((marker >= 0xd0 && marker <= 0xd9) || marker === 0x01) { i += 2; continue }
+    if (i + 4 > bytes.length) break
+    const segLen = (bytes[i + 2] << 8) | bytes[i + 3]
+    if (segLen < 2 || i + 2 + segLen > bytes.length) break
+    if (marker === 0xe1 && segLen >= 16) {
+      const p = i + 4
+      // "Exif\0\0" preamble, then the TIFF header
+      if (
+        bytes[p] === 0x45 && bytes[p + 1] === 0x78 && bytes[p + 2] === 0x69 &&
+        bytes[p + 3] === 0x66 && bytes[p + 4] === 0x00 && bytes[p + 5] === 0x00
+      ) {
+        const tiff = p + 6
+        const little = bytes[tiff] === 0x49 && bytes[tiff + 1] === 0x49
+        const big = bytes[tiff] === 0x4d && bytes[tiff + 1] === 0x4d
+        if (little || big) {
+          const segEnd = i + 2 + segLen
+          const u16 = (o: number) => (little ? bytes[o] | (bytes[o + 1] << 8) : (bytes[o] << 8) | bytes[o + 1])
+          const u32 = (o: number) =>
+            little
+              ? (bytes[o] | (bytes[o + 1] << 8) | (bytes[o + 2] << 16) | (bytes[o + 3] << 24)) >>> 0
+              : ((bytes[o] << 24) | (bytes[o + 1] << 16) | (bytes[o + 2] << 8) | bytes[o + 3]) >>> 0
+          const ifd = tiff + u32(tiff + 4)
+          if (ifd + 2 <= segEnd) {
+            const count = u16(ifd)
+            for (let e = 0; e < count; e++) {
+              const entry = ifd + 2 + e * 12
+              if (entry + 12 > segEnd) break
+              if (u16(entry) === 0x0112) {
+                const v = u16(entry + 8)
+                return v >= 1 && v <= 8 ? v : 1
+              }
+            }
+          }
+        }
+      }
+      return 1 // APP1 present but no readable orientation
+    }
+    i += 2 + segLen
+  }
+  return 1
+}
+
 export function stripExifFromJpeg(bytes: Uint8Array): Uint8Array {
   if (bytes.length < 4 || bytes[0] !== 0xff || bytes[1] !== 0xd8) return bytes
   // Skip EXIF stripping for unusually large files — the segment walk is fast due to
