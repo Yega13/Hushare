@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import * as tus from 'tus-js-client'
 import type { Album, Tier } from '@/types'
 import { stripExifFromJpeg, jpegOrientation } from '@/lib/exif'
+import { snapshotFileRobust } from '@/lib/file-read'
 import { showAppToast } from '@/components/AppToast'
 import { detectKind, uploadCapsForTier, generateVideoPoster } from '@/lib/media'
 import {
@@ -541,23 +542,6 @@ type PhotoRow = {
 // Buffering the bytes into memory is what makes the copy stable, so cap it: huge files
 // (large videos) would risk OOM on mobile if several were read at once. Those keep their
 // original reference — the stale-reference bug overwhelmingly hits image picks, not big videos.
-// Read a File's bytes, retrying the classic Android NotReadableError. When a photo is picked
-// from the gallery/camera, the OS hands back a File backed by a content-provider reference that
-// is sometimes not readable for a brief moment (or intermittently under memory pressure). A
-// couple of retries with a short delay converts most of those transient failures into success.
-async function readFileBytes(f: File, attempts = 3): Promise<ArrayBuffer> {
-  let lastErr: unknown
-  for (let i = 0; i < attempts; i++) {
-    try {
-      return await f.arrayBuffer()
-    } catch (e) {
-      lastErr = e
-      if (i < attempts - 1) await new Promise(r => setTimeout(r, 200 * (i + 1)))
-    }
-  }
-  throw lastErr instanceof Error ? lastErr : new Error('File could not be read')
-}
-
 const SNAPSHOT_MAX_BYTES = 80 * 1024 * 1024
 // Bounded workers, NOT Promise.all over everything: a 200-photo drop would otherwise buffer
 // every file's bytes into memory simultaneously — an OOM on mobile before uploading starts.
@@ -569,15 +553,13 @@ async function snapshotFiles(files: File[]): Promise<File[]> {
     while (next < files.length) {
       const i = next++
       const f = files[i]
+      // Big videos keep their original reference (buffering several into memory risks OOM);
+      // the stale-reference bug overwhelmingly hits image picks, not large videos.
       if (f.size > SNAPSHOT_MAX_BYTES) { out[i] = f; continue }
-      try {
-        // Retried read: snapshotting the bytes into an in-memory File here is what makes every
-        // downstream read (decode, EXIF, upload) immune to the reference going stale later.
-        const buf = await readFileBytes(f)
-        out[i] = new File([buf], f.name, { type: f.type, lastModified: f.lastModified })
-      } catch {
-        out[i] = f
-      }
+      // Robust snapshot (retries + FileReader fallback) into an in-memory File — this is what
+      // makes every downstream read (decode, EXIF, upload) immune to the reference going stale.
+      // Falls back to the original reference only if the bytes are truly unreadable.
+      out[i] = (await snapshotFileRobust(f)) ?? f
     }
   }
   await Promise.all(Array.from({ length: Math.min(SNAPSHOT_CONCURRENCY, files.length) }, worker))

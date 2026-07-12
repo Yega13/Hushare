@@ -1,5 +1,6 @@
 import type { CollectionSummary } from '@/components/owner-toolbar/types'
 import type { MediaDisplayFilter, MediaHoverEffect, MobileGridColumns, SlideshowAnimation } from '@/lib/media-display'
+import { readFileRobust } from '@/lib/file-read'
 
 async function jsonBody<T>(res: Response): Promise<T> {
   return (await res.json().catch(() => ({}))) as T
@@ -130,6 +131,18 @@ export async function uploadBackgroundRequest(
   slug: string,
   file: File,
 ): Promise<{ ok: true; background_theme: string } | { ok: false; error: string }> {
+  // Snapshot the picked file's bytes into memory FIRST. On Android a gallery/camera File can
+  // have a stale content-provider reference; PUTting it directly made fetch() fail to read the
+  // request body — surfacing as the "Failed to fetch" error. Reading into an in-memory Blob
+  // (with retries + FileReader fallback) makes the upload immune to that.
+  let bytes: ArrayBuffer
+  try {
+    bytes = await readFileRobust(file)
+  } catch {
+    return { ok: false, error: 'Could not read this image from your device. Please pick it again.' }
+  }
+  const blob = new Blob([bytes], { type: file.type })
+
   // Step 1: get a presigned PUT URL from the server
   const presignRes = await fetch('/api/album/background/upload', {
     method: 'POST',
@@ -138,7 +151,7 @@ export async function uploadBackgroundRequest(
       slug,
       contentType: file.type,
       fileName: file.name,
-      fileSize: file.size,
+      fileSize: blob.size,
     }),
   })
   const presignBody = await jsonBody<{
@@ -150,19 +163,25 @@ export async function uploadBackgroundRequest(
     return { ok: false, error: presignBody.error ?? `Upload failed (${presignRes.status})` }
   }
 
-  // Step 2: PUT the file bytes directly to R2 via the presigned URL. Cache-Control must match
+  // Step 2: PUT the in-memory blob to R2 via the presigned URL. Cache-Control must match
   // IMMUTABLE_CACHE_CONTROL in src/lib/cloudflare/r2.ts exactly — it's bound into the presigned
   // signature, so any mismatch is rejected by R2 as SignatureDoesNotMatch. Each background upload
   // gets a fresh uuid() key (see background/upload/route.ts), so caching it forever is safe.
-  const putRes = await fetch(presignBody.presignedUrl, {
-    method: 'PUT',
-    body: file,
-    headers: {
-      'Content-Type': file.type,
-      'Content-Length': String(file.size),
-      'Cache-Control': 'public, max-age=31536000, immutable',
-    },
-  })
+  // (Content-Length is set automatically by the browser from the blob; setting it manually is a
+  // no-op — it's a forbidden header — and the raw-File read is what actually used to fail.)
+  let putRes: Response
+  try {
+    putRes = await fetch(presignBody.presignedUrl, {
+      method: 'PUT',
+      body: blob,
+      headers: {
+        'Content-Type': file.type,
+        'Cache-Control': 'public, max-age=31536000, immutable',
+      },
+    })
+  } catch {
+    return { ok: false, error: 'Upload to storage failed (network error). Please try again.' }
+  }
   if (!putRes.ok) {
     return { ok: false, error: `Upload to storage failed (${putRes.status})` }
   }
