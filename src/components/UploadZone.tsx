@@ -470,6 +470,29 @@ async function putWithRetry(
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
+// Everything needed to RESUME a failed video upload instead of restarting it: the tus
+// uploadUrl lets tus-js-client HEAD the server for the last confirmed offset and continue
+// from there (a 100MB video that died at 80% resumes at 80%). Poster/duration/dimensions are
+// carried along so none of that work is redone either.
+type VideoResume = {
+  uploadUrl: string
+  streamUid: string
+  iframeUrl: string
+  thumbnailUrl: string | null
+  posterUrl: string | null
+  durationSeconds: number
+  videoWidth: number | null
+  videoHeight: number | null
+}
+
+// Thrown when a video's TUS phase fails after the Stream session was already created —
+// carries the resume state so the Retry button continues instead of starting over.
+class VideoUploadError extends Error {
+  constructor(message: string, public readonly resume: VideoResume | null) {
+    super(message)
+  }
+}
+
 type FileEntry = {
   id: string
   file: File
@@ -477,6 +500,7 @@ type FileEntry = {
   progress: number
   error?: string
   preview?: string  // object URL for the image thumbnail (revoked on clear/unmount)
+  videoResume?: VideoResume  // set when a video fails mid-TUS; Retry resumes from the offset
 }
 
 type PhotoRow = {
@@ -617,95 +641,197 @@ async function uploadPosterToR2(albumId: string, blob: Blob, signal?: AbortSigna
   return publicUrl
 }
 
-async function uploadVideoToStream(
+// A TUS error with a 4xx response is a final server verdict (expired/invalid upload URL,
+// bad request) — retrying the same URL cannot succeed. Everything else (network drop, stall,
+// 5xx) is transient.
+function isDeterministicTusError(e: unknown): boolean {
+  const resp = (e as { originalResponse?: { getStatus?: () => number } | null })?.originalResponse
+  if (!resp) return false
+  const status = resp.getStatus?.() ?? 0
+  return status >= 400 && status < 500
+}
+
+// One TUS attempt with a stall watchdog. tus-js-client has no progress timeout of its own:
+// a socket that opens and then silently stops sending bytes (classic weak-signal mobile
+// behaviour) would hang the upload forever. If no progress arrives for TUS_STALL_MS, abort
+// and reject so the recovery loop can resume from the server's confirmed offset.
+const TUS_STALL_MS = 45_000
+
+function runTusOnce(
   file: File,
-  albumId: string,
-  onProgress: (pct: number) => void,
+  uploadUrl: string,
+  onFraction: (fraction: number) => void,
   signal?: AbortSignal,
-): Promise<PhotoRow> {
-  onProgress(2)
-
-  // Poster frame: gives the grid an immediate thumbnail and captures the duration + true
-  // dimensions in the same decode.
-  let posterBlob: Blob | null = null
-  let durationSeconds = 0
-  let videoWidth: number | null = null
-  let videoHeight: number | null = null
-  try {
-    const posterResult = await generateVideoPoster(file)
-    if (posterResult) {
-      posterBlob = posterResult.blob
-      durationSeconds = posterResult.durationSeconds
-      if (posterResult.videoWidth > 0 && posterResult.videoHeight > 0) {
-        videoWidth = posterResult.videoWidth
-        videoHeight = posterResult.videoHeight
-      }
-    }
-  } catch { /* non-fatal — the Stream thumbnail covers a missing poster */ }
-  onProgress(6)
-
-  // Poster presign+PUT runs CONCURRENTLY with the Stream init + TUS upload below — it used to
-  // run serially before them, adding its full round-trip time to every video. This promise
-  // NEVER rejects (poster is best-effort, and if TUS throws first it goes un-awaited — a
-  // rejection here would surface as an unhandled rejection).
-  const posterPromise: Promise<string | null> = posterBlob
-    ? uploadPosterToR2(albumId, posterBlob, signal).catch(() => null)
-    : Promise.resolve(null)
-
-  // Init Cloudflare Stream TUS upload (fetchWithRetry gives 20s-per-attempt timeout + retries)
-  const initRes = await fetchWithRetry('/api/upload/stream', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      albumId,
-      fileName: file.name,
-      contentType: file.type,
-      fileSize: file.size,  // raw file size — no processing for videos
-    }),
-  })
-  if (!initRes.ok) {
-    const err = await initRes.json().catch(() => ({})) as { error?: string }
-    throw new Error(err.error ?? `Stream init failed (${initRes.status})`)
-  }
-  // Route returns camelCase: { uploadUrl, streamUid, iframeUrl, thumbnailUrl }
-  const { uploadUrl, streamUid, iframeUrl, thumbnailUrl } = await initRes.json() as {
-    uploadUrl: string; streamUid: string; iframeUrl: string; thumbnailUrl: string
-  }
-  if (!uploadUrl || !streamUid || !iframeUrl) throw new Error('Stream init returned incomplete response')
-  onProgress(10)
-
-  // TUS chunked upload — uploadUrl is a pre-created Cloudflare Stream upload URL. TUS is
-  // resumable by design: a retried chunk resumes from the last confirmed offset.
-  await new Promise<void>((resolve, reject) => {
+): Promise<void> {
+  return new Promise<void>((resolve, reject) => {
     if (signal?.aborted) { reject(new DOMException('Upload aborted', 'AbortError')); return }
     let settled = false
-    const settle = (fn: () => void) => { if (!settled) { settled = true; fn() } }
+    let lastActivity = Date.now()
+    const settle = (fn: () => void) => {
+      if (settled) return
+      settled = true
+      clearInterval(watchdog)
+      signal?.removeEventListener('abort', onAbort)
+      fn()
+    }
     const upload = new tus.Upload(file, {
+      // uploadUrl (not endpoint): tus HEADs it for the current offset and RESUMES — both
+      // across our recovery-loop attempts and across user-initiated retries.
       uploadUrl,
       chunkSize: STREAM_CHUNK_SIZE_BYTES,
       // Real backoff (the old [0, 0] fired two instant retries into the same congestion).
       retryDelays: [0, 1000, 3000, 5000],
       // Retry transport/network failures AND transient server states (5xx). Deterministic
       // 4xx verdicts are final — mirrors putWithRetry's policy for images.
-      onShouldRetry: (err: unknown) => {
-        const resp = (err as { originalResponse?: { getStatus?: () => number } | null })?.originalResponse
-        if (!resp) return true
-        const status = resp.getStatus?.() ?? 0
-        return status >= 500
-      },
+      onShouldRetry: (err: unknown) => !isDeterministicTusError(err),
       onProgress: (bytesUploaded, bytesTotal) => {
-        const pct = bytesTotal > 0 ? Math.round((bytesUploaded / bytesTotal) * 86) : 0
-        onProgress(10 + pct)
+        lastActivity = Date.now()
+        onFraction(bytesTotal > 0 ? bytesUploaded / bytesTotal : 0)
       },
       onSuccess: () => settle(resolve),
       onError: (err) => settle(() => reject(err instanceof Error ? err : new Error(String(err)))),
     })
-    signal?.addEventListener('abort', () => {
-      upload.abort()
-      settle(() => reject(new DOMException('Upload aborted', 'AbortError')))
-    }, { once: true })
+    const watchdog = setInterval(() => {
+      if (Date.now() - lastActivity > TUS_STALL_MS) {
+        settle(() => {
+          try { upload.abort() } catch { /* ignore */ }
+          reject(new Error('Video upload stalled'))
+        })
+      }
+    }, 5000)
+    const onAbort = () => settle(() => {
+      try { upload.abort() } catch { /* ignore */ }
+      reject(new DOMException('Upload aborted', 'AbortError'))
+    })
+    signal?.addEventListener('abort', onAbort, { once: true })
     upload.start()
   })
+}
+
+// Outer recovery loop around runTusOnce: each attempt resumes from the server's confirmed
+// offset, so a stall/drop at 80% costs only the unconfirmed chunk, never the whole file.
+async function runTusWithRecovery(
+  file: File,
+  uploadUrl: string,
+  onFraction: (fraction: number) => void,
+  signal?: AbortSignal,
+  attempts = 3,
+): Promise<void> {
+  let lastErr: Error | null = null
+  for (let attempt = 0; attempt < attempts; attempt++) {
+    if (signal?.aborted) throw new DOMException('Upload aborted', 'AbortError')
+    if (attempt > 0) await new Promise(r => setTimeout(r, 1500 * attempt + Math.random() * 500))
+    try {
+      await runTusOnce(file, uploadUrl, onFraction, signal)
+      return
+    } catch (e) {
+      if (e instanceof DOMException && e.name === 'AbortError') throw e
+      if (isDeterministicTusError(e)) throw e
+      lastErr = e instanceof Error ? e : new Error(String(e))
+    }
+  }
+  throw lastErr ?? new Error('Video upload failed')
+}
+
+async function uploadVideoToStream(
+  file: File,
+  albumId: string,
+  onProgress: (pct: number) => void,
+  signal?: AbortSignal,
+  resume?: VideoResume,
+): Promise<PhotoRow> {
+  onProgress(2)
+
+  let uploadUrl: string
+  let streamUid: string
+  let iframeUrl: string
+  let thumbnailUrl: string | null
+  let durationSeconds: number
+  let videoWidth: number | null
+  let videoHeight: number | null
+  let posterPromise: Promise<string | null>
+
+  if (resume) {
+    // Resuming a previously-failed upload: the Stream session, poster, duration and
+    // dimensions all still exist — go straight to TUS, which continues from the offset.
+    ;({ uploadUrl, streamUid, iframeUrl, thumbnailUrl, durationSeconds, videoWidth, videoHeight } = resume)
+    posterPromise = Promise.resolve(resume.posterUrl)
+    onProgress(10)
+  } else {
+    // Poster frame: gives the grid an immediate thumbnail and captures the duration + true
+    // dimensions in the same decode.
+    let posterBlob: Blob | null = null
+    durationSeconds = 0
+    videoWidth = null
+    videoHeight = null
+    try {
+      const posterResult = await generateVideoPoster(file)
+      if (posterResult) {
+        posterBlob = posterResult.blob
+        durationSeconds = posterResult.durationSeconds
+        if (posterResult.videoWidth > 0 && posterResult.videoHeight > 0) {
+          videoWidth = posterResult.videoWidth
+          videoHeight = posterResult.videoHeight
+        }
+      }
+    } catch { /* non-fatal — the Stream thumbnail covers a missing poster */ }
+    onProgress(6)
+
+    // Poster presign+PUT runs CONCURRENTLY with the Stream init + TUS upload below — it used
+    // to run serially before them, adding its full round-trip time to every video. This
+    // promise NEVER rejects (poster is best-effort, and if TUS throws first it goes
+    // un-awaited — a rejection here would surface as an unhandled rejection).
+    posterPromise = posterBlob
+      ? uploadPosterToR2(albumId, posterBlob, signal).catch(() => null)
+      : Promise.resolve(null)
+
+    // Init Cloudflare Stream TUS upload (fetchWithRetry gives 20s-per-attempt timeout + retries)
+    const initRes = await fetchWithRetry('/api/upload/stream', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        albumId,
+        fileName: file.name,
+        contentType: file.type,
+        fileSize: file.size,  // raw file size — no processing for videos
+      }),
+    })
+    if (!initRes.ok) {
+      const err = await initRes.json().catch(() => ({})) as { error?: string }
+      throw new Error(err.error ?? `Stream init failed (${initRes.status})`)
+    }
+    // Route returns camelCase: { uploadUrl, streamUid, iframeUrl, thumbnailUrl }
+    const init = await initRes.json() as {
+      uploadUrl: string; streamUid: string; iframeUrl: string; thumbnailUrl: string
+    }
+    if (!init.uploadUrl || !init.streamUid || !init.iframeUrl) throw new Error('Stream init returned incomplete response')
+    ;({ uploadUrl, streamUid, iframeUrl } = init)
+    thumbnailUrl = init.thumbnailUrl ?? null
+    onProgress(10)
+  }
+
+  try {
+    await runTusWithRecovery(
+      file,
+      uploadUrl,
+      (fraction) => onProgress(10 + Math.round(fraction * 86)),
+      signal,
+    )
+  } catch (e) {
+    if (e instanceof DOMException && e.name === 'AbortError') throw e
+    if (resume && isDeterministicTusError(e)) {
+      // The resumed upload URL is stale/expired — start over with a fresh Stream session
+      // (recursion is bounded: the recursive call passes no `resume`, so it can't loop).
+      return uploadVideoToStream(file, albumId, onProgress, signal)
+    }
+    // Await the poster (never rejects) so the resume record carries it and Retry skips redoing it.
+    const posterUrl = await posterPromise
+    throw new VideoUploadError(
+      e instanceof Error ? e.message : 'Video upload failed',
+      { uploadUrl, streamUid, iframeUrl, thumbnailUrl, posterUrl, durationSeconds, videoWidth, videoHeight },
+    )
+  }
+
   const posterUrl = await posterPromise
   onProgress(98)
 
@@ -737,6 +863,17 @@ async function saveUploadedRows(albumId: string, rows: PhotoRow[]): Promise<void
     const err = await res.json().catch(() => ({})) as { error?: string }
     throw new Error(err.error ?? `Save failed (${res.status})`)
   }
+}
+
+// tus failures stringify their entire request/response internals — a wall of text that
+// overflows a phone screen and tells the user nothing. Map known failure shapes to short,
+// actionable messages; cap everything else.
+function friendlyUploadError(e: unknown): string {
+  const raw = e instanceof Error ? e.message : 'Upload failed'
+  if (/^tus:|stalled/i.test(raw)) {
+    return 'Connection dropped while uploading. Tap Retry — it continues where it left off.'
+  }
+  return raw.length > 160 ? `${raw.slice(0, 157)}…` : raw
 }
 
 // Rows are written to the DB in small batches moments after each file finishes uploading —
@@ -904,14 +1041,20 @@ export default function UploadZone({ album, userTier, onPhotosUploaded }: Props)
 
           const row = kind === 'image'
             ? await uploadImageToR2(entry.file, album.id, caps.image, pct => patchEntry(entry.id, { progress: pct }), signal)
-            : await uploadVideoToStream(entry.file, album.id, pct => patchEntry(entry.id, { progress: pct }), signal)
+            : await uploadVideoToStream(entry.file, album.id, pct => patchEntry(entry.id, { progress: pct }), signal, entry.videoResume)
 
           // Bytes are in storage; the saver flips this tile to 'done' when the row commits.
-          patchEntry(entry.id, { progress: 100 })
+          patchEntry(entry.id, { progress: 100, videoResume: undefined })
           saver.add(row, entry.id)
         } catch (e) {
-          const msg = e instanceof Error ? e.message : 'Upload failed'
-          patchEntry(entry.id, { status: 'error', error: msg })
+          const msg = friendlyUploadError(e)
+          patchEntry(entry.id, {
+            status: 'error',
+            error: msg,
+            // Keep the resume state so Retry continues this video from its confirmed offset
+            // instead of restarting from zero.
+            ...(e instanceof VideoUploadError && e.resume ? { videoResume: e.resume } : {}),
+          })
           // Surface the real error (it was previously hidden in a title tooltip, invisible on
           // mobile). AbortError is a deliberate cancel, not worth toasting.
           if (!(e instanceof DOMException && e.name === 'AbortError')) {
