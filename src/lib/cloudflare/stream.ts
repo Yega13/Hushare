@@ -50,6 +50,22 @@ export async function createStreamUpload(
 
   const safeName = sanitizeFileName(fileName)
 
+  // maxDurationSeconds is REQUIRED for direct_user (creator) tus uploads. Cloudflare's docs:
+  // "you must pass the expiry and maxDurationSeconds as part of the Upload-Metadata request
+  // header." Without it the creation still returns a URL, but the upload FAILS during
+  // processing (the well-known "error after 100% using TUS" symptom) — which is exactly why
+  // longer videos were failing. 21600s (6h) is Cloudflare's documented maximum and safely
+  // exceeds any real user video; per-tier limits are enforced by file SIZE elsewhere.
+  const MAX_DURATION_SECONDS = 21600
+  // expiry: how long this upload URL stays valid. Cloudflare requires between 2 minutes and
+  // 6 hours from now; 4h comfortably covers a slow, resumed large-video upload.
+  const expiry = new Date(Date.now() + 4 * 60 * 60 * 1000).toISOString()
+  const uploadMetadata = [
+    `name ${safeBase64(safeName)}`,
+    `maxDurationSeconds ${safeBase64(String(MAX_DURATION_SECONDS))}`,
+    `expiry ${safeBase64(expiry)}`,
+  ].join(',')
+
   const res = await fetch(
     `${CLOUDFLARE_API}/accounts/${accountId}/stream?direct_user=true`,
     {
@@ -58,7 +74,7 @@ export async function createStreamUpload(
         Authorization: `Bearer ${token}`,
         'Tus-Resumable': '1.0.0',
         'Upload-Length': String(fileSizeBytes),
-        'Upload-Metadata': `name ${safeBase64(safeName)}`,
+        'Upload-Metadata': uploadMetadata,
       },
     },
   )

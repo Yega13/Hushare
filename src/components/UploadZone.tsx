@@ -486,11 +486,26 @@ type VideoResume = {
 }
 
 // Thrown when a video's TUS phase fails after the Stream session was already created —
-// carries the resume state so the Retry button continues instead of starting over.
+// carries the resume state so the Retry button continues instead of starting over, plus the
+// real HTTP status (or null for a pure network drop) so the message can name the actual cause.
 class VideoUploadError extends Error {
-  constructor(message: string, public readonly resume: VideoResume | null) {
+  constructor(
+    message: string,
+    public readonly resume: VideoResume | null,
+    public readonly httpStatus: number | null,
+  ) {
     super(message)
   }
+}
+
+// tus-js-client's DetailedError hides the real cause inside a stringified blob. Pull out the
+// HTTP status of the failing request: a number means the server rejected it (4xx = the video
+// is bad/too long/too large; 5xx = transient server error); null means no response arrived at
+// all (a genuine network drop — the "response code: n/a" case).
+function tusHttpStatus(e: unknown): number | null {
+  const resp = (e as { originalResponse?: { getStatus?: () => number } | null })?.originalResponse
+  const status = resp?.getStatus?.() ?? 0
+  return status > 0 ? status : null
 }
 
 type FileEntry = {
@@ -526,6 +541,23 @@ type PhotoRow = {
 // Buffering the bytes into memory is what makes the copy stable, so cap it: huge files
 // (large videos) would risk OOM on mobile if several were read at once. Those keep their
 // original reference — the stale-reference bug overwhelmingly hits image picks, not big videos.
+// Read a File's bytes, retrying the classic Android NotReadableError. When a photo is picked
+// from the gallery/camera, the OS hands back a File backed by a content-provider reference that
+// is sometimes not readable for a brief moment (or intermittently under memory pressure). A
+// couple of retries with a short delay converts most of those transient failures into success.
+async function readFileBytes(f: File, attempts = 3): Promise<ArrayBuffer> {
+  let lastErr: unknown
+  for (let i = 0; i < attempts; i++) {
+    try {
+      return await f.arrayBuffer()
+    } catch (e) {
+      lastErr = e
+      if (i < attempts - 1) await new Promise(r => setTimeout(r, 200 * (i + 1)))
+    }
+  }
+  throw lastErr instanceof Error ? lastErr : new Error('File could not be read')
+}
+
 const SNAPSHOT_MAX_BYTES = 80 * 1024 * 1024
 // Bounded workers, NOT Promise.all over everything: a 200-photo drop would otherwise buffer
 // every file's bytes into memory simultaneously — an OOM on mobile before uploading starts.
@@ -539,7 +571,9 @@ async function snapshotFiles(files: File[]): Promise<File[]> {
       const f = files[i]
       if (f.size > SNAPSHOT_MAX_BYTES) { out[i] = f; continue }
       try {
-        const buf = await f.arrayBuffer()
+        // Retried read: snapshotting the bytes into an in-memory File here is what makes every
+        // downstream read (decode, EXIF, upload) immune to the reference going stale later.
+        const buf = await readFileBytes(f)
         out[i] = new File([buf], f.name, { type: f.type, lastModified: f.lastModified })
       } catch {
         out[i] = f
@@ -645,10 +679,8 @@ async function uploadPosterToR2(albumId: string, blob: Blob, signal?: AbortSigna
 // bad request) — retrying the same URL cannot succeed. Everything else (network drop, stall,
 // 5xx) is transient.
 function isDeterministicTusError(e: unknown): boolean {
-  const resp = (e as { originalResponse?: { getStatus?: () => number } | null })?.originalResponse
-  if (!resp) return false
-  const status = resp.getStatus?.() ?? 0
-  return status >= 400 && status < 500
+  const status = tusHttpStatus(e)
+  return status !== null && status >= 400 && status < 500
 }
 
 // One TUS attempt with a stall watchdog. tus-js-client has no progress timeout of its own:
@@ -679,8 +711,10 @@ function runTusOnce(
       // across our recovery-loop attempts and across user-initiated retries.
       uploadUrl,
       chunkSize: STREAM_CHUNK_SIZE_BYTES,
-      // Real backoff (the old [0, 0] fired two instant retries into the same congestion).
-      retryDelays: [0, 1000, 3000, 5000],
+      // tus's OWN internal retries per failed chunk (the old [0, 0] fired two instant retries
+      // into the same congestion). Longer, more numerous delays ride out a mobile network that
+      // drops for several seconds at a time.
+      retryDelays: [0, 1000, 3000, 5000, 10000, 20000],
       // Retry transport/network failures AND transient server states (5xx). Deterministic
       // 4xx verdicts are final — mirrors putWithRetry's policy for images.
       onShouldRetry: (err: unknown) => !isDeterministicTusError(err),
@@ -715,12 +749,15 @@ async function runTusWithRecovery(
   uploadUrl: string,
   onFraction: (fraction: number) => void,
   signal?: AbortSignal,
-  attempts = 3,
+  attempts = 6,
 ): Promise<void> {
   let lastErr: Error | null = null
   for (let attempt = 0; attempt < attempts; attempt++) {
     if (signal?.aborted) throw new DOMException('Upload aborted', 'AbortError')
-    if (attempt > 0) await new Promise(r => setTimeout(r, 1500 * attempt + Math.random() * 500))
+    // Outer backoff on top of tus's internal retries — capped at 15s. Because every attempt
+    // RESUMES from the server's confirmed offset, being this persistent is nearly free: we
+    // never re-send bytes Cloudflare already has, we just keep reconnecting until it's done.
+    if (attempt > 0) await new Promise(r => setTimeout(r, Math.min(15000, 2000 * attempt) + Math.random() * 500))
     try {
       await runTusOnce(file, uploadUrl, onFraction, signal)
       return
@@ -829,6 +866,7 @@ async function uploadVideoToStream(
     throw new VideoUploadError(
       e instanceof Error ? e.message : 'Video upload failed',
       { uploadUrl, streamUid, iframeUrl, thumbnailUrl, posterUrl, durationSeconds, videoWidth, videoHeight },
+      tusHttpStatus(e),
     )
   }
 
@@ -867,12 +905,27 @@ async function saveUploadedRows(albumId: string, rows: PhotoRow[]): Promise<void
 
 // tus failures stringify their entire request/response internals — a wall of text that
 // overflows a phone screen and tells the user nothing. Map known failure shapes to short,
-// actionable messages; cap everything else.
+// actionable messages that still NAME the real cause (HTTP status), so a failure screenshot is
+// actually diagnostic instead of a generic "connection dropped".
 function friendlyUploadError(e: unknown): string {
   const raw = e instanceof Error ? e.message : 'Upload failed'
-  if (/^tus:|stalled/i.test(raw)) {
+
+  // Android stale file-reference bug: the OS revoked the picked file before we could read it.
+  if (/could not be read|NotReadableError|permission problems/i.test(raw)) {
+    return 'Could not read this file from your device. Please remove it and add it again.'
+  }
+
+  // Video (tus) failures: distinguish a real server rejection from a pure network drop.
+  const status = e instanceof VideoUploadError ? e.httpStatus : tusHttpStatus(e)
+  if (status !== null) {
+    if (status === 413) return 'This video is too large to upload.'
+    if (status >= 400 && status < 500) return `This video was rejected by the server (HTTP ${status}) — it may be too long or an unsupported format.`
+    return `Video server error (HTTP ${status}). Tap Retry — it continues where it left off.`
+  }
+  if (e instanceof VideoUploadError || /^tus:|stalled/i.test(raw)) {
     return 'Connection dropped while uploading. Tap Retry — it continues where it left off.'
   }
+
   return raw.length > 160 ? `${raw.slice(0, 157)}…` : raw
 }
 
