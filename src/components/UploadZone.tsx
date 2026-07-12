@@ -138,10 +138,18 @@ const decodeSem = new Semaphore(
 
 async function decodeBitmapSafe(source: Blob): Promise<ImageBitmap | null> {
   try {
-    // Default imageOrientation ('from-image') applies EXIF rotation into the pixels.
-    return await createImageBitmap(source)
+    // EXPLICIT imageOrientation: 'from-image' bakes EXIF rotation into the pixels. Modern
+    // browsers default to this, but older Android WebViews defaulted to 'none' — which would
+    // decode a rotated photo un-rotated, so the re-encoded upload would be sideways. Being
+    // explicit guarantees correct orientation everywhere.
+    return await createImageBitmap(source, { imageOrientation: 'from-image' })
   } catch {
-    return null
+    // Retry without options in case a very old engine rejects the options bag outright.
+    try {
+      return await createImageBitmap(source)
+    } catch {
+      return null
+    }
   }
 }
 

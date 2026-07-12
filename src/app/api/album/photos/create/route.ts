@@ -369,6 +369,14 @@ export async function POST(req: Request) {
     try {
       if (inserted === 0) return
       if (!album.user_id) return
+      // Coalesce notifications. The client now saves rows INCREMENTALLY — one photos/create
+      // call every ~1.2s as files finish — so a single upload session hits this route many
+      // times. Without this gate the owner would get a burst of "new photos" emails per batch.
+      // Allow at most one notification email per album per 10 minutes (failOpen: a limiter
+      // outage sends the email rather than dropping it). Trade-off: the email's count reflects
+      // the first flush that won the gate, not the whole session — an acceptable nudge.
+      const notifyGate = await checkRateLimit(`photo_notify:${albumId}`, 600, 1, { failOpen: true })
+      if (!notifyGate.ok) return
       const { data: userData } = await admin.auth.admin.getUserById(album.user_id)
       const email = userData?.user?.email
       if (!email) return
