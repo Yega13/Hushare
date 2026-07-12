@@ -347,7 +347,7 @@ export default function OwnerToolbar({ album, photos, ownerToken, userTier, medi
         return false
       }
       onAlbumUpdated({ background_theme: result.background_theme })
-      showAppToast('Background saved.')
+      // No success toast — only failures are worth interrupting the user for.
       return true
     } catch (e) {
       onAlbumUpdated({ background_theme: previousBackground })
@@ -519,7 +519,7 @@ export default function OwnerToolbar({ album, photos, ownerToken, userTier, medi
         return
       }
       onAlbumUpdated({ background_theme: result.background_theme })
-      showAppToast('Background image uploaded.')
+      // No success toast — the new background is visible immediately; only surface failures.
     } catch (e) {
       const message = e instanceof Error ? e.message : 'Network error'
       setBackgroundError(message)

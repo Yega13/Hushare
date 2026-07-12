@@ -4,6 +4,7 @@ import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import HamburgerMenu from '@/components/HamburgerMenu'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { createClient } from '@/lib/supabase/server'
 import { getUserTierById } from '@/lib/subscriptions'
 import { formatDate } from '@/lib/utils'
 
@@ -29,6 +30,7 @@ type AlbumSummary = {
   title: string
   cover_photo_id: string | null
   created_at: string
+  owner_token: string
 }
 
 type MediaPreview = {
@@ -70,6 +72,16 @@ export default async function CollectionPage({ params }: Props) {
 
   if (!collection) notFound()
 
+  // Is the current viewer the owner of this collection? Collections are shareable PUBLIC pages,
+  // so album links must stay plain guest links for everyone else — but when the owner browses
+  // their own collection, the album links need the #owner= management token or they'd land on
+  // the guest view of their own album (the reported "some albums guest, some owner" bug — it
+  // depended on whether you reached the album directly from account vs. through a collection).
+  // getUser() reads the auth cookie (server-validated), so a guest never gets a token in the HTML.
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  const isCollectionOwner = !!user && user.id === collection.user_id
+
   // Collections are a Studio feature — gate the public page to Studio owners.
   const tier = await getUserTierById(collection.user_id)
   if (tier !== 'studio') {
@@ -106,7 +118,7 @@ export default async function CollectionPage({ params }: Props) {
     albumIds.length
       ? admin
           .from('albums')
-          .select('id, slug, custom_slug, title, cover_photo_id, created_at')
+          .select('id, slug, custom_slug, title, cover_photo_id, created_at, owner_token')
           .in('id', albumIds)
           .returns<AlbumSummary[]>()
       : Promise.resolve({ data: [] as AlbumSummary[], error: null }),
@@ -265,7 +277,11 @@ export default async function CollectionPage({ params }: Props) {
         {/* Album grid */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mt-8">
           {orderedAlbums.map((album) => {
-            const href = `/${album.custom_slug ?? album.slug}`
+            // Owner → management link (base slug + #owner= token, matching the account page).
+            // Guest → plain public link (never carries the token).
+            const href = isCollectionOwner
+              ? `/${album.slug}#owner=${album.owner_token}`
+              : `/${album.custom_slug ?? album.slug}`
             return (
               <Link
                 key={album.id}

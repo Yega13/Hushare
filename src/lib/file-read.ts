@@ -19,6 +19,20 @@ function readViaFileReader(file: Blob): Promise<ArrayBuffer> {
   })
 }
 
+// Read via a blob: object URL. createObjectURL registers the blob's data in the browser's blob
+// store, and the loader path (fetch of the blob: URL) frequently succeeds on Android when both
+// Blob.arrayBuffer() and FileReader throw NotReadableError on the very same file — it's the same
+// path that lets an <img> preview of a freshly-captured photo render even while direct reads fail.
+async function readViaObjectUrl(file: Blob): Promise<ArrayBuffer> {
+  const url = URL.createObjectURL(file)
+  try {
+    const resp = await fetch(url)
+    return await resp.arrayBuffer()
+  } finally {
+    URL.revokeObjectURL(url)
+  }
+}
+
 export async function readFileRobust(file: Blob, attempts = 5): Promise<ArrayBuffer> {
   let lastErr: unknown
   for (let i = 0; i < attempts; i++) {
@@ -30,6 +44,13 @@ export async function readFileRobust(file: Blob, attempts = 5): Promise<ArrayBuf
     // Same read via the older API — occasionally succeeds when arrayBuffer() does not.
     try {
       return await readViaFileReader(file)
+    } catch (e) {
+      lastErr = e
+    }
+    // Last resort: the blob: URL loader path (what makes the photo's preview render even when the
+    // two direct reads fail). Kept last because it's the heaviest of the three.
+    try {
+      return await readViaObjectUrl(file)
     } catch (e) {
       lastErr = e
     }

@@ -15,8 +15,12 @@ export async function POST(req: Request) {
   const csrfError = forbidCrossSiteRequest(req)
   if (csrfError) return csrfError
 
-  // Tight rate limit — this is a credential endpoint
-  const rl = await checkRateLimit(clientIpKey(req, 'owner_login'), 300, 10, { failOpen: false })
+  // Rate limit as an abuse/DoS guard — NOT a brute-force defense (the owner_token is a 256-bit
+  // secret compared timing-safely, so guessing is infeasible regardless of this limit). The old
+  // 10/300s was low enough that an owner legitimately opening several albums (each with a client
+  // retry) could hit it and get silently dropped to guest view. 40/300s keeps it bounded while
+  // leaving comfortable headroom for real multi-album owner sessions.
+  const rl = await checkRateLimit(clientIpKey(req, 'owner_login'), 300, 40, { failOpen: false })
   if (!rl.ok) {
     return NextResponse.json(
       { error: 'Too many attempts. Please wait before trying again.' },

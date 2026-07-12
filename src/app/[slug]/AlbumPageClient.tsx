@@ -366,25 +366,31 @@ export default function AlbumPageClient() {
     // persistent management link the owner keeps private (guest link = same path with no #owner=).
 
     void (async () => {
-      // 10s timeout: if owner-login hangs, we fall through to guest view rather
-      // than blocking the page indefinitely.
-      const ac = new AbortController()
-      const timeoutId = setTimeout(() => ac.abort(), 10_000)
-      try {
-        await fetch('/api/album/owner-login', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ slug, owner_token: token }),
-          signal: ac.signal,
-        })
-        // On success: server sets hushare_owner_<albumId> HttpOnly cookie (7 days).
-        // On failure (including AbortError): swallowed. /api/album/auth returns { isOwner: false }.
-      } catch {
-        // Network error or timeout — proceed as guest
-      } finally {
-        clearTimeout(timeoutId)
-        if (!cancelled) setOwnerTokenReady(true)
+      // owner-login sets the hushare_owner_<albumId> cookie (7 days) that flips this load into
+      // owner view. Retry once on a TRANSIENT failure (network/timeout/429/5xx): a single blip
+      // used to silently drop the owner to guest view — the reported "sometimes owner, sometimes
+      // guest" flakiness. A definitive 403/404 (wrong token / album gone) is not retried. If the
+      // cookie was already set on a prior visit, a failure here is harmless — auth still sees it.
+      for (let attempt = 0; attempt < 2; attempt++) {
+        // 10s timeout per attempt: if owner-login hangs, fall through rather than block the page.
+        const ac = new AbortController()
+        const timeoutId = setTimeout(() => ac.abort(), 10_000)
+        try {
+          const res = await fetch('/api/album/owner-login', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ slug, owner_token: token }),
+            signal: ac.signal,
+          })
+          clearTimeout(timeoutId)
+          if (res.ok || res.status === 403 || res.status === 404) break  // succeeded or definitively not owner
+          // 429 / 5xx — fall through to retry
+        } catch {
+          clearTimeout(timeoutId)  // network error or timeout — fall through to retry
+        }
+        if (attempt === 0) await new Promise(r => setTimeout(r, 600))
       }
+      if (!cancelled) setOwnerTokenReady(true)
     })()
 
     return () => { cancelled = true }
