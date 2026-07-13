@@ -153,7 +153,7 @@ async function decodeBitmapSafe(source: Blob): Promise<ImageBitmap | null> {
   }
 }
 
-async function bitmapToBlob(bitmap: ImageBitmap, w: number, h: number, mime: string, quality: number): Promise<Blob> {
+async function bitmapToBlob(bitmap: CanvasImageSource, w: number, h: number, mime: string, quality: number): Promise<Blob> {
   // OffscreenCanvas first (convertToBlob missing on Safari < 16.4) — HTMLCanvas fallback.
   if (typeof OffscreenCanvas !== 'undefined') {
     try {
@@ -213,6 +213,58 @@ async function strippedJpegBlob(source: Blob): Promise<Blob> {
   const buf = await source.arrayBuffer()
   const stripped = stripExifFromJpeg(new Uint8Array(buf))
   return new Blob([stripped.buffer as unknown as ArrayBuffer], { type: 'image/jpeg' })
+}
+
+function loadImageElement(url: string): Promise<HTMLImageElement> {
+  return new Promise((resolve, reject) => {
+    const img = new Image()
+    img.decoding = 'async'
+    img.onload = () => resolve(img)
+    img.onerror = () => reject(new Error('img element load failed'))
+    img.src = url
+  })
+}
+
+// Draw a plain (non-ImageBitmap) source through a canvas, downscaled to fit maxDim.
+async function drawSourceToBlob(
+  source: CanvasImageSource,
+  srcW: number,
+  srcH: number,
+  maxDim: number,
+  mime: string,
+  quality: number,
+): Promise<{ blob: Blob; width: number; height: number }> {
+  const scale = Math.min(1, maxDim / Math.max(srcW, srcH))
+  const w = Math.max(1, Math.round(srcW * scale))
+  const h = Math.max(1, Math.round(srcH * scale))
+  return { blob: await bitmapToBlob(source, w, h, mime, quality), width: w, height: h }
+}
+
+// LAST-RESORT decode for Android files that DISPLAY but whose raw bytes are unreadable — every
+// byte read (Blob.arrayBuffer, FileReader, blob-URL fetch) throws NotReadableError, yet an <img>
+// renders them (the same path that makes the picked photo's PREVIEW appear). We load the file
+// into an <img> element and re-encode it through a canvas, producing FRESH in-memory bytes we
+// can actually upload. The <img> element auto-applies EXIF orientation, so the pixels are upright.
+async function processViaImgElement(file: File): Promise<ProcessedImage | null> {
+  const url = URL.createObjectURL(file)
+  try {
+    const img = await loadImageElement(url)
+    if (!(img.naturalWidth > 0 && img.naturalHeight > 0)) return null
+    const mimeType = (file.type || 'image/jpeg').toLowerCase()
+    // Preserve PNG transparency; everything else (incl. a camera JPEG) encodes to JPEG.
+    const outMime = mimeType === 'image/png' ? 'image/png' : 'image/jpeg'
+    let thumbBlob: Blob | null = null
+    try {
+      thumbBlob = (await drawSourceToBlob(img, img.naturalWidth, img.naturalHeight, THUMB_MAX_DIM, 'image/jpeg', THUMB_QUALITY)).blob
+    } catch { /* thumb best-effort */ }
+    const main = await drawSourceToBlob(img, img.naturalWidth, img.naturalHeight, MAX_IMG_DIM, outMime, MAIN_QUALITY)
+    const name = outMime === 'image/jpeg' ? file.name.replace(/\.[^.]+$/, '.jpg') : file.name
+    return { blob: main.blob, thumbBlob, mimeType: outMime, name, width: main.width, height: main.height }
+  } catch {
+    return null
+  } finally {
+    URL.revokeObjectURL(url)
+  }
 }
 
 // ─── processImage — ONE decode produces everything ───────────────────────────
@@ -312,8 +364,16 @@ async function processImageInner(file: File): Promise<ProcessedImage> {
 
   const bitmap = await decodeBitmapSafe(file)
   if (!bitmap) {
-    // Undecodable in this browser — upload untouched (the server validates the type); a JPEG
-    // still gets its lossless metadata strip.
+    // createImageBitmap failed. This is the Android "displayable but not byte-readable" case:
+    // an <img> element can still render the file, so re-encode it through a canvas to get fresh,
+    // uploadable bytes. This is what finally fixes the camera/gallery "Could not read this file"
+    // error — every raw-byte path (arrayBuffer/FileReader/blob-URL fetch) has already failed by
+    // the time we reach here (snapshotFiles tried them), but the <img> pipeline succeeds.
+    const viaImg = await processViaImgElement(file)
+    if (viaImg) return viaImg
+    // Truly undecodable AND unreadable — upload untouched (the server validates the type); a JPEG
+    // still gets its lossless metadata strip. May still fail at PUT if bytes are unreadable, but
+    // there's nothing more we can do here.
     if (mimeType === 'image/jpeg' || mimeType === 'image/jpg') {
       return { blob: await strippedJpegBlob(file), thumbBlob: null, mimeType: 'image/jpeg', name: file.name, width: null, height: null }
     }
