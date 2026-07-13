@@ -158,7 +158,10 @@ export async function POST(req: Request) {
   const csrfError = forbidCrossSiteRequest(req)
   if (csrfError) return csrfError
 
-  const ipRl = await checkRateLimit(clientIpKey(req, 'photos_create_ip'), 3600, 500, { failOpen: false })
+  // Per-IP, but events share one venue-WiFi IP, and the client saves rows in incremental batches
+  // (several calls per guest per upload session). 500/hr throttled a crowd. 12000/hr fits a big
+  // event; MAX_ALBUM_PHOTOS (10000) below is the true per-album flood backstop.
+  const ipRl = await checkRateLimit(clientIpKey(req, 'photos_create_ip'), 3600, 12000, { failOpen: false })
   if (!ipRl.ok) {
     return NextResponse.json(
       { error: 'Too many requests' },
@@ -213,7 +216,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: 'Uploads disabled for this album' }, { status: 403, headers: NO_STORE })
   }
 
-  const albumRl = await checkRateLimit(`photos_create_album:${albumId}`, 3600, 5000, { failOpen: false })
+  const albumRl = await checkRateLimit(`photos_create_album:${albumId}`, 3600, 40000, { failOpen: false })
   if (!albumRl.ok) {
     return NextResponse.json(
       { error: 'Album upload rate limit reached' },

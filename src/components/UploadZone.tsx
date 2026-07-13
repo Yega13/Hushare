@@ -990,7 +990,10 @@ function friendlyUploadError(e: unknown): string {
 //   - closing the tab mid-batch loses only in-flight files, not every already-uploaded one
 //     (bytes in storage with no DB row are permanently orphaned)
 // photos/create dedupes on storage_path/stream_uid, so a retried flush is idempotent.
-const SAVE_DEBOUNCE_MS = 1200
+// Larger debounce = fewer photos/create round trips per guest, which matters at event scale
+// (hundreds of guests each saving). Rows still batch together, and finish() flushes the
+// remainder immediately, so photos appear within a couple seconds of finishing.
+const SAVE_DEBOUNCE_MS = 2500
 
 function createRowSaver(
   albumId: string,

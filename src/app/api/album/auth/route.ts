@@ -11,7 +11,11 @@ export async function POST(req: Request) {
   const csrfError = forbidCrossSiteRequest(req)
   if (csrfError) return csrfError
 
-  const rl = await checkRateLimit(clientIpKey(req, 'album_auth'), 60, 60, { failOpen: false })
+  // Called on EVERY album load (to determine owner vs guest). At an event, all guests share the
+  // venue-WiFi public IP, so a low per-IP cap would 429 legitimate viewers. 900/min is generous
+  // for a crowd while still bounding abuse. failOpen:false keeps it safe on a limiter outage
+  // (a 429 here just means "treated as guest", which is the safe default).
+  const rl = await checkRateLimit(clientIpKey(req, 'album_auth'), 60, 900, { failOpen: false })
   if (!rl.ok) {
     return NextResponse.json(
       { error: 'Too many requests' },

@@ -15,9 +15,11 @@ const SLUG_RE = /^[a-zA-Z0-9._-]{1,200}$/
 function isValidSlug(s: string): boolean { return SLUG_RE.test(s) }
 
 // Rekognition calls cost money — rate limits must be shared across Worker instances.
+// IP limit is generous because at an event every guest's "find my photos" comes from the same
+// venue-WiFi IP; the per-ALBUM limit is the real Rekognition-cost cap (it binds first per event).
 const SEARCH_WINDOW_SECONDS = 60
-const SEARCH_IP_MAX = 10
-const SEARCH_ALBUM_MAX = 60
+const SEARCH_IP_MAX = 120
+const SEARCH_ALBUM_MAX = 120
 
 export async function POST(req: Request) {
   const forbidden = forbidCrossSiteRequest(req)

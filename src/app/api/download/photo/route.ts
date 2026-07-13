@@ -33,12 +33,13 @@ export async function GET(req: Request) {
 
   // blob=1: used by the ZIP download — streams bytes through the server so client-side
   // fetch() can read the response body without a cross-origin R2 presigned-URL redirect.
-  // Uses a separate, higher rate limit (2000/hr) to allow full-album ZIP downloads.
-  // Single-photo downloads (no blob=1) use the strict 60/30s limit.
+  // Per-IP, but at an event many guests download from behind one venue-WiFi IP (and a single ZIP
+  // download of a big album fetches many blobs). Limits raised so a crowd saving photos isn't
+  // throttled: blob (ZIP) 20000/hr, single-photo 600/30s.
   const isBlobMode = url.searchParams.get('blob') === '1'
   const rl = isBlobMode
-    ? await checkRateLimit(clientIpKey(req, 'download_blob'), 3600, 2000, { failOpen: false })
-    : await checkRateLimit(clientIpKey(req, 'download_photo'), 30, 60, { failOpen: false })
+    ? await checkRateLimit(clientIpKey(req, 'download_blob'), 3600, 20000, { failOpen: false })
+    : await checkRateLimit(clientIpKey(req, 'download_photo'), 30, 600, { failOpen: false })
   if (!rl.ok) {
     return NextResponse.json(
       { error: 'Too many requests' },

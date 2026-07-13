@@ -59,7 +59,10 @@ export async function GET(req: Request) {
   // failOpen:true intentionally — album/resolve is a read-only endpoint and failing it closed
   // would make all album views return 429 during any rate-limit store outage, which is worse
   // than allowing slug enumeration to continue until the store recovers.
-  const rl = await checkRateLimit(clientIpKey(req, 'album_resolve'), 60, 30, { failOpen: true })
+  // Limit is per-IP, but at an EVENT dozens–hundreds of guests share ONE venue-WiFi public IP
+  // (cf-connecting-ip is the NAT's IP for all of them). 30/min would rate-limit guests out of
+  // simply VIEWING the album. 900/min still throttles a scraper but never a real crowd.
+  const rl = await checkRateLimit(clientIpKey(req, 'album_resolve'), 60, 900, { failOpen: true })
   if (!rl.ok) {
     return NextResponse.json(
       { error: 'Too many requests' },

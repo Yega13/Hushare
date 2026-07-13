@@ -43,8 +43,11 @@ export async function POST(req: Request) {
   }
 
   // IP rate limit before DB lookup — cheap check first.
-  // failOpen:false — we must NOT allow brute force on DB outage
-  const ipRl = await checkRateLimit(clientIpKey(req, 'pw_verify_ip'), 300, 20, { failOpen: false })
+  // failOpen:false — we must NOT allow brute force on DB outage.
+  // Bumped for shared-NAT events (a crowd all entering the CORRECT password from one venue-WiFi
+  // IP would trip a tight per-IP cap). The per-album limit below is the real per-password
+  // brute-force guard; owners should still set a non-trivial password.
+  const ipRl = await checkRateLimit(clientIpKey(req, 'pw_verify_ip'), 300, 200, { failOpen: false })
   if (!ipRl.ok) {
     return NextResponse.json(
       { error: 'Too many attempts. Try again later.' },
@@ -85,9 +88,10 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: 'Album has no password' }, { status: 400, headers: NO_STORE })
   }
 
-  // Album-level rate limit — limits brute force on a single album.
-  // failOpen:false — same reasoning as IP limit above
-  const albumRl = await checkRateLimit(`pw_verify_album:${album.id}`, 300, 60, { failOpen: false })
+  // Album-level rate limit — limits brute force on a single album's password.
+  // failOpen:false — same reasoning as IP limit above. 120/5min tolerates a real crowd unlocking
+  // a password-protected event while still throttling automated guessing to a slow crawl.
+  const albumRl = await checkRateLimit(`pw_verify_album:${album.id}`, 300, 120, { failOpen: false })
   if (!albumRl.ok) {
     return NextResponse.json(
       { error: 'Too many attempts on this album. Try again later.' },

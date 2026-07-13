@@ -42,7 +42,10 @@ export async function POST(req: Request) {
   const csrfError = forbidCrossSiteRequest(req)
   if (csrfError) return csrfError
 
-  const ipRl = await checkRateLimit(clientIpKey(req, 'stream_ip'), 3600, 200, { failOpen: false })
+  // Per-IP, but events share one venue-WiFi IP. 200/hr blocked a crowd from posting videos.
+  // 2400/hr fits a busy event; Cloudflare Stream storage quota + the per-album cap below are the
+  // real cost guards (raise the Stream plan for heavy video traffic — see docs/ops notes).
+  const ipRl = await checkRateLimit(clientIpKey(req, 'stream_ip'), 3600, 2400, { failOpen: false })
   if (!ipRl.ok) {
     return NextResponse.json(
       { error: 'Too many requests' },
@@ -88,7 +91,7 @@ export async function POST(req: Request) {
   }
 
   // Rate-limit BEFORE subscription lookup — reject hammered albums without paying the tier cost
-  const albumRl = await checkRateLimit(`stream_album:${albumId}`, 3600, 200, { failOpen: false })
+  const albumRl = await checkRateLimit(`stream_album:${albumId}`, 3600, 4000, { failOpen: false })
   if (!albumRl.ok) {
     return NextResponse.json(
       { error: 'Album video upload rate limit reached' },

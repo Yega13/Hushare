@@ -68,7 +68,10 @@ export async function POST(req: Request) {
   // the limiter's verdict first. (Previously all four DB interactions here ran serially,
   // putting ~2 extra round trips of latency on every single upload's critical path.)
   const [ipRl, albumRes] = await Promise.all([
-    checkRateLimit(clientIpKey(req, 'presign_ip'), 3600, 500, { failOpen: false }),
+    // Per-IP, but at an event all guests share one venue-WiFi IP. 500/hr would block a crowd from
+    // uploading photos. 12000/hr is generous for a big event; the per-album MAX_ALBUM_PHOTOS
+    // (10000) hard cap in photos/create is the true backstop against a single album being flooded.
+    checkRateLimit(clientIpKey(req, 'presign_ip'), 3600, 12000, { failOpen: false }),
     admin
       .from('albums')
       .select('id, user_id, guest_uploads_enabled')
@@ -93,7 +96,7 @@ export async function POST(req: Request) {
   // Album rate limit ∥ tier lookup — again independent; the limiter verdict is checked first,
   // so a rate-limited caller still gets a 429 (the tier read just cost one parallel query).
   const [albumRl, tierRes] = await Promise.all([
-    checkRateLimit(`presign_album:${albumId}`, 3600, 5000, { failOpen: false }),
+    checkRateLimit(`presign_album:${albumId}`, 3600, 40000, { failOpen: false }),
     getUserTierById(album.user_id)
       .then(tier => ({ tier, error: null as unknown }))
       .catch((error: unknown) => ({ tier: null, error })),
