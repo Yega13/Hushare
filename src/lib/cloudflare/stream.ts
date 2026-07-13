@@ -40,6 +40,7 @@ function sanitizeFileName(name: string): string {
 export async function createStreamUpload(
   fileSizeBytes: number,
   fileName: string,
+  maxDurationSeconds: number,
 ): Promise<StreamUploadInit> {
   const accountId = process.env.CLOUDFLARE_ACCOUNT_ID
   const token = process.env.CLOUDFLARE_STREAM_TOKEN
@@ -50,19 +51,19 @@ export async function createStreamUpload(
 
   const safeName = sanitizeFileName(fileName)
 
-  // maxDurationSeconds is REQUIRED for direct_user (creator) tus uploads. Cloudflare's docs:
-  // "you must pass the expiry and maxDurationSeconds as part of the Upload-Metadata request
-  // header." Without it the creation still returns a URL, but the upload FAILS during
-  // processing (the well-known "error after 100% using TUS" symptom) — which is exactly why
-  // longer videos were failing. 21600s (6h) is Cloudflare's documented maximum and safely
-  // exceeds any real user video; per-tier limits are enforced by file SIZE elsewhere.
-  const MAX_DURATION_SECONDS = 21600
-  // expiry: how long this upload URL stays valid. Cloudflare requires between 2 minutes and
-  // 6 hours from now; 4h comfortably covers a slow, resumed large-video upload.
-  const expiry = new Date(Date.now() + 4 * 60 * 60 * 1000).toISOString()
+  // maxDurationSeconds is REQUIRED for direct_user (creator) tus uploads. Without it the creation
+  // still returns a URL, but the upload FAILS during processing (the "error after 100% using TUS"
+  // symptom). CRITICAL: Cloudflare reserves maxDurationSeconds of STORAGE QUOTA per pending
+  // upload, so the caller passes a TIGHT value (client-measured duration + margin) — a blanket 6h
+  // reserved 360 min per incomplete upload and exhausted the account quota. Clamp defensively.
+  const safeMaxDuration = Math.min(21600, Math.max(60, Math.round(maxDurationSeconds) || 7200))
+  // expiry: how long this upload URL stays valid; also when an abandoned pending upload (and its
+  // reserved quota) is reclaimed. 2h covers a slow, resumed large-video upload while freeing
+  // quota from abandoned uploads reasonably quickly. Cloudflare requires 2 min–6h from now.
+  const expiry = new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString()
   const uploadMetadata = [
     `name ${safeBase64(safeName)}`,
-    `maxDurationSeconds ${safeBase64(String(MAX_DURATION_SECONDS))}`,
+    `maxDurationSeconds ${safeBase64(String(safeMaxDuration))}`,
     `expiry ${safeBase64(expiry)}`,
   ].join(',')
 

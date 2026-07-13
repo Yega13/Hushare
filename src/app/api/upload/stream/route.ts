@@ -19,6 +19,23 @@ type Body = {
   fileName?: unknown
   contentType?: unknown
   fileSize?: unknown
+  durationSeconds?: unknown
+}
+
+// Cloudflare reserves maxDurationSeconds of STORAGE QUOTA for every pending (incomplete) upload,
+// so this must be kept TIGHT — not a blanket 6h ceiling. A fixed 21600 (6h) made each incomplete
+// or abandoned upload reserve 360 min; a handful of them exhausted the whole account's 1000-min
+// quota and blocked ALL video uploads. Use the client-measured duration plus a safety margin
+// (Cloudflare rejects a video LONGER than maxDurationSeconds, so the margin absorbs measurement
+// error), and fall back to 2h only when the client couldn't measure the duration.
+const CF_MAX_DURATION_CEILING = 21600 // Cloudflare's absolute max (6h)
+const FALLBACK_MAX_DURATION = 7200    // 2h — covers virtually any real video when duration unknown
+function resolveMaxDurationSeconds(durationSeconds: unknown): number {
+  if (typeof durationSeconds === 'number' && Number.isFinite(durationSeconds) && durationSeconds > 0) {
+    const withMargin = Math.ceil(durationSeconds * 1.5) + 60
+    return Math.min(CF_MAX_DURATION_CEILING, Math.max(60, withMargin))
+  }
+  return FALLBACK_MAX_DURATION
 }
 
 export async function POST(req: Request) {
@@ -34,7 +51,8 @@ export async function POST(req: Request) {
   }
 
   const body = await req.json().catch(() => null) as Body | null
-  const { albumId, fileName, contentType, fileSize } = body ?? {}
+  const { albumId, fileName, contentType, fileSize, durationSeconds } = body ?? {}
+  const maxDurationSeconds = resolveMaxDurationSeconds(durationSeconds)
 
   if (
     typeof albumId !== 'string' || !UUID_RE.test(albumId) ||
@@ -101,7 +119,7 @@ export async function POST(req: Request) {
   try {
     // Sanitize fileName to printable ASCII before passing to Cloudflare Stream's metadata API.
     const safeName = String(fileName).replace(/[^\w.\- ]/g, '_').slice(0, 255)
-    ;({ uploadUrl, streamUid, iframeUrl, thumbnailUrl } = await createStreamUpload(fileSize, safeName))
+    ;({ uploadUrl, streamUid, iframeUrl, thumbnailUrl } = await createStreamUpload(fileSize, safeName, maxDurationSeconds))
   } catch (e) {
     console.error('[stream] createStreamUpload failed:', e instanceof Error ? e.message : String(e))
     return NextResponse.json({ error: 'Failed to initiate video upload' }, { status: 502, headers: NO_STORE })

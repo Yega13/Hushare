@@ -881,6 +881,11 @@ async function uploadVideoToStream(
         fileName: file.name,
         contentType: file.type,
         fileSize: file.size,  // raw file size — no processing for videos
+        // Client-measured duration (from the poster decode) lets the server set a TIGHT
+        // maxDurationSeconds. Cloudflare reserves maxDurationSeconds of storage quota for every
+        // PENDING upload, so a fixed 6h ceiling made each incomplete/abandoned upload reserve
+        // 360 min — a handful exhausted the whole account quota and blocked all video uploads.
+        durationSeconds: durationSeconds > 0 ? Math.round(durationSeconds) : undefined,
       }),
     })
     if (!initRes.ok) {
