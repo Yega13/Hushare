@@ -79,8 +79,8 @@ const tiers: Tier[] = [
       'Unlimited photos per album',
       'Anyone can view & add via the link',
       'Download full album as ZIP',
-      'JPG, PNG, HEIC, WebP up to 25 MB',
-      'Album auto-retires after 12 months of inactivity',
+      'Photos up to 25 MB · videos up to 50 MB',
+      'Album auto-retires after 3 months of inactivity',
     ],
   },
   {
@@ -99,9 +99,9 @@ const tiers: Tier[] = [
       'Everything in Free, plus -',
       'Password-protect your albums',
       'Custom album URLs (e.g. hushare.space/anna-and-david)',
-      'No 12-month inactivity expiry - albums live forever',
-      'HD video uploads (MP4, MOV)',
-      'Larger file sizes - up to 200 MB per upload',
+      'No inactivity expiry - albums live as long as you subscribe',
+      'HD video - large uploads up to 1 GB (Free: 50 MB)',
+      'Larger photos - up to 200 MB per upload',
       'Account dashboard to manage your subscription',
     ],
   },
@@ -140,7 +140,7 @@ const billingFaq = [
   },
   {
     q: 'What happens to my free albums if I cancel Pro or Max?',
-    a: 'Nothing changes for guests. Your albums revert to Free behaviour - the password and custom URL are removed, the album becomes accessible by its original random link, and the 12-month inactivity rule applies again.',
+    a: 'Nothing changes for guests. Your albums are kept for a full year after you cancel, then revert to Free behaviour - the password and custom URL are removed, the album becomes accessible by its original random link, and the 3-month inactivity rule applies from then.',
   },
   {
     q: 'What do Max Collections do?',

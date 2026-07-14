@@ -124,7 +124,7 @@ export default function SharedPhotoAlbumPage() {
         },
         {
           q: 'How long does the album last?',
-          a: 'Free albums are retained as long as they are active. If an album sits untouched for 12 months it is automatically retired. Pro and Max albums never expire due to inactivity.',
+          a: 'Free albums are retained as long as they are active. If an album sits untouched for 3 months it is automatically retired (we email a warning first). Pro and Max albums never expire due to inactivity.',
         },
         {
           q: 'Is there a limit on how many people can contribute?',

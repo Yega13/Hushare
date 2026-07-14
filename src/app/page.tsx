@@ -21,7 +21,7 @@ const homeFaq = [
     q: 'How long does Hushare keep my photos?',
     a: (
       <>
-        Free albums are preserved as long as they remain active. If an album sits untouched for <strong className="font-semibold" style={{ color: '#630826' }}>12 months</strong>, it is automatically retired and its media is deleted. Active albums live on indefinitely. Paid tiers remove this inactivity rule.
+        Free albums are preserved as long as they remain active. If an album sits untouched for <strong className="font-semibold" style={{ color: '#630826' }}>3 months</strong>, it is automatically retired and its media is deleted (we email you a warning first so you can download everything). Paid tiers remove this inactivity rule, and keep your albums for a year even after you cancel.
       </>
     ),
   },
@@ -85,7 +85,7 @@ const homeFaq = [
     q: 'What photo formats and sizes are supported?',
     a: (
       <>
-        Free albums support JPG, PNG, HEIC, and WebP images up to <strong className="font-semibold" style={{ color: '#630826' }}>25 MB</strong> each, plus MP4, MOV, or WebM videos up to <strong className="font-semibold" style={{ color: '#630826' }}>50 MB</strong>. Pro and Studio albums support uploads up to <strong className="font-semibold" style={{ color: '#630826' }}>200 MB</strong>.
+        Free albums support JPG, PNG, HEIC, and WebP images up to <strong className="font-semibold" style={{ color: '#630826' }}>25 MB</strong> each, plus MP4, MOV, or WebM videos up to <strong className="font-semibold" style={{ color: '#630826' }}>50 MB</strong>. Pro albums raise this to <strong className="font-semibold" style={{ color: '#630826' }}>200 MB</strong> photos and <strong className="font-semibold" style={{ color: '#630826' }}>1 GB</strong> HD video (Studio up to 4 GB).
       </>
     ),
   },

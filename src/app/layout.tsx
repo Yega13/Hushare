@@ -269,7 +269,7 @@ const jsonLd = {
           name: "How long does Hushare keep my photos?",
           acceptedAnswer: {
             "@type": "Answer",
-            text: "Free albums are preserved as long as they remain active. If an album sits untouched by everyone for 12 months, it is automatically retired and its media is deleted. Active albums live on indefinitely. Paid tiers will remove this inactivity rule.",
+            text: "Free albums are preserved as long as they remain active. If an album sits untouched by everyone for 3 months, it is automatically retired and its media is deleted (we email a warning first). Active albums live on. Paid tiers remove this inactivity rule and keep albums a year after cancellation.",
           },
         },
         {

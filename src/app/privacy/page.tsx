@@ -253,7 +253,7 @@ export default function PrivacyPage() {
         <Section id="retention" number={6} heading="How long we keep things">
           <p>
             Free albums are retained for as long as they remain active. If an
-            album sits untouched for <strong style={INK}>12 months</strong>,
+            album sits untouched for <strong style={INK}>3 months</strong>,
             it is automatically retired and its media is permanently deleted.
             You may request deletion of your album at any time by emailing us
             - see section 12.

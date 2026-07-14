@@ -6,7 +6,10 @@ const MB = 1024 * 1024
 const GB = 1024 * MB
 
 export const FREE_IMAGE_BYTES = 25 * MB
-export const FREE_VIDEO_BYTES = 200 * MB
+// Free video is capped at 50 MB (~30-60s phone clip) — enough for guest "moments" while
+// bounding Cloudflare Stream storage/delivery cost on the free tier. Larger HD video is a paid
+// perk (Pro 1 GB, Studio 4 GB). This matches the number the home + pricing pages advertise.
+export const FREE_VIDEO_BYTES = 50 * MB
 export const PRO_IMAGE_BYTES = 200 * MB
 export const PRO_VIDEO_BYTES = 1 * GB
 export const STUDIO_VIDEO_BYTES = 4 * GB
