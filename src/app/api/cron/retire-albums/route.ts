@@ -1,13 +1,16 @@
 import { NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { deleteAlbumAssetsAndRows } from '@/lib/album-delete'
-import { getUserTierById } from '@/lib/subscriptions'
+import { getUserTierById, getPaidRetentionUntil } from '@/lib/subscriptions'
 import { timingSafeEqual } from '@/lib/timing-safe'
 
 export const runtime = 'nodejs'
 
 const NO_STORE = { 'Cache-Control': 'no-store' }
-const RETIRE_AFTER_DAYS = 365
+// Retention policy: FREE albums are deleted after 90 days (3 months) of INACTIVITY. Paid albums
+// are kept while the subscription is active (tier check below) and for 1 year after it lapses
+// (paid-grace check below). See getPaidRetentionUntil.
+const RETIRE_AFTER_DAYS = 90
 const BATCH_SIZE = 25
 
 type RetirementCandidate = {
@@ -70,6 +73,22 @@ export async function POST(req: Request) {
       skippedPaid += 1
       // Reset activity so it doesn't show up in the next scan.
       await admin.from('albums').update({ last_activity_at: new Date().toISOString() }).eq('id', album.id)
+      continue
+    }
+
+    // Paid-grace: a currently-free owner who USED to pay keeps their albums for 1 year after
+    // their subscription lapsed. Skip (without resetting activity) so that once grace expires the
+    // 90-day inactivity rule applies from the real last-activity date on a later scan.
+    try {
+      const paidUntil = await getPaidRetentionUntil(album.user_id)
+      if (paidUntil && paidUntil > new Date()) {
+        skippedPaid += 1
+        continue
+      }
+    } catch (err) {
+      // Never delete on an uncertain grace check.
+      console.error('[retire-albums] paid-grace check failed for album', album.slug, ':', err instanceof Error ? err.message : String(err))
+      failed += 1
       continue
     }
 

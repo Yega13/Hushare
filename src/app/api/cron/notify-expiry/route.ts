@@ -1,15 +1,17 @@
 import { NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
-import { getUserTierById } from '@/lib/subscriptions'
+import { getUserTierById, getPaidRetentionUntil } from '@/lib/subscriptions'
 import { sendExpiryWarningEmail } from '@/lib/email'
 import { timingSafeEqual } from '@/lib/timing-safe'
 
 export const runtime = 'nodejs'
 
 const NO_STORE = { 'Cache-Control': 'no-store' }
-const RETIRE_AFTER_DAYS = 365
+// Must mirror retire-albums: FREE albums expire after 90 days of inactivity. Owners are warned
+// 30 days before (i.e. once the album has been inactive 60–90 days) so they can download first.
+const RETIRE_AFTER_DAYS = 90
 const WARN_BEFORE_DAYS = 30
-const WARN_AFTER_DAYS = RETIRE_AFTER_DAYS - WARN_BEFORE_DAYS  // 335
+const WARN_AFTER_DAYS = RETIRE_AFTER_DAYS - WARN_BEFORE_DAYS  // 60
 const BATCH_SIZE = 50
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL ?? 'https://hushare.space'
 
@@ -75,6 +77,20 @@ export async function POST(req: Request) {
     }
     if (tier !== 'free') {
       skippedPaid += 1
+      continue
+    }
+
+    // Don't warn owners still covered by the 1-year paid-grace window (their album isn't
+    // expiring yet). Mirror the same check retire-albums uses.
+    try {
+      const paidUntil = await getPaidRetentionUntil(album.user_id)
+      if (paidUntil && paidUntil > new Date()) {
+        skippedPaid += 1
+        continue
+      }
+    } catch (err) {
+      console.error('[notify-expiry] paid-grace check failed for album', album.id, ':', err instanceof Error ? err.message : String(err))
+      failed += 1
       continue
     }
 

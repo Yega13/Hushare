@@ -74,6 +74,34 @@ export async function getUserTierById(userId: string | null | undefined): Promis
   return 'free'
 }
 
+// RETENTION grace for lapsed paying customers. Policy: a paid album is kept while the
+// subscription is active AND for 1 year after it ends. getUserTierById already returns the paid
+// tier (→ kept) while active; this covers the FREE-again case: an owner whose subscription has
+// lapsed still gets a 1-year grace from their last paid period end before the free retention
+// window applies. Returns the timestamp until which the owner's albums must be preserved due to
+// PAST paid status, or null if the owner never had a subscription (pure free).
+const PAID_GRACE_MS = 365 * 24 * 60 * 60 * 1000
+export async function getPaidRetentionUntil(userId: string | null | undefined): Promise<Date | null> {
+  if (!userId) return null
+  const admin = createAdminClient()
+  const { data: sub, error } = await admin
+    .from('subscriptions')
+    .select('current_period_end')
+    .eq('user_id', userId)
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle<{ current_period_end: string | null }>()
+  if (error) {
+    // On uncertainty, protect the album (return a far-future date) — never delete on a failed check.
+    console.error('[subscriptions] getPaidRetentionUntil query failed:', error.message)
+    return new Date(Date.now() + PAID_GRACE_MS)
+  }
+  if (!sub) return null // no subscription history → pure free tier
+  if (sub.current_period_end) return new Date(new Date(sub.current_period_end).getTime() + PAID_GRACE_MS)
+  // Had a subscription row but no recorded period end — be conservative, grant grace from now.
+  return new Date(Date.now() + PAID_GRACE_MS)
+}
+
 const TIER_RANK: Record<Tier, number> = { free: 0, pro: 1, studio: 2 }
 
 export async function requireTier(
