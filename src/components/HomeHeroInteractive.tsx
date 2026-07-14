@@ -5,6 +5,7 @@ import type { PointerEvent } from 'react'
 import { useRouter } from 'next/navigation'
 import Image from 'next/image'
 import { ArrowRight } from 'lucide-react'
+import { rememberOwnedAlbum } from '@/lib/my-albums'
 
 const ALBUM_PLACEHOLDERS = [
   'Wedding in Yerevan',
@@ -58,6 +59,10 @@ export default function HomeHeroInteractive() {
         setLoading(false)
         return
       }
+      // Remember this album on THIS device so an anonymous creator who closes the tab can get
+      // back to owner view instead of losing management access (the #owner= token is otherwise
+      // only in the URL they got once).
+      if (body.owner_token) rememberOwnedAlbum(body.slug, body.owner_token, title.trim())
       // Redirect via the #owner= management link so the creator lands in owner view. Public
       // album URLs are guest-only, so the owner cookie alone no longer grants the owner view —
       // the token in the hash does. The album page strips it from the URL after owner-login.

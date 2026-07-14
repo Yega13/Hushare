@@ -5,6 +5,7 @@ import HamburgerMenu from '@/components/HamburgerMenu'
 import FaqList from '@/components/FaqList'
 import HomeHeroInteractive from '@/components/HomeHeroInteractive'
 import HomeScrollButton from '@/components/HomeScrollButton'
+import MyDeviceAlbums from '@/components/MyDeviceAlbums'
 
 const NATURE_IMG = '/hero-nature.jpg'
 
@@ -175,6 +176,9 @@ export default function HomePage() {
 
         <HomeHeroInteractive />
       </div>
+
+      {/* Recovery for anonymous creators — renders only if this device has saved albums */}
+      <MyDeviceAlbums />
 
       <div className="hush-container py-12">
         <div className="flex items-center gap-6">

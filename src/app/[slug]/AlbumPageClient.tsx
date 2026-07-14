@@ -13,6 +13,7 @@ import PhotoGrid from '@/components/PhotoGrid'
 import AlbumHeader from '@/components/AlbumHeader'
 import GuestActionsBar from '@/components/GuestActionsBar'
 import { resolveAlbumBackgroundImage } from '@/lib/album-backgrounds'
+import { rememberOwnedAlbum } from '@/lib/my-albums'
 
 // Code-split out of the shared album bundle: OwnerToolbar (+ tus/JSZip-adjacent upload code) and
 // FaceFinder are only ever needed by the owner or by guests who opt in, never by an ordinary
@@ -296,6 +297,12 @@ export default function AlbumPageClient() {
       if (isCancelled()) return
       setAlbum(data)
       setPhotos(photoData)
+      // Remember this album on the device whenever we're on its owner link, so the owner can
+      // always get back to management view (read the token fresh from the hash — it's kept there).
+      if (ownerTokenFromUrlRef.current) {
+        const tok = new URLSearchParams(window.location.hash.replace(/^#/, '')).get('owner')
+        if (tok) rememberOwnedAlbum(data.slug, tok, data.title)
+      }
     } catch {
       // fetch() threw — network down, DNS failure, etc.
       if (!isCancelled()) setNetworkError(true)
