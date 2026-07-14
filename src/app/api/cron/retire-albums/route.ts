@@ -40,6 +40,10 @@ export async function POST(req: Request) {
 
   const cutoff = new Date(Date.now() - RETIRE_AFTER_DAYS * 24 * 60 * 60 * 1000).toISOString()
   const admin = createAdminClient()
+
+  // Piggyback the daily run to prune the admin error log (keeps 30 days). Best-effort.
+  void admin.rpc('prune_error_events')
+
   const { data: candidates, error } = await admin
     .from('albums')
     .select('id, slug, user_id, background_theme, last_activity_at')

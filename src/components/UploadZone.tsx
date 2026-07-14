@@ -958,6 +958,25 @@ async function saveUploadedRows(albumId: string, rows: PhotoRow[]): Promise<void
   }
 }
 
+// Fire-and-forget telemetry so real guest failures/near-misses surface in /admin. Never throws,
+// never blocks the upload, never awaited. keepalive lets it survive a tab close mid-report.
+function reportClientEvent(
+  level: 'error' | 'warn',
+  source: string,
+  message: string,
+  albumId: string,
+  context?: Record<string, unknown>,
+): void {
+  try {
+    void fetch('/api/log/client-error', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ level, source, message: String(message).slice(0, 500), albumId, context }),
+      keepalive: true,
+    }).catch(() => {})
+  } catch { /* never let telemetry break an upload */ }
+}
+
 // tus failures stringify their entire request/response internals — a wall of text that
 // overflows a phone screen and tells the user nothing. Map known failure shapes to short,
 // actionable messages that still NAME the real cause (HTTP status), so a failure screenshot is
@@ -1131,7 +1150,11 @@ export default function UploadZone({ album, userTier, onPhotosUploaded }: Props)
     const saver = createRowSaver(
       album.id,
       (ids) => { for (const id of ids) patchEntry(id, { status: 'done', progress: 100 }) },
-      (ids, msg) => { for (const id of ids) patchEntry(id, { status: 'error', error: `Uploaded, but saving to the album failed: ${msg}` }) },
+      (ids, msg) => {
+        for (const id of ids) patchEntry(id, { status: 'error', error: `Uploaded, but saving to the album failed: ${msg}` })
+        // Report — this is the worst kind of failure (bytes in storage, no album row = orphaned).
+        reportClientEvent('error', 'save', msg, album.id, { count: ids.length })
+      },
     )
 
     const run = async () => {
@@ -1170,6 +1193,12 @@ export default function UploadZone({ album, userTier, onPhotosUploaded }: Props)
           // mobile). AbortError is a deliberate cancel, not worth toasting.
           if (!(e instanceof DOMException && e.name === 'AbortError')) {
             showAppToast(`Upload failed: ${msg}`, 'error')
+            // Report to /admin so real guest failures are visible, not invisible. Raw message
+            // (not the friendly one) is the diagnostic value; include device + file context.
+            const kind = detectKind(entry.file)
+            reportClientEvent('error', kind === 'video' ? 'upload:video' : 'upload:image',
+              e instanceof Error ? e.message : String(e), album.id,
+              { fileType: entry.file.type, sizeMB: Math.round(entry.file.size / 1024 / 1024), status: e instanceof HttpError ? e.status : undefined })
           }
         } finally {
           sem.release()

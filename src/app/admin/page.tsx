@@ -58,9 +58,10 @@ export default async function AdminPage() {
 
   const admin = createAdminClient()
 
+  const dayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()
   const [
     albumsActive, albumsRetired, imgCount, vidCount, subsCount,
-    recentAlbumsRes, subsRes, streamUsage, usersRes,
+    recentAlbumsRes, subsRes, streamUsage, usersRes, errors24Res, recentErrorsRes,
   ] = await Promise.all([
     admin.from('albums').select('id', { count: 'exact', head: true }).is('retired_at', null),
     admin.from('albums').select('id', { count: 'exact', head: true }).not('retired_at', 'is', null),
@@ -73,11 +74,20 @@ export default async function AdminPage() {
       .order('created_at', { ascending: false }).limit(30),
     getStreamUsage(),
     admin.auth.admin.listUsers({ page: 1, perPage: 200 }),
+    admin.from('error_events').select('id', { count: 'exact', head: true }).eq('level', 'error').gte('created_at', dayAgo),
+    admin.from('error_events').select('created_at, level, source, message, album_id, ua')
+      .order('created_at', { ascending: false }).limit(60)
+      .returns<{ created_at: string; level: string; source: string; message: string; album_id: string | null; ua: string | null }[]>(),
   ])
 
   const recentAlbums = recentAlbumsRes.data ?? []
   const subs = subsRes.data ?? []
   const allUsers = usersRes.data?.users ?? []
+  const recentErrors = recentErrorsRes.data ?? []
+  // Group recent errors by message to show the top recurring problems.
+  const errorTally = new Map<string, number>()
+  for (const e of recentErrors) errorTally.set(e.message, (errorTally.get(e.message) ?? 0) + 1)
+  const topErrors = [...errorTally.entries()].sort((a, b) => b[1] - a[1]).slice(0, 6)
 
   // id → email map for owners + recent signups (one listUsers call, no N+1)
   const emailById = new Map<string, string>()
@@ -108,6 +118,7 @@ export default async function AdminPage() {
     streamUsage
       ? { label: 'Stream video', value: `${streamUsage.minutes} / ${streamUsage.limit} min`, hint: `${streamUsage.videos} videos stored` }
       : { label: 'Stream video', value: 'n/a', hint: 'CF token missing' },
+    { label: 'Errors (24h)', value: String(errors24Res.count ?? 0), hint: (errors24Res.count ?? 0) > 0 ? 'see below ↓' : 'all clear' },
   ]
 
   const th: React.CSSProperties = { textAlign: 'left', padding: '8px 10px', fontSize: 12, color: MUTED, fontWeight: 600, borderBottom: `1px solid ${BORDER}`, whiteSpace: 'nowrap' }
@@ -135,6 +146,44 @@ export default async function AdminPage() {
             </div>
           ))}
         </div>
+
+        {/* Errors — top recurring + recent stream */}
+        <h2 style={{ fontSize: 15, fontWeight: 700, color: INK, margin: '0 0 10px' }}>
+          Errors <span style={{ fontSize: 12, fontWeight: 400, color: MUTED }}>(real guest failures reported from their devices)</span>
+        </h2>
+        {recentErrors.length === 0 ? (
+          <div style={{ background: CARD, border: `1px solid ${BORDER}`, borderRadius: 12, padding: '14px 16px', marginBottom: 28, fontSize: 13, color: MUTED }}>
+            No errors reported. 🎉 If a guest hits an upload failure, it shows up here with the device and reason.
+          </div>
+        ) : (
+          <div style={{ marginBottom: 28 }}>
+            {topErrors.length > 0 && (
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 12 }}>
+                {topErrors.map(([msg, n]) => (
+                  <span key={msg} style={{ fontSize: 12, background: '#FBEEF0', color: BRAND, border: `1px solid #EAD3D8`, borderRadius: 999, padding: '4px 10px' }}>
+                    <strong>{n}×</strong> {msg.slice(0, 60)}{msg.length > 60 ? '…' : ''}
+                  </span>
+                ))}
+              </div>
+            )}
+            <div style={{ overflowX: 'auto', background: CARD, border: `1px solid ${BORDER}`, borderRadius: 12 }}>
+              <table style={{ borderCollapse: 'collapse', width: '100%', minWidth: 680 }}>
+                <thead><tr><th style={th}>When</th><th style={th}>Lvl</th><th style={th}>Source</th><th style={th}>Message</th><th style={th}>Device</th></tr></thead>
+                <tbody>
+                  {recentErrors.map((e, i) => (
+                    <tr key={i}>
+                      <td style={td}>{fmt(e.created_at)}</td>
+                      <td style={{ ...td, color: e.level === 'error' ? '#B3261E' : '#8A6D00' }}>{e.level}</td>
+                      <td style={td}>{e.source}</td>
+                      <td style={{ ...td, whiteSpace: 'normal', maxWidth: 320 }}>{e.message}</td>
+                      <td style={{ ...td, whiteSpace: 'normal', maxWidth: 180, fontSize: 11, color: MUTED }}>{(e.ua ?? '').replace(/Mozilla\/[\d.]+ /,'').slice(0, 60)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
 
         {/* Recent albums */}
         <h2 style={{ fontSize: 15, fontWeight: 700, color: INK, margin: '0 0 10px' }}>Recent albums</h2>
@@ -192,9 +241,6 @@ export default async function AdminPage() {
           </div>
         </div>
 
-        <p style={{ fontSize: 11, color: MUTED, marginTop: 28 }}>
-          Live error tracking isn&apos;t wired here yet (errors currently go to Cloudflare Worker logs). Ask to add an error-log table + panel next.
-        </p>
       </div>
     </main>
   )
