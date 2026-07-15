@@ -3,6 +3,8 @@ import type { DictKey } from './en'
 // Armenian overrides. Any key omitted here falls back to English automatically.
 export const hy: Partial<Record<DictKey, string>> = {
   'lang.label': 'Լեզու',
+  'account.language.title': 'Լեզու',
+  'account.language.hint': 'Ընտրեք Hushare կայքի լեզուն։',
 
   'home.eyebrow': 'Առանց հաշվի · Առանց ավելորդ քայլերի',
   'home.title.line1': 'Յուրաքանչյուր պահ՝',

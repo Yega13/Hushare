@@ -130,7 +130,9 @@ export default async function AdminPage() {
         <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 6 }}>
           <h1 style={{ fontSize: 24, fontWeight: 700, color: BRAND, fontFamily: 'var(--font-serif)' }}>Hushare Admin</h1>
           <div style={{ display: 'flex', gap: 14, fontSize: 13 }}>
-            <Link href="/admin" style={{ color: BRAND, fontWeight: 600 }}>Refresh</Link>
+            {/* Plain anchor (not next/link) so it does a FULL reload and refetches the live data —
+                a soft client-nav to the same route wouldn't re-run the server queries. */}
+            <a href="/admin" style={{ color: BRAND, fontWeight: 600 }}>Refresh</a>
             <Link href="/account" style={{ color: MUTED }}>Account</Link>
           </div>
         </div>

@@ -15,6 +15,9 @@ import DeleteAlbumButton from './DeleteAlbumButton'
 import RenameAlbumButton from './RenameAlbumButton'
 import SignOutButton from './SignOutButton'
 import SubscriptionPolling from './SubscriptionPolling'
+import LanguageSwitcherFlags from '@/components/LanguageSwitcherFlags'
+import { getServerLocale } from '@/i18n/server'
+import { getDictionary } from '@/i18n/get-dictionary'
 
 function AccountNav() {
   return (
@@ -130,6 +133,7 @@ export default async function AccountPage({ searchParams }: Props) {
 
   const subscription = await getActiveSubscription(user.id)
   const isAdmin = isAccountAdmin(user)
+  const dict = getDictionary(await getServerLocale())
   const tierLabel = subscription
     ? subscription.tier === 'pro' ? 'Hushare Pro' : 'Hushare Max'
     : null
@@ -406,6 +410,16 @@ export default async function AccountPage({ searchParams }: Props) {
               </div>
             </section>
           </div>
+
+          {/* Language */}
+          <section
+            className="hush-hover-lift rounded-2xl p-6 mt-6"
+            style={{ background: '#FFFFFF', border: '1px solid #DDD5C5' }}
+          >
+            <p className="text-xs uppercase tracking-wide mb-1" style={{ color: '#8B6F4E' }}>{dict['account.language.title']}</p>
+            <p className="text-sm leading-relaxed mb-4" style={{ color: '#5C4A3C' }}>{dict['account.language.hint']}</p>
+            <LanguageSwitcherFlags />
+          </section>
 
           {/* Collections + Albums */}
           <section className="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-[1.15fr_0.85fr]">

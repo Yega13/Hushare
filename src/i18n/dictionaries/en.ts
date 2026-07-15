@@ -4,6 +4,8 @@
 export const en = {
   // language switcher
   'lang.label': 'Language',
+  'account.language.title': 'Language',
+  'account.language.hint': 'Choose the language for the Hushare website.',
 
   // home hero
   'home.eyebrow': 'No account · No friction',

@@ -3,6 +3,8 @@ import type { DictKey } from './en'
 // Russian overrides. Any key omitted here falls back to English automatically.
 export const ru: Partial<Record<DictKey, string>> = {
   'lang.label': 'Язык',
+  'account.language.title': 'Язык',
+  'account.language.hint': 'Выберите язык сайта Hushare.',
 
   'home.eyebrow': 'Без аккаунта · Без лишних хлопот',
   'home.title.line1': 'Каждый момент —',
