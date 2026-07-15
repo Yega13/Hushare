@@ -2,11 +2,13 @@
 
 import { useEffect, useState } from 'react'
 import { getMyAlbums, forgetAlbum, type MyAlbum } from '@/lib/my-albums'
+import { useT } from '@/i18n/LocaleProvider'
 
 // "Your albums on this device" — recovery for anonymous creators. Reads localStorage (client-only),
 // so it renders nothing on the server and nothing until we've checked. Each entry links back to the
 // album's owner (#owner=) management view, so a creator who closed the tab never loses their album.
 export default function MyDeviceAlbums() {
+  const { t } = useT()
   const [albums, setAlbums] = useState<MyAlbum[] | null>(null)
 
   useEffect(() => {
@@ -23,12 +25,12 @@ export default function MyDeviceAlbums() {
       >
         <div className="flex items-baseline justify-between mb-3">
           <h2 className="text-sm sm:text-base" style={{ fontWeight: 700, color: '#630826', fontFamily: 'var(--font-serif)' }}>
-            Your albums on this device
+            {t('myAlbums.title')}
           </h2>
-          <span className="text-xs" style={{ color: '#8A7A66' }}>{albums.length} saved</span>
+          <span className="text-xs" style={{ color: '#8A7A66' }}>{t('myAlbums.saved', { n: albums.length })}</span>
         </div>
         <p className="text-xs mb-3" style={{ color: '#8A7A66' }}>
-          Albums you created here. Tap to manage — these links are private to you.
+          {t('myAlbums.subtitle')}
         </p>
         <ul className="flex flex-col divide-y" style={{ borderColor: '#EFE7D8' }}>
           {albums.map((a) => (
@@ -42,16 +44,16 @@ export default function MyDeviceAlbums() {
               </a>
               <div className="flex items-center gap-3 shrink-0">
                 <a href={`/${a.slug}#owner=${a.token}`} className="text-xs" style={{ color: '#630826', fontWeight: 600 }}>
-                  Manage
+                  {t('myAlbums.manage')}
                 </a>
                 <button
                   type="button"
                   onClick={() => { forgetAlbum(a.slug); setAlbums(getMyAlbums()) }}
                   className="text-xs"
                   style={{ color: '#8A7A66' }}
-                  aria-label={`Remove ${a.title} from this device`}
+                  aria-label={`${t('myAlbums.remove')} ${a.title}`}
                 >
-                  Remove
+                  {t('myAlbums.remove')}
                 </button>
               </div>
             </li>

@@ -3,6 +3,9 @@ import { Geist, Geist_Mono, Playfair_Display, Playwrite_GB_J } from "next/font/g
 import Script from "next/script";
 import AppToastViewport from "@/components/AppToast";
 import SiteFooter from "@/components/SiteFooter";
+import { getServerLocale } from "@/i18n/server";
+import { getDictionary } from "@/i18n/get-dictionary";
+import { LocaleProvider } from "@/i18n/LocaleProvider";
 import InitialPreloader from "@/components/InitialPreloader";
 import BackToTop from "@/components/BackToTop";
 import "./globals.css";
@@ -335,14 +338,19 @@ const PRELOADER_INIT_SCRIPT =
 const GA_INIT_SCRIPT =
   "window.dataLayer=window.dataLayer||[];function gtag(){dataLayer.push(arguments);}gtag('js',new Date());gtag('config','G-5JMF0RM5Q6');"
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  // Cookie-based locale (see src/i18n). Reading it makes rendering per-request dynamic, which is
+  // inherent to cookie i18n and fine on Workers. English is the baked-in fallback in the dict.
+  const locale = await getServerLocale();
+  const dict = getDictionary(locale);
+
   return (
     <html
-      lang="en"
+      lang={locale}
       className={`${geistSans.variable} ${geistMono.variable} ${playfair.variable} ${handwriting.variable} h-full antialiased`}
     >
       <head>
@@ -372,8 +380,10 @@ export default function RootLayout({
           </>
         )}
         <InitialPreloader />
-        {children}
-        <SiteFooter />
+        <LocaleProvider locale={locale} dict={dict}>
+          {children}
+          <SiteFooter />
+        </LocaleProvider>
         <BackToTop />
         <AppToastViewport />
       </body>

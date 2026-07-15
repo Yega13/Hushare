@@ -3,6 +3,7 @@
 import Image from 'next/image'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
+import LanguageSwitcher from '@/components/LanguageSwitcher'
 
 const footerLinks = [
   { href: '/', label: 'Home' },
@@ -67,6 +68,7 @@ export default function SiteFooter() {
         <span className="hush-footer-note" style={{ color: '#B0A090' }} suppressHydrationWarning>
           © {new Date().getFullYear()} - your moments, always.
         </span>
+        <LanguageSwitcher className="hush-footer-link" />
       </nav>
     </footer>
   )

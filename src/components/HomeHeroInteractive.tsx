@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation'
 import Image from 'next/image'
 import { ArrowRight } from 'lucide-react'
 import { rememberOwnedAlbum } from '@/lib/my-albums'
+import { useT } from '@/i18n/LocaleProvider'
 
 const ALBUM_PLACEHOLDERS = [
   'Wedding in Yerevan',
@@ -19,6 +20,7 @@ const ALBUM_PLACEHOLDERS = [
 
 export default function HomeHeroInteractive() {
   const router = useRouter()
+  const { t } = useT()
   const [title, setTitle] = useState('')
   const [albumPlaceholder, setAlbumPlaceholder] = useState(ALBUM_PLACEHOLDERS[0])
   const [loading, setLoading] = useState(false)
@@ -44,7 +46,7 @@ export default function HomeHeroInteractive() {
 
   async function createAlbum() {
     if (loading) return
-    if (!title.trim()) { setError('Please give your album a name'); return }
+    if (!title.trim()) { setError(t('home.errorName')); return }
     setLoading(true)
     setError('')
     try {
@@ -55,7 +57,7 @@ export default function HomeHeroInteractive() {
       })
       const body = await res.json().catch(() => ({})) as { slug?: string; owner_token?: string; error?: string }
       if (!res.ok || !body.slug) {
-        setError(body.error ?? 'Something went wrong. Please try again.')
+        setError(body.error ?? t('common.errorGeneric'))
         setLoading(false)
         return
       }
@@ -68,7 +70,7 @@ export default function HomeHeroInteractive() {
       // the token in the hash does. The album page strips it from the URL after owner-login.
       router.push(body.owner_token ? `/${body.slug}#owner=${body.owner_token}` : `/${body.slug}`)
     } catch {
-      setError('Something went wrong. Please try again.')
+      setError(t('common.errorGeneric'))
       setLoading(false)
     }
   }
@@ -81,25 +83,25 @@ export default function HomeHeroInteractive() {
           className="hush-home-eyebrow text-xs sm:text-sm font-medium uppercase mb-4 sm:mb-5 text-[#F3E0BC] lg:text-[#8B6F4E]"
           style={{ letterSpacing: '0.15em' }}
         >
-          No account - No friction
+          {t('home.eyebrow')}
         </p>
         <h1
           className="hush-home-title text-[#FDFAF5] lg:text-[#630826] [text-shadow:0_2px_18px_rgba(0,0,0,0.35)] lg:[text-shadow:none]"
           style={{ fontFamily: 'var(--font-serif)', fontSize: 'clamp(2rem, 7vw, 5.4rem)', lineHeight: 1.05, fontWeight: 700, marginBottom: '1.25rem' }}
         >
-          Every moment,<br />
-          <em className="text-[#F3E0BC] lg:text-[#7C4A2D]">beautifully kept</em>
+          {t('home.title.line1')}<br />
+          <em className="text-[#F3E0BC] lg:text-[#7C4A2D]">{t('home.title.line2')}</em>
         </h1>
         <p
           className="hush-home-copy text-base sm:text-lg leading-relaxed mb-8 sm:mb-10 text-[#FBF4E4] lg:text-[#6B5A4E] [text-shadow:0_1px_10px_rgba(0,0,0,0.35)] lg:[text-shadow:none]"
           style={{ maxWidth: '420px' }}
         >
-          Create a shared album and let anyone add photos with just a link - no sign-up, no app download.
+          {t('home.subtitle')}
         </p>
 
         <div className="hush-album-create-card rounded-2xl hush-fluid-card" style={{ background: '#FFFFFF', border: '1px solid #DDD5C5', boxShadow: '0 4px 32px rgba(99,8,38,0.10)', maxWidth: '430px' }}>
           <label className="block text-sm font-medium mb-2" style={{ color: '#8B6F4E' }}>
-            Name your album
+            {t('home.nameLabel')}
           </label>
           <input
             type="text"
@@ -118,10 +120,10 @@ export default function HomeHeroInteractive() {
             className="hush-home-button w-full flex items-center justify-center gap-2 font-semibold rounded-xl py-3 disabled:opacity-50"
             style={{ background: '#630826', color: '#FDFAF5' }}
           >
-            {loading ? 'Creating your album...' : <>Create Album <ArrowRight className="w-4 h-4" /></>}
+            {loading ? t('home.creating') : <>{t('home.createBtn')} <ArrowRight className="w-4 h-4" /></>}
           </button>
           <p className="hush-home-note text-xs mt-3 text-center" style={{ color: '#B0A090' }}>
-            You&apos;ll receive a private link to manage your album
+            {t('home.privateLinkNote')}
           </p>
         </div>
       </div>
