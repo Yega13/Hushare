@@ -4,6 +4,7 @@ import { checkRateLimit, clientIpKey } from '@/lib/rate-limit'
 import { forbidCrossSiteRequest } from '@/lib/request-security'
 import { sendPhotoNotificationEmail } from '@/lib/email'
 import { streamVideoUrls } from '@/lib/cloudflare/stream'
+import { queueAlbumChangedBroadcast, runAfterResponse } from '@/lib/broadcast'
 
 export const runtime = 'nodejs'
 
@@ -368,7 +369,13 @@ export async function POST(req: Request) {
 
   const inserted = insertedCount
 
-  void (async () => {
+  // Live-update ping to everyone viewing this album (Broadcast — scales where postgres_changes
+  // dropped events under burst). waitUntil keeps it alive past the response so it isn't cancelled.
+  if (inserted > 0) queueAlbumChangedBroadcast(albumId)
+
+  // Notification email — same waitUntil guarantee (a bare fire-and-forget promise would be
+  // cancelled when the Worker returns, silently never sending).
+  runAfterResponse((async () => {
     try {
       if (inserted === 0) return
       if (!album.user_id) return
@@ -389,7 +396,7 @@ export async function POST(req: Request) {
     } catch (e) {
       console.warn('[photos/create] notification email failed:', e instanceof Error ? e.message : String(e))
     }
-  })()
+  })())
 
   // Recompute skipped from actual insertedCount — the pre-insert dedup may undercount
   // if the upsert's ignoreDuplicates silently handled a concurrent race

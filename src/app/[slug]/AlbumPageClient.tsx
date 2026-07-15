@@ -411,12 +411,17 @@ export default function AlbumPageClient() {
   }, [fetchAlbum])
 
   // ─── Effect 3: Realtime photos channel ──────────────────────────────────────
+  // INSERTs (guest uploads — the high-frequency, bursty event) arrive via Supabase BROADCAST:
+  // photos/create sends a contentless "changed" ping and we DEBOUNCE-refetch. This replaced the
+  // postgres_changes INSERT listener, which dropped ~93% of events to 150 viewers under a burst.
+  // DELETE/UPDATE (rare owner actions) stay on postgres_changes for instant, per-row feedback.
   useEffect(() => {
     if (!album?.id) return
     const albumId = album.id
     let active = true
     let retryCount = 0
     let retryTimer: ReturnType<typeof setTimeout> | null = null
+    let refetchTimer: ReturnType<typeof setTimeout> | null = null
     let currentChannel: RealtimeChannel | null = null
 
     function connect() {
@@ -424,22 +429,16 @@ export default function AlbumPageClient() {
       if (currentChannel) supabase.removeChannel(currentChannel)
 
       const ch = supabase
-        .channel(`album-photos-${albumId}`)
-        .on('postgres_changes', {
-          event: 'INSERT',
-          schema: 'public',
-          table: 'photos',
-          filter: `album_id=eq.${albumId}`,
-        }, ({ new: incoming }) => {
+        // Channel name IS the broadcast topic the server sends to (`album:<id>`).
+        .channel(`album:${albumId}`)
+        .on('broadcast', { event: 'changed' }, () => {
           if (!active) return
-          const photo = sanitizeRealtimePhoto(incoming as Record<string, unknown>, albumId)
-          if (!photo || !photo.id) return
-          if (isRecentlyDeleted(photo.id)) return  // don't re-add a just-deleted photo
-          setPhotos(prev =>
-            prev.some(p => p.id === photo.id)
-              ? prev
-              : [...prev, photo],
-          )
+          // Debounce: a burst of uploads sends many pings — collapse them into one refetch so
+          // 50 uploads in 2s cost ~1 refetch, not 50 list rebuilds.
+          if (refetchTimer) clearTimeout(refetchTimer)
+          refetchTimer = setTimeout(() => {
+            void fetchPhotos(albumId).then(data => { if (active) setPhotos(data) })
+          }, 500)
         })
         .on('postgres_changes', {
           event: 'DELETE',
@@ -492,6 +491,7 @@ export default function AlbumPageClient() {
     return () => {
       active = false
       if (retryTimer) clearTimeout(retryTimer)
+      if (refetchTimer) clearTimeout(refetchTimer)
       if (currentChannel) supabase.removeChannel(currentChannel)
     }
   }, [album?.id, supabase, fetchPhotos])
