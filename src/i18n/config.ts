@@ -7,6 +7,11 @@ export type Locale = (typeof LOCALES)[number]
 export const DEFAULT_LOCALE: Locale = 'en'
 export const LOCALE_COOKIE = 'hushare_locale'
 
+// Master switch for the user-facing LANGUAGE PICKER UI. The translations + provider stay fully
+// wired (so nothing regresses and English renders as normal), but no switcher is shown until the
+// bilingual rollout is finished and reviewed. Flip to true to reveal the pickers (footer + account).
+export const LANGUAGE_UI_ENABLED = false
+
 // Native language names for the switcher.
 export const LOCALE_LABELS: Record<Locale, string> = {
   en: 'English',

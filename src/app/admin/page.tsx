@@ -4,6 +4,7 @@ import type { Metadata } from 'next'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { isAccountAdmin } from '@/lib/auth'
+import AdminRefreshButton from '@/components/AdminRefreshButton'
 
 // Live data, never cached, never indexed. Access is gated to ADMIN_EMAILS below.
 export const runtime = 'nodejs'
@@ -129,10 +130,9 @@ export default async function AdminPage() {
       <div style={{ maxWidth: 1080, margin: '0 auto' }}>
         <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 6 }}>
           <h1 style={{ fontSize: 24, fontWeight: 700, color: BRAND, fontFamily: 'var(--font-serif)' }}>Hushare Admin</h1>
-          <div style={{ display: 'flex', gap: 14, fontSize: 13 }}>
-            {/* Plain anchor (not next/link) so it does a FULL reload and refetches the live data —
-                a soft client-nav to the same route wouldn't re-run the server queries. */}
-            <a href="/admin" style={{ color: BRAND, fontWeight: 600 }}>Refresh</a>
+          <div style={{ display: 'flex', gap: 14, fontSize: 13, alignItems: 'center' }}>
+            {/* Real tab reload (client) — re-runs the dynamic page for fresh data. */}
+            <AdminRefreshButton />
             <Link href="/account" style={{ color: MUTED }}>Account</Link>
           </div>
         </div>
