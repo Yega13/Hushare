@@ -4,6 +4,7 @@ import { useRef, useState } from 'react'
 import type { Album } from '@/types'
 import { formatDate } from '@/lib/utils'
 import { showAppToast } from '@/components/AppToast'
+import { useT } from '@/i18n/LocaleProvider'
 import Image from 'next/image'
 import Link from 'next/link'
 import { Check, Pencil, X } from 'lucide-react'
@@ -16,6 +17,7 @@ type Props = {
 }
 
 export default function AlbumHeader({ album, photoCount, isOwner, onAlbumUpdated }: Props) {
+  const { t } = useT()
   const holdTimerRef = useRef<number | null>(null)
   const [editing, setEditing] = useState(false)
   const [title, setTitle] = useState(album.title)
@@ -38,7 +40,7 @@ export default function AlbumHeader({ album, photoCount, isOwner, onAlbumUpdated
     if (!isOwner || saving) return
     const nextTitle = title.trim().slice(0, 120)
     if (!nextTitle) {
-      showAppToast('Album title is required.', 'error')
+      showAppToast(t('album.titleRequired'), 'error')
       return
     }
     setSaving(true)
@@ -50,14 +52,14 @@ export default function AlbumHeader({ album, photoCount, isOwner, onAlbumUpdated
       })
       const body = (await res.json().catch(() => ({}))) as { error?: string; title?: string }
       if (!res.ok || !body.title) {
-        showAppToast(body.error ?? `Rename failed (${res.status})`, 'error')
+        showAppToast(body.error ?? t('album.renameFailed'), 'error')
         return
       }
       onAlbumUpdated({ title: body.title })
       setEditing(false)
-      showAppToast('Album renamed.')
+      showAppToast(t('album.renamed'))
     } catch (e) {
-      showAppToast(e instanceof Error ? e.message : 'Network error', 'error')
+      showAppToast(e instanceof Error ? e.message : t('common.networkError'), 'error')
     } finally {
       setSaving(false)
     }
@@ -92,10 +94,10 @@ export default function AlbumHeader({ album, photoCount, isOwner, onAlbumUpdated
                 className="hush-album-title-input min-w-0 flex-1 rounded-lg px-3 py-2 text-center text-lg font-bold focus:outline-none"
                 style={{ color: '#630826', background: '#FDFAF5', border: '1px solid #DDD5C5' }}
               />
-              <button type="button" onClick={saveTitle} disabled={saving} className="hush-press rounded-lg p-2 disabled:opacity-50" style={{ background: '#630826', color: '#FDFAF5' }} aria-label="Save album title">
+              <button type="button" onClick={saveTitle} disabled={saving} className="hush-press rounded-lg p-2 disabled:opacity-50" style={{ background: '#630826', color: '#FDFAF5' }} aria-label={t('album.saveTitle')}>
                 <Check className="h-4 w-4" />
               </button>
-              <button type="button" onClick={() => setEditing(false)} className="hush-press rounded-lg p-2" style={{ background: '#F5F0E8', color: '#7C5C3E', border: '1px solid #DDD5C5' }} aria-label="Cancel rename">
+              <button type="button" onClick={() => setEditing(false)} className="hush-press rounded-lg p-2" style={{ background: '#F5F0E8', color: '#7C5C3E', border: '1px solid #DDD5C5' }} aria-label={t('album.cancelRename')}>
                 <X className="h-4 w-4" />
               </button>
             </div>
@@ -112,7 +114,7 @@ export default function AlbumHeader({ album, photoCount, isOwner, onAlbumUpdated
               onPointerUp={clearHoldTimer}
               onPointerCancel={clearHoldTimer}
               onPointerLeave={clearHoldTimer}
-              title={isOwner ? 'Double-click to rename' : undefined}
+              title={isOwner ? t('album.dblclickRename') : undefined}
             >
               {album.title}
               {isOwner && (
@@ -125,8 +127,8 @@ export default function AlbumHeader({ album, photoCount, isOwner, onAlbumUpdated
                     openEditor()
                   }}
                   onPointerDown={(e) => e.stopPropagation()}
-                  aria-label="Rename album"
-                  title="Rename album"
+                  aria-label={t('album.rename')}
+                  title={t('album.rename')}
                 >
                   <Pencil className="h-3.5 w-3.5 opacity-65" aria-hidden="true" />
                 </button>
@@ -134,13 +136,13 @@ export default function AlbumHeader({ album, photoCount, isOwner, onAlbumUpdated
             </h1>
           )}
           <p className="hush-album-meta text-xs mt-0.5" style={{ color: '#7C5C3E' }}>
-            <span>{photoCount} photo{photoCount !== 1 ? 's' : ''}</span>
+            <span>{t('album.photos', { n: photoCount })}</span>
             <span aria-hidden="true"> · </span>
-            <span>Created {formatDate(album.created_at)}</span>
+            <span>{t('album.created', { date: formatDate(album.created_at) })}</span>
             {isOwner && (
               <>
                 <span className="hush-owner-dot" aria-hidden="true"> · </span>
-                <span className="hush-owner-pill font-semibold" style={{ color: '#1B3A6B' }}>Owner view</span>
+                <span className="hush-owner-pill font-semibold" style={{ color: '#1B3A6B' }}>{t('album.ownerView')}</span>
               </>
             )}
           </p>

@@ -6,6 +6,7 @@ import type { Album, Tier } from '@/types'
 import { stripExifFromJpeg, jpegOrientation } from '@/lib/exif'
 import { snapshotFileRobust } from '@/lib/file-read'
 import { showAppToast } from '@/components/AppToast'
+import { useT } from '@/i18n/LocaleProvider'
 import { detectKind, uploadCapsForTier, generateVideoPoster } from '@/lib/media'
 import {
   UPLOAD_CONCURRENCY_MOBILE,
@@ -1070,6 +1071,7 @@ type Props = {
 const FILE_ACCEPT = 'image/jpeg,image/png,image/gif,image/webp,image/heic,image/heif,.heic,.heif,video/mp4,video/quicktime,video/webm'
 
 export default function UploadZone({ album, userTier, onPhotosUploaded }: Props) {
+  const { t } = useT()
   const [entries, setEntries] = useState<FileEntry[]>([])
   const [isDragging, setIsDragging] = useState(false)
   const [isUploading, setIsUploading] = useState(false)
@@ -1328,10 +1330,10 @@ export default function UploadZone({ album, userTier, onPhotosUploaded }: Props)
         </div>
         <div className="text-center">
           <p className="text-sm sm:text-[0.95rem]" style={{ fontWeight: 600, color: '#630826' }}>
-            {isDragging ? 'Drop to upload' : 'Add photos & videos'}
+            {isDragging ? t('upload.drop') : t('upload.add')}
           </p>
           <p className="text-xs sm:text-[0.8rem]" style={{ color: '#8A7A66', marginTop: 2 }}>
-            Drag &amp; drop or <span style={{ color: '#630826', fontWeight: 600 }}>click to browse</span>
+            {t('upload.dragdrop')} <span style={{ color: '#630826', fontWeight: 600 }}>{t('upload.browse')}</span>
           </p>
         </div>
         {/* Format pills — hidden on mobile to keep the drop zone compact */}
@@ -1417,7 +1419,7 @@ export default function UploadZone({ album, userTier, onPhotosUploaded }: Props)
                       aria-label={`Retry ${entry.file.name}`}
                     >
                       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#FDFAF5" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="23 4 23 10 17 10" /><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" /></svg>
-                      <span className="mt-0.5 text-[10px] font-bold" style={{ color: '#FDFAF5' }}>Retry</span>
+                      <span className="mt-0.5 text-[10px] font-bold" style={{ color: '#FDFAF5' }}>{t('upload.retry')}</span>
                     </button>
                   )}
                 </div>
@@ -1429,13 +1431,13 @@ export default function UploadZone({ album, userTier, onPhotosUploaded }: Props)
           {!isUploading && activeCount === 0 && (doneCount > 0 || errorCount > 0) && (
             <div className="flex items-center justify-between mt-3 px-1">
               <span className="text-xs" style={{ color: '#7C6752' }}>
-                {doneCount > 0 && `${doneCount} uploaded`}
+                {doneCount > 0 && t('upload.uploaded', { n: doneCount })}
                 {doneCount > 0 && errorCount > 0 && ' · '}
-                {errorCount > 0 && `${errorCount} failed`}
+                {errorCount > 0 && t('upload.failed', { n: errorCount })}
               </span>
               {doneCount > 0 && (
                 <button type="button" onClick={dismissDone} className="text-xs font-semibold" style={{ color: '#630826' }}>
-                  Clear
+                  {t('upload.clear')}
                 </button>
               )}
             </div>

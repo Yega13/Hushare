@@ -20,6 +20,45 @@ export const en = {
   'home.errorName': 'Please give your album a name',
   'common.errorGeneric': 'Something went wrong. Please try again.',
 
+  // upload zone (guest upload UI)
+  'upload.add': 'Add photos & videos',
+  'upload.drop': 'Drop to upload',
+  'upload.dragdrop': 'Drag & drop or',
+  'upload.browse': 'click to browse',
+  'upload.uploaded': '{n} uploaded',
+  'upload.failed': '{n} failed',
+  'upload.retry': 'Retry',
+  'upload.clear': 'Clear',
+
+  // album header
+  'album.photos': '{n} photos',
+  'album.created': 'Created {date}',
+  'album.ownerView': 'Owner view',
+  'album.rename': 'Rename album',
+  'album.saveTitle': 'Save album title',
+  'album.cancelRename': 'Cancel rename',
+  'album.dblclickRename': 'Double-click to rename',
+  'album.titleRequired': 'Album title is required.',
+  'album.renameFailed': 'Rename failed.',
+  'album.renamed': 'Album renamed.',
+  'common.networkError': 'Network error',
+
+  // guest actions bar (view/share/download an album)
+  'guest.slideshow': 'Slideshow',
+  'guest.faceFinder': 'Face Finder',
+  'guest.downloadAll': 'Download all',
+  'guest.zipping': 'Zipping…',
+  'guest.share': 'Share',
+  'guest.shareAlbum': 'Share album',
+  'guest.shareVia': 'Send via messages, apps or copy',
+  'guest.copyLink': 'Copy link',
+  'guest.qr': 'QR code',
+  'guest.qrScan': 'Scan to open this album.',
+  'guest.close': 'Close',
+  'guest.linkCopied': 'Link copied.',
+  'guest.copyFail': 'Could not copy — please copy the link manually.',
+  'guest.noPhotos': 'No photos to show yet.',
+
   // "your albums on this device" recovery block
   'myAlbums.title': 'Your albums on this device',
   'myAlbums.subtitle': 'Albums you created here. Tap to manage — these links are private to you.',

@@ -5,6 +5,7 @@ import { createPortal } from 'react-dom'
 import Image from 'next/image'
 import { Check, Copy, Download, Loader2, Play, QrCode, ScanFace, Share2, X } from 'lucide-react'
 import { showAppToast } from '@/components/AppToast'
+import { useT } from '@/i18n/LocaleProvider'
 import { useIsNarrow } from '@/lib/useIsNarrow'
 import { useZipDownload } from '@/components/photo-grid/useZipDownload'
 import type { Album, Photo } from '@/types'
@@ -33,6 +34,7 @@ const btnBase: React.CSSProperties = {
 }
 
 export default function GuestActionsBar({ album, photos, shareUrl, onOpenSlideshow, onOpenFaceFinder }: Props) {
+  const { t } = useT()
   const { zipping, zipProgress, downloadZip } = useZipDownload(photos, album.title ?? '')
 
   // Face Finder button appears only when the owner enabled it and there are images to search.
@@ -80,10 +82,10 @@ export default function GuestActionsBar({ album, photos, shareUrl, onOpenSlidesh
     try {
       await navigator.clipboard.writeText(shareUrl)
       setCopied(true)
-      showAppToast('Link copied.')
+      showAppToast(t('guest.linkCopied'))
       setTimeout(() => setCopied(false), 2000)
     } catch {
-      showAppToast('Could not copy — please copy the link manually.', 'error')
+      showAppToast(t('guest.copyFail'), 'error')
     }
   }
 
@@ -103,14 +105,14 @@ export default function GuestActionsBar({ album, photos, shareUrl, onOpenSlidesh
           style={btnBase}
           onClick={() => {
             if (photos.length === 0) {
-              showAppToast('No photos to show yet.', 'error')
+              showAppToast(t('guest.noPhotos'), 'error')
               return
             }
             onOpenSlideshow()
           }}
         >
           <Play className="w-3.5 h-3.5" />
-          Slideshow
+          {t('guest.slideshow')}
         </button>
 
         {/* Find my photos — AI face finder (owner-enabled, Studio) */}
@@ -121,7 +123,7 @@ export default function GuestActionsBar({ album, photos, shareUrl, onOpenSlidesh
             onClick={onOpenFaceFinder}
           >
             <ScanFace className="w-3.5 h-3.5" />
-            Face Finder
+            {t('guest.faceFinder')}
           </button>
         )}
 
@@ -136,12 +138,12 @@ export default function GuestActionsBar({ album, photos, shareUrl, onOpenSlidesh
             {zipping ? (
               <>
                 <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                {zipProgress < 100 ? `${zipProgress}%` : 'Zipping…'}
+                {zipProgress < 100 ? `${zipProgress}%` : t('guest.zipping')}
               </>
             ) : (
               <>
                 <Download className="w-3.5 h-3.5" />
-                Download all
+                {t('guest.downloadAll')}
               </>
             )}
           </button>
@@ -155,15 +157,15 @@ export default function GuestActionsBar({ album, photos, shareUrl, onOpenSlidesh
             onClick={() => setShareOpen((v) => !v)}
           >
             <Share2 className="w-3.5 h-3.5" />
-            Share
+            {t('guest.share')}
           </button>
 
           {shareOpen && (() => {
             const menuInner = (
               <>
               <div className="flex items-center justify-between mb-3">
-                <span className="font-semibold text-sm" style={{ color: '#630826' }}>Share album</span>
-                <button type="button" onClick={() => setShareOpen(false)} style={{ color: '#A89880' }} aria-label="Close">
+                <span className="font-semibold text-sm" style={{ color: '#630826' }}>{t('guest.shareAlbum')}</span>
+                <button type="button" onClick={() => setShareOpen(false)} style={{ color: '#A89880' }} aria-label={t('guest.close')}>
                   <X className="w-4 h-4" />
                 </button>
               </div>
@@ -174,8 +176,8 @@ export default function GuestActionsBar({ album, photos, shareUrl, onOpenSlidesh
                 onClick={handleNativeShare}
               >
                 <span>
-                  <span className="block text-sm font-semibold" style={{ color: '#630826' }}>Share album</span>
-                  <span className="block text-xs" style={{ color: '#8B6F4E' }}>Send via messages, apps or copy</span>
+                  <span className="block text-sm font-semibold" style={{ color: '#630826' }}>{t('guest.shareAlbum')}</span>
+                  <span className="block text-xs" style={{ color: '#8B6F4E' }}>{t('guest.shareVia')}</span>
                 </span>
                 <Share2 className="w-4 h-4 flex-none" style={{ color: '#7C5C3E' }} />
               </button>
@@ -186,7 +188,7 @@ export default function GuestActionsBar({ album, photos, shareUrl, onOpenSlidesh
                 onClick={copyLink}
               >
                 <span>
-                  <span className="block text-sm font-semibold" style={{ color: '#630826' }}>Copy link</span>
+                  <span className="block text-sm font-semibold" style={{ color: '#630826' }}>{t('guest.copyLink')}</span>
                   <span className="block text-xs truncate" style={{ color: '#8B6F4E', maxWidth: 200 }}>{shareUrl}</span>
                 </span>
                 {copied ? <Check className="w-4 h-4" style={{ color: '#630826' }} /> : <Copy className="w-4 h-4" style={{ color: '#7C5C3E' }} />}
@@ -198,9 +200,9 @@ export default function GuestActionsBar({ album, photos, shareUrl, onOpenSlidesh
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-semibold flex items-center gap-2" style={{ color: '#630826' }}>
                       <QrCode className="w-4 h-4" />
-                      QR code
+                      {t('guest.qr')}
                     </p>
-                    <p className="text-xs leading-relaxed" style={{ color: '#7C5C3E' }}>Scan to open this album.</p>
+                    <p className="text-xs leading-relaxed" style={{ color: '#7C5C3E' }}>{t('guest.qrScan')}</p>
                   </div>
                 </div>
               </div>
