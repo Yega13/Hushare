@@ -1,6 +1,24 @@
+/* Braind Amanor — branded Armenian typeface (Eduard Kankanyan, free for commercial use).
+   Self-hosted so it passes the strict font-src 'self' CSP. Only fetched when the page is in
+   Armenian (see the html[lang="hy"] override below), so EN/RU visitors never download it. */
+@font-face {
+  font-family: 'Braind Amanor';
+  src: url('/fonts/BraindAmanor.otf') format('opentype');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
 :root {
   --background: #FDFAF5;
   --foreground: #630826;
+}
+
+/* Armenian gets Braind Amanor everywhere by overriding the shared font variables — headings
+   (var(--font-serif)) and body/UI (var(--font-sans)) both pick it up automatically. */
+html[lang="hy"] {
+  --font-serif: 'Braind Amanor', Georgia, serif;
+  --font-sans: 'Braind Amanor', var(--font-geist-sans), system-ui, sans-serif;
 }
 
 @theme inline {
