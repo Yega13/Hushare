@@ -20,7 +20,8 @@ import { getServerLocale } from '@/i18n/server'
 import { getDictionary } from '@/i18n/get-dictionary'
 import { LANGUAGE_UI_ENABLED } from '@/i18n/config'
 
-function AccountNav() {
+async function AccountNav() {
+  const dict = getDictionary(await getServerLocale())
   return (
     <nav
       className="hush-nav sticky top-0 z-50 flex items-center justify-between"
@@ -42,10 +43,10 @@ function AccountNav() {
         />
       </Link>
       <HamburgerMenu>
-        <Link href="/" className="text-sm font-medium hover:underline" style={{ color: '#630826' }}>Home</Link>
-        <Link href="/pricing" className="text-sm font-medium hover:underline" style={{ color: '#630826' }}>Pricing</Link>
-        <Link href="/about" className="text-sm font-medium hover:underline" style={{ color: '#630826' }}>About</Link>
-        <Link href="/support" className="text-sm font-medium hover:underline" style={{ color: '#630826' }}>Support</Link>
+        <Link href="/" className="text-sm font-medium hover:underline" style={{ color: '#630826' }}>{dict['nav.home']}</Link>
+        <Link href="/pricing" className="text-sm font-medium hover:underline" style={{ color: '#630826' }}>{dict['nav.pricing']}</Link>
+        <Link href="/about" className="text-sm font-medium hover:underline" style={{ color: '#630826' }}>{dict['nav.about']}</Link>
+        <Link href="/support" className="text-sm font-medium hover:underline" style={{ color: '#630826' }}>{dict['nav.support']}</Link>
       </HamburgerMenu>
     </nav>
   )
@@ -150,7 +151,7 @@ export default async function AccountPage({ searchParams }: Props) {
     : isStudio
     ? ['Max Collections', 'Custom album backgrounds', 'Password protection', 'Custom URLs', '200 MB uploads']
     : ['Custom album backgrounds', 'Password protection', 'Custom URLs', '200 MB uploads']
-  const nextLabel = subscription?.cancel_at_period_end ? 'Access ends' : 'Next renewal'
+  const nextLabel = subscription?.cancel_at_period_end ? dict['acct.accessEnds'] : dict['acct.nextRenewal']
 
   let admin: ReturnType<typeof createAdminClient>
   try {
@@ -162,10 +163,10 @@ export default async function AccountPage({ searchParams }: Props) {
         <AccountNav />
         <main className="flex items-center justify-center px-4 py-16">
           <div className="max-w-md w-full rounded-2xl p-8 text-center" style={{ background: '#FFFFFF', border: '1px solid #DDD5C5' }}>
-            <p className="text-xs uppercase mb-3" style={{ color: '#8B6F4E', letterSpacing: '0.18em', fontWeight: 600 }}>Service error</p>
-            <h1 className="text-2xl font-bold mb-3" style={{ color: '#630826', fontFamily: 'var(--font-serif)' }}>Dashboard temporarily unavailable</h1>
+            <p className="text-xs uppercase mb-3" style={{ color: '#8B6F4E', letterSpacing: '0.18em', fontWeight: 600 }}>{dict['acct.serviceError']}</p>
+            <h1 className="text-2xl font-bold mb-3" style={{ color: '#630826', fontFamily: 'var(--font-serif)' }}>{dict['acct.dashUnavailable']}</h1>
             <p className="text-sm leading-relaxed mb-5" style={{ color: '#5C4A3C' }}>
-              We&apos;re having trouble connecting to our database. Your albums and data are safe. Please try again in a moment.
+              {dict['acct.dbTrouble']}
             </p>
             <SignOutButton />
           </div>
@@ -197,10 +198,10 @@ export default async function AccountPage({ searchParams }: Props) {
         <AccountNav />
         <main className="flex items-center justify-center px-4 py-16">
           <div className="max-w-md w-full rounded-2xl p-8 text-center" style={{ background: '#FFFFFF', border: '1px solid #DDD5C5' }}>
-            <p className="text-xs uppercase mb-3" style={{ color: '#8B6F4E', letterSpacing: '0.18em', fontWeight: 600 }}>Service error</p>
-            <h1 className="text-2xl font-bold mb-3" style={{ color: '#630826', fontFamily: 'var(--font-serif)' }}>Dashboard temporarily unavailable</h1>
+            <p className="text-xs uppercase mb-3" style={{ color: '#8B6F4E', letterSpacing: '0.18em', fontWeight: 600 }}>{dict['acct.serviceError']}</p>
+            <h1 className="text-2xl font-bold mb-3" style={{ color: '#630826', fontFamily: 'var(--font-serif)' }}>{dict['acct.dashUnavailable']}</h1>
             <p className="text-sm leading-relaxed mb-5" style={{ color: '#5C4A3C' }}>
-              We&apos;re having trouble loading your data. Your albums and data are safe. Please try again in a moment.
+              {dict['acct.dbTrouble']}
             </p>
             <SignOutButton />
           </div>
@@ -216,10 +217,10 @@ export default async function AccountPage({ searchParams }: Props) {
         <AccountNav />
         <main className="flex items-center justify-center px-4 py-16">
           <div className="max-w-md w-full rounded-2xl p-8 text-center" style={{ background: '#FFFFFF', border: '1px solid #DDD5C5' }}>
-            <p className="text-xs uppercase mb-3" style={{ color: '#8B6F4E', letterSpacing: '0.18em', fontWeight: 600 }}>Service error</p>
-            <h1 className="text-2xl font-bold mb-3" style={{ color: '#630826', fontFamily: 'var(--font-serif)' }}>Dashboard temporarily unavailable</h1>
+            <p className="text-xs uppercase mb-3" style={{ color: '#8B6F4E', letterSpacing: '0.18em', fontWeight: 600 }}>{dict['acct.serviceError']}</p>
+            <h1 className="text-2xl font-bold mb-3" style={{ color: '#630826', fontFamily: 'var(--font-serif)' }}>{dict['acct.dashUnavailable']}</h1>
             <p className="text-sm leading-relaxed mb-5" style={{ color: '#5C4A3C' }}>
-              We&apos;re having trouble loading your albums. Your data is safe. Please try again in a moment.
+              {dict['acct.dbTrouble']}
             </p>
             <SignOutButton />
           </div>
@@ -300,16 +301,16 @@ export default async function AccountPage({ searchParams }: Props) {
           >
             <div className="flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
               <div>
-                <p className="text-xs mb-3 uppercase tracking-[0.18em]" style={{ color: '#8B6F4E', fontWeight: 600 }}>Account</p>
+                <p className="text-xs mb-3 uppercase tracking-[0.18em]" style={{ color: '#8B6F4E', fontWeight: 600 }}>{dict['acct.account']}</p>
                 <h1 className="text-3xl sm:text-4xl font-bold mb-3" style={{ color: '#630826', fontFamily: 'var(--font-serif)' }}>
-                  Your Hushare workspace
+                  {dict['acct.workspace']}
                 </h1>
                 <p className="text-sm break-all" style={{ color: '#5C4A3C' }}>
-                  Signed in as <strong>{user.email}</strong>
+                  {dict['acct.signedInAs']} <strong>{user.email}</strong>
                 </p>
               </div>
               <div className="rounded-xl px-4 py-3" style={{ background: '#F5F0E8', border: '1px solid #DDD5C5' }}>
-                <p className="text-xs uppercase tracking-wide mb-1" style={{ color: '#8B6F4E' }}>Current access</p>
+                <p className="text-xs uppercase tracking-wide mb-1" style={{ color: '#8B6F4E' }}>{dict['acct.currentAccess']}</p>
                 <p className="font-semibold" style={{ color: '#630826' }}>{planName}</p>
               </div>
             </div>
@@ -338,7 +339,7 @@ export default async function AccountPage({ searchParams }: Props) {
             >
               <div className="flex items-start justify-between gap-4 mb-5">
                 <div>
-                  <p className="text-xs uppercase tracking-wide mb-1" style={{ color: '#8B6F4E' }}>Plan</p>
+                  <p className="text-xs uppercase tracking-wide mb-1" style={{ color: '#8B6F4E' }}>{dict['acct.plan']}</p>
                   <h2 className="text-xl font-semibold" style={{ color: '#630826', fontFamily: 'var(--font-serif)' }}>{planName}</h2>
                 </div>
                 <span className="rounded-full px-3 py-1 text-xs font-semibold capitalize" style={{ background: '#F6E9EE', color: '#630826' }}>
@@ -348,17 +349,17 @@ export default async function AccountPage({ searchParams }: Props) {
 
               <dl className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm mb-5" style={{ color: '#5C4A3C' }}>
                 <div className="rounded-xl p-4" style={{ background: '#FDFAF5', border: '1px solid #E8E0D2' }}>
-                  <dt className="text-xs uppercase tracking-wide mb-1" style={{ color: '#8B6F4E' }}>Uploads</dt>
+                  <dt className="text-xs uppercase tracking-wide mb-1" style={{ color: '#8B6F4E' }}>{dict['acct.uploads']}</dt>
                   <dd className="font-semibold" style={{ color: '#630826' }}>
-                    {isAdmin ? 'Everything enabled' : subscription ? 'Up to 200 MB' : 'Studio limits enabled'}
+                    {isAdmin ? dict['acct.everythingEnabled'] : subscription ? dict['acct.upTo200'] : dict['acct.studioLimits']}
                   </dd>
                 </div>
                 <div className="rounded-xl p-4" style={{ background: '#FDFAF5', border: '1px solid #E8E0D2' }}>
                   <dt className="text-xs uppercase tracking-wide mb-1" style={{ color: '#8B6F4E' }}>
-                    {periodEnd ? nextLabel : 'Billing'}
+                    {periodEnd ? nextLabel : dict['acct.billing']}
                   </dt>
                   <dd className="font-semibold" style={{ color: '#630826' }}>
-                    {isAdmin ? 'Admin override' : periodEnd ?? 'No active paid subscription'}
+                    {isAdmin ? dict['acct.adminOverride'] : periodEnd ?? dict['acct.noSub']}
                   </dd>
                 </div>
               </dl>
@@ -378,7 +379,7 @@ export default async function AccountPage({ searchParams }: Props) {
                     className="w-full font-semibold rounded-xl py-3 text-sm transition hover:opacity-90"
                     style={{ background: '#630826', color: '#FDFAF5' }}
                   >
-                    Manage subscription
+                    {dict['acct.manageSub']}
                   </button>
                 </form>
               )}
@@ -388,10 +389,10 @@ export default async function AccountPage({ searchParams }: Props) {
               className="hush-account-quick hush-hover-lift rounded-2xl p-6"
               style={{ background: '#FBF4E4', border: '1px solid rgba(196,166,120,0.35)' }}
             >
-              <p className="text-xs uppercase tracking-wide mb-2" style={{ color: '#8B6F4E' }}>Quick actions</p>
-              <h2 className="text-xl font-semibold mb-3" style={{ color: '#630826', fontFamily: 'var(--font-serif)' }}>Keep building</h2>
+              <p className="text-xs uppercase tracking-wide mb-2" style={{ color: '#8B6F4E' }}>{dict['acct.quickActions']}</p>
+              <h2 className="text-xl font-semibold mb-3" style={{ color: '#630826', fontFamily: 'var(--font-serif)' }}>{dict['acct.keepBuilding']}</h2>
               <p className="text-sm leading-relaxed mb-5" style={{ color: '#5C4A3C' }}>
-                Create new albums, open Studio pages, or get help without hunting around the site.
+                {dict['acct.keepBuildingDesc']}
               </p>
               <div className="grid gap-2">
                 <Link
@@ -399,14 +400,14 @@ export default async function AccountPage({ searchParams }: Props) {
                   className="inline-flex w-full items-center justify-center rounded-xl py-3 text-sm font-semibold transition hover:opacity-90"
                   style={{ background: '#630826', color: '#FDFAF5' }}
                 >
-                  Create a new album
+                  {dict['acct.createNew']}
                 </Link>
                 <Link
                   href="/support"
                   className="inline-flex w-full items-center justify-center rounded-xl py-3 text-sm font-semibold transition hover:opacity-90"
                   style={{ background: '#FFFFFF', border: '1px solid #DDD5C5', color: '#630826' }}
                 >
-                  Contact support
+                  {dict['acct.contactSupport']}
                 </Link>
               </div>
             </section>
@@ -429,12 +430,12 @@ export default async function AccountPage({ searchParams }: Props) {
             <div className="rounded-2xl p-6" style={{ background: '#FFFFFF', border: '1px solid #DDD5C5', boxShadow: '0 4px 32px rgba(99,8,38,0.08)' }}>
               <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                 <div>
-                  <p className="text-xs uppercase tracking-wide mb-1" style={{ color: '#8B6F4E' }}>Collections</p>
-                  <h2 className="text-xl font-semibold" style={{ color: '#630826', fontFamily: 'var(--font-serif)' }}>Studio pages</h2>
+                  <p className="text-xs uppercase tracking-wide mb-1" style={{ color: '#8B6F4E' }}>{dict['acct.collections']}</p>
+                  <h2 className="text-xl font-semibold" style={{ color: '#630826', fontFamily: 'var(--font-serif)' }}>{dict['acct.studioPages']}</h2>
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
                   <span className="text-xs rounded-full px-3 py-1" style={{ background: '#F5F0E8', color: '#7C5C3E', border: '1px solid #E8E0D2' }}>
-                    {collectionsWithCounts.length} total
+                    {collectionsWithCounts.length} {dict['acct.total']}
                   </span>
                   {isStudio && <CreateCollectionButton />}
                 </div>
@@ -465,9 +466,9 @@ export default async function AccountPage({ searchParams }: Props) {
                 ))}
                 {collectionsWithCounts.length === 0 && (
                   <div className="rounded-xl px-4 py-6 text-center" style={{ background: '#FDFAF5', border: '1px solid #E8E0D2' }}>
-                    <p className="font-semibold" style={{ color: '#630826' }}>No collections yet</p>
+                    <p className="font-semibold" style={{ color: '#630826' }}>{dict['acct.noCollections']}</p>
                     <p className="mx-auto mt-2 max-w-sm text-sm leading-relaxed" style={{ color: '#5C4A3C' }}>
-                      Create your first collection above, then add albums to it from each album&apos;s Settings page.
+                      {dict['acct.noCollectionsDesc']}
                     </p>
                   </div>
                 )}
@@ -476,8 +477,8 @@ export default async function AccountPage({ searchParams }: Props) {
 
             <div className="rounded-2xl p-6" style={{ background: '#FFFFFF', border: '1px solid #DDD5C5', boxShadow: '0 4px 32px rgba(99,8,38,0.08)' }}>
               <div className="mb-5">
-                <p className="text-xs uppercase tracking-wide mb-1" style={{ color: '#8B6F4E' }}>Albums</p>
-                <h2 className="text-xl font-semibold" style={{ color: '#630826', fontFamily: 'var(--font-serif)' }}>Recently linked</h2>
+                <p className="text-xs uppercase tracking-wide mb-1" style={{ color: '#8B6F4E' }}>{dict['acct.albums']}</p>
+                <h2 className="text-xl font-semibold" style={{ color: '#630826', fontFamily: 'var(--font-serif)' }}>{dict['acct.recentlyLinked']}</h2>
               </div>
               <div className="space-y-3">
                 {recentAlbums.map((album) => (
@@ -488,7 +489,7 @@ export default async function AccountPage({ searchParams }: Props) {
                           <Image src={album.cover_url} alt="" fill sizes="56px" className="object-cover" unoptimized />
                         ) : (
                           <span className="flex h-full w-full items-center justify-center text-[10px] font-semibold" style={{ color: '#8B6F4E' }}>
-                            Empty
+                            {dict['acct.empty']}
                           </span>
                         )}
                       </span>
@@ -505,16 +506,16 @@ export default async function AccountPage({ searchParams }: Props) {
                 ))}
                 {recentAlbums.length === 0 && (
                   <div className="rounded-xl px-4 py-6 text-center" style={{ background: '#FDFAF5', border: '1px solid #E8E0D2' }}>
-                    <p className="font-semibold" style={{ color: '#630826' }}>No albums yet</p>
+                    <p className="font-semibold" style={{ color: '#630826' }}>{dict['acct.noAlbums']}</p>
                     <p className="mx-auto mt-2 max-w-sm text-sm leading-relaxed" style={{ color: '#5C4A3C' }}>
-                      Albums you create while signed in appear here automatically.
+                      {dict['acct.noAlbumsDesc']}
                     </p>
                     <Link
                       href="/"
                       className="mt-4 inline-flex items-center justify-center rounded-xl px-4 py-2 text-sm font-semibold transition hover:opacity-90"
                       style={{ background: '#630826', color: '#FDFAF5' }}
                     >
-                      Start one now
+                      {dict['acct.startNow']}
                     </Link>
                   </div>
                 )}
@@ -525,13 +526,11 @@ export default async function AccountPage({ searchParams }: Props) {
           {/* Tips */}
           <section className="hush-account-tips grid grid-cols-1 md:grid-cols-3 gap-4 mt-6 mb-6">
             {[
-              ['Customize albums', 'Change album colors and stock backgrounds from each owner toolbar.'],
-              ['Protect important links', 'Use passwords and custom URLs on Pro and Studio albums.'],
+              [dict['acct.tip1.title'], dict['acct.tip1.desc']],
+              [dict['acct.tip2.title'], dict['acct.tip2.desc']],
               [
-                isStudio ? 'Build Collections' : 'Upgrade for Collections',
-                isStudio
-                  ? 'Create public /c/... pages that group related albums.'
-                  : 'Collections are available on Max.',
+                isStudio ? dict['acct.tip3.title.studio'] : dict['acct.tip3.title.free'],
+                isStudio ? dict['acct.tip3.desc.studio'] : dict['acct.tip3.desc.free'],
               ],
             ].map(([title, copy]) => (
               <div key={title} className="hush-hover-lift rounded-2xl p-5" style={{ background: '#FFFFFF', border: '1px solid #DDD5C5' }}>
