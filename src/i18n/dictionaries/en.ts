@@ -30,6 +30,56 @@ export const en = {
   'upload.retry': 'Retry',
   'upload.clear': 'Clear',
 
+  // nav
+  'nav.pricing': 'Pricing',
+  'nav.about': 'About',
+  'nav.collabs': 'Collabs',
+  'nav.support': 'Support',
+
+  // home — how it works
+  'home.howItWorks': 'how it works',
+  'home.step1.caption': '“Name it.”',
+  'home.step1.label': 'First',
+  'home.step1.desc': 'Give your album a name. You get a private link you own — no account, no app.',
+  'home.step2.caption': '“Share it.”',
+  'home.step2.label': 'Then',
+  'home.step2.desc': 'Text it, print a QR for the table, drop it in the group chat. One link, everyone in.',
+  'home.step3.caption': '“Keep it.”',
+  'home.step3.label': 'As long as you want',
+  'home.step3.desc': 'Photos flow in from everyone who came. Free albums stay put — untouched for 3 months, they quietly retire. Active ones live on.',
+
+  // home — FAQ
+  'home.faqTitle': 'FAQ',
+  'home.stillCurious': 'Still curious? Write to us at',
+  'home.faq.q1': 'Do guests need an account to add photos?',
+  'home.faq.a1': 'No. Anyone with your album link can view and add photos — no sign-up, no app, no download. Hushare is designed so the only friction between a guest and the album is tapping the link.',
+  'home.faq.q2': 'How long does Hushare keep my photos?',
+  'home.faq.a2': 'Free albums are preserved as long as they remain active. If an album sits untouched for 3 months, it is automatically retired and its media is deleted (we email you a warning first so you can download everything). Paid tiers remove this inactivity rule, and keep your albums for a year even after you cancel.',
+  'home.faq.q3': 'Is Hushare really free?',
+  'home.faq.a3': 'Yes. Free albums are free to create, share, upload to, and download from, with no credit card required. Paid tiers add custom URLs, passwords, larger uploads, Studio Collections, and no inactivity retirement.',
+  'home.faq.q4': 'Can I customize how an album looks?',
+  'home.faq.a4': 'Yes. Owners can choose a background color, a stock photo background, or upload their own background image from album settings. Saved backgrounds are part of the album, so guests see the same look.',
+  'home.faq.q5': 'What are Collections?',
+  'home.faq.a5': 'Collections are Studio-only pages that group several albums under one public link, useful for photographers, event planners, or families managing related albums.',
+  'home.faq.q6': 'Can I use a QR code at a wedding or event?',
+  'home.faq.a6': 'Yes. Every album has a unique link you can turn into a QR code and print on table cards, invitations, programs, or a welcome sign. Guests scan it and start adding photos instantly.',
+  'home.faq.q7': 'Can I download all the photos at once?',
+  'home.faq.a7': 'Yes. From the owner view of your album, you can download the full collection as a single ZIP file — originals, not compressed thumbnails.',
+  'home.faq.q8': 'Who can see my album?',
+  'home.faq.a8': 'Only people with the link. Albums are unlisted — they are not indexed by search engines and cannot be discovered by browsing the site. Share the link only with the people you want to invite.',
+  'home.faq.q9': 'What happens if I lose my owner link?',
+  'home.faq.a9': 'The owner link is how Hushare recognises you as the album creator. Bookmark it as soon as you create an album, or forward it to yourself. If you do lose it, contact us with your album name and approximate creation date and we will verify you manually.',
+  'home.faq.q10': 'What photo formats and sizes are supported?',
+  'home.faq.a10': 'Free albums support JPG, PNG, HEIC, and WebP images up to 25 MB each, plus MP4, MOV, or WebM videos up to 50 MB. Pro albums raise this to 200 MB photos and 1 GB HD video (Studio up to 4 GB).',
+
+  // home — closing CTA
+  'home.cta.eyebrow': 'To — the keeper of moments',
+  'home.cta.title': 'Start your first shared album.',
+  'home.cta.desc': 'Start free. One link, any number of guests, no app to install. Active albums stay available; quiet free albums retire after 3 months.',
+  'home.cta.love': '— with love, from Yerevan',
+  'home.cta.kept': 'Kept',
+  'home.scrollCta': 'Create your album',
+
   // owner toolbar / album settings
   'ot.settings': 'Album settings',
   'ot.settingsSub': 'Share, customize, protect, and organize this album.',

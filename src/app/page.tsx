@@ -6,93 +6,18 @@ import FaqList from '@/components/FaqList'
 import HomeHeroInteractive from '@/components/HomeHeroInteractive'
 import HomeScrollButton from '@/components/HomeScrollButton'
 import MyDeviceAlbums from '@/components/MyDeviceAlbums'
+import { getServerLocale } from '@/i18n/server'
+import { getDictionary } from '@/i18n/get-dictionary'
+import type { DictKey } from '@/i18n/dictionaries/en'
 
 const NATURE_IMG = '/hero-nature.jpg'
 
-const homeFaq = [
-  {
-    q: 'Do guests need an account to add photos?',
-    a: (
-      <>
-        No. Anyone with your album link can view and add photos - <strong className="font-semibold" style={{ color: '#630826' }}>no sign-up</strong>, no app, no download. Hushare is designed so the only friction between a guest and the album is tapping the link.
-      </>
-    ),
-  },
-  {
-    q: 'How long does Hushare keep my photos?',
-    a: (
-      <>
-        Free albums are preserved as long as they remain active. If an album sits untouched for <strong className="font-semibold" style={{ color: '#630826' }}>3 months</strong>, it is automatically retired and its media is deleted (we email you a warning first so you can download everything). Paid tiers remove this inactivity rule, and keep your albums for a year even after you cancel.
-      </>
-    ),
-  },
-  {
-    q: 'Is Hushare really free?',
-    a: (
-      <>
-        Yes. Free albums are free to create, share, upload to, and download from, with no credit card required. Paid tiers add custom URLs, passwords, larger uploads, Studio Collections, and no inactivity retirement.
-      </>
-    ),
-  },
-  {
-    q: 'Can I customize how an album looks?',
-    a: (
-      <>
-        Yes. Owners can choose a background color, a stock photo background, or upload their own background image from album settings. Saved backgrounds are part of the album, so guests see the same look.
-      </>
-    ),
-  },
-  {
-    q: 'What are Collections?',
-    a: (
-      <>
-        Collections are Studio-only pages that group several albums under one public link, useful for photographers, event planners, or families managing related albums.
-      </>
-    ),
-  },
-  {
-    q: 'Can I use a QR code at a wedding or event?',
-    a: (
-      <>
-        Yes. Every album has a unique link you can turn into a <strong className="font-semibold" style={{ color: '#630826' }}>QR code</strong> and print on table cards, invitations, programs, or a welcome sign. Guests scan it and start adding photos instantly.
-      </>
-    ),
-  },
-  {
-    q: 'Can I download all the photos at once?',
-    a: (
-      <>
-        Yes. From the owner view of your album, you can download the full collection as a single <strong className="font-semibold" style={{ color: '#630826' }}>ZIP</strong> file - <strong className="font-semibold" style={{ color: '#630826' }}>originals</strong>, not compressed thumbnails.
-      </>
-    ),
-  },
-  {
-    q: 'Who can see my album?',
-    a: (
-      <>
-        Only people with the link. Albums are <strong className="font-semibold" style={{ color: '#630826' }}>unlisted</strong> - they are not indexed by search engines and cannot be discovered by browsing the site. Share the link only with the people you want to invite.
-      </>
-    ),
-  },
-  {
-    q: 'What happens if I lose my owner link?',
-    a: (
-      <>
-        The owner link is how Hushare recognises you as the album creator. <strong className="font-semibold" style={{ color: '#630826' }}>Bookmark it</strong> as soon as you create an album, or forward it to yourself. If you do lose it, contact us with your album name and approximate creation date and we will verify you manually.
-      </>
-    ),
-  },
-  {
-    q: 'What photo formats and sizes are supported?',
-    a: (
-      <>
-        Free albums support JPG, PNG, HEIC, and WebP images up to <strong className="font-semibold" style={{ color: '#630826' }}>25 MB</strong> each, plus MP4, MOV, or WebM videos up to <strong className="font-semibold" style={{ color: '#630826' }}>50 MB</strong>. Pro albums raise this to <strong className="font-semibold" style={{ color: '#630826' }}>200 MB</strong> photos and <strong className="font-semibold" style={{ color: '#630826' }}>1 GB</strong> HD video (Studio up to 4 GB).
-      </>
-    ),
-  },
-]
-
-export default function HomePage() {
+export default async function HomePage() {
+  const dict = getDictionary(await getServerLocale())
+  const homeFaq = Array.from({ length: 10 }, (_, i) => ({
+    q: dict[`home.faq.q${i + 1}` as DictKey],
+    a: dict[`home.faq.a${i + 1}` as DictKey],
+  }))
   return (
     <main style={{ background: '#FDFAF5', fontFamily: 'var(--font-sans)' }} className="min-h-screen">
 
@@ -118,16 +43,16 @@ export default function HomePage() {
         </Link>
         <HamburgerMenu>
           <Link href="/pricing" className="text-sm font-medium hover:underline" style={{ color: '#630826' }}>
-            Pricing
+            {dict['nav.pricing']}
           </Link>
           <Link href="/about" className="text-sm font-medium hover:underline" style={{ color: '#630826' }}>
-            About
+            {dict['nav.about']}
           </Link>
           <Link href="/collabs" className="text-sm font-medium hover:underline" style={{ color: '#630826' }}>
-            Collabs
+            {dict['nav.collabs']}
           </Link>
           <Link href="/support" className="text-sm font-medium hover:underline" style={{ color: '#630826' }}>
-            Support
+            {dict['nav.support']}
           </Link>
           <AccountNavLink />
         </HamburgerMenu>
@@ -183,7 +108,7 @@ export default function HomePage() {
       <div className="hush-container py-12">
         <div className="flex items-center gap-6">
           <div className="flex-1 h-px" style={{ background: '#E8E0D0' }} />
-          <p className="text-sm italic" style={{ color: '#B0A090', fontFamily: 'var(--font-serif)', whiteSpace: 'nowrap' }}>how it works</p>
+          <p className="text-sm italic" style={{ color: '#B0A090', fontFamily: 'var(--font-serif)', whiteSpace: 'nowrap' }}>{dict['home.howItWorks']}</p>
           <div className="flex-1 h-px" style={{ background: '#E8E0D0' }} />
         </div>
       </div>
@@ -196,9 +121,9 @@ export default function HomePage() {
               lift: 0,
               tapeColor: 'rgba(196, 152, 96, 0.45)',
               captionColor: '#7C4A2D',
-              caption: '"Name it."',
-              label: 'First',
-              desc: 'Give your album a name. You get a private link you own - no account, no app.',
+              caption: dict['home.step1.caption'],
+              label: dict['home.step1.label'],
+              desc: dict['home.step1.desc'],
               image: '/how-it-works-1.jpg',
               alt: 'Photo card representing a newly named Hushare album',
             },
@@ -207,9 +132,9 @@ export default function HomePage() {
               lift: 32,
               tapeColor: 'rgba(120, 150, 110, 0.4)',
               captionColor: '#630826',
-              caption: '"Share it."',
-              label: 'Then',
-              desc: 'Text it, print a QR for the table, drop it in the group chat. One link, everyone in.',
+              caption: dict['home.step2.caption'],
+              label: dict['home.step2.label'],
+              desc: dict['home.step2.desc'],
               image: '/shareit.jpg',
               alt: 'Photo card representing a shared Hushare album link',
             },
@@ -218,9 +143,9 @@ export default function HomePage() {
               lift: 12,
               tapeColor: 'rgba(120, 135, 170, 0.4)',
               captionColor: '#1B3A6B',
-              caption: '"Keep it."',
-              label: 'As long as you want',
-              desc: 'Photos flow in from everyone who came. Free albums stay put - untouched for a year, they quietly retire. Active ones live on.',
+              caption: dict['home.step3.caption'],
+              label: dict['home.step3.label'],
+              desc: dict['home.step3.desc'],
               image: '/how-it-works-3.jpg',
               alt: 'Photo card representing a kept Hushare album',
             },
@@ -305,7 +230,7 @@ export default function HomePage() {
               lineHeight: 1,
             }}
           >
-            FAQ
+            {dict['home.faqTitle']}
           </p>
           <div className="flex-1 h-px" style={{ background: '#E8E0D0' }} />
         </div>
@@ -329,7 +254,7 @@ export default function HomePage() {
           className="text-center text-sm mt-8 italic"
           style={{ color: '#8B6F4E', fontFamily: 'var(--font-serif)' }}
         >
-          Still curious? Write to us at <span style={{ color: '#630826', fontWeight: 600 }}>husharesupport@gmail.com</span>
+          {dict['home.stillCurious']} <span style={{ color: '#630826', fontWeight: 600 }}>husharesupport@gmail.com</span>
         </p>
       </section>
 
@@ -410,7 +335,7 @@ export default function HomePage() {
                     className="text-[10px] tracking-[0.2em] uppercase"
                     style={{ color: '#7C4A2D', fontFamily: 'var(--font-serif)' }}
                   >
-                    Kept - {new Date().getFullYear()}
+                    {dict['home.cta.kept']} - {new Date().getFullYear()}
                   </span>
                 </div>
 
@@ -418,7 +343,7 @@ export default function HomePage() {
                   className="text-[11px] uppercase mb-3"
                   style={{ color: '#8B6F4E', letterSpacing: '0.22em', fontWeight: 600 }}
                 >
-                  To - the keeper of moments
+                  {dict['home.cta.eyebrow']}
                 </p>
 
                 <h2
@@ -431,7 +356,7 @@ export default function HomePage() {
                     fontWeight: 700,
                   }}
                 >
-                  Start your first<br />shared album.
+                  {dict['home.cta.title']}
                 </h2>
 
                 <div
@@ -443,8 +368,7 @@ export default function HomePage() {
                   className="text-sm leading-relaxed"
                   style={{ color: '#5C4A3C', maxWidth: '24rem' }}
                 >
-                  Start free. One link, any number of guests, no
-                  app to install. Active albums stay available; quiet free albums retire after a year.
+                  {dict['home.cta.desc']}
                 </p>
 
                 <HomeScrollButton />
@@ -456,7 +380,7 @@ export default function HomePage() {
                     fontFamily: 'var(--font-serif)',
                   }}
                 >
-                  - with love, from Yerevan
+                  {dict['home.cta.love']}
                 </p>
               </div>
             </div>

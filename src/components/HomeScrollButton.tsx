@@ -1,8 +1,10 @@
 'use client'
 
 import { ArrowRight } from 'lucide-react'
+import { useT } from '@/i18n/LocaleProvider'
 
 export default function HomeScrollButton() {
+  const { t } = useT()
   return (
     <button
       type="button"
@@ -16,7 +18,7 @@ export default function HomeScrollButton() {
         boxShadow: '0 6px 18px rgba(99,8,38,0.35)',
       }}
     >
-      Create your album <ArrowRight className="w-4 h-4" />
+      {t('home.scrollCta')} <ArrowRight className="w-4 h-4" />
     </button>
   )
 }
