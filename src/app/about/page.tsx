@@ -5,6 +5,8 @@ import { Heart, Zap, Shield, Mail, Phone } from 'lucide-react'
 import AccountNavLink from '@/components/AccountNavLink'
 import HamburgerMenu from '@/components/HamburgerMenu'
 import { Globe3DLazy } from '@/components/ui/Globe3DLazy'
+import { getServerLocale } from '@/i18n/server'
+import { getDictionary } from '@/i18n/get-dictionary'
 
 const GLOBE_MARKERS = [
   { lat: 40.1792, lng:   44.4991, label: 'Armenia'       },
@@ -42,7 +44,8 @@ export const metadata: Metadata = {
   },
 }
 
-export default function AboutPage() {
+export default async function AboutPage() {
+  const dict = getDictionary(await getServerLocale())
   return (
     <main style={{ background: '#FDFAF5', fontFamily: 'var(--font-sans)' }} className="min-h-screen">
 
@@ -68,10 +71,10 @@ export default function AboutPage() {
           />
         </Link>
         <HamburgerMenu>
-          <Link href="/pricing" className="text-sm font-medium hover:underline" style={{ color: '#630826' }}>Pricing</Link>
-          <span className="text-sm font-semibold underline underline-offset-4" style={{ color: '#630826' }}>About</span>
-          <Link href="/collabs" className="text-sm font-medium hover:underline" style={{ color: '#630826' }}>Collabs</Link>
-          <Link href="/support" className="text-sm font-medium hover:underline" style={{ color: '#630826' }}>Support</Link>
+          <Link href="/pricing" className="text-sm font-medium hover:underline" style={{ color: '#630826' }}>{dict['nav.pricing']}</Link>
+          <span className="text-sm font-semibold underline underline-offset-4" style={{ color: '#630826' }}>{dict['nav.about']}</span>
+          <Link href="/collabs" className="text-sm font-medium hover:underline" style={{ color: '#630826' }}>{dict['nav.collabs']}</Link>
+          <Link href="/support" className="text-sm font-medium hover:underline" style={{ color: '#630826' }}>{dict['nav.support']}</Link>
           <AccountNavLink />
         </HamburgerMenu>
       </nav>
@@ -86,7 +89,7 @@ export default function AboutPage() {
               className="text-xs uppercase font-semibold mb-5"
               style={{ color: '#8B6F4E', letterSpacing: '0.22em' }}
             >
-              Since April 2026 · Yerevan, Armenia
+              {dict['about.eyebrow']}
             </p>
             <h1
               style={{
@@ -98,14 +101,14 @@ export default function AboutPage() {
                 fontWeight: 700,
               }}
             >
-              Built because your memories deserve a real home.
+              {dict['about.title']}
             </h1>
             <div className="mt-6 h-px w-16" style={{ background: '#C4A678' }} />
             <p
               className="mt-6 leading-relaxed"
               style={{ color: '#6B5A4E', fontSize: 'clamp(1rem, 1.4vw, 1.15rem)', maxWidth: '34rem' }}
             >
-              Not a group chat. Not a shared drive nobody checks. A real, lasting album — the kind your parents kept, rebuilt for today.
+              {dict['about.subtitle']}
             </p>
           </div>
 
@@ -156,7 +159,7 @@ export default function AboutPage() {
                     fontSize: '1.05rem',
                   }}
                 >
-                  &ldquo;Keep it.&rdquo;
+                  {dict['about.keepIt']}
                 </span>
               </div>
             </div>
@@ -169,7 +172,7 @@ export default function AboutPage() {
       <div className="hush-container pb-12">
         <div className="flex items-center gap-6">
           <div className="flex-1 h-px" style={{ background: '#E8E0D0' }} />
-          <p className="text-sm italic" style={{ color: '#B0A090', fontFamily: 'var(--font-serif)', whiteSpace: 'nowrap' }}>our story</p>
+          <p className="text-sm italic" style={{ color: '#B0A090', fontFamily: 'var(--font-serif)', whiteSpace: 'nowrap' }}>{dict['about.div.story']}</p>
           <div className="flex-1 h-px" style={{ background: '#E8E0D0' }} />
         </div>
       </div>
@@ -212,7 +215,7 @@ export default function AboutPage() {
             className="text-xs uppercase font-semibold mb-6"
             style={{ color: '#8B6F4E', letterSpacing: '0.2em' }}
           >
-            Why we built this
+            {dict['about.whyBuilt']}
           </p>
 
           <p
@@ -225,19 +228,19 @@ export default function AboutPage() {
               lineHeight: 1.65,
             }}
           >
-            &ldquo;My parents had a photo album. A real one — printed photos, carefully placed, labelled in pen. Every time we opened it, there was a whole story inside.&rdquo;
+            {dict['about.quote']}
           </p>
 
           <p className="text-base leading-relaxed mb-4" style={{ color: '#5C4A3C' }}>
-            I always wanted the same thing for my generation. But I was always too lazy to print photos, too busy to organize them, and completely overwhelmed by how many steps it takes to go from &ldquo;a bunch of photos on everyone&apos;s phones&rdquo; to &ldquo;a real album everyone can look back on.&rdquo;
+            {dict['about.story1']}
           </p>
 
           <p className="text-base leading-relaxed mb-4" style={{ color: '#5C4A3C' }}>
-            So I built Hushare. One name, one link — and every photo from everyone who was there, at the highest quality, in real time. No app to download, no account to create, no group chat chaos.
+            {dict['about.story2']}
           </p>
 
           <p className="text-base leading-relaxed" style={{ color: '#5C4A3C' }}>
-            It&apos;s been two months. We launched in April. We&apos;re still building, still growing, still obsessing over every detail. But the idea hasn&apos;t changed since day one: your memories should be easy to keep and beautiful to look back on.
+            {dict['about.story3']}
           </p>
 
           <div className="mt-8 h-px w-12" style={{ background: '#C4A678' }} />
@@ -245,7 +248,7 @@ export default function AboutPage() {
             className="mt-4 text-sm italic"
             style={{ color: '#7C4A2D', fontFamily: 'var(--font-serif)' }}
           >
-            — with love, from Yerevan
+            {dict['about.love']}
           </p>
         </div>
       </section>
@@ -254,7 +257,7 @@ export default function AboutPage() {
       <div className="hush-container pb-12">
         <div className="flex items-center gap-6">
           <div className="flex-1 h-px" style={{ background: '#E8E0D0' }} />
-          <p className="text-sm italic" style={{ color: '#B0A090', fontFamily: 'var(--font-serif)', whiteSpace: 'nowrap' }}>what we stand for</p>
+          <p className="text-sm italic" style={{ color: '#B0A090', fontFamily: 'var(--font-serif)', whiteSpace: 'nowrap' }}>{dict['about.div.stand']}</p>
           <div className="flex-1 h-px" style={{ background: '#E8E0D0' }} />
         </div>
       </div>
@@ -268,8 +271,8 @@ export default function AboutPage() {
               accent: '#7C4A2D',
               bg: '#FBF4E4',
               border: 'rgba(196, 166, 120, 0.4)',
-              title: 'Comfortable',
-              desc: 'No account. No app. No friction. Just one link — and everyone is in.',
+              title: dict['about.value1.title'],
+              desc: dict['about.value1.desc'],
               delay: '0ms',
             },
             {
@@ -277,8 +280,8 @@ export default function AboutPage() {
               accent: '#630826',
               bg: '#F0F6EE',
               border: 'rgba(99, 8, 38, 0.2)',
-              title: 'Safe',
-              desc: 'Albums are unlisted, link-protected, and never indexed. Your memories stay yours.',
+              title: dict['about.value2.title'],
+              desc: dict['about.value2.desc'],
               delay: '90ms',
             },
             {
@@ -286,8 +289,8 @@ export default function AboutPage() {
               accent: '#1B3A6B',
               bg: '#EEF2F9',
               border: 'rgba(27, 58, 107, 0.18)',
-              title: 'Connected',
-              desc: 'One album. Everyone who was there. No matter which phone, which country, which carrier.',
+              title: dict['about.value3.title'],
+              desc: dict['about.value3.desc'],
               delay: '180ms',
             },
           ] as const).map((v) => (
@@ -318,7 +321,7 @@ export default function AboutPage() {
       <div className="hush-container pb-12">
         <div className="flex items-center gap-6">
           <div className="flex-1 h-px" style={{ background: '#E8E0D0' }} />
-          <p className="text-sm italic" style={{ color: '#B0A090', fontFamily: 'var(--font-serif)', whiteSpace: 'nowrap' }}>what we&apos;ve built</p>
+          <p className="text-sm italic" style={{ color: '#B0A090', fontFamily: 'var(--font-serif)', whiteSpace: 'nowrap' }}>{dict['about.div.built']}</p>
           <div className="flex-1 h-px" style={{ background: '#E8E0D0' }} />
         </div>
       </div>
@@ -328,33 +331,33 @@ export default function AboutPage() {
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           {([
             {
-              title: 'Face Recognition AI',
-              desc: 'Find yourself in every photo instantly. Our AI scans the whole album and surfaces your moments without scrolling forever.',
-              tag: 'Live',
+              title: dict['about.feat1.title'],
+              desc: dict['about.feat1.desc'],
+              tag: dict['about.tag.live'],
               tagColor: '#630826',
               tagBg: '#E4F0E2',
               delay: '0ms',
             },
             {
-              title: 'Full Album Customization',
-              desc: 'Your own background, your colors, your layout. Albums look the way you want — not the way a template decided.',
-              tag: 'Live',
+              title: dict['about.feat2.title'],
+              desc: dict['about.feat2.desc'],
+              tag: dict['about.tag.live'],
               tagColor: '#630826',
               tagBg: '#E4F0E2',
               delay: '70ms',
             },
             {
-              title: 'Highest Quality, Always',
-              desc: 'No compression. No trade-offs. Photos and videos are stored and downloaded at the exact quality they were shot in.',
-              tag: 'Live',
+              title: dict['about.feat3.title'],
+              desc: dict['about.feat3.desc'],
+              tag: dict['about.tag.live'],
               tagColor: '#630826',
               tagBg: '#E4F0E2',
               delay: '140ms',
             },
             {
-              title: 'AI Photo Recovery',
-              desc: "Blurry shot? Bad lighting? We're building AI tools to recover and enhance photos right inside your album.",
-              tag: 'Coming soon',
+              title: dict['about.feat4.title'],
+              desc: dict['about.feat4.desc'],
+              tag: dict['about.tag.soon'],
               tagColor: '#7C4A2D',
               tagBg: '#F9EDD8',
               delay: '210ms',
@@ -389,7 +392,7 @@ export default function AboutPage() {
       <div className="hush-container pb-12">
         <div className="flex items-center gap-6">
           <div className="flex-1 h-px" style={{ background: '#E8E0D0' }} />
-          <p className="text-sm italic" style={{ color: '#B0A090', fontFamily: 'var(--font-serif)', whiteSpace: 'nowrap' }}>what&apos;s next</p>
+          <p className="text-sm italic" style={{ color: '#B0A090', fontFamily: 'var(--font-serif)', whiteSpace: 'nowrap' }}>{dict['about.div.next']}</p>
           <div className="flex-1 h-px" style={{ background: '#E8E0D0' }} />
         </div>
       </div>
@@ -413,7 +416,7 @@ export default function AboutPage() {
             className="relative z-10 text-xs uppercase font-semibold mb-4"
             style={{ color: 'rgba(253,250,245,0.4)', letterSpacing: '0.22em' }}
           >
-            On the horizon
+            {dict['about.horizon']}
           </p>
 
           <h2
@@ -427,36 +430,36 @@ export default function AboutPage() {
               lineHeight: 1.15,
             }}
           >
-            We&apos;re two months old. We&apos;re just getting started.
+            {dict['about.nextTitle']}
           </h2>
 
           <p
             className="relative z-10 mb-10 text-sm leading-relaxed"
             style={{ color: 'rgba(253,250,245,0.55)', maxWidth: '32rem' }}
           >
-            Here&apos;s what&apos;s coming — some of it we can talk about, some of it we can&apos;t yet.
+            {dict['about.nextSub']}
           </p>
 
           <div className="relative z-10 grid grid-cols-1 sm:grid-cols-3 gap-4">
             {([
               {
-                label: 'AI Photo Recovery',
-                desc: 'Restore blurry, dark, or damaged shots right inside your album. No Photoshop needed.',
-                status: 'In progress',
+                label: dict['about.road1.label'],
+                desc: dict['about.road1.desc'],
+                status: dict['about.status.progress'],
                 statusColor: '#C4A678',
                 statusBg: 'rgba(196,166,120,0.12)',
               },
               {
-                label: 'Something big.',
-                desc: "We're building features we're not ready to announce yet. Follow us — you'll know when it's ready.",
-                status: 'Secret',
+                label: dict['about.road2.label'],
+                desc: dict['about.road2.desc'],
+                status: dict['about.status.secret'],
                 statusColor: '#9AB89A',
                 statusBg: 'rgba(154,184,154,0.1)',
               },
               {
-                label: 'Something bigger.',
-                desc: 'Two months in and we already have plans that felt impossible at the start. Stay close.',
-                status: 'Secret',
+                label: dict['about.road3.label'],
+                desc: dict['about.road3.desc'],
+                status: dict['about.status.secret'],
                 statusColor: '#9AB89A',
                 statusBg: 'rgba(154,184,154,0.1)',
               },
@@ -488,7 +491,7 @@ export default function AboutPage() {
             className="relative z-10 mt-8 text-sm italic"
             style={{ color: 'rgba(253,250,245,0.3)', fontFamily: 'var(--font-serif)' }}
           >
-            Follow <a href="https://www.instagram.com/hushare_space/" target="_blank" rel="noopener noreferrer" style={{ color: 'rgba(253,250,245,0.55)', textDecoration: 'underline' }}>@hushare_space</a> to be the first to know.
+            {dict['about.followPre']} <a href="https://www.instagram.com/hushare_space/" target="_blank" rel="noopener noreferrer" style={{ color: 'rgba(253,250,245,0.55)', textDecoration: 'underline' }}>@hushare_space</a> {dict['about.followPost']}
           </p>
         </div>
       </section>
@@ -497,7 +500,7 @@ export default function AboutPage() {
       <div className="hush-container pb-12">
         <div className="flex items-center gap-6">
           <div className="flex-1 h-px" style={{ background: '#E8E0D0' }} />
-          <p className="text-sm italic" style={{ color: '#B0A090', fontFamily: 'var(--font-serif)', whiteSpace: 'nowrap' }}>our community</p>
+          <p className="text-sm italic" style={{ color: '#B0A090', fontFamily: 'var(--font-serif)', whiteSpace: 'nowrap' }}>{dict['about.div.community']}</p>
           <div className="flex-1 h-px" style={{ background: '#E8E0D0' }} />
         </div>
       </div>
@@ -522,7 +525,7 @@ export default function AboutPage() {
               className="text-xs uppercase font-semibold mb-4"
               style={{ color: 'rgba(253,250,245,0.4)', letterSpacing: '0.22em' }}
             >
-              Our community
+              {dict['about.community']}
             </p>
             <h2
               style={{
@@ -535,13 +538,13 @@ export default function AboutPage() {
                 marginBottom: '0.75rem',
               }}
             >
-              A small team. A growing community.
+              {dict['about.communityTitle']}
             </h2>
             <p
               className="text-sm"
               style={{ color: 'rgba(253,250,245,0.5)', maxWidth: '30rem', margin: '0 auto' }}
             >
-              From Yerevan to the world — our users are in Armenia, USA, Canada, Romania, Luxembourg, and Russia.
+              {dict['about.communitySub']}
             </p>
           </div>
 
@@ -578,7 +581,7 @@ export default function AboutPage() {
             className="relative z-10 text-xs uppercase font-semibold mb-4"
             style={{ color: 'rgba(253,250,245,0.5)', letterSpacing: '0.22em' }}
           >
-            Find us
+            {dict['about.findUs']}
           </p>
 
           <h2
@@ -593,7 +596,7 @@ export default function AboutPage() {
               marginBottom: '2rem',
             }}
           >
-            We&apos;re always happy to hear from you.
+            {dict['about.contactTitle']}
           </h2>
 
           <div className="relative z-10 flex items-center justify-center gap-3 flex-wrap mb-8">
@@ -627,7 +630,7 @@ export default function AboutPage() {
 
           <div className="relative z-10 flex items-center gap-4 mb-6 max-w-xs mx-auto">
             <div className="flex-1 h-px" style={{ background: 'rgba(253,250,245,0.15)' }} />
-            <span className="text-xs" style={{ color: 'rgba(253,250,245,0.35)', letterSpacing: '0.1em' }}>or reach us directly</span>
+            <span className="text-xs" style={{ color: 'rgba(253,250,245,0.35)', letterSpacing: '0.1em' }}>{dict['about.orReach']}</span>
             <div className="flex-1 h-px" style={{ background: 'rgba(253,250,245,0.15)' }} />
           </div>
 
@@ -650,7 +653,7 @@ export default function AboutPage() {
             className="relative z-10 mt-10 text-sm italic"
             style={{ color: 'rgba(253,250,245,0.4)', fontFamily: 'var(--font-serif)' }}
           >
-            Made with love in Yerevan, Armenia
+            {dict['about.madeWithLove']}
           </p>
         </div>
       </section>
