@@ -6,6 +6,9 @@ import AccountNavLink from '@/components/AccountNavLink'
 import HamburgerMenu from '@/components/HamburgerMenu'
 import CheckoutResumer from '@/components/CheckoutResumer'
 import FaqList from '@/components/FaqList'
+import { getServerLocale } from '@/i18n/server'
+import { getDictionary } from '@/i18n/get-dictionary'
+import type { DictKey } from '@/i18n/dictionaries/en'
 
 export const runtime = 'nodejs'
 
@@ -282,7 +285,26 @@ const jsonLd = {
 const SERIF = { fontFamily: 'var(--font-serif)' } as const
 const INK   = { color: '#630826' } as const
 
-export default function PricingPage() {
+export default async function PricingPage() {
+  const dict = getDictionary(await getServerLocale())
+  const tt = (k: string) => dict[k as DictKey]
+  const localizedTiers = tiers.map((tier) => {
+    const key = tier.name.toLowerCase()
+    return {
+      ...tier,
+      tagline: tt(`pricing.${key}.tagline`),
+      cadence: key === 'free' ? tt('pricing.cadenceForever') : tt('pricing.cadenceMonth'),
+      cta: tt(`pricing.${key}.cta`),
+      annual: tier.annual ? tt(`pricing.${key}.annual`) : tier.annual,
+      promo: tier.promo ? tt(`pricing.${key}.promo`) : tier.promo,
+      renewText: tier.renewText ? tt(`pricing.${key}.renew`) : tier.renewText,
+      features: tier.features.map((_, i) => tt(`pricing.${key}.f${i + 1}`)),
+    }
+  })
+  const pricingFaq = Array.from({ length: 11 }, (_, i) => ({
+    q: tt(`pricing.faq.q${i + 1}`),
+    a: tt(`pricing.faq.a${i + 1}`),
+  }))
   return (
     <main
       className="min-h-screen"
@@ -317,10 +339,10 @@ export default function PricingPage() {
           />
         </Link>
         <HamburgerMenu>
-          <span className="text-sm font-semibold underline underline-offset-4" style={{ color: '#630826' }}>Pricing</span>
-          <Link href="/about" className="text-sm font-medium hover:underline" style={{ color: '#630826' }}>About</Link>
-          <Link href="/collabs" className="text-sm font-medium hover:underline" style={{ color: '#630826' }}>Collabs</Link>
-          <Link href="/support" className="text-sm font-medium hover:underline" style={{ color: '#630826' }}>Support</Link>
+          <span className="text-sm font-semibold underline underline-offset-4" style={{ color: '#630826' }}>{dict['nav.pricing']}</span>
+          <Link href="/about" className="text-sm font-medium hover:underline" style={{ color: '#630826' }}>{dict['nav.about']}</Link>
+          <Link href="/collabs" className="text-sm font-medium hover:underline" style={{ color: '#630826' }}>{dict['nav.collabs']}</Link>
+          <Link href="/support" className="text-sm font-medium hover:underline" style={{ color: '#630826' }}>{dict['nav.support']}</Link>
           <AccountNavLink />
         </HamburgerMenu>
       </nav>
@@ -331,7 +353,7 @@ export default function PricingPage() {
           className="text-xs sm:text-sm font-medium uppercase mb-4"
           style={{ color: '#8B6F4E', letterSpacing: '0.18em' }}
         >
-          Pricing
+          {dict['pricing.eyebrow']}
         </p>
         <h1
           style={{
@@ -342,22 +364,21 @@ export default function PricingPage() {
             fontWeight: 700,
           }}
         >
-          Free for the moments<br />
-          <em style={{ color: '#7C4A2D' }}>worth keeping forever</em>
+          {dict['pricing.title1']}<br />
+          <em style={{ color: '#7C4A2D' }}>{dict['pricing.title2']}</em>
         </h1>
         <p
           className="mt-5 text-base sm:text-lg leading-relaxed mx-auto"
           style={{ color: '#6B5A4E', maxWidth: '560px' }}
         >
-          A generous free tier for one-off events. Two paid tiers for people who
-          want passwords, custom URLs, HD video, and albums that never expire.
+          {dict['pricing.subtitle']}
         </p>
       </section>
 
       {/* Tiers */}
       <section className="hush-container pb-16">
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 md:gap-5 xl:gap-7 items-stretch">
-          {tiers.map((t) => (
+          {localizedTiers.map((t) => (
             <article
               key={t.name}
               id={t.name.toLowerCase()}
@@ -382,7 +403,7 @@ export default function PricingPage() {
                     border: '1px solid #C4A678',
                   }}
                 >
-                  Most loved
+                  {dict['pricing.mostLoved']}
                 </span>
               )}
 
@@ -511,7 +532,7 @@ export default function PricingPage() {
           className="text-center text-xs mt-6 italic"
           style={{ color: '#8B6F4E', fontFamily: 'var(--font-serif)' }}
         >
-          Prices in USD &middot; Subscriptions auto-renew monthly or annually until cancelled &middot; Cancel anytime from your account dashboard &middot; No refunds except as required by law.
+          {dict['pricing.disclaimer']}
         </p>
       </section>
 
@@ -525,21 +546,16 @@ export default function PricingPage() {
             className="text-xs uppercase mb-3"
             style={{ color: '#8B6F4E', letterSpacing: '0.18em', fontWeight: 600 }}
           >
-            Why we charge
+            {dict['pricing.whyCharge']}
           </p>
           <h2
             className="mb-4"
             style={{ ...SERIF, ...INK, fontSize: '1.6rem', fontWeight: 700, lineHeight: 1.2 }}
           >
-            Free for the world. Paid for the keepers.
+            {dict['pricing.whyTitle']}
           </h2>
           <p className="text-[0.98rem] leading-relaxed" style={{ color: '#5C4A3C' }}>
-            A wedding, a birthday, a one-week trip - these belong on the free tier
-            forever. But a wedding photographer running ten albums a month, or a
-            family that wants a single album to live for twenty years with a name
-            you can actually remember - that costs us in storage and bandwidth, and
-            it costs you a little to keep it. No ads. No selling your photos.
-            Just a small subscription that pays for the servers and our coffee.
+            {dict['pricing.whyBody']}
           </p>
         </div>
       </section>
@@ -559,7 +575,7 @@ export default function PricingPage() {
               lineHeight: 1,
             }}
           >
-            BILLING FAQ
+            {dict['pricing.billingFaqTitle']}
           </p>
           <div className="flex-1 h-px" style={{ background: '#E8E0D0' }} />
         </div>
@@ -572,14 +588,14 @@ export default function PricingPage() {
             boxShadow: '0 10px 36px rgba(99,8,38,0.08)',
           }}
         >
-          <FaqList items={billingFaq} compactCount={6} plusSize={26} />
+          <FaqList items={pricingFaq} compactCount={6} plusSize={26} />
         </div>
 
         <p
           className="text-center text-sm mt-8 italic"
           style={{ color: '#8B6F4E', fontFamily: 'var(--font-serif)' }}
         >
-          Other questions? Write to{' '}
+          {dict['pricing.otherQuestions']}{' '}
           <a href="mailto:husharesupport@gmail.com" style={{ color: '#630826', fontWeight: 600 }}>
             husharesupport@gmail.com
           </a>
