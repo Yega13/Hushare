@@ -1,6 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { useT } from '@/i18n/LocaleProvider'
 import { useZipDownload } from '@/components/photo-grid/useZipDownload'
 import { Check, ChevronDown, Clock, Copy, Download, FolderPlus, Images, Link2, Loader2, Lock, LockOpen, Move, Play, ScanFace, Settings, Trash2, X } from 'lucide-react'
 import type { Album, Photo, Tier } from '@/types'
@@ -75,6 +76,7 @@ function toDatetimeLocal(iso: string | null): string {
 }
 
 export default function OwnerToolbar({ album, photos, ownerToken, userTier, mediaRadiusMax, onAlbumUpdated, onOpenSlideshow, arrangeMode, onToggleArrangeMode }: Props) {
+  const { t } = useT()
   const [copied, setCopied] = useState<'share' | 'owner' | null>(null)
   const [showShare, setShowShare] = useState(false)
   // Account owners have no #owner= link, so ownerToken (prop) is null for them. Fetch the
@@ -273,10 +275,10 @@ export default function OwnerToolbar({ album, photos, ownerToken, userTier, medi
     try {
       await navigator.clipboard.writeText(text)
       setCopied(type)
-      showAppToast(type === 'share' ? 'Share link copied.' : 'Owner link copied.')
+      showAppToast(type === 'share' ? t('ot.shareLinkCopied') : t('ot.ownerLinkCopied'))
       setTimeout(() => setCopied(null), 2000)
     } catch {
-      showAppToast('Could not copy — please copy the link manually.', 'error')
+      showAppToast(t('ot.copyFail'), 'error')
     }
   }
 
@@ -296,10 +298,10 @@ export default function OwnerToolbar({ album, photos, ownerToken, userTier, medi
       }
       onAlbumUpdated({ custom_slug: result.custom_slug })
       setCustomUrlSaved(true)
-      showAppToast(action === 'clear' ? 'Custom URL cleared.' : 'Custom URL saved.')
+      showAppToast(action === 'clear' ? t('ot.customUrlCleared') : t('ot.customUrlSaved'))
       if (action === 'clear') setCustomUrlInput('')
     } catch (e) {
-      const message = e instanceof Error ? e.message : 'Network error'
+      const message = e instanceof Error ? e.message : t('common.networkError')
       setCustomUrlError(message)
       showAppToast(message, 'error')
     } finally {
@@ -325,7 +327,7 @@ export default function OwnerToolbar({ album, photos, ownerToken, userTier, medi
       setPasswordSaved(true)
       setPasswordInput('')
     } catch (e) {
-      const message = e instanceof Error ? e.message : 'Network error'
+      const message = e instanceof Error ? e.message : t('common.networkError')
       setPasswordError(message)
       showAppToast(message, 'error')
     } finally {
@@ -351,7 +353,7 @@ export default function OwnerToolbar({ album, photos, ownerToken, userTier, medi
       return true
     } catch (e) {
       onAlbumUpdated({ background_theme: previousBackground })
-      const message = e instanceof Error ? e.message : 'Network error'
+      const message = e instanceof Error ? e.message : t('common.networkError')
       setBackgroundError(message)
       showAppToast(message, 'error')
       return false
@@ -412,7 +414,7 @@ export default function OwnerToolbar({ album, photos, ownerToken, userTier, medi
         { forceGlobalRadius: false, resetRadiusOverrides, resetFilterOverrides },
       )
     } catch (e) {
-      const message = e instanceof Error ? e.message : 'Network error'
+      const message = e instanceof Error ? e.message : t('common.networkError')
       setMediaError(message)
       showAppToast(message, 'error')
     }
@@ -500,7 +502,7 @@ export default function OwnerToolbar({ album, photos, ownerToken, userTier, medi
     setBackgroundError('')
     if (!BACKGROUND_IMAGE_TYPES.has(file.type)) {
       setBackgroundError('Use a JPG, PNG, WebP, or AVIF image.')
-      showAppToast('Use a JPG, PNG, WebP, or AVIF image.', 'error')
+      showAppToast(t('ot.badImageFormat'), 'error')
       return
     }
     if (file.size > MAX_BACKGROUND_BYTES) {
@@ -521,7 +523,7 @@ export default function OwnerToolbar({ album, photos, ownerToken, userTier, medi
       onAlbumUpdated({ background_theme: result.background_theme })
       // No success toast — the new background is visible immediately; only surface failures.
     } catch (e) {
-      const message = e instanceof Error ? e.message : 'Network error'
+      const message = e instanceof Error ? e.message : t('common.networkError')
       setBackgroundError(message)
       showAppToast(message, 'error')
     } finally {
@@ -543,9 +545,9 @@ export default function OwnerToolbar({ album, photos, ownerToken, userTier, medi
       }
       setCollectionUrl(`${window.location.origin}/c/${result.slug}`)
       await loadCollections()
-      showAppToast('Album added to collection.')
+      showAppToast(t('ot.addedToCollection'))
     } catch (e) {
-      const message = e instanceof Error ? e.message : 'Network error'
+      const message = e instanceof Error ? e.message : t('common.networkError')
       setCollectionError(message)
       showAppToast(message, 'error')
     } finally {
@@ -569,10 +571,10 @@ export default function OwnerToolbar({ album, photos, ownerToken, userTier, medi
         showAppToast(result.error, 'error')
         return
       }
-      storeAppToast('Album deleted.')
+      storeAppToast(t('ot.albumDeleted'))
       window.location.href = '/'
     } catch (e) {
-      const message = e instanceof Error ? e.message : 'Network error'
+      const message = e instanceof Error ? e.message : t('common.networkError')
       setDeleteError(message)
       showAppToast(message, 'error')
     } finally {
@@ -603,7 +605,7 @@ export default function OwnerToolbar({ album, photos, ownerToken, userTier, medi
       })
       const result = (await res.json()) as { ok?: boolean; reveal_at?: string | null; error?: string }
       if (!res.ok || !result.ok) {
-        const message = result.error ?? 'Could not save reveal time'
+        const message = result.error ?? t('ot.revealSaveFail')
         setRevealError(message)
         showAppToast(message, 'error')
         return
@@ -611,9 +613,9 @@ export default function OwnerToolbar({ album, photos, ownerToken, userTier, medi
       onAlbumUpdated({ reveal_at: result.reveal_at ?? null })
       setRevealInput(toDatetimeLocal(result.reveal_at ?? null))
       setRevealSaved(true)
-      showAppToast(action === 'clear' ? 'Reveal time cleared.' : 'Reveal time saved.')
+      showAppToast(action === 'clear' ? t('ot.revealCleared') : t('ot.revealSaved'))
     } catch (e) {
-      const message = e instanceof Error ? e.message : 'Network error'
+      const message = e instanceof Error ? e.message : t('common.networkError')
       setRevealError(message)
       showAppToast(message, 'error')
     } finally {
@@ -635,7 +637,7 @@ export default function OwnerToolbar({ album, photos, ownerToken, userTier, medi
             }}
           >
             <Copy className="w-4 h-4" style={{ color: '#7C5C3E' }} />
-            Share
+            {t('ot.share')}
           </button>
 
           {showShare && (
@@ -655,17 +657,17 @@ export default function OwnerToolbar({ album, photos, ownerToken, userTier, medi
           style={btnBase}
           onClick={() => {
             if (photos.length === 0) {
-              showAppToast('Upload photos or videos before creating a slideshow.', 'error')
+              showAppToast(t('ot.slideshowNeedsPhotos'), 'error')
               return
             }
             setShowShare(false)
             setShowSettings(false)
             onOpenSlideshow()
           }}
-          title="Create slideshow"
+          title={t('ot.createSlideshow')}
         >
           <Play className="w-4 h-4" style={{ color: '#7C5C3E' }} />
-          Slideshow
+          {t('ot.slideshow')}
         </button>
 
         <button
@@ -676,10 +678,10 @@ export default function OwnerToolbar({ album, photos, ownerToken, userTier, medi
             setShowSettings(false)
             onToggleArrangeMode()
           }}
-          title="Arrange media"
+          title={t('ot.arrangeMedia')}
         >
           <Move className="w-4 h-4" style={{ color: arrangeMode ? '#FDFAF5' : '#7C5C3E' }} />
-          {arrangeMode ? 'Done' : 'Arrange'}
+          {arrangeMode ? t('ot.done') : t('ot.arrange')}
         </button>
 
         <div className="hush-owner-action-wrap hush-owner-settings relative ml-auto" ref={settingsRef}>
@@ -698,7 +700,7 @@ export default function OwnerToolbar({ album, photos, ownerToken, userTier, medi
               })
               setShowShare(false)
             }}
-            title="Settings"
+            title={t('ot.settingsTitle')}
           >
             <Settings className="w-4 h-4" style={{ color: '#7C5C3E' }} />
             Settings
@@ -711,12 +713,12 @@ export default function OwnerToolbar({ album, photos, ownerToken, userTier, medi
             >
               <div className="flex items-start justify-between gap-4 rounded-xl px-3 py-3 mb-3" style={{ background: '#FFFFFF', border: '1px solid #E8E0D2' }}>
                 <div>
-                  <span className="block font-semibold text-sm" style={{ color: '#630826' }}>Album settings</span>
+                  <span className="block font-semibold text-sm" style={{ color: '#630826' }}>{t('ot.settings')}</span>
                   <span className="block text-xs mt-1" style={{ color: '#8B6F4E' }}>
-                    Share, customize, protect, and organize this album.
+                    {t('ot.settingsSub')}
                   </span>
                 </div>
-                <button onClick={() => setShowSettings(false)} className="shrink-0 rounded-full p-1 transition hover:opacity-80" style={{ color: '#A89880', cursor: 'pointer', background: '#F5F0E8' }} aria-label="Close settings">
+                <button onClick={() => setShowSettings(false)} className="shrink-0 rounded-full p-1 transition hover:opacity-80" style={{ color: '#A89880', cursor: 'pointer', background: '#F5F0E8' }} aria-label={t('ot.closeSettings')}>
                   <X className="w-4 h-4" />
                 </button>
               </div>
@@ -725,7 +727,7 @@ export default function OwnerToolbar({ album, photos, ownerToken, userTier, medi
               <section style={settingsSectionStyle}>
                 <button type="button" className="hush-motion" style={accordionButton} onClick={() => toggleSection('customization')}>
                   <Images className="w-4 h-4" style={{ color: '#7C5C3E' }} />
-                  <span style={sectionTitle}>Customization</span>
+                  <span style={sectionTitle}>{t('ot.customization')}</span>
                   <ChevronDown
                     className="ml-auto w-4 h-4 transition-transform"
                     style={{ color: '#A89880', transform: openSection === 'customization' ? 'rotate(180deg)' : 'rotate(0deg)' }}
@@ -734,7 +736,7 @@ export default function OwnerToolbar({ album, photos, ownerToken, userTier, medi
 
                 {openSection === 'customization' && (
                   <div className="px-4 pb-4">
-                    <p className="text-xs font-medium mb-2" style={{ color: '#7C5C3E' }}>Color patterns</p>
+                    <p className="text-xs font-medium mb-2" style={{ color: '#7C5C3E' }}>{t('ot.colorPatterns')}</p>
                     <div className="grid grid-cols-8 gap-2 mb-4">
                       {PRESETS.map((preset) => (
                         <button
@@ -761,7 +763,7 @@ export default function OwnerToolbar({ album, photos, ownerToken, userTier, medi
                       ))}
                     </div>
 
-                    <p className="text-xs font-medium mb-2" style={{ color: '#7C5C3E' }}>Stock photos</p>
+                    <p className="text-xs font-medium mb-2" style={{ color: '#7C5C3E' }}>{t('ot.stockPhotos')}</p>
                     <div className="grid grid-cols-5 gap-2 mb-3">
                       {FEATURED_STOCK_BACKGROUNDS.map((preset) => (
                         <button
@@ -809,7 +811,7 @@ export default function OwnerToolbar({ album, photos, ownerToken, userTier, medi
                         disabled={backgroundSaving}
                       >
                         <Images className="h-4 w-4" />
-                        {backgroundSaving ? 'Saving...' : 'Add picture'}
+                        {backgroundSaving ? t('ot.saving') : t('ot.addPicture')}
                       </button>
                       <button
                         className="hush-press flex w-full items-center justify-center gap-2 rounded-lg py-2 text-xs font-semibold transition hover:opacity-90"
@@ -817,12 +819,12 @@ export default function OwnerToolbar({ album, photos, ownerToken, userTier, medi
                         onClick={() => setShowBackgroundLibrary(true)}
                       >
                         <Images className="h-4 w-4" />
-                        See all
+                        {t('ot.seeAll')}
                       </button>
                     </div>
 
                     <div className="flex items-center gap-2">
-                      <label className="text-xs font-medium" style={{ color: '#7C5C3E' }}>Custom color</label>
+                      <label className="text-xs font-medium" style={{ color: '#7C5C3E' }}>{t('ot.customColor')}</label>
                       <input
                         type="color"
                         value={currentColor}
@@ -835,7 +837,7 @@ export default function OwnerToolbar({ album, photos, ownerToken, userTier, medi
                         style={{ color: '#A89880', cursor: 'pointer' }}
                         onClick={() => void saveBackground(null)}
                       >
-                        Reset
+                        {t('ot.reset')}
                       </button>
                     </div>
                     {backgroundError && <p className="text-xs mt-2" style={{ color: '#C0392B' }}>{backgroundError}</p>}
@@ -847,7 +849,7 @@ export default function OwnerToolbar({ album, photos, ownerToken, userTier, medi
               <section style={settingsSectionStyle}>
                 <button type="button" className="hush-motion" style={accordionButton} onClick={() => toggleSection('media')}>
                   <Settings className="w-4 h-4" style={{ color: '#7C5C3E' }} />
-                  <span style={sectionTitle}>Media display</span>
+                  <span style={sectionTitle}>{t('ot.mediaDisplay')}</span>
                   <ChevronDown
                     className="ml-auto w-4 h-4 transition-transform"
                     style={{ color: '#A89880', transform: openSection === 'media' ? 'rotate(180deg)' : 'rotate(0deg)' }}
@@ -857,7 +859,7 @@ export default function OwnerToolbar({ album, photos, ownerToken, userTier, medi
                   <div className="px-4 pb-4 space-y-4">
                     <div>
                       <div className="mb-2 flex items-center justify-between gap-3">
-                        <label className="text-xs font-medium" style={{ color: '#7C5C3E' }}>Global corner radius</label>
+                        <label className="text-xs font-medium" style={{ color: '#7C5C3E' }}>{t('ot.cornerRadius')}</label>
                         <span className="text-xs font-mono" style={{ color: '#A89880' }}>{mediaRadius}px</span>
                       </div>
                       <input
@@ -896,8 +898,8 @@ export default function OwnerToolbar({ album, photos, ownerToken, userTier, medi
 
                     <label className="flex items-center justify-between gap-4 rounded-xl px-3 py-3" style={{ background: '#FDFAF5', border: '1px solid #DDD5C5', cursor: 'pointer' }}>
                       <span>
-                        <span className="block text-sm font-semibold" style={{ color: '#630826' }}>Video autoplay</span>
-                        <span className="block text-xs" style={{ color: '#7C5C3E' }}>Start videos automatically when opened.</span>
+                        <span className="block text-sm font-semibold" style={{ color: '#630826' }}>{t('ot.videoAutoplay')}</span>
+                        <span className="block text-xs" style={{ color: '#7C5C3E' }}>{t('ot.videoAutoplaySub')}</span>
                       </span>
                       <input
                         type="checkbox"
@@ -914,7 +916,7 @@ export default function OwnerToolbar({ album, photos, ownerToken, userTier, medi
                     </label>
 
                     <div>
-                      <label className="mb-2 block text-xs font-medium" style={{ color: '#7C5C3E' }}>Global filter</label>
+                      <label className="mb-2 block text-xs font-medium" style={{ color: '#7C5C3E' }}>{t('ot.globalFilter')}</label>
                       <select
                         value={mediaFilter}
                         onChange={(e) => {
@@ -934,7 +936,7 @@ export default function OwnerToolbar({ album, photos, ownerToken, userTier, medi
                     </div>
 
                     <div>
-                      <label className="mb-2 block text-xs font-medium" style={{ color: '#7C5C3E' }}>Grid</label>
+                      <label className="mb-2 block text-xs font-medium" style={{ color: '#7C5C3E' }}>{t('ot.grid')}</label>
                       <div className="grid grid-cols-4 gap-2">
                         {MOBILE_GRID_COLUMN_OPTIONS.map((option) => {
                           const selected = mobileGridColumns === option.value
@@ -961,16 +963,16 @@ export default function OwnerToolbar({ album, photos, ownerToken, userTier, medi
                         })}
                       </div>
                       <p className="mt-2 text-xs" style={{ color: '#8B6F4E' }}>
-                        Applies to album thumbnails on desktop and mobile.
+                        {t('ot.gridSub')}
                       </p>
                     </div>
 
                     <div>
-                      <label className="mb-2 block text-xs font-medium" style={{ color: '#7C5C3E' }}>Layout</label>
+                      <label className="mb-2 block text-xs font-medium" style={{ color: '#7C5C3E' }}>{t('ot.layout')}</label>
                       <div className="grid grid-cols-2 gap-2">
                         {([
-                          { value: 'grid' as const, label: 'Square' },
-                          { value: 'justified' as const, label: 'Masonry' },
+                          { value: 'grid' as const, label: t('ot.square') },
+                          { value: 'justified' as const, label: t('ot.masonry') },
                         ]).map((option) => {
                           const selected = photoLayout === option.value
                           return (
@@ -997,7 +999,7 @@ export default function OwnerToolbar({ album, photos, ownerToken, userTier, medi
                         })}
                       </div>
                       <p className="mt-2 text-xs" style={{ color: '#8B6F4E' }}>
-                        Square crops every tile; Masonry keeps each photo&rsquo;s real shape in Pinterest-style columns.
+                        {t('ot.layoutSub')}
                       </p>
                     </div>
 
@@ -1010,7 +1012,7 @@ export default function OwnerToolbar({ album, photos, ownerToken, userTier, medi
               <section style={settingsSectionStyle}>
                 <button type="button" className="hush-motion" style={accordionButton} onClick={() => toggleSection('slideshow')}>
                   <Play className="w-4 h-4" style={{ color: '#7C5C3E' }} />
-                  <span style={sectionTitle}>Slideshow settings</span>
+                  <span style={sectionTitle}>{t('ot.slideshowSettings')}</span>
                   <ChevronDown
                     className="ml-auto w-4 h-4 transition-transform"
                     style={{ color: '#A89880', transform: openSection === 'slideshow' ? 'rotate(180deg)' : 'rotate(0deg)' }}
@@ -1020,7 +1022,7 @@ export default function OwnerToolbar({ album, photos, ownerToken, userTier, medi
                   <div className="px-4 pb-4 space-y-4">
                     <div>
                       <div className="mb-2 flex items-center justify-between gap-3">
-                        <label className="text-xs font-medium" style={{ color: '#7C5C3E' }}>Slide speed</label>
+                        <label className="text-xs font-medium" style={{ color: '#7C5C3E' }}>{t('ot.slideSpeed')}</label>
                         <span className="text-xs font-mono" style={{ color: '#A89880' }}>{(slideshowIntervalMs / 1000).toFixed(slideshowIntervalMs % 1000 === 0 ? 0 : 1)}s</span>
                       </div>
                       <input
@@ -1039,7 +1041,7 @@ export default function OwnerToolbar({ album, photos, ownerToken, userTier, medi
                           style={{ background: slideshowIntervalMs === 3000 ? '#630826' : '#FDFAF5', color: slideshowIntervalMs === 3000 ? '#FDFAF5' : '#630826', border: '1px solid #DDD5C5' }}
                           onClick={() => applySlideshowInterval(3000)}
                         >
-                          Faster
+                          {t('ot.faster')}
                         </button>
                         <button
                           type="button"
@@ -1047,13 +1049,13 @@ export default function OwnerToolbar({ album, photos, ownerToken, userTier, medi
                           style={{ background: slideshowIntervalMs === 6000 ? '#630826' : '#FDFAF5', color: slideshowIntervalMs === 6000 ? '#FDFAF5' : '#630826', border: '1px solid #DDD5C5' }}
                           onClick={() => applySlideshowInterval(6000)}
                         >
-                          Slower
+                          {t('ot.slower')}
                         </button>
                       </div>
                     </div>
 
                     <div>
-                      <label className="mb-2 block text-xs font-medium" style={{ color: '#7C5C3E' }}>Animation</label>
+                      <label className="mb-2 block text-xs font-medium" style={{ color: '#7C5C3E' }}>{t('ot.animation')}</label>
                       <select
                         value={slideshowAnimation}
                         onChange={(e) => {
@@ -1080,7 +1082,7 @@ export default function OwnerToolbar({ album, photos, ownerToken, userTier, medi
               <section style={settingsSectionStyle}>
                 <button type="button" className="hush-motion" style={accordionButton} onClick={() => toggleSection('files')}>
                   <Download className="w-4 h-4" style={{ color: '#7C5C3E' }} />
-                  <span style={sectionTitle}>Files</span>
+                  <span style={sectionTitle}>{t('ot.files')}</span>
                   <ChevronDown
                     className="ml-auto w-4 h-4 transition-transform"
                     style={{ color: '#A89880', transform: openSection === 'files' ? 'rotate(180deg)' : 'rotate(0deg)' }}
@@ -1097,20 +1099,20 @@ export default function OwnerToolbar({ album, photos, ownerToken, userTier, medi
                       {zipping ? (
                         <>
                           <Loader2 className="w-4 h-4 animate-spin" />
-                          {zipProgress < 100 ? `Downloading ${zipProgress}%…` : 'Creating zip…'}
+                          {zipProgress < 100 ? t('ot.downloading', { n: zipProgress }) : t('ot.creatingZip')}
                         </>
                       ) : (
                         <>
                           <Download className="w-4 h-4" />
-                          Download all ({photos.length})
+                          {t('ot.downloadAll', { n: photos.length })}
                         </>
                       )}
                     </button>
 
                     <label className="flex items-center justify-between gap-4 rounded-xl px-3 py-3" style={{ background: '#FDFAF5', border: '1px solid #DDD5C5', cursor: 'pointer' }}>
                       <span>
-                        <span className="block text-sm font-semibold" style={{ color: '#630826' }}>Allow guest downloads</span>
-                        <span className="block text-xs" style={{ color: '#7C5C3E' }}>Guests can download all photos as a zip file.</span>
+                        <span className="block text-sm font-semibold" style={{ color: '#630826' }}>{t('ot.allowDownloads')}</span>
+                        <span className="block text-xs" style={{ color: '#7C5C3E' }}>{t('ot.allowDownloadsSub')}</span>
                       </span>
                       <input
                         type="checkbox"
@@ -1127,7 +1129,7 @@ export default function OwnerToolbar({ album, photos, ownerToken, userTier, medi
                               onAlbumUpdated({ allow_guest_downloads: !next })
                             }
                           } catch (e) {
-                            const message = e instanceof Error ? e.message : 'Network error'
+                            const message = e instanceof Error ? e.message : t('common.networkError')
                             showAppToast(message, 'error')
                             setAllowGuestDownloads(!next)
                             onAlbumUpdated({ allow_guest_downloads: !next })
@@ -1144,10 +1146,10 @@ export default function OwnerToolbar({ album, photos, ownerToken, userTier, medi
                       <span>
                         <span className="flex items-center gap-2 text-sm font-semibold" style={{ color: '#630826' }}>
                           <ScanFace className="w-4 h-4" />
-                          AI Face Finder
+                          {t('ot.faceFinder')}
                           {!canUseCollections && <span className="text-[10px] font-semibold uppercase" style={{ color: '#7C4A2D', letterSpacing: '0.06em' }}>Studio</span>}
                         </span>
-                        <span className="block text-xs" style={{ color: '#7C5C3E' }}>Guests can upload a selfie to find every photo they appear in.</span>
+                        <span className="block text-xs" style={{ color: '#7C5C3E' }}>{t('ot.faceFinderSub')}</span>
                       </span>
                       <input
                         type="checkbox"
@@ -1168,7 +1170,7 @@ export default function OwnerToolbar({ album, photos, ownerToken, userTier, medi
                               throw new Error(body.error ?? `Save failed (${res.status})`)
                             }
                           } catch (err) {
-                            const message = err instanceof Error ? err.message : 'Network error'
+                            const message = err instanceof Error ? err.message : t('common.networkError')
                             showAppToast(message, 'error')
                             setFaceFinderEnabled(!next)
                             onAlbumUpdated({ face_finder_enabled: !next })
@@ -1185,7 +1187,7 @@ export default function OwnerToolbar({ album, photos, ownerToken, userTier, medi
               <section style={settingsSectionStyle}>
                 <button type="button" className="hush-motion" style={accordionButton} onClick={() => toggleSection('customUrl')}>
                   <Link2 className="w-4 h-4" style={{ color: canCustomize ? '#7C5C3E' : '#A89880' }} />
-                  <span style={sectionTitle}>Custom URL</span>
+                  <span style={sectionTitle}>{t('ot.customUrl')}</span>
                   {!canCustomize && <span className="ml-auto text-[10px] font-semibold uppercase" style={{ color: '#7C4A2D', letterSpacing: '0.06em' }}>Pro</span>}
                   <ChevronDown
                     className={canCustomize ? 'ml-auto w-4 h-4 transition-transform' : 'w-4 h-4 transition-transform'}
@@ -1195,7 +1197,7 @@ export default function OwnerToolbar({ album, photos, ownerToken, userTier, medi
                 {openSection === 'customUrl' && (
                   <div className="px-4 pb-4">
                     <p className="text-xs mb-3" style={{ color: '#7C5C3E' }}>
-                      Pick a friendly path for this album. Letters, numbers, and hyphens, 3 to 40 characters.
+                      {t('ot.customUrlSub')}
                     </p>
                     <div className="flex items-stretch rounded-lg overflow-hidden" style={{ border: '1px solid #DDD5C5', background: '#FDFAF5', opacity: canCustomize ? 1 : 0.55 }}>
                       <span className="text-xs flex items-center px-2 select-none" style={{ color: '#A89880' }}>hushare.space/</span>
@@ -1214,7 +1216,7 @@ export default function OwnerToolbar({ album, photos, ownerToken, userTier, medi
                       />
                     </div>
                     {customUrlError && <p className="text-xs mt-2" style={{ color: '#C0392B' }}>{customUrlError}</p>}
-                    {customUrlSaved && !customUrlError && <p className="text-xs mt-2" style={{ color: '#630826' }}>Saved.</p>}
+                    {customUrlSaved && !customUrlError && <p className="text-xs mt-2" style={{ color: '#630826' }}>{t('ot.saved')}</p>}
                     <div className="flex items-center gap-2 mt-3">
                       <button
                         onClick={() => void saveCustomUrl('set')}
@@ -1222,7 +1224,7 @@ export default function OwnerToolbar({ album, photos, ownerToken, userTier, medi
                         className="hush-press flex-1 text-sm font-semibold rounded-lg py-2 transition hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed"
                         style={{ background: '#630826', color: '#FDFAF5' }}
                       >
-                        {customUrlSaving ? 'Saving...' : 'Save'}
+                        {customUrlSaving ? t('ot.saving') : t('ot.save')}
                       </button>
                       {album.custom_slug && (
                         <button
@@ -1231,7 +1233,7 @@ export default function OwnerToolbar({ album, photos, ownerToken, userTier, medi
                           className="hush-press text-sm rounded-lg py-2 px-3 transition hover:opacity-90 disabled:opacity-50"
                           style={{ background: '#F5F0E8', color: '#7C5C3E', border: '1px solid #DDD5C5' }}
                         >
-                          Clear
+                          {t('ot.clear')}
                         </button>
                       )}
                     </div>
@@ -1247,7 +1249,7 @@ export default function OwnerToolbar({ album, photos, ownerToken, userTier, medi
                   ) : (
                     <LockOpen className="w-4 h-4" style={{ color: canCustomize ? '#7C5C3E' : '#A89880' }} />
                   )}
-                  <span style={sectionTitle}>Password</span>
+                  <span style={sectionTitle}>{t('ot.password')}</span>
                   {!canCustomize && <span className="ml-auto text-[10px] font-semibold uppercase" style={{ color: '#7C4A2D', letterSpacing: '0.06em' }}>Pro</span>}
                   <ChevronDown
                     className={canCustomize ? 'ml-auto w-4 h-4 transition-transform' : 'w-4 h-4 transition-transform'}
@@ -1257,7 +1259,7 @@ export default function OwnerToolbar({ album, photos, ownerToken, userTier, medi
                 {openSection === 'password' && (
                   <div className="px-4 pb-4">
                     <p className="text-xs mb-3" style={{ color: '#7C5C3E' }}>
-                      Visitors will need this password to view the album. 4-128 characters.
+                      {t('ot.passwordSub')}
                     </p>
                     <input type="text" name="username" autoComplete="username" value={ownerUrl ?? ''} readOnly hidden />
                     <input
@@ -1265,7 +1267,7 @@ export default function OwnerToolbar({ album, photos, ownerToken, userTier, medi
                       type={passwordInput ? 'password' : 'text'}
                       value={passwordInput}
                       onChange={(e) => setPasswordInput(e.target.value)}
-                      placeholder={album.password_protected ? 'New password' : 'Password'}
+                      placeholder={album.password_protected ? t('ot.newPassword') : t('ot.passwordPlaceholder')}
                       maxLength={128}
                       disabled={!canCustomize}
                       autoComplete="new-password"
@@ -1280,7 +1282,7 @@ export default function OwnerToolbar({ album, photos, ownerToken, userTier, medi
                       }}
                     />
                     {passwordError && <p className="text-xs mt-2" style={{ color: '#C0392B' }}>{passwordError}</p>}
-                    {passwordSaved && !passwordError && <p className="text-xs mt-2" style={{ color: '#630826' }}>Saved.</p>}
+                    {passwordSaved && !passwordError && <p className="text-xs mt-2" style={{ color: '#630826' }}>{t('ot.saved')}</p>}
                     <div className="flex items-center gap-2 mt-3">
                       <button
                         onClick={() => void savePassword('set')}
@@ -1288,7 +1290,7 @@ export default function OwnerToolbar({ album, photos, ownerToken, userTier, medi
                         className="hush-press flex-1 text-sm font-semibold rounded-lg py-2 transition hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed"
                         style={{ background: '#630826', color: '#FDFAF5' }}
                       >
-                        {passwordSaving ? 'Saving...' : 'Save'}
+                        {passwordSaving ? t('ot.saving') : t('ot.save')}
                       </button>
                       {album.password_protected && (
                         <button
@@ -1297,7 +1299,7 @@ export default function OwnerToolbar({ album, photos, ownerToken, userTier, medi
                           className="hush-press text-sm rounded-lg py-2 px-3 transition hover:opacity-90 disabled:opacity-50"
                           style={{ background: '#F5F0E8', color: '#7C5C3E', border: '1px solid #DDD5C5' }}
                         >
-                          Remove
+                          {t('ot.remove')}
                         </button>
                       )}
                     </div>
@@ -1309,7 +1311,7 @@ export default function OwnerToolbar({ album, photos, ownerToken, userTier, medi
               <section style={settingsSectionStyle}>
                 <button type="button" className="hush-motion" style={accordionButton} onClick={() => toggleSection('collection')}>
                   <FolderPlus className="w-4 h-4" style={{ color: canUseCollections ? '#7C5C3E' : '#A89880' }} />
-                  <span style={sectionTitle}>Collections</span>
+                  <span style={sectionTitle}>{t('ot.collections')}</span>
                   {!canUseCollections && <span className="ml-auto text-[10px] font-semibold uppercase" style={{ color: '#7C4A2D', letterSpacing: '0.06em' }}>Max</span>}
                   <ChevronDown
                     className={canUseCollections ? 'ml-auto w-4 h-4 transition-transform' : 'w-4 h-4 transition-transform'}
@@ -1319,14 +1321,14 @@ export default function OwnerToolbar({ album, photos, ownerToken, userTier, medi
                 {openSection === 'collection' && (
                   <div className="px-4 pb-4">
                     <p className="text-xs mb-3" style={{ color: '#7C5C3E' }}>
-                      Add this album to a collection. Create new collections in your account.
+                      {t('ot.collectionsSub')}
                     </p>
 
                     {canUseCollections && (
                       <div className="mb-4 rounded-xl p-3" style={{ background: '#FDFAF5', border: '1px solid #E8E0D2' }}>
                         <div className="mb-2 flex items-center justify-between gap-3">
-                          <span className="text-xs font-semibold uppercase tracking-[0.08em]" style={{ color: '#8B6F4E' }}>Your collections</span>
-                          {collectionsLoading && <span className="text-xs" style={{ color: '#A89880' }}>Loading...</span>}
+                          <span className="text-xs font-semibold uppercase tracking-[0.08em]" style={{ color: '#8B6F4E' }}>{t('ot.yourCollections')}</span>
+                          {collectionsLoading && <span className="text-xs" style={{ color: '#A89880' }}>{t('ot.loading')}</span>}
                         </div>
                         <div className="space-y-2">
                           {collections.map((collection) => (
@@ -1345,12 +1347,12 @@ export default function OwnerToolbar({ album, photos, ownerToken, userTier, medi
                                 </span>
                               </span>
                               <span className="shrink-0 font-semibold" style={{ color: collection.contains_album ? '#630826' : '#7C5C3E' }}>
-                                {collection.contains_album ? 'Added' : 'Add'}
+                                {collection.contains_album ? t('ot.added') : t('ot.add')}
                               </span>
                             </button>
                           ))}
                           {!collectionsLoading && collections.length === 0 && (
-                            <p className="text-xs" style={{ color: '#8B6F4E' }}>No collections yet. Create one in your account.</p>
+                            <p className="text-xs" style={{ color: '#8B6F4E' }}>{t('ot.noCollections')}</p>
                           )}
                         </div>
                       </div>
@@ -1374,13 +1376,13 @@ export default function OwnerToolbar({ album, photos, ownerToken, userTier, medi
                   return (
                 <button type="button" className="hush-motion" style={accordionButton} onClick={() => toggleSection('reveal')}>
                   <Clock className="w-4 h-4" style={{ color: revealIsFuture ? '#630826' : '#7C5C3E' }} />
-                  <span style={sectionTitle}>Delayed reveal</span>
+                  <span style={sectionTitle}>{t('ot.delayedReveal')}</span>
                   {revealIsFuture && (
                     <span
                       className="ml-auto text-[10px] font-semibold uppercase tracking-wide px-1.5 py-0.5 rounded-full"
                       style={{ background: 'rgba(99,8,38,0.10)', color: '#630826' }}
                     >
-                      Active
+                      {t('ot.active')}
                     </span>
                   )}
                   <ChevronDown
@@ -1408,7 +1410,7 @@ export default function OwnerToolbar({ album, photos, ownerToken, userTier, medi
                           <Clock className="w-3.5 h-3.5 mt-0.5 shrink-0" style={{ color: isFuture ? '#630826' : '#8B6F4E' }} />
                           <div>
                             <p className="text-[11px] font-semibold leading-none mb-1" style={{ color: isFuture ? '#630826' : '#8B6F4E' }}>
-                              {isFuture ? 'Unlocks on' : 'Already revealed'}
+                              {isFuture ? t('ot.unlocksOn') : t('ot.alreadyRevealed')}
                             </p>
                             <p className="text-xs" style={{ color: '#5C4A3C' }}>
                               {revealDate.toLocaleString([], {
@@ -1426,7 +1428,7 @@ export default function OwnerToolbar({ album, photos, ownerToken, userTier, medi
 
                     <div>
                       <p className="text-[11px] font-medium mb-1.5" style={{ color: '#8B6F4E' }}>
-                        {album.reveal_at ? 'Change time' : 'Photos unlock for guests at'}
+                        {album.reveal_at ? t('ot.changeTime') : t('ot.unlockAt')}
                       </p>
                       <RevealDatePicker
                         value={revealInput}
@@ -1443,7 +1445,7 @@ export default function OwnerToolbar({ album, photos, ownerToken, userTier, medi
                         className="hush-press flex-1 text-sm font-semibold rounded-lg py-2 transition hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed"
                         style={{ background: '#630826', color: '#FDFAF5' }}
                       >
-                        {revealSaving ? 'Saving…' : revealSaved ? '✓ Saved' : 'Save'}
+                        {revealSaving ? t('ot.saving') : revealSaved ? `✓ ${t('ot.saved')}` : t('ot.save')}
                       </button>
                       {album.reveal_at && (
                         <button
@@ -1452,14 +1454,14 @@ export default function OwnerToolbar({ album, photos, ownerToken, userTier, medi
                           className="hush-press text-sm rounded-lg py-2 px-3 transition hover:opacity-80 disabled:opacity-50"
                           style={{ background: 'transparent', color: '#8B6F4E', border: '1px solid #DDD5C5' }}
                         >
-                          Remove
+                          {t('ot.remove')}
                         </button>
                       )}
                     </div>
 
                     {!album.reveal_at && (
                       <p className="text-[11px] leading-relaxed" style={{ color: '#A89880' }}>
-                        You can always view the album with your owner link.
+                        {t('ot.revealNote')}
                       </p>
                     )}
                   </div>
@@ -1471,7 +1473,7 @@ export default function OwnerToolbar({ album, photos, ownerToken, userTier, medi
               <section style={{ ...settingsSectionStyle, marginBottom: 0 }}>
                 <button type="button" className="hush-motion" style={accordionButton} onClick={() => toggleSection('danger')}>
                   <Trash2 className="w-4 h-4" style={{ color: '#C0392B' }} />
-                  <span style={sectionTitle}>Delete album</span>
+                  <span style={sectionTitle}>{t('ot.deleteAlbum')}</span>
                   <ChevronDown
                     className="ml-auto w-4 h-4 transition-transform"
                     style={{ color: '#A89880', transform: openSection === 'danger' ? 'rotate(180deg)' : 'rotate(0deg)' }}
@@ -1481,7 +1483,7 @@ export default function OwnerToolbar({ album, photos, ownerToken, userTier, medi
                   <div className="px-4 pb-4">
                     <div className={`hush-delete-dialog hush-delete-panel rounded-xl p-3 ${deleteConfirm ? 'hush-delete-dialog-open' : ''}`} style={{ background: '#FFF7F4', border: '1px solid rgba(192,57,43,0.25)' }}>
                       <p className="text-xs leading-relaxed mb-3" style={{ color: '#7A2A1F' }}>
-                        Delete this album, its photos and videos, and remove it from collections.
+                        {t('ot.deleteSub')}
                       </p>
                       <div className="flex flex-col gap-2 sm:flex-row">
                         <button
@@ -1492,7 +1494,7 @@ export default function OwnerToolbar({ album, photos, ownerToken, userTier, medi
                           style={{ background: deleteConfirm ? '#C0392B' : '#FFFFFF', border: '1px solid #C0392B', color: deleteConfirm ? '#FFFFFF' : '#C0392B' }}
                         >
                           <Trash2 className="w-4 h-4" />
-                          {deletingAlbum ? 'Deleting...' : deleteConfirm ? 'Delete permanently' : 'Delete album'}
+                          {deletingAlbum ? t('ot.deleting') : deleteConfirm ? t('ot.deletePermanently') : t('ot.deleteAlbum')}
                         </button>
                         {deleteConfirm && (
                           <button
