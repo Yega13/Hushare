@@ -3,6 +3,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { createClient } from '@/lib/supabase/server'
 import { checkRateLimit, clientIpKey } from '@/lib/rate-limit'
 import { forbidCrossSiteRequest } from '@/lib/request-security'
+import { track } from '@/lib/analytics'
 
 export const runtime = 'nodejs'
 
@@ -51,14 +52,22 @@ export async function POST(req: Request) {
 
   const body = await req.json().catch(() => null) as { title?: unknown } | null
   const title = body?.title
-  if (typeof title !== 'string' || title.trim().length < 1 || title.trim().length > 120) {
+  if (typeof title !== 'string') {
     return NextResponse.json({ error: 'Title must be 1–120 characters' }, { status: 400, headers: NO_STORE })
   }
-  // Store the title as entered — React JSX auto-escapes at render time,
-  // email templates use escapeHtml(), and JSON-LD uses JSON.stringify().
-  // Only strip control characters (null bytes, newlines, etc.) that have no valid use
-  // in a title and would either cause Postgres to error or render as invisible characters.
-  const cleanTitle = title.trim().replace(/[\x00-\x1F\x7F]/g, '')
+  // Stored value: strip only C0 control chars + DEL (never valid in a title), then trim.
+  // Everything else — including emoji and their ZWJ sequences (family, professions, flags) — is
+  // preserved as entered. React JSX auto-escapes at render, emails use escapeHtml(), JSON-LD stringifies.
+  const cleanTitle = title.replace(/[\x00-\x1F\x7F]/g, '').trim()
+  // Visibility check ONLY (does not change what we store): a title made purely of zero-width /
+  // invisible formatting chars (ZWSP, ZWNJ, ZWJ, word-joiner, BOM) renders as an empty cell yet
+  // survives String.trim() and the DB char_length(>=1) constraint — that is how a nameless album
+  // got created. Strip them here just to test whether any visible glyph remains: a lone ZWJ is
+  // rejected, but a ZWJ *inside* an emoji is not, because the emoji's own codepoints stay visible.
+  const visibleTitle = cleanTitle.replace(/[\u200B\u200C\u200D\u2060\uFEFF]/g, '').trim()
+  if (visibleTitle.length < 1 || cleanTitle.length > 120) {
+    return NextResponse.json({ error: 'Title must be 1–120 characters' }, { status: 400, headers: NO_STORE })
+  }
 
   // Guests can create albums — auth is optional
   const supabase = await createClient()
@@ -76,6 +85,7 @@ export async function POST(req: Request) {
       .single()
 
     if (!error) {
+      track({ name: 'album_created', albumId: data.id, userId: user?.id })
       // Owner token is set as an HttpOnly cookie AND returned to the creator so the client can
       // redirect to the management link (/slug#owner=token). Returning it here is safe: the
       // caller is the owner (they just created the album) — the same way the account dashboard

@@ -7,8 +7,9 @@ import HamburgerMenu from '@/components/HamburgerMenu'
 export const runtime = 'nodejs'
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL ?? 'https://hushare.space'
-const LAST_UPDATED = '2026-04-25'
-const LAST_UPDATED_HUMAN = 'April 25, 2026'
+const PUBLISHED = '2026-04-25'
+const LAST_UPDATED = '2026-07-18'
+const LAST_UPDATED_HUMAN = 'July 18, 2026'
 
 const PAGE_TITLE = 'Privacy Policy'
 const PAGE_DESCRIPTION =
@@ -63,7 +64,7 @@ const jsonLd = {
       inLanguage: 'en',
       isPartOf: { '@id': `${SITE_URL}#website` },
       dateModified: LAST_UPDATED,
-      datePublished: LAST_UPDATED,
+      datePublished: PUBLISHED,
       about: { '@id': `${SITE_URL}#organization` },
     },
   ],
@@ -247,6 +248,15 @@ export default function PrivacyPage() {
             are only reachable by someone who has the link. You decide who
             receives that link. We do not sell, rent, or share your data with
             advertisers - ever.
+          </p>
+          <p className="mt-3">
+            In limited circumstances, authorised Hushare staff may access album
+            content - including photos and videos - where it is necessary to run
+            the service: to respond to a report or legal request, to investigate
+            suspected illegal or abusive content, to comply with applicable law,
+            or to help you with a support request you have raised. We access
+            content only when there is a specific, legitimate reason to do so -
+            never to browse albums out of curiosity, and never for advertising.
           </p>
         </Section>
 

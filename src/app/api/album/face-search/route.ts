@@ -4,6 +4,7 @@ import { searchFacesByImage } from '@/lib/rekognition'
 import { forbidCrossSiteRequest } from '@/lib/request-security'
 import { getUserTierById } from '@/lib/subscriptions'
 import { checkRateLimit, clientIpKey } from '@/lib/rate-limit'
+import { track } from '@/lib/analytics'
 
 export const runtime = 'nodejs'
 export const maxDuration = 30
@@ -135,6 +136,8 @@ async function handlePost(req: Request) {
       { status: 502, headers: NO_STORE },
     )
   }
+
+  track({ name: 'face_search_run', albumId: album.id, matches: matches.length })
 
   return NextResponse.json({ matches }, { headers: NO_STORE })
 }

@@ -3,6 +3,7 @@ import { createClient } from '@/lib/supabase/server'
 import { createCheckout, tierFromProduct } from '@/lib/polar'
 import { forbidCrossSiteRequest } from '@/lib/request-security'
 import { checkRateLimit, clientIpKey } from '@/lib/rate-limit'
+import { track } from '@/lib/analytics'
 
 export const runtime = 'nodejs'
 
@@ -79,6 +80,8 @@ export async function POST(req: Request) {
       { status: 502, headers: NO_STORE },
     )
   }
+
+  track({ name: 'checkout_started', userId: user.id, tier: tierMatch.tier, cycle: tierMatch.cycle })
 
   return NextResponse.redirect(checkout.url, { status: 303, headers: NO_STORE })
 }

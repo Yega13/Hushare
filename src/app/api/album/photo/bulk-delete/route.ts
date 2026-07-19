@@ -5,6 +5,7 @@ import { forbidCrossSiteRequest } from '@/lib/request-security'
 import { r2KeyFromUrl } from '@/lib/album-delete'
 import { deleteStreamVideo } from '@/lib/cloudflare/stream'
 import { getCloudflareContext } from '@opennextjs/cloudflare'
+import { track } from '@/lib/analytics'
 
 export const runtime = 'nodejs'
 
@@ -144,6 +145,8 @@ export async function POST(req: Request) {
       console.error('[photo/bulk-delete] Stream remove failed:', e instanceof Error ? e.message : String(e))
     )
   ))
+
+  track({ name: 'media_deleted', albumId: access.album.id, count: validPhotos.length })
 
   return NextResponse.json({ ok: true, deleted: validPhotos.length }, { headers: NO_STORE })
 }

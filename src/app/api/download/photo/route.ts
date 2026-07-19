@@ -4,6 +4,7 @@ import { timingSafeEqual } from '@/lib/timing-safe'
 import { cookieNameForAlbum, verifyAccessToken } from '@/lib/album-password'
 import { checkRateLimit, clientIpKey } from '@/lib/rate-limit'
 import { createPresignedGet } from '@/lib/cloudflare/r2'
+import { track } from '@/lib/analytics'
 import { cookies } from 'next/headers'
 
 export const runtime = 'nodejs'
@@ -107,6 +108,13 @@ export async function GET(req: Request) {
   // param to a CDN URL does nothing because R2 only honours it on presigned S3 requests.
   // We must sign a new GetObject request with the disposition baked into the signature.
   const signedUrl = await createPresignedGet(photo.storage_path, 'attachment', 300)
+
+  track({
+    name: 'media_downloaded',
+    albumId: album.id,
+    kind: isBlobMode ? 'zip' : 'single',
+    source: isOwner ? 'owner' : 'guest',
+  })
 
   if (isBlobMode) {
     // Fetch the asset from R2 server-side and stream bytes directly to the client.

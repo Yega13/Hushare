@@ -3,6 +3,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { deleteAlbumAssetsAndRows } from '@/lib/album-delete'
 import { getUserTierById, getPaidRetentionUntil } from '@/lib/subscriptions'
 import { timingSafeEqual } from '@/lib/timing-safe'
+import { track } from '@/lib/analytics'
 
 export const runtime = 'nodejs'
 
@@ -107,6 +108,7 @@ export async function POST(req: Request) {
     const result = await deleteAlbumAssetsAndRows(admin, album)
     if (result.ok) {
       retired += 1
+      track({ name: 'album_retired', albumId: album.id })
     } else {
       // Deletion failed — clear retired_at so the next cron run can retry.
       console.error('[retire-albums] deletion failed for album', album.slug, '— resetting retired_at for retry')

@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { forbidCrossSiteRequest } from '@/lib/request-security'
 import { checkRateLimit, clientIpKey } from '@/lib/rate-limit'
+import { track } from '@/lib/analytics'
 
 export const runtime = 'nodejs'
 
@@ -175,6 +176,7 @@ export async function POST(req: Request) {
       return json(502, { error: 'Our mail service rejected the report' })
     }
 
+    track({ name: 'report_submitted' })
     return json(200, { ok: true })
   } catch (err) {
     console.error('[report] fetch failed:', err)

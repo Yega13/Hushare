@@ -23,6 +23,12 @@ binding = "ASSETS"
 binding = "R2_BUCKET"
 bucket_name = "hushare-media"
 
+# Workers Analytics Engine — product event stream (queried via the SQL API / GraphQL).
+# Fire-and-forget writes from src/lib/analytics.ts; never on the request's critical path.
+[[analytics_engine_datasets]]
+binding = "ANALYTICS"
+dataset = "hushare_events"
+
 [vars]
 NEXT_PUBLIC_SITE_URL = "https://hushare.space"
 NEXT_PUBLIC_SUPABASE_URL = "https://yqngmyjquwemwogdyuwv.supabase.co"

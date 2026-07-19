@@ -5,6 +5,9 @@ import { forbidCrossSiteRequest } from '@/lib/request-security'
 import { sendPhotoNotificationEmail } from '@/lib/email'
 import { streamVideoUrls } from '@/lib/cloudflare/stream'
 import { queueAlbumChangedBroadcast, runAfterResponse } from '@/lib/broadcast'
+import { track } from '@/lib/analytics'
+import { timingSafeEqual } from '@/lib/timing-safe'
+import { cookies } from 'next/headers'
 
 export const runtime = 'nodejs'
 
@@ -59,6 +62,7 @@ type AlbumRow = {
   guest_uploads_enabled: boolean
   title: string
   slug: string
+  owner_token: string
 }
 
 function r2UrlPrefix(host: string, albumId: string, prefix: 'albums' | 'thumbs') {
@@ -201,7 +205,7 @@ export async function POST(req: Request) {
 
   const { data: album, error: albumError } = await admin
     .from('albums')
-    .select('id, user_id, guest_uploads_enabled, title, slug')
+    .select('id, user_id, guest_uploads_enabled, title, slug, owner_token')
     .eq('id', albumId)
     .is('retired_at', null)
     .maybeSingle<AlbumRow>()
@@ -341,7 +345,8 @@ export async function POST(req: Request) {
   const r2Rows = rows.filter(r => r.storage_backend === 'r2')
   const streamRows = rows.filter(r => r.storage_backend === 'stream')
 
-  let insertedCount = 0
+  let insertedImages = 0
+  let insertedVideos = 0
 
   if (r2Rows.length > 0) {
     const { data, error } = await admin
@@ -352,7 +357,7 @@ export async function POST(req: Request) {
       console.error('[photos/create] r2 upsert failed:', error.message)
       return NextResponse.json({ error: 'Failed to save photos' }, { status: 500, headers: NO_STORE })
     }
-    insertedCount += (data ?? []).length
+    insertedImages += (data ?? []).length
   }
 
   if (streamRows.length > 0) {
@@ -364,10 +369,18 @@ export async function POST(req: Request) {
       console.error('[photos/create] stream upsert failed:', error.message)
       return NextResponse.json({ error: 'Failed to save photos' }, { status: 500, headers: NO_STORE })
     }
-    insertedCount += (data ?? []).length
+    insertedVideos += (data ?? []).length
   }
 
-  const inserted = insertedCount
+  const inserted = insertedImages + insertedVideos
+
+  // Attribute the upload to owner vs guest via the owner cookie (same check the download route uses).
+  if (inserted > 0) {
+    const ownerCookie = ((await cookies()).get(`hushare_owner_${albumId}`)?.value ?? '').trim()
+    const source = ownerCookie.length > 0 && timingSafeEqual(ownerCookie, album.owner_token) ? 'owner' : 'guest'
+    if (insertedImages > 0) track({ name: 'media_uploaded', albumId, mediaType: 'image', count: insertedImages, source })
+    if (insertedVideos > 0) track({ name: 'media_uploaded', albumId, mediaType: 'video', count: insertedVideos, source })
+  }
 
   // Live-update ping to everyone viewing this album (Broadcast — scales where postgres_changes
   // dropped events under burst). waitUntil keeps it alive past the response so it isn't cancelled.

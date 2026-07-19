@@ -1,4 +1,5 @@
 import Image from 'next/image'
+import ReactDOM from 'react-dom'
 import Link from 'next/link'
 import AccountNavLink from '@/components/AccountNavLink'
 import HamburgerMenu from '@/components/HamburgerMenu'
@@ -13,6 +14,14 @@ import type { DictKey } from '@/i18n/dictionaries/en'
 const NATURE_IMG = '/hero-nature.jpg'
 
 export default async function HomePage() {
+  // The hero image is a full-viewport CSS background — the browser only discovers it after CSS
+  // parses, which delays the mobile LCP. Preloading (fetchPriority high) starts the fetch in the
+  // initial HTML instead. Same file the CSS requests, so it dedupes — no extra download, no pixel
+  // change. NOTE: this is a static /public asset served directly; the /_next/image optimizer on
+  // this Cloudflare deployment is a passthrough (verified — returns originals, no AVIF/resize), so
+  // real byte savings need pre-optimized assets or a Cloudflare Images loader, not next/image.
+  ReactDOM.preload(NATURE_IMG, { as: 'image', fetchPriority: 'high' })
+
   const dict = getDictionary(await getServerLocale())
   const homeFaq = Array.from({ length: 10 }, (_, i) => ({
     q: dict[`home.faq.q${i + 1}` as DictKey],

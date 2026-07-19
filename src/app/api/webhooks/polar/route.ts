@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { verifyWebhookSignature, tierFromProduct } from '@/lib/polar'
+import { track } from '@/lib/analytics'
 
 export const runtime = 'nodejs'
 
@@ -104,6 +105,12 @@ export async function POST(req: Request) {
   if (error) {
     console.error('[polar/webhook] upsert failed:', error.message, 'event=', event.type)
     return NextResponse.json({ error: 'DB write failed' }, { status: 500, headers: NO_STORE })
+  }
+
+  if (sub.status === 'active' || sub.status === 'trialing') {
+    track({ name: 'subscription_active', userId, tier: tierMatch.tier })
+  } else if (sub.status === 'canceled') {
+    track({ name: 'subscription_canceled', userId, tier: tierMatch.tier })
   }
 
   return NextResponse.json({ ok: true, type: event.type }, { headers: NO_STORE })

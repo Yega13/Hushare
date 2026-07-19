@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import * as tus from 'tus-js-client'
 import type { Album, Tier } from '@/types'
 import { stripExifFromJpeg, jpegOrientation } from '@/lib/exif'
-import { snapshotFileRobust } from '@/lib/file-read'
+import { snapshotFileRobust, readFileRobust } from '@/lib/file-read'
 import { showAppToast } from '@/components/AppToast'
 import { useT } from '@/i18n/LocaleProvider'
 import { detectKind, uploadCapsForTier, generateVideoPoster } from '@/lib/media'
@@ -14,10 +14,12 @@ import {
   STREAM_CHUNK_SIZE_BYTES,
 } from '@/lib/constants'
 
-// ─── XHR timeout ──────────────────────────────────────────────────────────────
-const XHR_TIMEOUT_MS = 60_000
-// If a PUT opens the socket but sends no bytes for this long (a flaky-mobile stall), abort
-// and let the retry loop try again — instead of waiting out the full XHR_TIMEOUT_MS.
+// ─── Upload stall watchdog ────────────────────────────────────────────────────
+// Deliberately NO hard total-time cap on a PUT. On congested event Wi-Fi / cellular a large
+// image can legitimately take minutes, and the old fixed 60s ceiling killed slow-but-healthy
+// uploads with "Upload timed out" (then every retry hit the same wall → permanent failure).
+// Instead we watch for *stalls*: if the socket sends no bytes for this long, abort and let the
+// retry loop reconnect. Any real progress resets the clock, so a slow upload is never cut off.
 const STALL_TIMEOUT_MS = 20_000
 // ─── Max image dimension — images larger than this get downscaled before upload ─
 // 2560px (≈QHD) keeps images crisp on any phone/laptop screen while cutting a 12-48MP phone
@@ -79,7 +81,9 @@ function getHeicWorker(): Worker {
 async function convertHeicViaWorker(file: File): Promise<Blob> {
   const worker = getHeicWorker()
   const id = ++_heicJobId
-  const buffer = await file.arrayBuffer()
+  // Robust read: an iOS/Android picked-file reference can be momentarily unreadable — retry
+  // through readFileRobust rather than throwing on the first arrayBuffer() attempt.
+  const buffer = await readFileRobust(file)
   return new Promise<Blob>((resolve, reject) => {
     const timer = setTimeout(() => {
       _heicCallbacks.delete(id)
@@ -211,7 +215,10 @@ async function deriveThumb(bitmap: ImageBitmap): Promise<Blob | null> {
 }
 
 async function strippedJpegBlob(source: Blob): Promise<Blob> {
-  const buf = await source.arrayBuffer()
+  // readFileRobust (retries + FileReader/blob-URL fallbacks) instead of a bare arrayBuffer():
+  // on iOS a stale picked-file reference throws NotFoundError ("The object can not be found
+  // here.") on the first read but often succeeds on a retry a moment later.
+  const buf = await readFileRobust(source)
   const stripped = stripExifFromJpeg(new Uint8Array(buf))
   return new Blob([stripped.buffer as unknown as ArrayBuffer], { type: 'image/jpeg' })
 }
@@ -397,7 +404,7 @@ async function processImageInner(file: File): Promise<ProcessedImage> {
     }
 
     if (mimeType === 'image/jpeg' || mimeType === 'image/jpg') {
-      const raw = new Uint8Array(await file.arrayBuffer())
+      const raw = new Uint8Array(await readFileRobust(file))
       if (jpegOrientation(raw) !== 1) {
         // The lossless strip drops APP1 — including the EXIF orientation tag — so a rotated
         // photo would upload sideways. Re-encode instead: createImageBitmap already baked the
@@ -447,8 +454,8 @@ async function xhrPut(
     let lastActivity = Date.now()
 
     // Stall watchdog: mobile connections sometimes open the socket then stop sending bytes.
-    // Rather than hang for the full XHR_TIMEOUT_MS, abort after STALL_TIMEOUT_MS of zero
-    // progress so the retry loop can try again quickly. Reset on every progress event.
+    // Abort after STALL_TIMEOUT_MS of zero progress so the retry loop can reconnect quickly.
+    // Reset on every upload-progress event and once the body is fully sent (see below).
     const stallTimer = setInterval(() => {
       if (Date.now() - lastActivity > STALL_TIMEOUT_MS) {
         finish(() => { try { xhr.abort() } catch { /* ignore */ }; reject(new Error('Upload stalled — retrying')) })
@@ -468,17 +475,18 @@ async function xhrPut(
     xhr.open('PUT', url)
     xhr.setRequestHeader('Content-Type', contentType)
     xhr.setRequestHeader('Cache-Control', IMMUTABLE_CACHE_CONTROL)
-    xhr.timeout = XHR_TIMEOUT_MS
     xhr.upload.onprogress = (e) => {
       lastActivity = Date.now()
       if (e.lengthComputable) onProgress(Math.round((e.loaded / e.total) * 100))
     }
+    // Body fully sent — restart the stall clock so a slow server response during the
+    // request→response gap (when upload progress no longer fires) isn't mistaken for a stall.
+    xhr.upload.onload = () => { lastActivity = Date.now() }
     xhr.onload = () => finish(() => {
       if (xhr.status >= 200 && xhr.status < 300) resolve()
       else reject(new HttpError(xhr.status, `R2 PUT ${xhr.status}`))
     })
     xhr.onerror = () => finish(() => reject(new Error('Network error during upload')))
-    xhr.ontimeout = () => finish(() => reject(new Error('Upload timed out')))
     xhr.send(body)
   })
 }
@@ -488,8 +496,12 @@ async function xhrPut(
 // Network failures, timeouts, stalls and 5xx are transient — retried with jittered
 // exponential backoff. A deliberate cancel (AbortError) always propagates immediately.
 
+// Exponential backoff capped at 8s. Mobile networks at a crowded venue drop for *seconds* at a
+// time, so the early sub-second delays alone weren't enough to ride out a drop — the curve now
+// climbs to multi-second waits (0.5→1→2→4→8s) before giving up, mirroring the video path's
+// persistence. Every retry re-PUTs the same immutable R2 key, so extra attempts are idempotent.
 function backoffDelay(attempt: number): number {
-  return 400 * 2 ** (attempt - 1) + Math.random() * 300
+  return Math.min(8000, 500 * 2 ** (attempt - 1)) + Math.random() * 300
 }
 
 async function fetchWithRetry(url: string, init: RequestInit, attempts = 3): Promise<Response> {
@@ -520,7 +532,7 @@ async function putWithRetry(
   contentType: string,
   onProgress: (pct: number) => void,
   signal?: AbortSignal,
-  attempts = 3,
+  attempts = 5,
 ): Promise<void> {
   let lastErr: Error | null = null
   for (let attempt = 0; attempt < attempts; attempt++) {
@@ -985,8 +997,11 @@ function reportClientEvent(
 function friendlyUploadError(e: unknown): string {
   const raw = e instanceof Error ? e.message : 'Upload failed'
 
-  // Android stale file-reference bug: the OS revoked the picked file before we could read it.
-  if (/could not be read|NotReadableError|permission problems/i.test(raw)) {
+  // Stale/unreadable picked-file reference: the OS invalidated the file before we could read it.
+  // Android reports NotReadableError ("could not be read… permission problems"); iOS/WebKit reports
+  // the same underlying failure as NotFoundError ("The object can not be found here.") or a decode
+  // SyntaxError ("The string did not match the expected pattern."). All map to the same user action.
+  if (/could not be read|NotReadableError|NotFoundError|permission problems|object can not be found|did not match the expected pattern|InvalidStateError/i.test(raw)) {
     return 'Could not read this file from your device. Please remove it and add it again.'
   }
 
