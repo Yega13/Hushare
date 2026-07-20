@@ -57,6 +57,10 @@ export default function PhotoGrid({ album, photos, isOwner, slug, forceGlobalRad
   // DB value is 'justified' (kept to avoid a migration); it renders a masonry layout.
   const masonry = album.photo_layout === 'justified'
 
+  // First-row (above-the-fold) tiles load eagerly at high priority — the rest stay lazy. Combined
+  // with server-rendering the grid, this stops the LCP image from being deprioritized.
+  const eagerFirstRowCount = album.mobile_grid_columns ?? 3
+
   // Stable key over the set of photo IDs. Lets effects depend on "did the tile set change?"
   // instead of "did the photos array reference change?" — the latter happens on every Realtime
   // UPDATE, which would otherwise force a full observer rebuild + re-firing all preloads.
@@ -496,6 +500,7 @@ export default function PhotoGrid({ album, photos, isOwner, slug, forceGlobalRad
             handlers={tileHandlersRef}
             boxW={boxW}
             boxH={boxH}
+            eager={index < eagerFirstRowCount}
           />
         )
 

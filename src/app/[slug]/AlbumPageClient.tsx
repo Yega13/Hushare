@@ -100,24 +100,36 @@ function getBackgroundColorStyle(theme: string | null): CSSProperties {
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
-export default function AlbumPageClient() {
+type InitialGate =
+  | { type: 'password'; slug: string; title: string }
+  | { type: 'reveal'; revealAt: string; slug: string; title: string }
+
+type Props = {
+  // Server-rendered initial state (src/app/[slug]/page.tsx). When present, the page paints
+  // immediately from these instead of showing a skeleton and doing the client resolve+photos fetch.
+  initialAlbum?: Album | null
+  initialPhotos?: Photo[]
+  initialGate?: InitialGate
+}
+
+export default function AlbumPageClient({ initialAlbum = null, initialPhotos, initialGate }: Props = {}) {
   const { slug } = useParams<{ slug: string }>()
   const [supabase] = useState(() => createClient())
 
-  // Album data
-  const [album, setAlbum] = useState<Album | null>(null)
-  const [photos, setPhotos] = useState<Photo[]>([])
+  // Album data — seeded from the server render when available.
+  const [album, setAlbum] = useState<Album | null>(initialAlbum)
+  const [photos, setPhotos] = useState<Photo[]>(initialPhotos ?? [])
 
-  // Loading gates
-  const [loading, setLoading] = useState(true)
+  // Loading gates — not loading when the server already provided album or gate state.
+  const [loading, setLoading] = useState(!initialAlbum && !initialGate)
   const [isNotFound, setIsNotFound] = useState(false)
   const [networkError, setNetworkError] = useState(false)
   const [passwordGate, setPasswordGate] = useState<{
     slug: string; title: string
-  } | null>(null)
+  } | null>(initialGate?.type === 'password' ? { slug: initialGate.slug, title: initialGate.title } : null)
   const [revealGate, setRevealGate] = useState<{
     revealAt: string; slug: string; title: string
-  } | null>(null)
+  } | null>(initialGate?.type === 'reveal' ? { revealAt: initialGate.revealAt, slug: initialGate.slug, title: initialGate.title } : null)
 
   // Owner
   const [ownerTokenReady, setOwnerTokenReady] = useState(false)
@@ -145,6 +157,12 @@ export default function AlbumPageClient() {
   // generation advanced past myGen (i.e. a newer slug navigation superseded this call).
   // This prevents a stale in-flight fetchAlbum from overwriting the new album's state.
   const fetchGenRef = useRef(0)
+
+  // Server-hydration bookkeeping. `seededRef`: the server rendered this slug's album/gate, so the
+  // first fetchAlbum is skipped (unless upgrading to owner view). `firstEffectRunRef` guards the
+  // slug-reset effect so it doesn't wipe the seeded state on mount — only on real slug navigations.
+  const seededRef = useRef<boolean>(!!initialAlbum || !!initialGate)
+  const firstEffectRunRef = useRef(true)
 
   // Computed at render — ref is always set before isOwner can become true.
   // Owner view requires the owner cookie (set via the #owner= management link or album
@@ -192,6 +210,17 @@ export default function AlbumPageClient() {
 
   const fetchAlbum = useCallback(async (): Promise<void> => {
     if (!ownerTokenReady) return
+
+    // The server already rendered this slug's album/gate. Skip the initial client fetch — unless
+    // we're upgrading to owner view (the #owner= fragment is present, which the server couldn't
+    // see). Consumed once: any later call (gate unlock, navigation, retry, realtime) is a real fetch.
+    if (seededRef.current) {
+      seededRef.current = false
+      if (!ownerTokenFromUrlRef.current) {
+        setLoading(false)
+        return
+      }
+    }
 
     // Capture generation at call time. isCancelled() returns true if a slug
     // change advanced fetchGenRef.current past this value while we were awaiting.
@@ -326,17 +355,27 @@ export default function AlbumPageClient() {
       uploadRefetchTimerRef.current = null
     }
 
-    // Synchronously reset ALL state for the new slug before any async work.
+    // Synchronously reset state for the new slug before any async work.
     // App Router re-renders the same component instance on slug changes — it
     // does NOT unmount/remount — so stale state from the previous album must
     // be explicitly cleared here.
-    setLoading(true)
-    setIsNotFound(false)
-    setNetworkError(false)
-    setAlbum(null)
-    setPhotos([])
-    setPasswordGate(null)
-    setRevealGate(null)
+    // EXCEPTION: on the very first run, if the server seeded this slug's album/gate, keep it —
+    // wiping it would blank the page and throw away the SSR. Real slug navigations reset fully.
+    const isFirstRun = firstEffectRunRef.current
+    firstEffectRunRef.current = false
+    const keepSeeded = isFirstRun && seededRef.current
+
+    if (!keepSeeded) {
+      setLoading(true)
+      setIsNotFound(false)
+      setNetworkError(false)
+      setAlbum(null)
+      setPhotos([])
+      setPasswordGate(null)
+      setRevealGate(null)
+    }
+
+    // Owner + display state is always re-derived per load.
     setIsOwner(false)
     setOwnerToken(null)
     setOwnerTokenReady(false)

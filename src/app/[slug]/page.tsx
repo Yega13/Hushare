@@ -1,8 +1,10 @@
-import { Suspense } from 'react'
+import { notFound } from 'next/navigation'
+import { cookies } from 'next/headers'
 import type { Metadata } from 'next'
+import type { Photo } from '@/types'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { resolveAlbum, fetchAuthorizedPhotos } from '@/lib/server/album-access'
 import AlbumPageClient from './AlbumPageClient'
-import AlbumSkeleton from '@/components/AlbumSkeleton'
 
 export const runtime = 'nodejs'
 export const revalidate = 0
@@ -110,13 +112,34 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   }
 }
 
-// AlbumPageClient reads the slug via useParams() — no need to pass it as a prop.
-// The Suspense fallback fires while AlbumPageClient's async effects complete on
-// initial hydration. Runtime slug resolution is client-side only.
-export default function AlbumPage() {
-  return (
-    <Suspense fallback={<AlbumSkeleton />}>
-      <AlbumPageClient />
-    </Suspense>
-  )
+// Server-render the album so a guest gets the photos in the initial HTML instead of waiting on
+// JS → hydrate → two client API round-trips (resolve, then photos). The client still hydrates for
+// interactivity (owner upgrade via #owner=, realtime, uploads). The server cannot read the #owner=
+// URL fragment, so it resolves as a guest (wantsOwner=false): gated albums render their gate here
+// and the owner upgrades client-side exactly as before.
+export default async function AlbumPage({ params }: Props) {
+  const { slug } = await params
+  const cookieStore = await cookies()
+  const resolved = await resolveAlbum(slug, false, cookieStore)
+
+  if (resolved.kind === 'invalid' || resolved.kind === 'notfound') notFound()
+
+  if (resolved.kind === 'reveal') {
+    return <AlbumPageClient initialGate={{ type: 'reveal', revealAt: resolved.reveal_at, slug: resolved.slug, title: resolved.title }} />
+  }
+  if (resolved.kind === 'password') {
+    return <AlbumPageClient initialGate={{ type: 'password', slug: resolved.slug, title: resolved.title }} />
+  }
+
+  // Open / already-unlocked — fetch photos server-side so they land in the initial HTML.
+  let initialPhotos: Photo[] = []
+  try {
+    const photosRes = await fetchAuthorizedPhotos(resolved.album.id, cookieStore)
+    if (photosRes.kind === 'ok') initialPhotos = photosRes.photos
+  } catch {
+    // Server-side photo fetch failed — render the shell; the client effect refetches.
+    initialPhotos = []
+  }
+
+  return <AlbumPageClient initialAlbum={resolved.album} initialPhotos={initialPhotos} />
 }

@@ -1,67 +1,24 @@
 import { NextResponse } from 'next/server'
 import { cookies } from 'next/headers'
-import { createAdminClient } from '@/lib/supabase/admin'
 import { checkRateLimit, clientIpKey } from '@/lib/rate-limit'
-import { verifyAccessToken } from '@/lib/album-password'
-import { timingSafeEqual } from '@/lib/timing-safe'
+import { resolveAlbum } from '@/lib/server/album-access'
 
 export const runtime = 'nodejs'
 
 const NO_STORE = { 'Cache-Control': 'no-store' }
 
-// owner_token and user_id are intentionally absent — they are never needed in the
-// resolve response. owner_token is fetched in a separate query only when an owner
-// cookie is present, so it never touches memory on ordinary guest requests.
-type AlbumRow = {
-  id: string
-  slug: string
-  custom_slug: string | null
-  title: string
-  background_theme: string | null
-  media_radius: number
-  media_filter: string
-  media_hover: string
-  mobile_grid_columns: number
-  photo_layout: string
-  slideshow_interval_ms: number
-  slideshow_animation: string
-  video_autoplay: boolean
-  cover_photo_id: string | null
-  reveal_at: string | null
-  guest_uploads_enabled: boolean
-  allow_guest_downloads: boolean
-  face_finder_enabled: boolean
-  last_activity_at: string
-  created_at: string
-  // Internal — stripped before response
-  password_hash: string | null
-  retired_at: string | null
-}
-
-const SELECT_COLS = [
-  'id', 'slug', 'custom_slug', 'title', 'background_theme',
-  'media_radius', 'media_filter', 'media_hover', 'mobile_grid_columns', 'photo_layout',
-  'slideshow_interval_ms', 'slideshow_animation', 'video_autoplay',
-  'cover_photo_id', 'reveal_at', 'guest_uploads_enabled', 'allow_guest_downloads',
-  'face_finder_enabled',
-  'last_activity_at', 'created_at',
-  'password_hash', 'retired_at',
-].join(', ')
-
+// Thin wrapper over the shared resolveAlbum() (src/lib/server/album-access.ts), which is also
+// used by the server-rendered album page so the two can never make different gating decisions.
 export async function GET(req: Request) {
   const url = new URL(req.url)
-  const slug = (url.searchParams.get('slug') ?? '').trim().toLowerCase()
+  const slug = url.searchParams.get('slug') ?? ''
+  // owner=1 only when the client is actually in owner view (the #owner= management link is in the
+  // URL this load) — a leftover owner cookie on the plain guest URL must not bypass the gates.
+  const wantsOwner = url.searchParams.get('owner') === '1'
 
-  if (!slug || slug.length < 4 || slug.length > 80 || !/^[a-z0-9-]+$/.test(slug)) {
-    return NextResponse.json({ error: 'Invalid slug' }, { status: 400, headers: NO_STORE })
-  }
-
-  // failOpen:true intentionally — album/resolve is a read-only endpoint and failing it closed
-  // would make all album views return 429 during any rate-limit store outage, which is worse
-  // than allowing slug enumeration to continue until the store recovers.
-  // Limit is per-IP, but at an EVENT dozens–hundreds of guests share ONE venue-WiFi public IP
-  // (cf-connecting-ip is the NAT's IP for all of them). 30/min would rate-limit guests out of
-  // simply VIEWING the album. 900/min still throttles a scraper but never a real crowd.
+  // failOpen:true — album/resolve is read-only; failing closed would 429 all album views during a
+  // rate-limit store outage. Limit is high because at an event dozens–hundreds of guests share ONE
+  // venue-WiFi public IP — 900/min throttles a scraper but never a real crowd.
   const rl = await checkRateLimit(clientIpKey(req, 'album_resolve'), 60, 900, { failOpen: true })
   if (!rl.ok) {
     return NextResponse.json(
@@ -70,97 +27,25 @@ export async function GET(req: Request) {
     )
   }
 
-  const admin = createAdminClient()
-
-  // Single round trip for both the random-slug and custom-slug lookup (both columns are unique,
-  // so at most 2 rows can ever match). Random slug takes priority over custom_slug in case of
-  // string overlap, resolved in JS since `.or()` can't express "prefer this match". `slug` was
-  // validated above against /^[a-z0-9-]+$/, which excludes the `,()` PostgREST's `.or()` filter
-  // syntax needs to be broken out of — safe to interpolate.
-  // Filter retired_at at SQL level — JS check below is belt-and-suspenders only.
-  const { data: rows } = await admin.from('albums').select(SELECT_COLS)
-    .or(`slug.eq.${slug},custom_slug.eq.${slug}`)
-    .is('retired_at', null)
-    .limit(2)
-    .returns<AlbumRow[]>()
-  const album: AlbumRow | null = rows && rows.length > 0
-    ? (rows.find((r) => r.slug === slug) ?? rows[0])
-    : null
-
-  if (!album || album.retired_at) {
-    return NextResponse.json({ error: 'Album not found' }, { status: 404, headers: NO_STORE })
-  }
-
-  const albumId = album.id
   const cookieStore = await cookies()
+  const result = await resolveAlbum(slug, wantsOwner, cookieStore)
 
-  // Owner check: the client passes owner=1 only when it is actually in owner view (the
-  // #owner= management link is in the URL this load). A leftover owner cookie on the plain
-  // (guest) URL must NOT be treated as owner — otherwise the reveal/password gates would be
-  // silently bypassed for a guest-looking view. owner_token is fetched in a separate minimal
-  // query ONLY when owner mode is requested and a cookie is present, so it never enters memory
-  // on ordinary guest requests.
-  const wantsOwner = url.searchParams.get('owner') === '1'
-  let isOwner = false
-  const ownerCookieVal = (cookieStore.get(`hushare_owner_${albumId}`)?.value ?? '').trim()
-  if (wantsOwner && ownerCookieVal) {
-    const { data: ownerRow } = await admin
-      .from('albums')
-      .select('owner_token')
-      .eq('id', albumId)
-      .maybeSingle<{ owner_token: string }>()
-    isOwner = !!ownerRow && timingSafeEqual(ownerCookieVal, ownerRow.owner_token)
+  switch (result.kind) {
+    case 'invalid':
+      return NextResponse.json({ error: 'Invalid slug' }, { status: 400, headers: NO_STORE })
+    case 'notfound':
+      return NextResponse.json({ error: 'Album not found' }, { status: 404, headers: NO_STORE })
+    case 'reveal':
+      return NextResponse.json(
+        { reveal_at: result.reveal_at, locked: true, slug: result.slug, title: result.title },
+        { headers: NO_STORE },
+      )
+    case 'password':
+      return NextResponse.json(
+        { password_required: true, slug: result.slug, title: result.title },
+        { headers: NO_STORE },
+      )
+    case 'album':
+      return NextResponse.json(result.album, { headers: NO_STORE })
   }
-
-  // Owner status is determined ONLY by the owner cookie above. Account identity does NOT
-  // auto-grant owner access here: the public album URL is a guest experience for everyone,
-  // including the logged-in creator. The creator gets owner access by opening their
-  // management link (from the account dashboard), which sets the owner cookie.
-  if (!isOwner) {
-    // Reveal gate
-    if (album.reveal_at && new Date(album.reveal_at) > new Date()) {
-      return NextResponse.json({
-        reveal_at: album.reveal_at,
-        locked: true,
-        slug: album.slug,
-        title: album.title,
-      }, { headers: NO_STORE })
-    }
-
-    // Password gate
-    if (album.password_hash) {
-      const pwCookie = cookieStore.get(`hushare_pw_${albumId}`)?.value ?? ''
-      const unlocked = pwCookie.length > 0
-        ? await verifyAccessToken(pwCookie, album.password_hash, albumId)
-        : false
-      if (!unlocked) {
-        return NextResponse.json({
-          password_required: true,
-          slug: album.slug,
-          title: album.title,
-        }, { headers: NO_STORE })
-      }
-    }
-  }
-
-  // Fire-and-forget activity touch — errors are non-fatal, log and continue. Throttled: the
-  // retirement scan only needs coarse recency (it retires after months of inactivity), so
-  // writing on literally every page view is pure write amplification on hot albums. Skip once
-  // this album has already been touched within the last hour.
-  const lastActivityAgeMs = Date.now() - new Date(album.last_activity_at).getTime()
-  if (!Number.isFinite(lastActivityAgeMs) || lastActivityAgeMs > 60 * 60 * 1000) {
-    void admin.from('albums')
-      .update({ last_activity_at: new Date().toISOString() })
-      .eq('id', albumId)
-      .then(({ error }) => {
-        if (error) console.error('[resolve] activity touch failed:', error.message)
-      })
-  }
-
-  // Strip internal columns — password_hash and retired_at are never sent to the client
-  const { password_hash: _pw, retired_at: _ra, ...publicAlbum } = album
-  return NextResponse.json(
-    { ...publicAlbum, password_protected: !!_pw },
-    { headers: NO_STORE },
-  )
 }

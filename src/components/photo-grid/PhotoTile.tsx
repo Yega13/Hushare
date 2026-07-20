@@ -46,6 +46,9 @@ type Props = {
   // React.memo can still shallow-compare and skip re-renders.
   boxW?: number
   boxH?: number
+  // First-row (above-the-fold) tiles load eagerly at high priority so the LCP image isn't
+  // deprioritized by lazy-loading; every other tile stays lazy.
+  eager?: boolean
 }
 
 const PhotoTile = React.memo(function PhotoTile({
@@ -66,6 +69,7 @@ const PhotoTile = React.memo(function PhotoTile({
   handlers,
   boxW,
   boxH,
+  eager,
 }: Props) {
   const isVideo = photo.media_type === 'video'
   // Video thumbnail: prefer the R2 poster (uploaded on submit — immediate + reliable), and
@@ -138,7 +142,8 @@ const PhotoTile = React.memo(function PhotoTile({
           <img
             src={thumbSrc}
             alt={photo.caption || ''}
-            loading="lazy"
+            loading={eager ? 'eager' : 'lazy'}
+            fetchPriority={eager ? 'high' : undefined}
             decoding="async"
             draggable={false}
             className="hush-media-img object-cover"
