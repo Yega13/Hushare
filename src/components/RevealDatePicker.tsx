@@ -195,9 +195,10 @@ export default function RevealDatePicker({ value, onChange }: Props) {
               {String(minute).padStart(2, '0')}
             </button>
             {openPicker === 'minute' && (
-              <div className="absolute bottom-full mb-1.5 right-0 z-50 rounded-xl p-2 shadow-xl" style={{ background: 'rgba(253,250,245,0.98)', border: '1px solid #E0D5C5', minWidth: 120 }}>
-                <div className="grid grid-cols-3 gap-1">
-                  {[0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55].map(m => (
+              <div className="absolute bottom-full mb-1.5 right-0 z-50 rounded-xl p-2 shadow-xl" style={{ background: 'rgba(253,250,245,0.98)', border: '1px solid #E0D5C5', minWidth: 176, maxHeight: 200, overflowY: 'auto' }}>
+                {/* Every minute 0–59 (was 5-minute steps, which couldn't express e.g. :28). */}
+                <div className="grid grid-cols-6 gap-1">
+                  {Array.from({ length: 60 }, (_, i) => i).map(m => (
                     <button
                       key={m}
                       onClick={() => { changeMinute(m); setOpenPicker(null) }}
@@ -208,7 +209,7 @@ export default function RevealDatePicker({ value, onChange }: Props) {
                         boxShadow: m === minute ? '0 2px 6px rgba(99,8,38,0.3)' : 'none',
                       }}
                     >
-                      :{String(m).padStart(2, '0')}
+                      {String(m).padStart(2, '0')}
                     </button>
                   ))}
                 </div>

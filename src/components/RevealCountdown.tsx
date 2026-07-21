@@ -2,12 +2,17 @@
 
 import { useEffect, useRef, useState } from 'react'
 import Image from 'next/image'
+import { useT } from '@/i18n/LocaleProvider'
 
 type Props = {
   revealAt: string
   title: string
   onUnlocked: () => void
 }
+
+// Format the reveal date in the APP's language (default English), not the browser's OS locale —
+// a Russian-locale laptop was showing the date in Russian even on the English site.
+const LOCALE_TAG: Record<string, string> = { en: 'en-US', ru: 'ru-RU', hy: 'hy-AM' }
 
 type TimeLeft = {
   days: number
@@ -75,6 +80,7 @@ function Sep() {
 }
 
 export default function RevealCountdown({ revealAt, title, onUnlocked }: Props) {
+  const { locale } = useT()
   const [timeLeft, setTimeLeft] = useState<TimeLeft>(() => getTimeLeft(revealAt))
 
   // Stable ref — prevents the interval from needing onUnlocked in its dep array,
@@ -102,13 +108,19 @@ export default function RevealCountdown({ revealAt, title, onUnlocked }: Props) 
     return () => clearInterval(id)
   }, [revealAt])
 
-  const formattedDate = new Date(revealAt).toLocaleString([], {
-    weekday: 'long',
-    month: 'long',
-    day: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  })
+  // Computed client-side (in an effect) rather than during render: this component now server-renders
+  // too, and toLocaleString output can differ between the Workers and browser ICU builds — formatting
+  // it only on the client avoids a hydration mismatch. Empty on the server / first paint, then filled.
+  const [formattedDate, setFormattedDate] = useState('')
+  useEffect(() => {
+    setFormattedDate(new Date(revealAt).toLocaleString(LOCALE_TAG[locale] ?? 'en-US', {
+      weekday: 'long',
+      month: 'long',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    }))
+  }, [revealAt, locale])
 
   return (
     <div
