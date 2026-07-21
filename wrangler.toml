@@ -25,9 +25,13 @@ bucket_name = "hushare-media"
 
 # Workers Analytics Engine — product event stream (queried via the SQL API / GraphQL).
 # Fire-and-forget writes from src/lib/analytics.ts; never on the request's critical path.
-[[analytics_engine_datasets]]
-binding = "ANALYTICS"
-dataset = "hushare_events"
+# DISABLED until Analytics Engine is enabled on the account (Cloudflare Dashboard →
+# Workers → Analytics Engine). Deploying with this binding while the feature is off fails
+# with error 10089. track() no-ops safely when the ANALYTICS binding is absent, so the app
+# works fine meanwhile. Re-enable this block and redeploy once the dashboard toggle is on.
+# [[analytics_engine_datasets]]
+# binding = "ANALYTICS"
+# dataset = "hushare_events"
 
 [vars]
 NEXT_PUBLIC_SITE_URL = "https://hushare.space"

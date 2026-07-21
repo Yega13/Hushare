@@ -2,19 +2,26 @@
 
 import { useEffect, useState } from 'react'
 import { getMyAlbums, forgetAlbum, type MyAlbum } from '@/lib/my-albums'
+import { createClient } from '@/lib/supabase/client'
 import { useT } from '@/i18n/LocaleProvider'
 
-// "Your albums on this device" — recovery for anonymous creators. Reads localStorage (client-only),
-// so it renders nothing on the server and nothing until we've checked. Each entry links back to the
-// album's owner (#owner=) management view, so a creator who closed the tab never loses their album.
+// "Your albums on this device" — recovery for ANONYMOUS creators only. Reads localStorage
+// (client-only), so it renders nothing on the server and nothing until we've checked. Registered
+// users manage their albums from their account, so this list is hidden for them. Each entry links
+// back to the album's owner (#owner=) view, so an anon creator who closed the tab never loses it.
 export default function MyDeviceAlbums() {
   const { t } = useT()
   const [albums, setAlbums] = useState<MyAlbum[] | null>(null)
+  // null = still checking; false = signed out (show); true = signed in (hide).
+  const [loggedIn, setLoggedIn] = useState<boolean | null>(null)
 
   useEffect(() => {
     setAlbums(getMyAlbums())
+    createClient().auth.getSession().then(({ data }) => setLoggedIn(!!data.session)).catch(() => setLoggedIn(false))
   }, [])
 
+  // Only show once we've confirmed the visitor is signed OUT — never flash it to a signed-in user.
+  if (loggedIn !== false) return null
   if (!albums || albums.length === 0) return null
 
   return (
