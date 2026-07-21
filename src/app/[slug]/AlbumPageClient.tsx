@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from 'react'
+import { useCallback, useEffect, useRef, useState, type CSSProperties } from 'react'
 import { useParams, notFound } from 'next/navigation'
 import dynamic from 'next/dynamic'
 import type { RealtimeChannel } from '@supabase/supabase-js'
@@ -24,10 +24,6 @@ const OwnerToolbar = dynamic(() => import('@/components/OwnerToolbar'))
 const FaceFinder = dynamic(() => import('@/components/FaceFinder'))
 
 const SITE_ORIGIN = (process.env.NEXT_PUBLIC_SITE_URL ?? 'https://hushare.space').replace(/\/+$/, '')
-
-// useLayoutEffect on the client (runs before paint, so we can suppress the guest/gate flash on
-// owner-link loads without a visible frame), useEffect on the server (avoids the SSR warning).
-const useIsoLayoutEffect = typeof window !== 'undefined' ? useLayoutEffect : useEffect
 
 // ─── Realtime row sanitization ────────────────────────────────────────────────
 // Realtime delivers the raw Postgres row (all columns). We enumerate explicitly
@@ -135,10 +131,6 @@ export default function AlbumPageClient({ initialAlbum = null, initialPhotos, in
     revealAt: string; slug: string; title: string
   } | null>(initialGate?.type === 'reveal' ? { revealAt: initialGate.revealAt, slug: initialGate.slug, title: initialGate.title } : null)
 
-  // True while an owner-link (#owner=) load upgrades from the server-rendered guest/gate view to
-  // owner view — suppresses the guest bar / gate flash until owner status resolves. Set before
-  // paint (useIsoLayoutEffect) so the guest view never visibly appears for the owner.
-  const [resolvingOwner, setResolvingOwner] = useState(false)
 
   // Owner
   const [ownerTokenReady, setOwnerTokenReady] = useState(false)
@@ -345,20 +337,9 @@ export default function AlbumPageClient({ initialAlbum = null, initialPhotos, in
       // fetch() threw — network down, DNS failure, etc.
       if (!isCancelled()) setNetworkError(true)
     } finally {
-      if (!isCancelled()) {
-        setLoading(false)
-        // Owner resolution finished (or fell back to guest) — reveal the resolved view.
-        setResolvingOwner(false)
-      }
+      if (!isCancelled()) setLoading(false)
     }
   }, [slug, ownerTokenReady, fetchPhotos])
-
-  // Detect an owner-link load synchronously before paint, so the server-rendered guest/gate view
-  // isn't shown to the owner for a frame while owner-login + the owner refetch run below.
-  useIsoLayoutEffect(() => {
-    const raw = window.location.hash.startsWith('#') ? window.location.hash.slice(1) : window.location.hash
-    setResolvingOwner(new URLSearchParams(raw).has('owner'))
-  }, [slug])
 
   // ─── Effect 1: Owner token resolution ───────────────────────────────────────
   // Deps: [slug] — runs whenever the route slug changes
@@ -688,10 +669,6 @@ export default function AlbumPageClient({ initialAlbum = null, initialPhotos, in
 
   if (loading) return <AlbumSkeleton />
 
-  // Owner-link load still resolving with no album yet — show the skeleton rather than flashing the
-  // guest password/reveal gate the server rendered (the owner bypasses it once the upgrade lands).
-  if (resolvingOwner && !album) return <AlbumSkeleton />
-
   if (networkError) {
     return (
       <div
@@ -792,9 +769,7 @@ export default function AlbumPageClient({ initialAlbum = null, initialPhotos, in
           onAlbumUpdated={handleAlbumUpdated}
         />
 
-        {/* While an owner-link load is resolving, render neither bar — avoids the guest→owner
-            (guest link → owner link) flash the SSR guest view would otherwise show the owner. */}
-        {!resolvingOwner && (effectiveIsOwner ? (
+        {effectiveIsOwner ? (
           <OwnerToolbar
             album={album}
             photos={photos}
@@ -814,7 +789,7 @@ export default function AlbumPageClient({ initialAlbum = null, initialPhotos, in
             onOpenSlideshow={() => setSlideshowRequestId(id => id + 1)}
             onOpenFaceFinder={() => setShowFaceFinder(true)}
           />
-        ))}
+        )}
 
         {showFaceFinder && (
           <FaceFinder

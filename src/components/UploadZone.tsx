@@ -1416,7 +1416,12 @@ export default function UploadZone({ album, userTier, onPhotosUploaded }: Props)
                   {active && (
                     <div className="absolute inset-0 flex flex-col items-center justify-center" style={{ background: 'rgba(27,46,26,0.48)' }}>
                       <div className="w-6 h-6 rounded-full border-2 border-t-transparent animate-spin" style={{ borderColor: '#FDFAF5', borderTopColor: 'transparent' }} aria-label="Uploading" />
-                      <span className="mt-1 text-[10px] font-bold tabular-nums" style={{ color: '#FDFAF5' }}>{entry.progress}%</span>
+                      {/* Below 16% is the decode + presign/stream-init phase (before bytes flow). On slow
+                          Wi-Fi that can sit a while, so show "preparing…" — reads as active, not frozen at a
+                          low number — and switch to a live % once the actual upload of bytes begins. */}
+                      <span className="mt-1 text-[9px] font-bold tabular-nums" style={{ color: '#FDFAF5' }}>
+                        {entry.progress < 16 ? 'preparing…' : `${entry.progress}%`}
+                      </span>
                       <div className="absolute bottom-0 left-0 right-0" style={{ height: 3, background: 'rgba(255,255,255,0.25)' }}>
                         <div className="h-full transition-all duration-300" style={{ width: `${entry.progress}%`, background: '#FDFAF5' }} />
                       </div>
