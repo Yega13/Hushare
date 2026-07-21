@@ -1005,6 +1005,12 @@ function friendlyUploadError(e: unknown): string {
     return 'Could not read this file from your device. Please remove it and add it again.'
   }
 
+  // Network fetch failed (slow / dropped Wi-Fi) — the presign/save request never reached the server.
+  // "Failed to fetch" (Chrome), "Load failed" (Safari), "NetworkError" — all the same class.
+  if (/failed to fetch|load failed|network request failed|networkerror/i.test(raw)) {
+    return 'Connection lost — check your Wi-Fi and tap Retry.'
+  }
+
   // Video (tus) failures: distinguish a real server rejection from a pure network drop.
   const status = e instanceof VideoUploadError ? e.httpStatus : tusHttpStatus(e)
   if (status !== null) {

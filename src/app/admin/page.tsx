@@ -5,6 +5,8 @@ import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { isAccountAdmin } from '@/lib/auth'
 import AdminRefreshButton from '@/components/AdminRefreshButton'
+import AdminResetErrorsButton from '@/components/AdminResetErrorsButton'
+import AdminDeleteAlbumButton from '@/components/AdminDeleteAlbumButton'
 
 // Live data, never cached, never indexed. Access is gated to ADMIN_EMAILS below.
 export const runtime = 'nodejs'
@@ -75,8 +77,9 @@ export default async function AdminPage() {
       .order('created_at', { ascending: false }).limit(30),
     getStreamUsage(),
     admin.auth.admin.listUsers({ page: 1, perPage: 200 }),
-    admin.from('error_events').select('id', { count: 'exact', head: true }).eq('level', 'error').gte('created_at', dayAgo),
+    admin.from('error_events').select('id', { count: 'exact', head: true }).eq('level', 'error').is('resolved_at', null).gte('created_at', dayAgo),
     admin.from('error_events').select('created_at, level, source, message, album_id, ua')
+      .is('resolved_at', null)
       .order('created_at', { ascending: false }).limit(60)
       .returns<{ created_at: string; level: string; source: string; message: string; album_id: string | null; ua: string | null }[]>(),
   ])
@@ -150,9 +153,12 @@ export default async function AdminPage() {
         </div>
 
         {/* Errors — top recurring + recent stream */}
-        <h2 style={{ fontSize: 15, fontWeight: 700, color: INK, margin: '0 0 10px' }}>
-          Errors <span style={{ fontSize: 12, fontWeight: 400, color: MUTED }}>(real guest failures reported from their devices)</span>
-        </h2>
+        <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 12, margin: '0 0 10px' }}>
+          <h2 style={{ fontSize: 15, fontWeight: 700, color: INK, margin: 0 }}>
+            Errors <span style={{ fontSize: 12, fontWeight: 400, color: MUTED }}>(real guest failures reported from their devices)</span>
+          </h2>
+          {recentErrors.length > 0 && <AdminResetErrorsButton />}
+        </div>
         {recentErrors.length === 0 ? (
           <div style={{ background: CARD, border: `1px solid ${BORDER}`, borderRadius: 12, padding: '14px 16px', marginBottom: 28, fontSize: 13, color: MUTED }}>
             No errors reported. 🎉 If a guest hits an upload failure, it shows up here with the device and reason.
@@ -203,7 +209,12 @@ export default async function AdminPage() {
                     <td style={{ ...td, color: a.user_id ? INK : MUTED }}>{owner}</td>
                     <td style={td}>{c.img}</td>
                     <td style={td}>{c.vid}</td>
-                    <td style={td}>{!a.retired_at && <a href={`/${a.custom_slug ?? a.slug}`} target="_blank" rel="noreferrer" style={{ color: BRAND }}>open</a>}</td>
+                    <td style={td}>
+                      <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
+                        {!a.retired_at && <a href={`/${a.custom_slug ?? a.slug}`} target="_blank" rel="noreferrer" style={{ color: BRAND }}>open</a>}
+                        <AdminDeleteAlbumButton albumId={a.id} title={a.title} />
+                      </div>
+                    </td>
                   </tr>
                 )
               })}

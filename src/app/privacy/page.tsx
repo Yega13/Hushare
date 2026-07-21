@@ -139,7 +139,9 @@ export default function PrivacyPage() {
         </HamburgerMenu>
       </nav>
 
-      <article className="hush-readable hush-fade-up py-16">
+      {/* px on mobile: hush-readable collapses to ~0.75rem side margin on small phones, which left
+          the text hugging the screen edges. Lighter top/bottom padding on mobile too. */}
+      <article className="hush-readable hush-fade-up py-9 sm:py-16 px-4 sm:px-0">
         <p
           className="text-sm font-medium uppercase mb-5"
           style={{ color: '#8B6F4E', letterSpacing: '0.18em' }}
