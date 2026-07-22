@@ -108,6 +108,29 @@ export default function RevealCountdown({ revealAt, title, onUnlocked }: Props) 
     return () => clearInterval(id)
   }, [revealAt])
 
+  // Browsers throttle (or fully pause) setInterval in a backgrounded tab or a sleeping laptop —
+  // the displayed countdown freezes at whatever it last showed (e.g. "20 seconds remaining") and
+  // only catches up once the tab/machine wakes. Without this, that catch-up waits for the next
+  // throttled tick, which can be seconds to over a minute late, and looks exactly like "clicking
+  // the screen caused it to unlock" — it didn't; the scheduled time had genuinely already passed
+  // while the tab was inactive. The server independently re-validates reveal_at on every fetch
+  // (see resolveAlbum), so nothing is ever exposed before its real time regardless; this just makes
+  // the on-screen number catch up the INSTANT the tab regains focus, instead of looking frozen.
+  useEffect(() => {
+    function recompute() {
+      if (document.visibilityState !== 'visible') return
+      const next = getTimeLeft(revealAt)
+      setTimeLeft(next)
+      if (next.total === 0) onUnlockedRef.current()
+    }
+    document.addEventListener('visibilitychange', recompute)
+    window.addEventListener('focus', recompute)
+    return () => {
+      document.removeEventListener('visibilitychange', recompute)
+      window.removeEventListener('focus', recompute)
+    }
+  }, [revealAt])
+
   // Computed client-side (in an effect) rather than during render: this component now server-renders
   // too, and toLocaleString output can differ between the Workers and browser ICU builds — formatting
   // it only on the client avoids a hydration mismatch. Empty on the server / first paint, then filled.

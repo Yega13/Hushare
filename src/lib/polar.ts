@@ -142,3 +142,37 @@ export function tierFromProduct(productId: string): { tier: 'pro' | 'studio'; cy
   }
   return result
 }
+
+// ─── Stable plan keys ──────────────────────────────────────────────────────────
+// The pricing page bakes a plan key (e.g. "pro_monthly") into its HTML instead of a raw Polar
+// product ID. That HTML is CDN/browser-cached for 24h (see next.config.ts Cache-Control on
+// /pricing), so if it embedded the actual product ID, rotating a Polar product or fixing a
+// misconfigured secret would silently break checkout for anyone holding a stale cached copy —
+// exactly what happened in production. A plan key is not a secret and never changes; the actual
+// product ID is resolved from env HERE, at checkout-POST time (never cached), so a live secret
+// change takes effect on the very next click regardless of how stale the pricing page's cache is.
+export type PlanKey = 'pro_monthly' | 'pro_yearly' | 'studio_monthly' | 'studio_yearly'
+
+const PLAN_ENV_KEYS: Record<PlanKey, string> = {
+  pro_monthly: 'POLAR_PRODUCT_PRO_MONTHLY',
+  pro_yearly: 'POLAR_PRODUCT_PRO_YEARLY',
+  studio_monthly: 'POLAR_PRODUCT_STUDIO_MONTHLY',
+  studio_yearly: 'POLAR_PRODUCT_STUDIO_YEARLY',
+}
+
+export function isPlanKey(v: string): v is PlanKey {
+  return Object.prototype.hasOwnProperty.call(PLAN_ENV_KEYS, v)
+}
+
+export function productIdForPlan(
+  plan: string,
+): { productId: string; tier: 'pro' | 'studio'; cycle: 'monthly' | 'yearly' } | null {
+  if (!isPlanKey(plan)) return null
+  const productId = process.env[PLAN_ENV_KEYS[plan]]
+  if (!productId) {
+    console.warn('[polar] plan requested but its product ID env var is not set:', plan, PLAN_ENV_KEYS[plan])
+    return null
+  }
+  const [tier, cycle] = plan.split('_') as ['pro' | 'studio', 'monthly' | 'yearly']
+  return { productId, tier, cycle }
+}

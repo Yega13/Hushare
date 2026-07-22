@@ -9,6 +9,7 @@ import FaqList from '@/components/FaqList'
 import { getServerLocale } from '@/i18n/server'
 import { getDictionary } from '@/i18n/get-dictionary'
 import type { DictKey } from '@/i18n/dictionaries/en'
+import type { PlanKey } from '@/lib/polar'
 
 export const runtime = 'nodejs'
 
@@ -58,16 +59,15 @@ type Tier = {
   renewText?: string
   cta: string
   href?: string
-  monthlyProductId?: string
-  yearlyProductId?: string
+  // Stable plan keys (never a raw Polar product ID — see lib/polar.ts productIdForPlan). The
+  // checkout route resolves the actual product ID from env at request time, so this page never
+  // needs to read POLAR_PRODUCT_* itself and its 24h-cached HTML can never go stale on a secret
+  // change or product rotation.
+  monthlyPlan?: PlanKey
+  yearlyPlan?: PlanKey
   highlight: boolean
   features: string[]
 }
-
-const proMonthlyId    = process.env.POLAR_PRODUCT_PRO_MONTHLY    ?? ''
-const proYearlyId     = process.env.POLAR_PRODUCT_PRO_YEARLY     ?? ''
-const maxMonthlyId    = process.env.POLAR_PRODUCT_STUDIO_MONTHLY ?? ''
-const maxYearlyId     = process.env.POLAR_PRODUCT_STUDIO_YEARLY  ?? ''
 
 const tiers: Tier[] = [
   {
@@ -95,8 +95,8 @@ const tiers: Tier[] = [
     promo: 'First month $1.99',
     renewText: 'Intro offer: $1.99 first month, then $4/month. Auto-renews until cancelled.',
     cta: 'Get Pro',
-    monthlyProductId: proMonthlyId,
-    yearlyProductId: proYearlyId,
+    monthlyPlan: 'pro_monthly',
+    yearlyPlan: 'pro_yearly',
     highlight: true,
     features: [
       'Everything in Free, plus -',
@@ -117,8 +117,8 @@ const tiers: Tier[] = [
     promo: 'First month $6.99',
     renewText: 'Intro offer: $6.99 first month, then $10/month. Auto-renews until cancelled.',
     cta: 'Get Max',
-    monthlyProductId: maxMonthlyId,
-    yearlyProductId: maxYearlyId,
+    monthlyPlan: 'studio_monthly',
+    yearlyPlan: 'studio_yearly',
     highlight: false,
     features: [
       'Everything in Pro, plus -',
@@ -426,9 +426,9 @@ export default async function PricingPage() {
                 </span>
               </div>
 
-              {t.annual && (t.yearlyProductId ? (
+              {t.annual && (t.yearlyPlan ? (
                 <form action="/api/checkout" method="POST" className="mt-1">
-                  <input type="hidden" name="productId" value={t.yearlyProductId} />
+                  <input type="hidden" name="plan" value={t.yearlyPlan} />
                   <button
                     type="submit"
                     className="text-xs hover:underline cursor-pointer text-left"
@@ -492,9 +492,9 @@ export default async function PricingPage() {
                 })}
               </ul>
 
-              {t.monthlyProductId ? (
+              {t.monthlyPlan ? (
                 <form action="/api/checkout" method="POST" className="w-full">
-                  <input type="hidden" name="productId" value={t.monthlyProductId} />
+                  <input type="hidden" name="plan" value={t.monthlyPlan} />
                   <button
                     type="submit"
                     className="w-full inline-flex items-center justify-center gap-2 font-semibold rounded-xl py-3 transition hover:opacity-90 cursor-pointer"

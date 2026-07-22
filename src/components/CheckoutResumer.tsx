@@ -2,28 +2,30 @@
 
 import { useEffect, useRef, useState } from 'react'
 
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+// Stable plan keys only (see lib/polar.ts) — never a raw Polar product ID, so this resume link
+// stays valid even if the underlying product ID is later rotated.
+const PLAN_KEY_RE = /^(pro|studio)_(monthly|yearly)$/
 
 export default function CheckoutResumer() {
   const formRef = useRef<HTMLFormElement>(null)
-  const [productId, setProductId] = useState<string | null>(null)
+  const [plan, setPlan] = useState<string | null>(null)
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search)
-    const id = params.get('product')
-    if (id && UUID_RE.test(id)) setProductId(id)
+    const p = params.get('plan')
+    if (p && PLAN_KEY_RE.test(p)) setPlan(p)
   }, [])
 
   useEffect(() => {
-    if (productId) formRef.current?.submit()
-  }, [productId])
+    if (plan) formRef.current?.submit()
+  }, [plan])
 
-  if (!productId) return null
+  if (!plan) return null
 
   return (
     <>
       <form ref={formRef} action="/api/checkout" method="POST" className="hidden">
-        <input type="hidden" name="productId" value={productId} />
+        <input type="hidden" name="plan" value={plan} />
       </form>
       <div
         className="fixed inset-0 z-50 flex items-center justify-center"
