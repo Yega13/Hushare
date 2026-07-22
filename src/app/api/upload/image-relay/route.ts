@@ -3,19 +3,31 @@ import { getCloudflareContext } from '@opennextjs/cloudflare'
 import { r2PublicUrl, IMMUTABLE_CACHE_CONTROL } from '@/lib/cloudflare/r2'
 import { authorizeImageUpload, deriveImageKey } from '@/lib/server/image-upload-authorization'
 import { forbidCrossSiteRequest } from '@/lib/request-security'
-import { uploadCapsForTier } from '@/lib/media'
 
 export const runtime = 'nodejs'
 
 const NO_STORE = { 'Cache-Control': 'no-store' }
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
-// Minimal local type — avoids importing @cloudflare/workers-types globally (conflicts with DOM
+// Minimal local types — avoids importing @cloudflare/workers-types globally (conflicts with DOM
 // types), matching the pattern already used elsewhere in this codebase (e.g. lib/album-delete.ts's
 // R2BucketLike, the video relay's RateLimitBinding).
 type R2PutOptions = { httpMetadata?: { contentType?: string; cacheControl?: string } }
 type R2BucketLike = { put(key: string, value: ReadableStream | ArrayBuffer, options?: R2PutOptions): Promise<unknown> }
 type ImageRelayEnv = { R2_BUCKET?: R2BucketLike }
+
+// FixedLengthStream is a Cloudflare Workers global (not a Web/DOM standard type, so not in the
+// project's lib.dom types) — a passthrough that (a) gives its `readable` side a KNOWN LENGTH,
+// which R2Bucket.put() requires ("Provided readable stream must have a known length" — discovered
+// live: a bare req.body, or one piped through a generic TransformStream, does NOT carry this,
+// which a plain arrayBuffer-based approach would have masked), and (b) bounds total bytes passed
+// through to exactly the declared length, so it doubles as the enforcement that a lying
+// Content-Length can't smuggle more bytes into storage than what authorizeImageUpload approved.
+type FixedLengthStreamCtor = new (length: number) => {
+  readable: ReadableStream<Uint8Array>
+  writable: WritableStream<Uint8Array>
+}
+const FixedLengthStream = (globalThis as unknown as { FixedLengthStream: FixedLengthStreamCtor }).FixedLengthStream
 
 // Same-origin fallback for R2 image uploads — for networks that block R2's upload domain
 // (<CLOUDFLARE_ACCOUNT_ID>.r2.cloudflarestorage.com) outright, the same class of problem Phase 1
@@ -35,29 +47,13 @@ type ImageRelayEnv = { R2_BUCKET?: R2BucketLike }
 // unlike Phase 1's TUS chunks (bounded to 5MB by our own client config), images have no such tight
 // bound (the tier cap allows up to 200MB, and this codebase's own upload pipeline deliberately never
 // re-encodes animated GIFs, so a legitimate large file is a real case, not just a theoretical one).
-// A size-limit stream enforces the REAL tier cap on actual bytes received, independent of whatever
-// Content-Length the client declared — Content-Length is trusted only for the authorization gate
-// (the same trust level /api/upload/presign already places on a client-declared fileSize), never as
-// the sole enforcement of how many bytes are actually written.
+// FixedLengthStream (see above) enforces the REAL authorized size on actual bytes received,
+// independent of whatever Content-Length the client declared — Content-Length is trusted only for
+// the authorization gate (the same trust level /api/upload/presign already places on a
+// client-declared fileSize), never as the sole enforcement of how many bytes are actually written.
 
 function parseBoolParam(v: string | null): boolean {
   return v === '1' || v === 'true'
-}
-
-// Wraps the incoming body stream so it hard-aborts if actual bytes exceed maxBytes — the real
-// enforcement of the tier cap, independent of whatever Content-Length the client declared.
-function createSizeLimitStream(maxBytes: number): TransformStream<Uint8Array, Uint8Array> {
-  let total = 0
-  return new TransformStream<Uint8Array, Uint8Array>({
-    transform(chunk, controller) {
-      total += chunk.byteLength
-      if (total > maxBytes) {
-        controller.error(new Error('Body exceeds authorized size'))
-        return
-      }
-      controller.enqueue(chunk)
-    },
-  })
 }
 
 export async function POST(req: Request): Promise<Response> {
@@ -86,7 +82,6 @@ export async function POST(req: Request): Promise<Response> {
   if (!auth.ok) return auth.response
 
   const { key, finalContentType } = deriveImageKey(albumId, contentType, fileName, isThumb)
-  const maxBytes = uploadCapsForTier(auth.tier).image
 
   const bucket = (getCloudflareContext()?.env as ImageRelayEnv | undefined)?.R2_BUCKET
   if (!bucket) {
@@ -97,11 +92,18 @@ export async function POST(req: Request): Promise<Response> {
     return NextResponse.json({ error: 'Missing request body' }, { status: 400, headers: NO_STORE })
   }
 
+  // declaredSize was already checked against the tier's real caps.image ceiling above, so it's
+  // safe to use as FixedLengthStream's declared length: piping req.body into `writable` fails if
+  // MORE bytes than declaredSize arrive (a lying Content-Length can't smuggle extra bytes past the
+  // already-authorized size), and R2Bucket.put() gets a `readable` with the known length it requires.
+  const { readable, writable } = new FixedLengthStream(declaredSize)
+  const pipePromise = req.body.pipeTo(writable)
+  const putPromise = bucket.put(key, readable, {
+    httpMetadata: { contentType: finalContentType, cacheControl: IMMUTABLE_CACHE_CONTROL },
+  })
+
   try {
-    const limitedBody = req.body.pipeThrough(createSizeLimitStream(maxBytes))
-    await bucket.put(key, limitedBody, {
-      httpMetadata: { contentType: finalContentType, cacheControl: IMMUTABLE_CACHE_CONTROL },
-    })
+    await Promise.all([pipePromise, putPromise])
   } catch (e) {
     console.error('[image-relay] R2 put failed:', e instanceof Error ? e.message : String(e))
     return NextResponse.json({ error: 'Upload failed' }, { status: 502, headers: NO_STORE })
