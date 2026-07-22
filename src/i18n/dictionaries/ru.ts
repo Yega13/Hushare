@@ -352,4 +352,29 @@ export const ru: Partial<Record<DictKey, string>> = {
   'myAlbums.saved': 'сохранено: {n}',
   'myAlbums.manage': 'Управлять',
   'myAlbums.remove': 'Удалить',
+
+  // Обратный отсчёт до открытия альбома
+  'reveal.eyebrow': 'Фото скоро появятся',
+  'reveal.revealsOn': 'Открытие',
+  'reveal.ariaReveals': 'открытие',
+  'reveal.unlockNote': 'Страница откроется автоматически, когда наступит время.',
+  'reveal.days': 'дней',
+  'reveal.hrs': 'ч',
+  'reveal.min': 'мин',
+  'reveal.sec': 'сек',
+  'reveal.ariaDaysUnit': 'дней',
+  'reveal.ariaHoursUnit': 'часов',
+  'reveal.ariaMinutesUnit': 'минут',
+  'reveal.ariaSecondsUnit': 'секунд',
+  'reveal.ariaRemaining': 'осталось',
+
+  // Экран ввода пароля
+  'passwordGate.eyebrow': 'Защищено паролем',
+  'passwordGate.ariaLabel': 'Пароль альбома',
+  'passwordGate.placeholder': 'Введите пароль',
+  'passwordGate.submit': 'Открыть альбом',
+  'passwordGate.checking': 'Проверка…',
+  'passwordGate.incorrect': 'Неверный пароль',
+  'passwordGate.networkError': 'Ошибка сети. Попробуйте ещё раз.',
+  'passwordGate.tooManyAttempts': 'Слишком много попыток. Повторите через {mins} мин.',
 }

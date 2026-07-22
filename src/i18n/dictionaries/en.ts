@@ -366,6 +366,31 @@ export const en = {
   'myAlbums.saved': '{n} saved',
   'myAlbums.manage': 'Manage',
   'myAlbums.remove': 'Remove',
+
+  // Reveal countdown (full-page gate shown before an album's scheduled reveal time)
+  'reveal.eyebrow': 'Photos coming soon',
+  'reveal.revealsOn': 'Reveals on',
+  'reveal.ariaReveals': 'reveals',
+  'reveal.unlockNote': 'This page will unlock automatically when the time arrives.',
+  'reveal.days': 'days',
+  'reveal.hrs': 'hrs',
+  'reveal.min': 'min',
+  'reveal.sec': 'sec',
+  'reveal.ariaDaysUnit': 'days',
+  'reveal.ariaHoursUnit': 'hours',
+  'reveal.ariaMinutesUnit': 'minutes',
+  'reveal.ariaSecondsUnit': 'seconds',
+  'reveal.ariaRemaining': 'remaining',
+
+  // Password gate (full-page gate shown for a password-protected album)
+  'passwordGate.eyebrow': 'Password protected',
+  'passwordGate.ariaLabel': 'Album password',
+  'passwordGate.placeholder': 'Enter password',
+  'passwordGate.submit': 'Unlock album',
+  'passwordGate.checking': 'Checking…',
+  'passwordGate.incorrect': 'Incorrect password',
+  'passwordGate.networkError': 'Network error. Please try again.',
+  'passwordGate.tooManyAttempts': 'Too many attempts. Try again in {mins} min.',
 } as const
 
 export type Dict = typeof en

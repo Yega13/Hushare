@@ -2,6 +2,7 @@
 
 import { useRef, useState } from 'react'
 import { Lock } from 'lucide-react'
+import { useT } from '@/i18n/LocaleProvider'
 
 type Props = {
   slug: string
@@ -10,6 +11,7 @@ type Props = {
 }
 
 export default function PasswordGate({ slug, title, onUnlocked }: Props) {
+  const { t } = useT()
   const [password, setPassword] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState('')
@@ -37,13 +39,13 @@ export default function PasswordGate({ slug, title, onUnlocked }: Props) {
       if (res.status === 429) {
         const retryAfter = parseInt(res.headers.get('Retry-After') ?? '300', 10)
         const mins = Math.max(1, Math.ceil(retryAfter / 60))
-        setError(`Too many attempts. Try again in ${mins} minute${mins === 1 ? '' : 's'}.`)
+        setError(t('passwordGate.tooManyAttempts', { mins }))
         inputRef.current?.focus()
         return
       }
 
       if (!res.ok || !body.ok) {
-        setError(body.error ?? 'Incorrect password')
+        setError(body.error ?? t('passwordGate.incorrect'))
         inputRef.current?.focus()
         return
       }
@@ -51,7 +53,7 @@ export default function PasswordGate({ slug, title, onUnlocked }: Props) {
       unlocked = true
       onUnlocked()
     } catch {
-      setError('Network error. Please try again.')
+      setError(t('passwordGate.networkError'))
       inputRef.current?.focus()
     } finally {
       if (!unlocked) setSubmitting(false)
@@ -69,7 +71,7 @@ export default function PasswordGate({ slug, title, onUnlocked }: Props) {
           className="text-xs font-medium uppercase mb-2"
           style={{ letterSpacing: '0.18em', opacity: 0.75 }}
         >
-          Password protected
+          {t('passwordGate.eyebrow')}
         </p>
         <h1 className="text-2xl font-bold mb-6" style={{ fontFamily: 'var(--font-serif)' }}>
           {title}
@@ -90,7 +92,7 @@ export default function PasswordGate({ slug, title, onUnlocked }: Props) {
           <input
             ref={inputRef}
             type="password"
-            aria-label="Album password"
+            aria-label={t('passwordGate.ariaLabel')}
             name={`hush-visitor-password-${slug}`}
             autoComplete="current-password"
             autoCorrect="off"
@@ -98,7 +100,7 @@ export default function PasswordGate({ slug, title, onUnlocked }: Props) {
             spellCheck={false}
             // eslint-disable-next-line jsx-a11y/no-autofocus
             autoFocus
-            placeholder="Enter password"
+            placeholder={t('passwordGate.placeholder')}
             maxLength={128}
             value={password}
             onChange={e => setPassword(e.target.value)}
@@ -132,7 +134,7 @@ export default function PasswordGate({ slug, title, onUnlocked }: Props) {
             className="w-full rounded-xl py-3 font-semibold transition hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed"
             style={{ background: '#FDFAF5', color: '#630826' }}
           >
-            {submitting ? 'Checking…' : 'Unlock album'}
+            {submitting ? t('passwordGate.checking') : t('passwordGate.submit')}
           </button>
         </div>
       </div>

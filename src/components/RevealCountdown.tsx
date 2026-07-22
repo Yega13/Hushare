@@ -80,7 +80,7 @@ function Sep() {
 }
 
 export default function RevealCountdown({ revealAt, title, onUnlocked }: Props) {
-  const { locale } = useT()
+  const { locale, t } = useT()
   const [timeLeft, setTimeLeft] = useState<TimeLeft>(() => getTimeLeft(revealAt))
 
   // Stable ref — prevents the interval from needing onUnlocked in its dep array,
@@ -149,7 +149,7 @@ export default function RevealCountdown({ revealAt, title, onUnlocked }: Props) 
     <div
       className="min-h-dvh flex flex-col items-center justify-center px-6"
       style={{ background: '#2B0A15' }}
-      aria-label={`${title} — reveals ${formattedDate}`}
+      aria-label={`${title} — ${t('reveal.ariaReveals')} ${formattedDate}`}
     >
       <div className="flex flex-col items-center gap-10 max-w-sm w-full text-center">
 
@@ -175,7 +175,7 @@ export default function RevealCountdown({ revealAt, title, onUnlocked }: Props) 
             className="font-semibold uppercase mb-3"
             style={{ fontSize: '11px', color: '#E8C4D0', letterSpacing: '0.22em' }}
           >
-            Photos coming soon
+            {t('reveal.eyebrow')}
           </p>
           <h1
             style={{
@@ -193,7 +193,7 @@ export default function RevealCountdown({ revealAt, title, onUnlocked }: Props) 
         <div
           className="flex items-end justify-center"
           aria-live="off"
-          aria-label={`${timeLeft.days > 0 ? `${timeLeft.days} days ` : ''}${pad(timeLeft.hours)} hours ${pad(timeLeft.minutes)} minutes ${pad(timeLeft.seconds)} seconds remaining`}
+          aria-label={`${timeLeft.days > 0 ? `${timeLeft.days} ${t('reveal.ariaDaysUnit')} ` : ''}${pad(timeLeft.hours)} ${t('reveal.ariaHoursUnit')} ${pad(timeLeft.minutes)} ${t('reveal.ariaMinutesUnit')} ${pad(timeLeft.seconds)} ${t('reveal.ariaSecondsUnit')} ${t('reveal.ariaRemaining')}`}
         >
           {/* Regular flex wrapper (not display:contents) so visibility:hidden
               preserves the box and reserved space, preventing layout shift
@@ -203,14 +203,14 @@ export default function RevealCountdown({ revealAt, title, onUnlocked }: Props) 
             alignItems: 'flex-end',
             visibility: timeLeft.days > 0 ? 'visible' : 'hidden',
           }}>
-            <Unit value={timeLeft.days} label="days" />
+            <Unit value={timeLeft.days} label={t('reveal.days')} />
             <Sep />
           </div>
-          <Unit value={timeLeft.hours} label="hrs" />
+          <Unit value={timeLeft.hours} label={t('reveal.hrs')} />
           <Sep />
-          <Unit value={timeLeft.minutes} label="min" />
+          <Unit value={timeLeft.minutes} label={t('reveal.min')} />
           <Sep />
-          <Unit value={timeLeft.seconds} label="sec" />
+          <Unit value={timeLeft.seconds} label={t('reveal.sec')} />
         </div>
 
         <div
@@ -225,7 +225,7 @@ export default function RevealCountdown({ revealAt, title, onUnlocked }: Props) 
             className="uppercase mb-1"
             style={{ fontSize: '11px', color: '#E8C4D0', letterSpacing: '0.2em' }}
           >
-            Reveals on
+            {t('reveal.revealsOn')}
           </p>
           <p className="text-sm font-medium" style={{ color: '#E8C4D0' }}>
             {formattedDate}
@@ -234,7 +234,7 @@ export default function RevealCountdown({ revealAt, title, onUnlocked }: Props) 
 
         {/* #C77690 on #2B0A15 ≈ 4.8:1 contrast — passes WCAG AA */}
         <p style={{ fontSize: '11px', color: '#C77690' }}>
-          This page will unlock automatically when the time arrives.
+          {t('reveal.unlockNote')}
         </p>
 
       </div>

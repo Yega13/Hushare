@@ -352,4 +352,29 @@ export const hy: Partial<Record<DictKey, string>> = {
   'myAlbums.saved': '{n} պահված',
   'myAlbums.manage': 'Կառավարել',
   'myAlbums.remove': 'Հեռացնել',
+
+  // Ալբոմի բացման հետհաշվարկ
+  'reveal.eyebrow': 'Լուսանկարները շուտով',
+  'reveal.revealsOn': 'Կբացվի՝',
+  'reveal.ariaReveals': 'կբացվի',
+  'reveal.unlockNote': 'Այս էջը ինքնաբերաբար կբացվի, երբ ժամանակը գա։',
+  'reveal.days': 'օր',
+  'reveal.hrs': 'ժ',
+  'reveal.min': 'ր',
+  'reveal.sec': 'վ',
+  'reveal.ariaDaysUnit': 'օր',
+  'reveal.ariaHoursUnit': 'ժամ',
+  'reveal.ariaMinutesUnit': 'րոպե',
+  'reveal.ariaSecondsUnit': 'վայրկյան',
+  'reveal.ariaRemaining': 'մնացել է',
+
+  // Գաղտնաբառի էկրան
+  'passwordGate.eyebrow': 'Պաշտպանված գաղտնաբառով',
+  'passwordGate.ariaLabel': 'Ալբոմի գաղտնաբառ',
+  'passwordGate.placeholder': 'Մուտքագրեք գաղտնաբառը',
+  'passwordGate.submit': 'Բացել ալբոմը',
+  'passwordGate.checking': 'Ստուգում…',
+  'passwordGate.incorrect': 'Սխալ գաղտնաբառ',
+  'passwordGate.networkError': 'Ցանցի սխալ։ Փորձեք կրկին։',
+  'passwordGate.tooManyAttempts': 'Չափազանց շատ փորձեր։ Կրկին փորձեք {mins} րոպեից։',
 }
