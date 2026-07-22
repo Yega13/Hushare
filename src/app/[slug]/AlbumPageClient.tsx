@@ -136,6 +136,11 @@ export default function AlbumPageClient({ initialAlbum = null, initialPhotos, in
   const [ownerTokenReady, setOwnerTokenReady] = useState(false)
   const [ownerToken, setOwnerToken] = useState<string | null>(null)
   const [isOwner, setIsOwner] = useState(false)
+  // STATE mirror of ownerTokenFromUrlRef, used to compute the rendered `effectiveIsOwner`. A ref
+  // does not trigger a re-render when it flips and reading a ref during render is fragile — using
+  // state here guarantees the guest↔owner bar re-renders reliably. The ref is kept for synchronous
+  // reads inside async callbacks (resolve/owner-login/realtime); both are set together in Effect 1.
+  const [ownerTokenInUrl, setOwnerTokenInUrl] = useState(false)
   const [showFaceFinder, setShowFaceFinder] = useState(false)
 
   // Display state — consumed by Phase 7–9 components
@@ -165,10 +170,11 @@ export default function AlbumPageClient({ initialAlbum = null, initialPhotos, in
   const seededRef = useRef<boolean>(!!initialAlbum || !!initialGate)
   const firstEffectRunRef = useRef(true)
 
-  // Computed at render — ref is always set before isOwner can become true.
-  // Owner view requires the owner cookie (set via the #owner= management link or album
-  // creation). The public URL is a guest experience for everyone, including the creator.
-  const effectiveIsOwner = isOwner && ownerTokenFromUrlRef.current
+  // Owner VIEW requires BOTH: verified ownership (isOwner, established authoritatively by a
+  // successful owner-login token check — see Effect 1) AND this load arriving via the #owner=
+  // management link (ownerTokenInUrl). A leftover owner cookie on the plain guest URL sets isOwner
+  // but NOT ownerTokenInUrl, so the public URL stays a guest experience for everyone incl. the creator.
+  const effectiveIsOwner = isOwner && ownerTokenInUrl
 
   // Tombstone recently-deleted photo IDs so a realtime reconnect/refetch (common on mobile)
   // cannot reinstate a photo the user just deleted. Auto-expires after 60s.
@@ -248,7 +254,13 @@ export default function AlbumPageClient({ initialAlbum = null, initialPhotos, in
         // owner cookie alone authorizes owner mutations but does not flip the public album URL
         // into owner view — the public URL is a guest experience for everyone, including the
         // creator. The creator reaches owner view via their management link (dashboard / post-create).
-        setIsOwner(!!result.isOwner)
+        //
+        // Only ever UPGRADE to owner here, never downgrade: Effect 1 already resets isOwner=false per
+        // load and sets it true when owner-login verifies the token. A racing/failed auth call
+        // returning isOwner:false must not flip a verified owner back to guest — that was the
+        // "sometimes owner, sometimes guest" flakiness. On a guest URL this is harmless (gated by
+        // ownerTokenInUrl in effectiveIsOwner).
+        if (result.isOwner) setIsOwner(true)
         if (result.isOwner) {
           // Non-blocking — page renders before tier resolves
           fetch('/api/me/tier', { cache: 'no-store' })
@@ -381,6 +393,7 @@ export default function AlbumPageClient({ initialAlbum = null, initialPhotos, in
     setOwnerToken(null)
     setOwnerTokenReady(false)
     ownerTokenFromUrlRef.current = false
+    setOwnerTokenInUrl(false)
     prevGuestDownloadsRef.current = null
     // Reset display state that persists across navigations
     setArrangeMode(false)
@@ -404,6 +417,7 @@ export default function AlbumPageClient({ initialAlbum = null, initialPhotos, in
     // Mark this load as owner-initiated BEFORE ownerTokenReady is set.
     // This guarantees the ref is true whenever fetchAlbum and checkOwnerAuth run.
     ownerTokenFromUrlRef.current = true
+    setOwnerTokenInUrl(true)
     setOwnerToken(token)
 
     // Intentionally KEEP #owner=<token> in the URL. Owner view now requires the token in the
@@ -418,6 +432,7 @@ export default function AlbumPageClient({ initialAlbum = null, initialPhotos, in
       // used to silently drop the owner to guest view — the reported "sometimes owner, sometimes
       // guest" flakiness. A definitive 403/404 (wrong token / album gone) is not retried. If the
       // cookie was already set on a prior visit, a failure here is harmless — auth still sees it.
+      let ownerLoginOk = false
       for (let attempt = 0; attempt < 2; attempt++) {
         // 10s timeout per attempt: if owner-login hangs, fall through rather than block the page.
         const ac = new AbortController()
@@ -430,14 +445,21 @@ export default function AlbumPageClient({ initialAlbum = null, initialPhotos, in
             signal: ac.signal,
           })
           clearTimeout(timeoutId)
-          if (res.ok || res.status === 403 || res.status === 404) break  // succeeded or definitively not owner
+          if (res.ok) { ownerLoginOk = true; break }  // token verified — authoritative proof of ownership
+          if (res.status === 403 || res.status === 404) break  // definitively not owner / album gone
           // 429 / 5xx — fall through to retry
         } catch {
           clearTimeout(timeoutId)  // network error or timeout — fall through to retry
         }
         if (attempt === 0) await new Promise(r => setTimeout(r, 600))
       }
-      if (!cancelled) setOwnerTokenReady(true)
+      if (cancelled) return
+      // owner-login verified the 256-bit owner_token against this album, so its success is
+      // authoritative proof of ownership — establish owner view directly here rather than relying
+      // solely on the separate cookie-based /api/album/auth check in fetchAlbum, which could race the
+      // cookie write and flip the owner back to guest ("sometimes owner, sometimes management").
+      if (ownerLoginOk) setIsOwner(true)
+      setOwnerTokenReady(true)
     })()
 
     return () => { cancelled = true }
