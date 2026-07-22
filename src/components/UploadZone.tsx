@@ -1005,21 +1005,26 @@ function friendlyUploadError(e: unknown): string {
     return 'Could not read this file from your device. Please remove it and add it again.'
   }
 
-  // Network fetch failed (slow / dropped Wi-Fi) — the presign/save request never reached the server.
-  // "Failed to fetch" (Chrome), "Load failed" (Safari), "NetworkError" — all the same class.
+  // Network fetch failed — the presign/save request never reached the server. This message only
+  // shows AFTER the retry loop is exhausted, so a persistent failure here usually means the network
+  // itself is blocking us (restrictive venue Wi-Fi, a VPN, or an ad-blocker) rather than a one-off
+  // blip. Point the user at the actions that actually recover it. "Failed to fetch" (Chrome),
+  // "Load failed" (Safari), "NetworkError" — all the same class.
   if (/failed to fetch|load failed|network request failed|networkerror/i.test(raw)) {
-    return 'Connection lost — check your Wi-Fi and tap Retry.'
+    return "Couldn't reach the server after several tries. Switch networks (e.g. mobile data), or turn off any VPN or ad-blocker, then tap Retry."
   }
 
-  // Video (tus) failures: distinguish a real server rejection from a pure network drop.
+  // Video (tus) failures: distinguish a real server rejection from a pure network failure.
   const status = e instanceof VideoUploadError ? e.httpStatus : tusHttpStatus(e)
   if (status !== null) {
     if (status === 413) return 'This video is too large to upload.'
     if (status >= 400 && status < 500) return `This video was rejected by the server (HTTP ${status}) — it may be too long or an unsupported format.`
     return `Video server error (HTTP ${status}). Tap Retry — it continues where it left off.`
   }
+  // status === null → no HTTP response ever arrived: the request couldn't reach Cloudflare Stream's
+  // upload server at all. After the retry loop that almost always means the network is blocking it.
   if (e instanceof VideoUploadError || /^tus:|stalled/i.test(raw)) {
-    return 'Connection dropped while uploading. Tap Retry — it continues where it left off.'
+    return "Couldn't reach the video server after several tries — your network may be blocking it. Try mobile data, or turn off any VPN or ad-blocker, then tap Retry."
   }
 
   return raw.length > 160 ? `${raw.slice(0, 157)}…` : raw
