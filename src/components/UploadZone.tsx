@@ -440,14 +440,18 @@ class HttpError extends Error {
 // signature binds this header's value, so any mismatch is rejected by R2 as SignatureDoesNotMatch.
 const IMMUTABLE_CACHE_CONTROL = 'public, max-age=31536000, immutable'
 
+// method: 'PUT' for the direct-to-R2 presigned PUT; 'POST' for the same-origin image-relay
+// fallback (src/app/api/upload/image-relay/route.ts). Returns the response body text — R2's PUT
+// response is empty (callers ignore it), the relay's POST response is JSON ({key, publicUrl}).
 async function xhrPut(
+  method: 'PUT' | 'POST',
   url: string,
   body: Blob,
   contentType: string,
   onProgress: (pct: number) => void,
   signal?: AbortSignal,
-): Promise<void> {
-  return new Promise<void>((resolve, reject) => {
+): Promise<string> {
+  return new Promise<string>((resolve, reject) => {
     if (signal?.aborted) { reject(new DOMException('Upload aborted', 'AbortError')); return }
     const xhr = new XMLHttpRequest()
     let settled = false
@@ -472,9 +476,11 @@ async function xhrPut(
 
     const onAbort = () => finish(() => { try { xhr.abort() } catch { /* ignore */ }; reject(new DOMException('Upload aborted', 'AbortError')) })
     signal?.addEventListener('abort', onAbort, { once: true })
-    xhr.open('PUT', url)
+    xhr.open(method, url)
     xhr.setRequestHeader('Content-Type', contentType)
-    xhr.setRequestHeader('Cache-Control', IMMUTABLE_CACHE_CONTROL)
+    // Cache-Control is bound into R2's presigned-PUT signature (must match IMMUTABLE_CACHE_CONTROL
+    // in src/lib/cloudflare/r2.ts exactly); the relay route doesn't read/require this header at all.
+    if (method === 'PUT') xhr.setRequestHeader('Cache-Control', IMMUTABLE_CACHE_CONTROL)
     xhr.upload.onprogress = (e) => {
       lastActivity = Date.now()
       if (e.lengthComputable) onProgress(Math.round((e.loaded / e.total) * 100))
@@ -483,8 +489,16 @@ async function xhrPut(
     // request→response gap (when upload progress no longer fires) isn't mistaken for a stall.
     xhr.upload.onload = () => { lastActivity = Date.now() }
     xhr.onload = () => finish(() => {
-      if (xhr.status >= 200 && xhr.status < 300) resolve()
-      else reject(new HttpError(xhr.status, `R2 PUT ${xhr.status}`))
+      if (xhr.status >= 200 && xhr.status < 300) { resolve(xhr.responseText); return }
+      // The relay returns a JSON {error} body with the real reason (rate limited, too large, etc).
+      // R2's own PUT error body is XML, which fails to parse here and falls back to the generic
+      // message below — no change to the existing direct-PUT error text.
+      let message = method === 'PUT' ? `R2 PUT ${xhr.status}` : `Relay upload failed (${xhr.status})`
+      try {
+        const parsed = JSON.parse(xhr.responseText) as { error?: string }
+        if (parsed?.error) message = parsed.error
+      } catch { /* non-JSON error body — keep the generic message */ }
+      reject(new HttpError(xhr.status, message))
     })
     xhr.onerror = () => finish(() => reject(new Error('Network error during upload')))
     xhr.send(body)
@@ -539,7 +553,7 @@ async function putWithRetry(
     if (signal?.aborted) throw new DOMException('Upload aborted', 'AbortError')
     if (attempt > 0) await new Promise(r => setTimeout(r, backoffDelay(attempt)))
     try {
-      await xhrPut(url, body, contentType, onProgress, signal)
+      await xhrPut('PUT', url, body, contentType, onProgress, signal)
       return
     } catch (e) {
       if (e instanceof DOMException && e.name === 'AbortError') throw e
@@ -548,6 +562,92 @@ async function putWithRetry(
     }
   }
   throw lastErr ?? new Error('Upload failed')
+}
+
+// ─── Image relay fallback (same-origin, via R2 native binding) ──────────────
+// Image analogue of runTusWithRecovery's video relay: when a network blocks R2's upload domain
+// outright (confirmed in production: the same blocked device also failed image uploads), fall back
+// to routing the bytes through hushare.space's own server (src/app/api/upload/image-relay/route.ts,
+// which writes to R2 via the native Workers binding — no outbound fetch, no SSRF surface).
+//
+// Session-scoped flag, SEPARATE from video's networkNeedsRelay: the two direct-upload domains
+// (Stream's upload.cloudflarestream.com vs R2's private <account>.r2.cloudflarestorage.com) are
+// genuinely distinct, so one confirmed block shouldn't be assumed to cover the other.
+let imageNetworkNeedsRelay = false
+
+// Every relay attempt re-runs the FULL server-side authorization chain (both rate-limit checks +
+// album/tier lookups) — unlike a direct PUT retry, which just re-sends bytes to an already-signed
+// URL. Capped lower than putWithRetry's 5 attempts to avoid multiplying DB load across retries.
+const IMAGE_RELAY_ATTEMPTS = 2
+
+async function relayUploadImage(
+  albumId: string,
+  fileName: string,
+  contentType: string,
+  isThumb: boolean,
+  body: Blob,
+  onProgress: (pct: number) => void,
+  signal?: AbortSignal,
+): Promise<{ key: string; publicUrl: string }> {
+  const url = `/api/upload/image-relay?albumId=${encodeURIComponent(albumId)}&fileName=${encodeURIComponent(fileName)}&contentType=${encodeURIComponent(contentType)}&isThumb=${isThumb ? '1' : '0'}`
+  let lastErr: Error | null = null
+  for (let attempt = 0; attempt < IMAGE_RELAY_ATTEMPTS; attempt++) {
+    if (signal?.aborted) throw new DOMException('Upload aborted', 'AbortError')
+    if (attempt > 0) await new Promise(r => setTimeout(r, backoffDelay(attempt)))
+    try {
+      const text = await xhrPut('POST', url, body, contentType, onProgress, signal)
+      return JSON.parse(text) as { key: string; publicUrl: string }
+    } catch (e) {
+      if (e instanceof DOMException && e.name === 'AbortError') throw e
+      // A 4xx from the relay (rate limited, oversized, disabled) is a final verdict — never retried,
+      // mirroring putWithRetry's policy for the direct path.
+      if (e instanceof HttpError && e.status < 500) throw e
+      lastErr = e instanceof Error ? e : new Error(String(e))
+    }
+  }
+  throw lastErr ?? new Error('Relay upload failed')
+}
+
+// Wraps a presigned direct-to-R2 PUT with the relay fallback. A network-class failure (plain
+// Error — no HTTP response ever arrived, mirroring runTusWithRecovery's tusHttpStatus(e) === null
+// check) switches to the relay for a fresh attempt of the SAME bytes; an HttpError (R2 itself
+// responded, even with a 5xx) is not network-class and is never relayed — putWithRetry already
+// exhausted its own retries against that same signed URL.
+//
+// CRITICAL: the relay always re-derives its OWN server-side key (never the original presign-time
+// key), so this always returns the key/publicUrl that ACTUALLY got written — callers must use the
+// returned values, never the original presign-time ones, or the DB row would point at bytes that
+// were never written while the relay's real object sits orphaned under a different key.
+async function putImageWithRelay(
+  originalKey: string,
+  originalPublicUrl: string,
+  presignedUrl: string,
+  relay: { albumId: string; fileName: string; contentType: string; isThumb: boolean },
+  body: Blob,
+  onProgress: (pct: number) => void,
+  signal?: AbortSignal,
+): Promise<{ key: string; publicUrl: string }> {
+  if (!imageNetworkNeedsRelay) {
+    try {
+      await putWithRetry(presignedUrl, body, relay.contentType, onProgress, signal)
+      return { key: originalKey, publicUrl: originalPublicUrl }
+    } catch (e) {
+      if (e instanceof DOMException && e.name === 'AbortError') throw e
+      if (e instanceof HttpError) throw e
+      imageNetworkNeedsRelay = true
+      reportClientEvent('warn', 'upload:image-relay', 'Switched to relay after direct upload was network-blocked', relay.albumId, { fileName: relay.fileName })
+    }
+  }
+  try {
+    return await relayUploadImage(relay.albumId, relay.fileName, relay.contentType, relay.isThumb, body, onProgress, signal)
+  } catch (e) {
+    if (e instanceof DOMException && e.name === 'AbortError') throw e
+    if (e instanceof HttpError) throw e
+    // Both the direct path AND the relay failed on a pure network-level basis — a rarer, more
+    // serious case than a single blocked domain. Thrown pre-formatted (rather than pattern-matched
+    // in friendlyUploadError) since this message is already the final, user-facing text.
+    throw new Error("Couldn't upload after trying multiple connection methods. Check that you're connected to the internet, then tap Retry.")
+  }
 }
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -704,20 +804,26 @@ async function uploadImageToR2(
   // the thumb phase also resolves null: the main image is already in R2 at that point, so
   // saving its row (thumb-less) beats orphaning the uploaded bytes.
   const thumbPut: Promise<string | null> = (processed.thumbBlob && thumb)
-    ? putWithRetry(thumb.presignedUrl, processed.thumbBlob, 'image/jpeg', () => {}, signal)
-        .then(() => thumb.publicUrl)
-        .catch(() => null)
+    ? putImageWithRelay(
+        thumb.key, thumb.publicUrl, thumb.presignedUrl,
+        { albumId, fileName: processed.name, contentType: 'image/jpeg', isThumb: true },
+        processed.thumbBlob, () => {}, signal,
+      ).then(r => r.publicUrl).catch(() => null)
     : Promise.resolve(null)
 
-  await putWithRetry(presignedUrl, processed.blob, processed.mimeType, pct => onProgress(16 + Math.round(pct * 0.8)), signal)
+  const main = await putImageWithRelay(
+    key, publicUrl, presignedUrl,
+    { albumId, fileName: processed.name, contentType: processed.mimeType, isThumb: false },
+    processed.blob, pct => onProgress(16 + Math.round(pct * 0.8)), signal,
+  )
   const thumbUrl = await thumbPut
   onProgress(98)
 
   return {
     storage_backend: 'r2',
     media_type: 'image',
-    storage_path: key,
-    url: publicUrl,
+    storage_path: main.key,
+    url: main.publicUrl,
     thumb_url: thumbUrl,
     poster_url: null,
     width: processed.width,
@@ -736,9 +842,13 @@ async function uploadPosterToR2(albumId: string, blob: Blob, signal?: AbortSigna
     body: JSON.stringify({ albumId, fileName: 'poster.jpg', contentType: 'image/jpeg', fileSize: blob.size, isThumb: true }),
   })
   if (!presign.ok) throw new Error(`Poster presign failed (${presign.status})`)
-  const { presignedUrl, publicUrl } = await presign.json() as { presignedUrl: string; publicUrl: string }
-  await putWithRetry(presignedUrl, blob, 'image/jpeg', () => {}, signal)
-  return publicUrl
+  const { presignedUrl, key, publicUrl } = await presign.json() as { presignedUrl: string; key: string; publicUrl: string }
+  const result = await putImageWithRelay(
+    key, publicUrl, presignedUrl,
+    { albumId, fileName: 'poster.jpg', contentType: 'image/jpeg', isThumb: true },
+    blob, () => {}, signal,
+  )
+  return result.publicUrl
 }
 
 // A TUS error with a 4xx response is a final server verdict (expired/invalid upload URL,
