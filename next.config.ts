@@ -45,7 +45,10 @@ const CSP = [
   "frame-ancestors 'none'",
   "object-src 'none'",
   "base-uri 'self'",
-  "form-action 'self'",
+  // Polar checkout: the checkout form POSTs to /api/checkout, which 303-redirects to Polar's
+  // hosted checkout. Modern browsers enforce form-action on redirect targets too, so Polar's
+  // domains must be allow-listed here or the redirect is silently blocked ("click does nothing").
+  "form-action 'self' https://polar.sh https://*.polar.sh",
 ].join("; ");
 
 const securityHeaders = [
