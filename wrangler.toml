@@ -30,6 +30,19 @@ bucket_name = "hushare-media"
 binding = "ANALYTICS"
 dataset = "Hushare_events"
 
+# Edge-enforced, no-DB-round-trip rate limit for the video-upload relay's PATCH path (src/app/api/
+# upload/stream-relay/[uid]/route.ts). A relayed large video is many chunks (~820 for a 4GB video at
+# 5MB/chunk) — the Postgres-backed checkRateLimit helper (insert+count+delete per call) would add
+# real latency at that frequency, on the very networks already struggling. This binding is an abuse
+# backstop only (the uid is already unguessable + existence-checked against our own DB), not a
+# precise accounting mechanism — "eventually consistent per Cloudflare location" is fine for that.
+[[ratelimits]]
+name = "STREAM_RELAY_LIMITER"
+namespace_id = "1001"
+  [ratelimits.simple]
+  limit = 600
+  period = 60
+
 [vars]
 NEXT_PUBLIC_SITE_URL = "https://hushare.space"
 NEXT_PUBLIC_SUPABASE_URL = "https://yqngmyjquwemwogdyuwv.supabase.co"

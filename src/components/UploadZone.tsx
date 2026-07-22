@@ -565,6 +565,9 @@ type VideoResume = {
   durationSeconds: number
   videoWidth: number | null
   videoHeight: number | null
+  // Set once this file has proven the direct-to-Cloudflare path is network-blocked, so a manual
+  // Retry click resumes via the relay directly instead of re-attempting the doomed direct path first.
+  viaRelay?: boolean
 }
 
 // Thrown when a video's TUS phase fails after the Stream session was already created —
@@ -740,11 +743,32 @@ async function uploadPosterToR2(albumId: string, blob: Blob, signal?: AbortSigna
 
 // A TUS error with a 4xx response is a final server verdict (expired/invalid upload URL,
 // bad request) — retrying the same URL cannot succeed. Everything else (network drop, stall,
-// 5xx) is transient.
+// 5xx) is transient. Used for tus-js-client's OWN internal onShouldRetry, and for deciding whether
+// a RESUMED upload's session itself is stale/expired (needs a fresh Stream init).
 function isDeterministicTusError(e: unknown): boolean {
   const status = tusHttpStatus(e)
   return status !== null && status >= 400 && status < 500
 }
+
+// The OUTER recovery loop's view is more permissive: it always constructs a FRESH tus.Upload per
+// attempt, which re-HEADs for the true confirmed offset before resuming — so a 409 Conflict (offset
+// mismatch, e.g. from an aborted attempt's already-in-flight PATCH landing on the wire after the
+// next attempt already started — abort() can't un-send bytes already flushed to the socket, an
+// inherent property of retrying over HTTP) self-corrects on the next attempt rather than being a
+// real final verdict. tus-js-client's own internal retry (isDeterministicTusError, above) still
+// gives up on a 409 quickly — that's fine, it just hands control back to this loop sooner.
+function isFatalTusError(e: unknown): boolean {
+  const status = tusHttpStatus(e)
+  if (status === 409) return false
+  return status !== null && status >= 400 && status < 500
+}
+
+// Session-scoped (browser JS, not server state — see the Workers "no global request state" rule,
+// which is about per-request isolation on the SERVER and doesn't apply to a single browser tab's
+// own lifetime): once ANY video in this page session has proven the direct-to-Cloudflare path is
+// network-blocked, remember it so the NEXT NEW video (not just a retry of the same file) starts
+// with the relay immediately instead of wasting an attempt rediscovering the same block.
+let networkNeedsRelay = false
 
 // One TUS attempt with a stall watchdog. tus-js-client has no progress timeout of its own:
 // a socket that opens and then silently stops sending bytes (classic weak-signal mobile
@@ -807,13 +831,28 @@ function runTusOnce(
 
 // Outer recovery loop around runTusOnce: each attempt resumes from the server's confirmed
 // offset, so a stall/drop at 80% costs only the unconfirmed chunk, never the whole file.
+//
+// Also owns the direct→relay fallback: a pure network-level failure (tusHttpStatus === null — no
+// HTTP response ever arrived, whether from an immediate connection failure or the TUS_STALL_MS
+// watchdog firing on a silently blackholed connection, e.g. a content filter that drops packets
+// rather than actively refusing them) is a strong, specific signal that THIS network cannot reach
+// upload.cloudflarestream.com at all — unlike a real 4xx/5xx, where Cloudflare DID respond, so the
+// network path is fine and switching wouldn't help. After just ONE such failure, switch subsequent
+// attempts to the same-origin relay (src/app/api/upload/stream-relay/[uid]/route.ts) — TUS resume
+// works via HEAD-for-confirmed-offset regardless of which URL path reaches the same underlying
+// Cloudflare session, so this is a seamless mid-upload switch, never a restart.
 async function runTusWithRecovery(
   file: File,
-  uploadUrl: string,
+  directUploadUrl: string,
+  streamUid: string,
+  albumId: string,
   onFraction: (fraction: number) => void,
-  signal?: AbortSignal,
+  signal: AbortSignal | undefined,
+  relayState: { active: boolean },
   attempts = 6,
 ): Promise<void> {
+  const relayUploadUrl = `/api/upload/stream-relay/${streamUid}`
+  let effectiveUrl = relayState.active ? relayUploadUrl : directUploadUrl
   let lastErr: Error | null = null
   for (let attempt = 0; attempt < attempts; attempt++) {
     if (signal?.aborted) throw new DOMException('Upload aborted', 'AbortError')
@@ -822,12 +861,21 @@ async function runTusWithRecovery(
     // never re-send bytes Cloudflare already has, we just keep reconnecting until it's done.
     if (attempt > 0) await new Promise(r => setTimeout(r, Math.min(15000, 2000 * attempt) + Math.random() * 500))
     try {
-      await runTusOnce(file, uploadUrl, onFraction, signal)
+      await runTusOnce(file, effectiveUrl, onFraction, signal)
       return
     } catch (e) {
       if (e instanceof DOMException && e.name === 'AbortError') throw e
-      if (isDeterministicTusError(e)) throw e
+      if (isFatalTusError(e)) throw e
       lastErr = e instanceof Error ? e : new Error(String(e))
+      if (!relayState.active && tusHttpStatus(e) === null) {
+        relayState.active = true
+        effectiveUrl = relayUploadUrl
+        networkNeedsRelay = true
+        // One-time telemetry per file when the fallback actually engages — lets the admin panel
+        // show how often blocked-network recovery is actually needed in practice. Fire-and-forget,
+        // never blocks the upload (reportClientEvent already guarantees this).
+        reportClientEvent('warn', 'upload:video-relay', 'Switched to relay after direct upload was network-blocked', albumId, { streamUid })
+      }
     }
   }
   throw lastErr ?? new Error('Video upload failed')
@@ -915,12 +963,20 @@ async function uploadVideoToStream(
     onProgress(10)
   }
 
+  // Seed relay state from prior knowledge: this file's own resume record (a previous attempt
+  // already proved direct is blocked), or this browser session's flag (a DIFFERENT video already
+  // proved it) — either way, skip straight to the relay instead of re-discovering the same block.
+  const relayState = { active: (resume?.viaRelay ?? false) || networkNeedsRelay }
+
   try {
     await runTusWithRecovery(
       file,
       uploadUrl,
+      streamUid,
+      albumId,
       (fraction) => onProgress(10 + Math.round(fraction * 86)),
       signal,
+      relayState,
     )
   } catch (e) {
     if (e instanceof DOMException && e.name === 'AbortError') throw e
@@ -933,7 +989,7 @@ async function uploadVideoToStream(
     const posterUrl = await posterPromise
     throw new VideoUploadError(
       e instanceof Error ? e.message : 'Video upload failed',
-      { uploadUrl, streamUid, iframeUrl, thumbnailUrl, posterUrl, durationSeconds, videoWidth, videoHeight },
+      { uploadUrl, streamUid, iframeUrl, thumbnailUrl, posterUrl, durationSeconds, videoWidth, videoHeight, viaRelay: relayState.active },
       tusHttpStatus(e),
     )
   }
@@ -1021,10 +1077,13 @@ function friendlyUploadError(e: unknown): string {
     if (status >= 400 && status < 500) return `This video was rejected by the server (HTTP ${status}) — it may be too long or an unsupported format.`
     return `Video server error (HTTP ${status}). Tap Retry — it continues where it left off.`
   }
-  // status === null → no HTTP response ever arrived: the request couldn't reach Cloudflare Stream's
-  // upload server at all. After the retry loop that almost always means the network is blocking it.
+  // status === null → no HTTP response ever arrived on ANY attempt. Since runTusWithRecovery already
+  // falls back to the same-origin relay after the first such failure, a user-visible failure here
+  // means BOTH the direct path AND the relay failed — a much rarer, more serious case (true
+  // connectivity loss) than a single blocked domain, so the message no longer suggests "your
+  // network may be blocking it" specifically.
   if (e instanceof VideoUploadError || /^tus:|stalled/i.test(raw)) {
-    return "Couldn't reach the video server after several tries — your network may be blocking it. Try mobile data, or turn off any VPN or ad-blocker, then tap Retry."
+    return "Couldn't upload after trying multiple connection methods. Check that you're connected to the internet, then tap Retry."
   }
 
   return raw.length > 160 ? `${raw.slice(0, 157)}…` : raw

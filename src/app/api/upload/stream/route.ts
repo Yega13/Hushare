@@ -142,9 +142,12 @@ export async function POST(req: Request) {
   // Bind stream_uid → albumId before returning to client.
   // photos/create verifies and consumes this row — prevents a guest from calling
   // /upload/stream for album A then injecting that uid into album B via photos/create.
+  // upload_url is the exact Cloudflare `Location` header from createStreamUpload — stored so the
+  // stream-relay fallback (src/app/api/upload/stream-relay/[uid]/route.ts) can forward to the real
+  // URL without ever reconstructing/guessing Cloudflare's URL format from just the uid.
   const { error: pendingErr } = await admin
     .from('pending_stream_uploads')
-    .insert({ stream_uid: streamUid, album_id: albumId })
+    .insert({ stream_uid: streamUid, album_id: albumId, upload_url: uploadUrl })
   if (pendingErr) {
     console.error('[stream] pending_stream_uploads insert failed:', pendingErr.message)
     return NextResponse.json({ error: 'Failed to initiate video upload' }, { status: 502, headers: NO_STORE })
