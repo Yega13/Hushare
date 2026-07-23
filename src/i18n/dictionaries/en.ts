@@ -25,6 +25,7 @@ export const en = {
   'upload.drop': 'Drop to upload',
   'upload.dragdrop': 'Drag & drop or',
   'upload.browse': 'click to browse',
+  'upload.camera': 'Take Photo',
   'upload.uploaded': '{n} uploaded',
   'upload.failed': '{n} failed',
   'upload.retry': 'Retry',

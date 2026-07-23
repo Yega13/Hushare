@@ -22,6 +22,7 @@ export const ru: Partial<Record<DictKey, string>> = {
   'upload.drop': 'Отпустите, чтобы загрузить',
   'upload.dragdrop': 'Перетащите или',
   'upload.browse': 'нажмите для выбора',
+  'upload.camera': 'Сделать фото',
   'upload.uploaded': '{n} загружено',
   'upload.failed': '{n} с ошибкой',
   'upload.retry': 'Повторить',

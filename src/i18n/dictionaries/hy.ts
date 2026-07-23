@@ -22,6 +22,7 @@ export const hy: Partial<Record<DictKey, string>> = {
   'upload.drop': 'Բաց թողեք՝ վերբեռնելու համար',
   'upload.dragdrop': 'Քաշեք ու թողեք կամ',
   'upload.browse': 'սեղմեք ընտրելու համար',
+  'upload.camera': 'Լուսանկարել',
   'upload.uploaded': '{n} վերբեռնված',
   'upload.failed': '{n} ձախողված',
   'upload.retry': 'Կրկնել',

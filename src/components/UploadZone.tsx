@@ -1271,6 +1271,8 @@ export default function UploadZone({ album, userTier, onPhotosUploaded }: Props)
   const [isDragging, setIsDragging] = useState(false)
   const [isUploading, setIsUploading] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
+  // Separate input for the in-app camera: `capture` opens the phone's native camera directly.
+  const cameraInputRef = useRef<HTMLInputElement>(null)
 
   // Computed once at mount — userAgent never changes during a session
   const isMobileRef = useRef(typeof navigator !== 'undefined' && /Mobi|Android/i.test(navigator.userAgent))
@@ -1545,11 +1547,38 @@ export default function UploadZone({ album, userTier, onPhotosUploaded }: Props)
         </div>
       </div>
 
+      {/* In-app camera — mobile only (sm:hidden). `capture="environment"` opens the phone's rear
+          camera directly; the captured photo flows into the exact same upload path as a picked
+          file. Pure CSS gating (no JS/userAgent conditional) so there's no SSR hydration mismatch.
+          On the rare narrow desktop it degrades to a normal file dialog (capture is ignored). */}
+      <button
+        type="button"
+        onClick={() => cameraInputRef.current?.click()}
+        className="mt-2 flex w-full items-center justify-center gap-2 rounded-2xl py-3 font-semibold transition-transform active:scale-[0.99] sm:hidden"
+        style={{ background: '#630826', color: '#FDFAF5' }}
+      >
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" />
+          <circle cx="12" cy="13" r="4" />
+        </svg>
+        {t('upload.camera')}
+      </button>
+
       <input
         ref={inputRef}
         type="file"
         multiple
         accept={FILE_ACCEPT}
+        className="sr-only"
+        onChange={handleInputChange}
+        aria-hidden="true"
+        tabIndex={-1}
+      />
+      <input
+        ref={cameraInputRef}
+        type="file"
+        accept="image/*"
+        capture="environment"
         className="sr-only"
         onChange={handleInputChange}
         aria-hidden="true"
