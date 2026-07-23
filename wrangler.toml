@@ -46,7 +46,7 @@ namespace_id = "1001"
 [vars]
 NEXT_PUBLIC_SITE_URL = "https://hushare.space"
 NEXT_PUBLIC_SUPABASE_URL = "https://yqngmyjquwemwogdyuwv.supabase.co"
-NEXT_PUBLIC_SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InlxbmdteWpxdXdlbXdvZ2R5dXd2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODE4ODY1ODgsImV4cCI6MjA5NzQ2MjU4OH0.D6r3Qm4ihpzVqrDy8cFWoUyAETKVznA2kQl4cYlp-1k"
+NEXT_PUBLIC_SUPABASE_ANON_KEY = "sb_publishable_eGkedNMc2vozQFQz__XC5Q_ITLIHjKV"
 R2_PUBLIC_HOST = "videos.hushare.space"
 NEXT_PUBLIC_TURNSTILE_SITE_KEY = "0x4AAAAAADDt-NIV2H4_FNKgornAUjbhM0g"
 # Set to "true" after verifying hushare.space in Resend dashboard → Domains
