@@ -135,3 +135,79 @@ export async function deleteStreamVideo(uid: string): Promise<void> {
     console.warn(`[stream] deleteStreamVideo uid=${uid} failed: ${res.status}`)
   }
 }
+
+// Minimal shape of a Stream list entry — only the fields the stale-upload sweep needs.
+type StreamListVideo = {
+  uid: string
+  created: string
+  uploadExpiry: string | null
+  maxDurationSeconds: number | null
+  status: { state: string } | null
+}
+
+// Every incomplete Stream upload RESERVES its maxDurationSeconds of storage quota until it either
+// finishes or is reclaimed. createStreamUpload sets a 2h `expiry` expecting Cloudflare to reclaim
+// abandoned uploads — but in production they've been observed lingering for many DAYS past expiry,
+// silently piling up reserved quota until it exhausted the account's storage and the "capacity
+// running low" warning fired (see the maxDurationSeconds note in createStreamUpload). This daily
+// sweep deletes any non-ready upload whose uploadExpiry is already PAST, so quota can't be held
+// hostage by uploads that can never complete. Because it only touches EXPIRED uploads, an upload a
+// guest is actively working on right now (expiry still in the future) is never at risk.
+export async function cleanupStaleStreamUploads(): Promise<{
+  scanned: number
+  deleted: number
+  failed: number
+  reclaimedMinutes: number
+}> {
+  const accountId = process.env.CLOUDFLARE_ACCOUNT_ID
+  const token = process.env.CLOUDFLARE_STREAM_TOKEN
+  if (!accountId || !token) throw new Error('Missing Cloudflare Stream credentials')
+  const headers = { Authorization: `Bearer ${token}` }
+  const now = Date.now()
+
+  // Page through the whole video list (descending by created; page via `end` = older-than cursor).
+  const stale: { uid: string; maxDurationSeconds: number }[] = []
+  let scanned = 0
+  let end: string | undefined
+  for (let page = 0; page < 50; page++) {
+    const u = new URL(`${CLOUDFLARE_API}/accounts/${accountId}/stream`)
+    u.searchParams.set('limit', '1000')
+    if (end) u.searchParams.set('end', end)
+    const res = await fetch(u, { headers })
+    if (!res.ok) throw new Error(`Stream list failed: ${res.status}`)
+    const json = (await res.json()) as { success: boolean; result: StreamListVideo[] }
+    if (!json.success) throw new Error('Stream list returned success=false')
+    const batch = json.result ?? []
+    scanned += batch.length
+    for (const v of batch) {
+      if (v.status?.state === 'ready') continue
+      // Non-ready (pendingupload/inprogress/queued/downloading/error): delete only once its upload
+      // window has closed, so a currently-in-flight upload is never caught.
+      if (v.uploadExpiry && new Date(v.uploadExpiry).getTime() < now) {
+        stale.push({ uid: v.uid, maxDurationSeconds: v.maxDurationSeconds ?? 0 })
+      }
+    }
+    if (batch.length < 1000) break
+    const nextCursor = batch[batch.length - 1]?.created
+    if (!nextCursor || nextCursor === end) break // no progress → stop (avoids a dup-timestamp loop)
+    end = nextCursor
+  }
+
+  let deleted = 0
+  let failed = 0
+  let reclaimedSeconds = 0
+  for (const s of stale) {
+    const res = await fetch(`${CLOUDFLARE_API}/accounts/${accountId}/stream/${s.uid}`, {
+      method: 'DELETE',
+      headers,
+    })
+    if (res.ok || res.status === 404) {
+      deleted++
+      reclaimedSeconds += s.maxDurationSeconds
+    } else {
+      failed++
+      console.warn(`[stream-cleanup] delete uid=${s.uid} failed: ${res.status}`)
+    }
+  }
+  return { scanned, deleted, failed, reclaimedMinutes: Math.round(reclaimedSeconds / 60) }
+}
