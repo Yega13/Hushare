@@ -461,6 +461,33 @@ export const hy: Partial<Record<DictKey, string>> = {
   'seo.albumFallback': 'Ալբոմ',
   'seo.albumDesc': 'Ընդհանուր լուսանկարների ալբոմ Hushare-ում',
 
+  // shared/common
+  'common.saving': 'Պահպանվում է…',
+  'common.deleting': 'Ջնջվում է…',
+  'common.delete': 'Ջնջել',
+  'common.confirmDelete': 'Հաստատել ջնջումը',
+  'common.create': 'Ստեղծել',
+  'common.creating': 'Ստեղծվում է…',
+
+  // account + collections
+  'acct.signOut': 'Դուրս գալ',
+  'acct.signingOut': 'Դուրս գալ…',
+  'acct.albumDeleted': 'Ալբոմը ջնջվեց',
+  'acct.deleteAlbumConfirm': 'Ընդմիշտ ջնջե՞լ այս ալբոմը։',
+  'acct.titleRequired': 'Ալբոմի անվանումը պարտադիր է',
+  'acct.albumRenamed': 'Ալբոմը վերանվանվեց',
+  'acct.collectionCreated': 'Հավաքածուն ստեղծվեց',
+  'acct.collectionName': 'Հավաքածուի անունը',
+  'acct.descOptional': 'Նկարագրություն (ըստ ցանկության)',
+  'acct.collectionDescAria': 'Հավաքածուի նկարագրություն (ըստ ցանկության)',
+  'acct.collectionDeleted': 'Հավաքածուն ջնջվեց',
+  'acct.collectionLinkCopied': 'Հավաքածուի հղումը պատճենվեց',
+  'acct.collectionCopyFail': 'Չհաջողվեց պատճենել հավաքածուի հղումը',
+  'acct.collectionUpdated': 'Հավաքածուն թարմացվեց',
+  'acct.collectionSlug': 'Հավաքածուի հասցեն',
+  'acct.collectionDesc': 'Հավաքածուի նկարագրություն',
+  'acct.subStatus': 'Բաժանորդագրության հաստատման կարգավիճակ',
+
   'myAlbums.title': 'Ձեր ալբոմները այս սարքում',
   'myAlbums.subtitle': 'Ալբոմներ, որ ստեղծել եք այստեղ։ Սեղմեք՝ կառավարելու համար. այս հղումները միայն ձերն են։',
   'myAlbums.saved': '{n} պահված',

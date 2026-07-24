@@ -461,6 +461,33 @@ export const ru: Partial<Record<DictKey, string>> = {
   'seo.albumFallback': 'Альбом',
   'seo.albumDesc': 'Общий фотоальбом на Hushare',
 
+  // shared/common
+  'common.saving': 'Сохранение…',
+  'common.deleting': 'Удаление…',
+  'common.delete': 'Удалить',
+  'common.confirmDelete': 'Подтвердить удаление',
+  'common.create': 'Создать',
+  'common.creating': 'Создание…',
+
+  // account + collections
+  'acct.signOut': 'Выйти',
+  'acct.signingOut': 'Выход…',
+  'acct.albumDeleted': 'Альбом удалён',
+  'acct.deleteAlbumConfirm': 'Удалить этот альбом навсегда?',
+  'acct.titleRequired': 'Требуется название альбома',
+  'acct.albumRenamed': 'Альбом переименован',
+  'acct.collectionCreated': 'Коллекция создана',
+  'acct.collectionName': 'Название коллекции',
+  'acct.descOptional': 'Описание (необязательно)',
+  'acct.collectionDescAria': 'Описание коллекции (необязательно)',
+  'acct.collectionDeleted': 'Коллекция удалена',
+  'acct.collectionLinkCopied': 'Ссылка на коллекцию скопирована',
+  'acct.collectionCopyFail': 'Не удалось скопировать ссылку на коллекцию',
+  'acct.collectionUpdated': 'Коллекция обновлена',
+  'acct.collectionSlug': 'Адрес коллекции',
+  'acct.collectionDesc': 'Описание коллекции',
+  'acct.subStatus': 'Статус подтверждения подписки',
+
   'myAlbums.title': 'Ваши альбомы на этом устройстве',
   'myAlbums.subtitle': 'Альбомы, созданные здесь. Нажмите, чтобы управлять — эти ссылки видны только вам.',
   'myAlbums.saved': 'сохранено: {n}',

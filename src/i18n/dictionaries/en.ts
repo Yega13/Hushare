@@ -474,6 +474,33 @@ export const en = {
   'seo.albumFallback': 'Album',
   'seo.albumDesc': 'A shared photo album on Hushare',
 
+  // shared/common
+  'common.saving': 'Saving…',
+  'common.deleting': 'Deleting…',
+  'common.delete': 'Delete',
+  'common.confirmDelete': 'Confirm delete',
+  'common.create': 'Create',
+  'common.creating': 'Creating…',
+
+  // account + collections
+  'acct.signOut': 'Sign out',
+  'acct.signingOut': 'Signing out…',
+  'acct.albumDeleted': 'Album deleted',
+  'acct.deleteAlbumConfirm': 'Delete this album forever?',
+  'acct.titleRequired': 'Album title is required',
+  'acct.albumRenamed': 'Album renamed',
+  'acct.collectionCreated': 'Collection created',
+  'acct.collectionName': 'Collection name',
+  'acct.descOptional': 'Description (optional)',
+  'acct.collectionDescAria': 'Collection description (optional)',
+  'acct.collectionDeleted': 'Collection deleted',
+  'acct.collectionLinkCopied': 'Collection link copied',
+  'acct.collectionCopyFail': 'Could not copy collection link',
+  'acct.collectionUpdated': 'Collection updated',
+  'acct.collectionSlug': 'Collection slug',
+  'acct.collectionDesc': 'Collection description',
+  'acct.subStatus': 'Subscription confirmation status',
+
   // "your albums on this device" recovery block
   'myAlbums.title': 'Your albums on this device',
   'myAlbums.subtitle': 'Albums you created here. Tap to manage — these links are private to you.',
