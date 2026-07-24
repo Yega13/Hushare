@@ -6,6 +6,7 @@ import Image from 'next/image'
 import { useRouter } from 'next/navigation'
 import { ArrowLeft, Check, Copy, Download, QrCode, Share2, SquareMenu, X } from 'lucide-react'
 import { useIsNarrow } from '@/lib/useIsNarrow'
+import { useT } from '@/i18n/LocaleProvider'
 import { renderBrandedCard, renderBWCard } from './TableCardModal'
 
 type CardStyle = 'branded' | 'bw'
@@ -51,12 +52,13 @@ async function downloadQr(shareUrl: string, albumTitle: string, format: 'png' | 
 // ─── Inline table card selector (no modal overlay) ────────────────────────────
 
 function TableCardView({ shareUrl, albumTitle, onBack }: { shareUrl: string; albumTitle: string; onBack: () => void }) {
+  const { t } = useT()
   const router = useRouter()
   const [style, setStyle] = useState<CardStyle>('branded')
   const [downloading, setDownloading] = useState(false)
   const [dlFormat, setDlFormat] = useState<'png' | 'pdf'>('png')
   const canvasRef = useRef<HTMLCanvasElement>(null)
-  const heading = albumTitle || 'Capture the Moment'
+  const heading = albumTitle || t('sm.captureMoment')
 
   useEffect(() => {
     const c = canvasRef.current
@@ -95,9 +97,9 @@ function TableCardView({ shareUrl, albumTitle, onBack }: { shareUrl: string; alb
       <div className="flex items-center gap-2 mb-3">
         <button onClick={onBack} className="flex items-center gap-1 text-xs font-medium rounded-lg px-2 py-1 transition hover:opacity-70"
           style={{ color: '#7C5C3E', background: '#F5F0E8', border: '1px solid #DDD5C5' }}>
-          <ArrowLeft className="w-3 h-3" /> Back
+          <ArrowLeft className="w-3 h-3" /> {t('sm.back')}
         </button>
-        <span className="text-sm font-semibold" style={{ color: '#630826' }}>Table card</span>
+        <span className="text-sm font-semibold" style={{ color: '#630826' }}>{t('sm.tableCard')}</span>
       </div>
 
       <div className="flex gap-1.5 mb-3">
@@ -105,13 +107,13 @@ function TableCardView({ shareUrl, albumTitle, onBack }: { shareUrl: string; alb
           <button key={s} onClick={() => setStyle(s)}
             className="flex-1 py-2 text-xs font-semibold rounded-xl transition"
             style={{ background: style === s ? '#630826' : '#F5F0E8', color: style === s ? '#FDFAF5' : '#5C3D2E', border: '1px solid ' + (style === s ? '#630826' : '#DDD5C5') }}>
-            {s === 'branded' ? 'Hushare Branded' : 'B&W'}
+            {s === 'branded' ? t('sm.branded') : t('sm.bw')}
           </button>
         ))}
         <button onClick={openEditor}
           className="flex-1 py-2 text-xs font-semibold rounded-xl transition hover:opacity-80"
           style={{ background: '#F5F0E8', color: '#5C3D2E', border: '1px solid #DDD5C5' }}>
-          Custom
+          {t('sm.custom')}
         </button>
       </div>
 
@@ -120,8 +122,8 @@ function TableCardView({ shareUrl, albumTitle, onBack }: { shareUrl: string; alb
           style={{ width: 130, height: Math.round(130 * 1700 / 1200), flexShrink: 0, borderRadius: 8, border: '1px solid #E5E5E5', boxShadow: '0 2px 10px rgba(0,0,0,0.08)' }} />
         <div className="flex-1 space-y-2 pt-1">
           <p className="text-xs leading-relaxed" style={{ color: '#7C5C3E' }}>
-            {style === 'branded' ? 'Hushare red & white, Playfair Display.' : 'Elegant B&W, double border.'}
-            {' '}Print-ready 1200×1700 px.
+            {style === 'branded' ? t('sm.brandedDesc') : t('sm.bwDesc')}
+            {' '}{t('sm.printReady')}
           </p>
           <div className="flex rounded-lg overflow-hidden" style={{ border: '1px solid #DDD5C5' }}>
             {(['png', 'pdf'] as const).map(f => (
@@ -136,9 +138,9 @@ function TableCardView({ shareUrl, albumTitle, onBack }: { shareUrl: string; alb
             className="w-full flex items-center justify-center gap-1.5 text-xs font-semibold rounded-xl py-2.5 transition hover:opacity-90 disabled:opacity-50"
             style={{ background: '#630826', color: '#FDFAF5' }}>
             <Download className="w-3.5 h-3.5" />
-            {downloading ? 'Generating…' : `Download ${dlFormat.toUpperCase()}`}
+            {downloading ? t('sm.generating') : t('sm.download', { format: dlFormat.toUpperCase() })}
           </button>
-          <p className="text-xs" style={{ color: '#A89880' }}>A5 / 5×7&quot;</p>
+          <p className="text-xs" style={{ color: '#A89880' }}>{t('sm.a5size')}</p>
         </div>
       </div>
     </div>
@@ -148,6 +150,7 @@ function TableCardView({ shareUrl, albumTitle, onBack }: { shareUrl: string; alb
 // ─── Main share menu ──────────────────────────────────────────────────────────
 
 export default function ShareMenu({ copied, ownerUrl, shareUrl, albumTitle, onClose, onCopy }: Props) {
+  const { t } = useT()
   const [view, setView] = useState<'main' | 'tablecard'>('main')
   const [qrDataUrl, setQrDataUrl] = useState('')
   const [qrFormat, setQrFormat] = useState<'png' | 'svg'>('png')
@@ -163,7 +166,7 @@ export default function ShareMenu({ copied, ownerUrl, shareUrl, albumTitle, onCl
 
   async function handleShare() {
     if (typeof navigator !== 'undefined' && navigator.share) {
-      try { await navigator.share({ url: shareUrl, title: albumTitle, text: `Check out "${albumTitle}" on Hushare` }); return } catch { /* fall through */ }
+      try { await navigator.share({ url: shareUrl, title: albumTitle, text: t('guest.shareText', { title: albumTitle }) }); return } catch { /* fall through */ }
     }
     try { await navigator.clipboard.writeText(shareUrl); onCopy('share') } catch { /* ignore */ }
   }
@@ -177,8 +180,8 @@ export default function ShareMenu({ copied, ownerUrl, shareUrl, albumTitle, onCl
       ) : (
         <>
           <div className="flex items-center justify-between mb-3">
-            <span className="font-semibold text-sm" style={{ color: '#630826' }}>Send link</span>
-            <button onClick={onClose} style={{ color: '#A89880', cursor: 'pointer' }} aria-label="Close share menu">
+            <span className="font-semibold text-sm" style={{ color: '#630826' }}>{t('sm.sendLink')}</span>
+            <button onClick={onClose} style={{ color: '#A89880', cursor: 'pointer' }} aria-label={t('sm.closeShare')}>
               <X className="w-4 h-4" />
             </button>
           </div>
@@ -189,8 +192,8 @@ export default function ShareMenu({ copied, ownerUrl, shareUrl, albumTitle, onCl
             onClick={handleShare}
           >
             <span>
-              <span className="block text-sm font-semibold" style={{ color: '#630826' }}>Share album</span>
-              <span className="block text-xs" style={{ color: '#8B6F4E' }}>Send via messages, apps or copy</span>
+              <span className="block text-sm font-semibold" style={{ color: '#630826' }}>{t('guest.shareAlbum')}</span>
+              <span className="block text-xs" style={{ color: '#8B6F4E' }}>{t('guest.shareVia')}</span>
             </span>
             <Share2 className="w-4 h-4 flex-none" style={{ color: '#7C5C3E' }} />
           </button>
@@ -201,7 +204,7 @@ export default function ShareMenu({ copied, ownerUrl, shareUrl, albumTitle, onCl
             onClick={() => onCopy('share')}
           >
             <span>
-              <span className="block text-sm font-semibold" style={{ color: '#630826' }}>Guest share link</span>
+              <span className="block text-sm font-semibold" style={{ color: '#630826' }}>{t('sm.guestShareLink')}</span>
               <span className="block text-xs truncate" style={{ color: '#8B6F4E', maxWidth: 220 }}>{shareUrl}</span>
             </span>
             {copied === 'share' ? <Check className="w-4 h-4 flex-none" style={{ color: '#630826' }} /> : <Copy className="w-4 h-4 flex-none" style={{ color: '#7C5C3E' }} />}
@@ -214,7 +217,7 @@ export default function ShareMenu({ copied, ownerUrl, shareUrl, albumTitle, onCl
               onClick={() => onCopy('owner')}
             >
               <span>
-                <span className="block text-sm font-semibold" style={{ color: '#1B3A6B' }}>Owner management link</span>
+                <span className="block text-sm font-semibold" style={{ color: '#1B3A6B' }}>{t('sm.ownerLink')}</span>
                 <span className="block text-xs truncate" style={{ color: '#45628C', maxWidth: 220 }}>{ownerUrl}</span>
               </span>
               {copied === 'owner' ? <Check className="w-4 h-4" style={{ color: '#1B3A6B' }} /> : <Copy className="w-4 h-4" style={{ color: '#1B3A6B' }} />}
@@ -223,13 +226,13 @@ export default function ShareMenu({ copied, ownerUrl, shareUrl, albumTitle, onCl
 
           <div className="mt-3 rounded-xl p-3" style={{ background: '#FFFFFF', border: '1px solid #DDD5C5' }}>
             <div className="flex items-center gap-3">
-              {qrDataUrl && <Image src={qrDataUrl} alt="QR Code" width={92} height={92} unoptimized />}
+              {qrDataUrl && <Image src={qrDataUrl} alt={t('guest.qr')} width={92} height={92} unoptimized />}
               <div className="flex-1 min-w-0">
                 <p className="text-sm font-semibold flex items-center gap-2" style={{ color: '#630826' }}>
                   <QrCode className="w-4 h-4" />
-                  QR code
+                  {t('guest.qr')}
                 </p>
-                <p className="text-xs leading-relaxed" style={{ color: '#7C5C3E' }}>Guests scan this to open the album.</p>
+                <p className="text-xs leading-relaxed" style={{ color: '#7C5C3E' }}>{t('sm.qrScanGuests')}</p>
                 <div className="mt-2 flex gap-2 flex-wrap items-center">
                   <div className="flex rounded-lg overflow-hidden" style={{ border: '1px solid #DDD5C5' }}>
                     {(['png', 'svg'] as const).map(f => (
@@ -246,7 +249,7 @@ export default function ShareMenu({ copied, ownerUrl, shareUrl, albumTitle, onCl
                     onClick={() => downloadQr(shareUrl, albumTitle, qrFormat)}
                   >
                     <Download className="w-3 h-3" />
-                    Download {qrFormat.toUpperCase()}
+                    {t('sm.download', { format: qrFormat.toUpperCase() })}
                   </button>
                   <button
                     className="flex items-center gap-1.5 text-xs font-semibold rounded-lg px-2.5 py-1.5 transition hover:opacity-80"
@@ -254,7 +257,7 @@ export default function ShareMenu({ copied, ownerUrl, shareUrl, albumTitle, onCl
                     onClick={() => setView('tablecard')}
                   >
                     <SquareMenu className="w-3 h-3" />
-                    Table card
+                    {t('sm.tableCard')}
                   </button>
                 </div>
               </div>

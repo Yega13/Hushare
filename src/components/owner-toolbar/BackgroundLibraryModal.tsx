@@ -2,6 +2,7 @@
 
 import { Check, X } from 'lucide-react'
 import { STOCK_ALBUM_BACKGROUNDS } from '@/lib/album-backgrounds'
+import { useT } from '@/i18n/LocaleProvider'
 
 type Props = {
   backgroundSaving: boolean
@@ -11,6 +12,7 @@ type Props = {
 }
 
 export default function BackgroundLibraryModal({ backgroundSaving, bgChoice, onChoose, onClose }: Props) {
+  const { t } = useT()
   return (
     <div
       className="fixed inset-0 z-[80] flex items-center justify-center px-4 py-6"
@@ -28,14 +30,14 @@ export default function BackgroundLibraryModal({ backgroundSaving, bgChoice, onC
           style={{ background: '#FFFFFF', borderBottom: '1px solid #E8E0D2' }}
         >
           <div>
-            <h2 className="text-base font-semibold" style={{ color: '#630826' }}>Stock backgrounds</h2>
-            <p className="text-xs" style={{ color: '#7C5C3E' }}>Pick a quiet image for this album.</p>
+            <h2 className="text-base font-semibold" style={{ color: '#630826' }}>{t('blm.title')}</h2>
+            <p className="text-xs" style={{ color: '#7C5C3E' }}>{t('blm.subtitle')}</p>
           </div>
           <button
             onClick={onClose}
             className="rounded-full p-2 transition hover:opacity-80"
             style={{ color: '#7C5C3E', background: '#F5F0E8', cursor: 'pointer' }}
-            aria-label="Close stock backgrounds"
+            aria-label={t('blm.close')}
           >
             <X className="h-4 w-4" />
           </button>

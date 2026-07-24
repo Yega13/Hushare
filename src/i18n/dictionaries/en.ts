@@ -406,6 +406,28 @@ export const en = {
   'ss.selectAll': 'Select all',
   'ss.selected': '{n} selected',
 
+  // share menu (owner)
+  'sm.sendLink': 'Send link',
+  'sm.closeShare': 'Close share menu',
+  'sm.guestShareLink': 'Guest share link',
+  'sm.ownerLink': 'Owner management link',
+  'sm.qrScanGuests': 'Guests scan this to open the album.',
+  'sm.back': 'Back',
+  'sm.tableCard': 'Table card',
+  'sm.branded': 'Hushare Branded',
+  'sm.bw': 'B&W',
+  'sm.custom': 'Custom',
+  'sm.brandedDesc': 'Hushare red & white, Playfair Display.',
+  'sm.bwDesc': 'Elegant B&W, double border.',
+  'sm.printReady': 'Print-ready 1200×1700 px.',
+  'sm.generating': 'Generating…',
+  'sm.download': 'Download {format}',
+  'sm.a5size': 'A5 / 5×7″',
+  'sm.captureMoment': 'Capture the Moment',
+  'blm.title': 'Stock backgrounds',
+  'blm.subtitle': 'Pick a quiet image for this album.',
+  'blm.close': 'Close stock backgrounds',
+
   // "your albums on this device" recovery block
   'myAlbums.title': 'Your albums on this device',
   'myAlbums.subtitle': 'Albums you created here. Tap to manage — these links are private to you.',
