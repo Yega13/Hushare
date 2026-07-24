@@ -458,6 +458,8 @@ export const ru: Partial<Record<DictKey, string>> = {
   'pg.arrangeTip': 'Нажмите на этот значок на любом фото, затем перетащите его на другое, чтобы поменять местами.',
   'pg.coverSet': 'Установлено обложкой альбома.',
   'pg.coverCleared': 'Обложка убрана.',
+  'seo.albumFallback': 'Альбом',
+  'seo.albumDesc': 'Общий фотоальбом на Hushare',
 
   'myAlbums.title': 'Ваши альбомы на этом устройстве',
   'myAlbums.subtitle': 'Альбомы, созданные здесь. Нажмите, чтобы управлять — эти ссылки видны только вам.',

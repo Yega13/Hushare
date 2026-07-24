@@ -458,6 +458,8 @@ export const hy: Partial<Record<DictKey, string>> = {
   'pg.arrangeTip': 'Հպեք ցանկացած լուսանկարի այս նշանին, ապա քաշեք մյուսի վրա՝ տեղափոխելու համար։',
   'pg.coverSet': 'Դարձվեց ալբոմի շապիկ։',
   'pg.coverCleared': 'Շապիկը հեռացվեց։',
+  'seo.albumFallback': 'Ալբոմ',
+  'seo.albumDesc': 'Ընդհանուր լուսանկարների ալբոմ Hushare-ում',
 
   'myAlbums.title': 'Ձեր ալբոմները այս սարքում',
   'myAlbums.subtitle': 'Ալբոմներ, որ ստեղծել եք այստեղ։ Սեղմեք՝ կառավարելու համար. այս հղումները միայն ձերն են։',

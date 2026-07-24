@@ -4,6 +4,8 @@ import type { Metadata } from 'next'
 import type { Photo } from '@/types'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { resolveAlbum, fetchAuthorizedPhotos } from '@/lib/server/album-access'
+import { getServerLocale } from '@/i18n/server'
+import { getDictionary } from '@/i18n/get-dictionary'
 import AlbumPageClient from './AlbumPageClient'
 
 export const runtime = 'nodejs'
@@ -78,10 +80,10 @@ async function fetchCoverUrl(album: AlbumMeta): Promise<string | null> {
 
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { slug } = await params
-  const album = await fetchAlbumMeta(slug)
+  const [album, dict] = await Promise.all([fetchAlbumMeta(slug), getServerLocale().then(getDictionary)])
 
   if (!album) {
-    return { title: 'Album', robots: { index: false, follow: false } }
+    return { title: dict['seo.albumFallback'], robots: { index: false, follow: false } }
   }
 
   const isRevealed = !album.reveal_at || new Date(album.reveal_at) <= new Date()
@@ -93,14 +95,14 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 
   return {
     title: album.title,
-    description: 'A shared photo album on Hushare',
+    description: dict['seo.albumDesc'],
     metadataBase: new URL(SITE_URL),
     alternates: { canonical: `/${album.custom_slug ?? slug}` },
     robots: { index: false, follow: false },
     openGraph: {
       type: 'website',
       title: album.title,
-      description: 'A shared photo album on Hushare',
+      description: dict['seo.albumDesc'],
       url: `${SITE_URL}/${album.custom_slug ?? slug}`,
       images: [{ url: ogImage, width: 1200, height: 630, alt: album.title }],
     },

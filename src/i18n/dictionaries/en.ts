@@ -471,6 +471,8 @@ export const en = {
   'pg.arrangeTip': 'Tap this handle on any photo, then drag it onto another to swap.',
   'pg.coverSet': 'Set as album cover.',
   'pg.coverCleared': 'Cover cleared.',
+  'seo.albumFallback': 'Album',
+  'seo.albumDesc': 'A shared photo album on Hushare',
 
   // "your albums on this device" recovery block
   'myAlbums.title': 'Your albums on this device',
