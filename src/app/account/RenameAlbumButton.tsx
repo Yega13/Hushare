@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { Check, Pencil, X } from 'lucide-react'
 import { showAccountToast, TOAST_STORAGE_KEY } from './AccountToastViewport'
+import { useT } from '@/i18n/LocaleProvider'
 
 type Props = {
   albumId: string
@@ -10,6 +11,7 @@ type Props = {
 }
 
 export default function RenameAlbumButton({ albumId, title: initialTitle }: Props) {
+  const { t } = useT()
   const [editing, setEditing] = useState(false)
   const [saving, setSaving] = useState(false)
   const [title, setTitle] = useState(initialTitle)
@@ -18,7 +20,7 @@ export default function RenameAlbumButton({ albumId, title: initialTitle }: Prop
     if (saving) return
     const nextTitle = title.trim().slice(0, 120)
     if (!nextTitle) {
-      showAccountToast('Album title is required', 'error')
+      showAccountToast(t('acct.titleRequired'), 'error')
       return
     }
     setSaving(true)
@@ -30,13 +32,13 @@ export default function RenameAlbumButton({ albumId, title: initialTitle }: Prop
       })
       const body = (await res.json().catch(() => ({}))) as { error?: string }
       if (!res.ok) {
-        showAccountToast(body.error ?? `Rename failed (${res.status})`, 'error')
+        showAccountToast(body.error ?? t('acct.renameFailed', { status: res.status }), 'error')
         return
       }
-      window.sessionStorage.setItem(TOAST_STORAGE_KEY, JSON.stringify({ message: 'Album renamed' }))
+      window.sessionStorage.setItem(TOAST_STORAGE_KEY, JSON.stringify({ message: t('acct.albumRenamed') }))
       window.location.reload()
     } catch (e) {
-      showAccountToast(e instanceof Error ? e.message : 'Network error', 'error')
+      showAccountToast(e instanceof Error ? e.message : t('common.networkError'), 'error')
     } finally {
       setSaving(false)
     }
@@ -66,7 +68,7 @@ export default function RenameAlbumButton({ albumId, title: initialTitle }: Prop
             style={{ background: '#630826', color: '#FDFAF5' }}
           >
             <Check className="h-3.5 w-3.5" />
-            {saving ? 'Saving...' : 'Save'}
+            {saving ? t('common.saving') : t('ot.save')}
           </button>
           <button
             type="button"
@@ -75,7 +77,7 @@ export default function RenameAlbumButton({ albumId, title: initialTitle }: Prop
             style={{ background: '#FFFFFF', border: '1px solid #DDD5C5', color: '#7C5C3E' }}
           >
             <X className="h-3.5 w-3.5" />
-            Cancel
+            {t('ot.cancel')}
           </button>
         </div>
       </div>
@@ -90,7 +92,7 @@ export default function RenameAlbumButton({ albumId, title: initialTitle }: Prop
       style={{ background: '#FFFFFF', border: '1px solid #DDD5C5', color: '#7C5C3E' }}
     >
       <Pencil className="h-3.5 w-3.5" />
-      Rename
+      {t('acct.rename')}
     </button>
   )
 }

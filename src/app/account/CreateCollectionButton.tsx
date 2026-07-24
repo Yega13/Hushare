@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { Check, Plus, X } from 'lucide-react'
 import { showAccountToast, TOAST_STORAGE_KEY } from './AccountToastViewport'
+import { useT } from '@/i18n/LocaleProvider'
 
 function slugFromName(name: string): string {
   return (
@@ -15,6 +16,7 @@ function slugFromName(name: string): string {
 }
 
 export default function CreateCollectionButton() {
+  const { t } = useT()
   const [open, setOpen] = useState(false)
   const [name, setName] = useState('')
   const [description, setDescription] = useState('')
@@ -31,7 +33,7 @@ export default function CreateCollectionButton() {
     const trimmedName = name.trim()
     if (!trimmedName) return
     if (trimmedName.length < 4) {
-      showAccountToast('Collection name must be at least 4 characters', 'error')
+      showAccountToast(t('acct.collectionNameMin'), 'error')
       return
     }
     setSaving(true)
@@ -47,13 +49,13 @@ export default function CreateCollectionButton() {
       })
       const body = (await res.json().catch(() => ({}))) as { error?: string }
       if (!res.ok) {
-        showAccountToast(body.error ?? `Could not create collection (${res.status})`, 'error')
+        showAccountToast(body.error ?? t('acct.createCollectionFailed', { status: res.status }), 'error')
         return
       }
-      window.sessionStorage.setItem(TOAST_STORAGE_KEY, JSON.stringify({ message: 'Collection created' }))
+      window.sessionStorage.setItem(TOAST_STORAGE_KEY, JSON.stringify({ message: t('acct.collectionCreated') }))
       window.location.reload()
     } catch (e) {
-      showAccountToast(e instanceof Error ? e.message : 'Network error', 'error')
+      showAccountToast(e instanceof Error ? e.message : t('common.networkError'), 'error')
     } finally {
       setSaving(false)
     }
@@ -68,7 +70,7 @@ export default function CreateCollectionButton() {
         style={{ background: '#F6E9EE', color: '#630826', border: '1px solid #C8D8C4' }}
       >
         <Plus className="h-3.5 w-3.5" />
-        New collection
+        {t('acct.newCollection')}
       </button>
     )
   }
@@ -77,12 +79,12 @@ export default function CreateCollectionButton() {
     <div className="mt-3 rounded-xl p-3" style={{ background: '#FFFFFF', border: '1px solid #DDD5C5' }}>
       <div className="grid gap-2">
         <input
-          aria-label="Collection name"
+          aria-label={t('acct.collectionName')}
           autoFocus
           value={name}
           onChange={(e) => setName(e.target.value)}
           maxLength={80}
-          placeholder="Collection name"
+          placeholder={t('acct.collectionName')}
           className="w-full rounded-lg px-3 py-2 text-sm focus:outline-none"
           style={{ background: '#FDFAF5', border: '1px solid #DDD5C5', color: '#630826' }}
           onKeyDown={(e) => {
@@ -91,12 +93,12 @@ export default function CreateCollectionButton() {
           }}
         />
         <textarea
-          aria-label="Collection description (optional)"
+          aria-label={t('acct.collectionDescAria')}
           value={description}
           onChange={(e) => setDescription(e.target.value)}
           maxLength={240}
           rows={2}
-          placeholder="Description (optional)"
+          placeholder={t('acct.descOptional')}
           className="w-full resize-none rounded-lg px-3 py-2 text-sm focus:outline-none"
           style={{ background: '#FDFAF5', border: '1px solid #DDD5C5', color: '#630826' }}
         />
@@ -110,7 +112,7 @@ export default function CreateCollectionButton() {
           style={{ background: '#630826', color: '#FDFAF5' }}
         >
           <Check className="h-3.5 w-3.5" />
-          {saving ? 'Creating...' : 'Create'}
+          {saving ? t('common.creating') : t('common.create')}
         </button>
         <button
           type="button"
@@ -119,7 +121,7 @@ export default function CreateCollectionButton() {
           style={{ background: '#FFFFFF', border: '1px solid #DDD5C5', color: '#7C5C3E' }}
         >
           <X className="h-3.5 w-3.5" />
-          Cancel
+          {t('ot.cancel')}
         </button>
       </div>
     </div>
