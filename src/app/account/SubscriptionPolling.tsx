@@ -2,11 +2,13 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
+import { useT } from '@/i18n/LocaleProvider'
 
 const POLL_INTERVAL_MS = 2000
 const MAX_POLLS = 15 // 30 seconds total
 
 export default function SubscriptionPolling({ email }: { email: string }) {
+  const { t } = useT()
   const router = useRouter()
   const routerRef = useRef(router)
   const [givenUp, setGivenUp] = useState(false)
@@ -55,7 +57,7 @@ export default function SubscriptionPolling({ email }: { email: string }) {
         style={{ background: '#FDFAF5' }}
         role="status"
         aria-live="polite"
-        aria-label="Subscription confirmation status"
+        aria-label={t('acct.subStatus')}
       >
         <div
           className="max-w-md w-full rounded-2xl p-8 text-center"
@@ -69,25 +71,23 @@ export default function SubscriptionPolling({ email }: { email: string }) {
             className="text-xs uppercase mb-3"
             style={{ color: '#8B6F4E', letterSpacing: '0.18em', fontWeight: 600 }}
           >
-            Almost there
+            {t('sub.almostThere')}
           </p>
           <h1
             className="text-2xl font-bold mb-3"
             style={{ color: '#630826', fontFamily: 'var(--font-serif)' }}
           >
-            We&apos;re still confirming your subscription
+            {t('sub.stillConfirming')}
           </h1>
           <p className="text-sm leading-relaxed mb-5" style={{ color: '#5C4A3C' }}>
-            Your payment went through, but our system is taking a moment to catch
-            up. This usually clears within a minute or two — try refreshing this
-            page shortly. If it&apos;s still not showing in 5 minutes, email{' '}
+            {t('sub.delayBody1')}{' '}
             <a
               href="mailto:husharesupport@gmail.com"
               style={{ color: '#630826', textDecoration: 'underline', textDecorationStyle: 'dotted' }}
             >
               husharesupport@gmail.com
-            </a>{' '}
-            from <strong className="break-all">{email}</strong> and we&apos;ll sort it immediately.
+            </a>
+            {t('sub.delayFrom')}<strong className="break-all">{email}</strong>{t('sub.delayTail')}
           </p>
           <button
             type="button"
@@ -95,7 +95,7 @@ export default function SubscriptionPolling({ email }: { email: string }) {
             className="w-full font-semibold rounded-xl py-2.5 text-sm transition hover:opacity-90"
             style={{ background: '#630826', color: '#FDFAF5' }}
           >
-            Refresh
+            {t('sub.refresh')}
           </button>
         </div>
       </main>
@@ -108,7 +108,7 @@ export default function SubscriptionPolling({ email }: { email: string }) {
       style={{ background: '#FDFAF5' }}
       role="status"
       aria-live="polite"
-      aria-label="Subscription confirmation status"
+      aria-label={t('acct.subStatus')}
     >
       <div
         className="max-w-md w-full rounded-2xl p-10 text-center"
@@ -134,10 +134,10 @@ export default function SubscriptionPolling({ email }: { email: string }) {
           className="text-xl font-bold mb-2"
           style={{ color: '#630826', fontFamily: 'var(--font-serif)' }}
         >
-          Confirming your subscription...
+          {t('sub.confirming')}
         </h1>
         <p className="text-sm leading-relaxed" style={{ color: '#5C4A3C' }}>
-          Thanks for subscribing. We&apos;re finalising things on our end — this usually takes a few seconds.
+          {t('sub.confirmingBody')}
         </p>
         <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
       </div>

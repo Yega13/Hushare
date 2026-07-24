@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { Check, Copy, Pencil, X } from 'lucide-react'
 import DeleteCollectionButton from './DeleteCollectionButton'
 import { showAccountToast, TOAST_STORAGE_KEY } from './AccountToastViewport'
+import { useT } from '@/i18n/LocaleProvider'
 
 type Props = {
   collection: {
@@ -15,6 +16,7 @@ type Props = {
 }
 
 export default function CollectionActions({ collection }: Props) {
+  const { t } = useT()
   const [editing, setEditing] = useState(false)
   const [saving, setSaving] = useState(false)
   const [name, setName] = useState(collection.name)
@@ -27,9 +29,9 @@ export default function CollectionActions({ collection }: Props) {
     const url = `${window.location.origin}/c/${collection.slug}`
     try {
       await navigator.clipboard.writeText(url)
-      showAccountToast('Collection link copied')
+      showAccountToast(t('acct.collectionLinkCopied'))
     } catch {
-      showAccountToast('Could not copy collection link', 'error')
+      showAccountToast(t('acct.collectionCopyFail'), 'error')
     }
   }
 
@@ -49,13 +51,13 @@ export default function CollectionActions({ collection }: Props) {
       })
       const body = (await res.json().catch(() => ({}))) as { error?: string }
       if (!res.ok) {
-        showAccountToast(body.error ?? `Save failed (${res.status})`, 'error')
+        showAccountToast(body.error ?? t('acct.saveFailed', { status: res.status }), 'error')
         return
       }
-      window.sessionStorage.setItem(TOAST_STORAGE_KEY, JSON.stringify({ message: 'Collection updated' }))
+      window.sessionStorage.setItem(TOAST_STORAGE_KEY, JSON.stringify({ message: t('acct.collectionUpdated') }))
       window.location.reload()
     } catch (e) {
-      showAccountToast(e instanceof Error ? e.message : 'Network error', 'error')
+      showAccountToast(e instanceof Error ? e.message : t('common.networkError'), 'error')
     } finally {
       setSaving(false)
     }
@@ -66,7 +68,7 @@ export default function CollectionActions({ collection }: Props) {
       <div className="mt-3 rounded-xl p-3" style={{ background: '#FFFFFF', border: '1px solid #DDD5C5' }}>
         <div className="grid gap-2">
           <input
-            aria-label="Collection name"
+            aria-label={t('acct.collectionName')}
             value={name}
             onChange={(e) => setName(e.target.value)}
             maxLength={80}
@@ -74,7 +76,7 @@ export default function CollectionActions({ collection }: Props) {
             style={{ background: '#FDFAF5', border: '1px solid #DDD5C5', color: '#630826' }}
           />
           <input
-            aria-label="Collection slug"
+            aria-label={t('acct.collectionSlug')}
             value={slug}
             onChange={(e) => setSlug(e.target.value)}
             maxLength={40}
@@ -82,7 +84,7 @@ export default function CollectionActions({ collection }: Props) {
             style={{ background: '#FDFAF5', border: '1px solid #DDD5C5', color: '#630826' }}
           />
           <textarea
-            aria-label="Collection description"
+            aria-label={t('acct.collectionDesc')}
             value={description}
             onChange={(e) => setDescription(e.target.value)}
             maxLength={240}
@@ -100,7 +102,7 @@ export default function CollectionActions({ collection }: Props) {
             style={{ background: '#630826', color: '#FDFAF5' }}
           >
             <Check className="h-3.5 w-3.5" />
-            {saving ? 'Saving...' : 'Save'}
+            {saving ? t('common.saving') : t('ot.save')}
           </button>
           <button
             type="button"
@@ -114,7 +116,7 @@ export default function CollectionActions({ collection }: Props) {
             style={{ background: '#FFFFFF', border: '1px solid #DDD5C5', color: '#7C5C3E' }}
           >
             <X className="h-3.5 w-3.5" />
-            Cancel
+            {t('ot.cancel')}
           </button>
         </div>
       </div>
@@ -130,7 +132,7 @@ export default function CollectionActions({ collection }: Props) {
         style={{ background: '#FFFFFF', border: '1px solid #DDD5C5', color: '#630826' }}
       >
         <Copy className="h-3.5 w-3.5" />
-        Copy link
+        {t('guest.copyLink')}
       </button>
       <button
         type="button"
@@ -139,7 +141,7 @@ export default function CollectionActions({ collection }: Props) {
         style={{ background: '#FFFFFF', border: '1px solid #DDD5C5', color: '#7C5C3E' }}
       >
         <Pencil className="h-3.5 w-3.5" />
-        Edit
+        {t('acct.edit')}
       </button>
       <DeleteCollectionButton collectionId={collection.id} />
     </div>
