@@ -4,6 +4,7 @@ import React from 'react'
 import { X, ChevronLeft, ChevronRight, Play, Pause, Download, Settings, Star, Trash2 } from 'lucide-react'
 import type { Photo } from '@/types'
 import { unmuteStreamVideo } from '@/lib/cloudflare/stream-player'
+import { useT } from '@/i18n/LocaleProvider'
 
 function streamFrameSrc(photo: Photo, autoplay: boolean): string {
   const base = photo.stream_iframe_url || (photo.stream_uid ? `https://iframe.videodelivery.net/${photo.stream_uid}` : '')
@@ -132,6 +133,7 @@ export default function LightboxOverlay({
   onDelete,
   onToggleSlideshowPause,
 }: Props) {
+  const { t } = useT()
   // Video aspect ratio drives the player box so it fills with no black bars. Prefer the exact
   // dimensions captured at upload (instant, reliable); fall back to measuring the poster for
   // legacy rows that predate the width/height columns.
@@ -193,7 +195,7 @@ export default function LightboxOverlay({
 
       <button
         type="button"
-        aria-label="Close"
+        aria-label={t('guest.close')}
         className="absolute top-4 right-4 z-20 flex items-center justify-center rounded-full transition hover:opacity-80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-2 focus-visible:ring-offset-black"
         style={{
           width: 42,
@@ -222,7 +224,7 @@ export default function LightboxOverlay({
               WebkitBackdropFilter: 'blur(8px)',
             }}
             onClick={(e) => { e.stopPropagation(); onPrev() }}
-            aria-label="Previous photo"
+            aria-label={t('lb.prev')}
           >
             <ChevronLeft className="w-5 h-5" />
           </button>
@@ -237,7 +239,7 @@ export default function LightboxOverlay({
               WebkitBackdropFilter: 'blur(8px)',
             }}
             onClick={(e) => { e.stopPropagation(); onNext() }}
-            aria-label="Next photo"
+            aria-label={t('lb.next')}
           >
             <ChevronRight className="w-5 h-5" />
           </button>
@@ -267,7 +269,7 @@ export default function LightboxOverlay({
       >
         {slideshowMode && (
           <div className="hush-slideshow-head" onClick={(e) => e.stopPropagation()}>
-            <span>Slideshow</span>
+            <span>{t('guest.slideshow')}</span>
             <strong>{lightboxIndex + 1} / {viewerPhotos.length}</strong>
           </div>
         )}
@@ -278,8 +280,8 @@ export default function LightboxOverlay({
             style={{ background: 'rgba(253,250,245,0.94)', borderRadius: previewRadiusFor(current) }}
             onClick={(e) => e.stopPropagation()}
           >
-            <p className="font-semibold" style={{ color: '#630826' }}>This file is unavailable</p>
-            <p className="mt-2 text-sm" style={{ color: '#7C5C3E' }}>The album row still exists, but the storage object could not be loaded.</p>
+            <p className="font-semibold" style={{ color: '#630826' }}>{t('lb.unavailable')}</p>
+            <p className="mt-2 text-sm" style={{ color: '#7C5C3E' }}>{t('lb.unavailableDesc')}</p>
           </div>
         ) : current.media_type === 'video' && current.stream_uid ? (
           // All videos in the new system are Cloudflare Stream. There is no R2 video fallback.
@@ -397,9 +399,9 @@ export default function LightboxOverlay({
                 onClick={(e) => { e.stopPropagation(); onSetLightboxFlipped(false) }}
               >
                 {current.caption && <p className="text-xl font-semibold text-center px-6 leading-snug" style={{ color: '#630826' }}>{current.caption}</p>}
-                {current.author_name && <p className={`text-sm${current.caption ? ' mt-2' : ''}`} style={{ color: '#7C5C3E' }}>by {current.author_name}</p>}
-                {!current.caption && !current.author_name && <p className="text-sm" style={{ color: '#A89880' }}>No info set</p>}
-                <p className="mt-4 text-xs" style={{ color: '#C5B9A8' }}>Tap to close</p>
+                {current.author_name && <p className={`text-sm${current.caption ? ' mt-2' : ''}`} style={{ color: '#7C5C3E' }}>{t('lb.by', { name: current.author_name })}</p>}
+                {!current.caption && !current.author_name && <p className="text-sm" style={{ color: '#A89880' }}>{t('lb.noInfo')}</p>}
+                <p className="mt-4 text-xs" style={{ color: '#C5B9A8' }}>{t('lb.tapClose')}</p>
               </div>
             )}
           </div>
@@ -421,8 +423,8 @@ export default function LightboxOverlay({
               onClick={(e) => { e.stopPropagation(); onToggleSlideshowPause() }}
               className="p-2 rounded-lg transition hover:opacity-80"
               style={{ background: slideshowPaused ? 'rgba(253,250,245,0.92)' : 'rgba(138,181,133,0.28)', color: slideshowPaused ? '#630826' : '#FDFAF5', border: '1px solid rgba(253,250,245,0.28)' }}
-              title={slideshowPaused ? 'Resume slideshow' : 'Pause slideshow'}
-              aria-label={slideshowPaused ? 'Resume slideshow' : 'Pause slideshow'}
+              title={slideshowPaused ? t('lb.resume') : t('lb.pause')}
+              aria-label={slideshowPaused ? t('lb.resume') : t('lb.pause')}
             >
               {slideshowPaused ? <Play className="w-5 h-5" /> : <Pause className="w-5 h-5" />}
             </button>
@@ -430,7 +432,7 @@ export default function LightboxOverlay({
           {!slideshowMode && (current.caption || current.author_name) && (
             <div className="text-center">
               {current.caption && <p className="font-medium" style={{ color: '#FDFAF5' }}>{current.caption}</p>}
-              {current.author_name && <p className="text-sm" style={{ color: '#C5D9C2' }}>by {current.author_name}</p>}
+              {current.author_name && <p className="text-sm" style={{ color: '#C5D9C2' }}>{t('lb.by', { name: current.author_name })}</p>}
             </div>
           )}
 
@@ -441,7 +443,7 @@ export default function LightboxOverlay({
               disabled={broken.has(current.id)}
               className="p-2 rounded-lg transition hover:opacity-80 disabled:opacity-40 disabled:cursor-not-allowed"
               style={{ background: 'rgba(255,255,255,0.15)', color: '#FDFAF5' }}
-              title="Download"
+              title={t('lb.download')}
             >
               <Download className="w-5 h-5" />
             </button>
@@ -450,7 +452,7 @@ export default function LightboxOverlay({
             <button
               onClick={(e) => { e.stopPropagation(); onSetCover(current) }}
               disabled={settingCover}
-              title={coverPhotoId === current.id ? 'Clear album cover' : 'Set as album cover'}
+              title={coverPhotoId === current.id ? t('lb.clearCover') : t('lb.setCover')}
               className="p-2 rounded-lg transition hover:opacity-80 disabled:opacity-40 disabled:cursor-not-allowed"
               style={{ background: 'rgba(255,255,255,0.15)', color: coverPhotoId === current.id ? '#F4C430' : '#FDFAF5' }}
             >
@@ -464,7 +466,7 @@ export default function LightboxOverlay({
                   onClick={(e) => { e.stopPropagation(); onOpenSettings(current) }}
                   className="p-2 rounded-lg transition hover:opacity-80"
                   style={{ background: 'rgba(255,255,255,0.15)', color: '#FDFAF5' }}
-                  title="Settings"
+                  title={t('ot.settingsTitle')}
                 >
                   <Settings className="w-5 h-5" />
                 </button>
@@ -474,8 +476,8 @@ export default function LightboxOverlay({
                   onClick={(e) => { e.stopPropagation(); onRemoveFromSlideshow(current.id) }}
                   className="p-2 rounded-lg transition hover:opacity-80"
                   style={{ background: 'rgba(255,255,255,0.15)', color: '#FDFAF5' }}
-                  title="Remove from slideshow"
-                  aria-label="Remove from slideshow"
+                  title={t('lb.removeFromSlideshow')}
+                  aria-label={t('lb.removeFromSlideshow')}
                 >
                   <X className="w-5 h-5" />
                 </button>
@@ -485,8 +487,8 @@ export default function LightboxOverlay({
                   disabled={deleting === current.id}
                   className="p-2 rounded-lg transition hover:opacity-80 disabled:opacity-50"
                   style={{ background: 'rgba(192,57,43,0.3)', color: '#FDFAF5' }}
-                  title="Delete photo"
-                  aria-label="Delete photo"
+                  title={t('lb.deletePhoto')}
+                  aria-label={t('lb.deletePhoto')}
                 >
                   <Trash2 className="w-5 h-5" />
                 </button>
@@ -508,7 +510,7 @@ export default function LightboxOverlay({
                   type="button"
                   className={`hush-slideshow-thumb${isActive ? ' is-active' : ''}`}
                   onClick={() => onThumbnailClick(index)}
-                  aria-label={`Open slide ${index + 1}`}
+                  aria-label={t('lb.openSlide', { n: index + 1 })}
                 >
                   {thumbSrc ? (
                     // eslint-disable-next-line @next/next/no-img-element

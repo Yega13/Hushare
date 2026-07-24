@@ -6,6 +6,7 @@ import type { SlideshowAnimation } from '@/types'
 import { DEFAULT_SLIDESHOW_INTERVAL_MS, cssMediaDisplayFilter } from '@/lib/media-display'
 import { MEDIA_AUTHOR_MAX, MEDIA_CAPTION_MAX, SUPPRESS_CLICK_AFTER_REORDER_MS, BTT_UPDATE_EVENT } from '@/lib/constants'
 import { showAppToast } from '@/components/AppToast'
+import { useT } from '@/i18n/LocaleProvider'
 import PhotoSettingsModal from '@/components/photo-grid/PhotoSettingsModal'
 import SlideshowPickerModal from '@/components/SlideshowPickerModal'
 import { usePhotoGridObservers } from '@/components/photo-grid/usePhotoGridObservers'
@@ -42,6 +43,7 @@ type Props = {
 }
 
 export default function PhotoGrid({ album, photos, isOwner, slug, forceGlobalRadius, onRadiusMaxChange, onPhotoDeleted, onPhotoUpdated, onPhotosReordered, slideshowRequestId = 0, arrangeMode = false, coverPhotoId, onCoverSet }: Props) {
+  const { t } = useT()
   const gridRef = useRef<HTMLDivElement>(null)
   const lightboxHistoryRef = useRef(false)
   const [lightbox, setLightbox] = useState<number | null>(null)
@@ -195,12 +197,12 @@ export default function PhotoGrid({ album, photos, isOwner, slug, forceGlobalRad
       })
       if (res.ok) {
         onCoverSet?.(newCoverId)
-        showAppToast(newCoverId ? 'Set as album cover.' : 'Cover cleared.')
+        showAppToast(newCoverId ? t('pg.coverSet') : t('pg.coverCleared'))
       } else {
-        showAppToast('Could not update cover.', 'error')
+        showAppToast(t('pg.coverFail'), 'error')
       }
     } catch {
-      showAppToast('Could not update cover.', 'error')
+      showAppToast(t('pg.coverFail'), 'error')
     } finally {
       setSettingCover(false)
     }
@@ -303,7 +305,7 @@ export default function PhotoGrid({ album, photos, isOwner, slug, forceGlobalRad
     }
     const mediaName = mediaNameFor(photo)
     if (!mediaName) {
-      showAppToast('No name is set for this media yet.', 'error')
+      showAppToast(t('pg.noName'), 'error')
       return
     }
     setFlippedPhotoId((id) => (id === photo.id ? null : photo.id))
@@ -312,7 +314,7 @@ export default function PhotoGrid({ album, photos, isOwner, slug, forceGlobalRad
   function createSlideshow() {
     const ids = photos.map((p) => p.id).filter((id) => slideshowSelectedIds.has(id))
     if (ids.length < 2) {
-      showAppToast('Pick at least 2 photos or videos for a slideshow.', 'error')
+      showAppToast(t('pg.slideshowMin'), 'error')
       return
     }
     slideshowTimer.remainingMsRef.current = slideshowIntervalMs
@@ -439,8 +441,8 @@ export default function PhotoGrid({ album, photos, isOwner, slug, forceGlobalRad
   if (photos.length === 0) {
     return (
       <div className="text-center py-20" style={{ color: '#A89880' }}>
-        <p className="text-lg">Nothing here yet.</p>
-        <p className="text-sm mt-1">Be the first to upload a photo or video!</p>
+        <p className="text-lg">{t('pg.empty')}</p>
+        <p className="text-sm mt-1">{t('pg.emptySub')}</p>
       </div>
     )
   }
@@ -459,11 +461,11 @@ export default function PhotoGrid({ album, photos, isOwner, slug, forceGlobalRad
             <Move className="w-3.5 h-3.5" style={{ color: '#FDFAF5', pointerEvents: 'none' }} />
           </span>
           <p className="flex-1 text-sm leading-snug" style={{ color: '#FDFAF5' }}>
-            Tap this handle on any photo, then drag it onto another to swap.
+            {t('pg.arrangeTip')}
           </p>
           <button
             type="button"
-            aria-label="Dismiss arrange tip"
+            aria-label={t('pg.dismissTip')}
             className="shrink-0 opacity-50 hover:opacity-100 transition-opacity"
             onClick={() => setShowArrangeHint(false)}
           >

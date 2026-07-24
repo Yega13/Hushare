@@ -2,6 +2,7 @@ import React from 'react'
 import { Play, Check, Move } from 'lucide-react'
 import { formatDuration } from '@/lib/media'
 import type { Photo } from '@/types'
+import { useT } from '@/i18n/LocaleProvider'
 
 export type TileHandlers = {
   handleTileClick: (index: number) => void
@@ -71,6 +72,7 @@ const PhotoTile = React.memo(function PhotoTile({
   boxH,
   eager,
 }: Props) {
+  const { t } = useT()
   const isVideo = photo.media_type === 'video'
   // Video thumbnail: prefer the R2 poster (uploaded on submit — immediate + reliable), and
   // fall back to the Cloudflare Stream thumbnail (which 404s until Stream finishes processing)
@@ -193,11 +195,11 @@ const PhotoTile = React.memo(function PhotoTile({
             {isVideo ? <Play className="w-8 h-8" style={{ color: '#7C5C3E' }} /> : null}
             {isVideo ? (
               isBroken ? (
-                <span className="text-xs font-semibold" style={{ color: '#7C5C3E' }}>Video unavailable</span>
+                <span className="text-xs font-semibold" style={{ color: '#7C5C3E' }}>{t('pt.videoUnavailable')}</span>
               ) : null
             ) : (
               <span className="text-xs font-semibold" style={{ color: '#7C5C3E' }}>
-                {isBroken ? 'File unavailable' : 'Preview unavailable'}
+                {isBroken ? t('pt.fileUnavailable') : t('pt.previewUnavailable')}
               </span>
             )}
           </div>
