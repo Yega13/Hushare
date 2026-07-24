@@ -2,6 +2,7 @@
 
 import { Check, Play, X } from 'lucide-react'
 import type { Photo } from '@/types'
+import { useT } from '@/i18n/LocaleProvider'
 
 type Props = {
   photos: Photo[]
@@ -22,6 +23,7 @@ export default function SlideshowPickerModal({
   onToggle,
   onCreate,
 }: Props) {
+  const { t } = useT()
   return (
     <div
       className="fixed inset-0 z-[60] flex items-center justify-center px-4 py-6"
@@ -43,10 +45,10 @@ export default function SlideshowPickerModal({
               className="text-lg font-semibold"
               style={{ color: '#630826', fontFamily: 'var(--font-serif)' }}
             >
-              Create slideshow
+              {t('ot.createSlideshow')}
             </h2>
             <p className="text-sm mt-1" style={{ color: '#7C5C3E' }}>
-              Pick the media you want to include. They will play in the current album order.
+              {t('ss.pickMedia')}
             </p>
           </div>
           <button
@@ -54,7 +56,7 @@ export default function SlideshowPickerModal({
             className="rounded-full p-2 transition hover:opacity-80"
             style={{ background: '#F5F0E8', color: '#7C5C3E' }}
             onClick={onClose}
-            aria-label="Close slideshow picker"
+            aria-label={t('ss.close')}
           >
             <X className="w-4 h-4" />
           </button>
@@ -67,7 +69,7 @@ export default function SlideshowPickerModal({
             style={{ background: '#F6E9EE', color: '#630826' }}
             onClick={onSelectAll}
           >
-            Select all
+            {t('ss.selectAll')}
           </button>
           <button
             type="button"
@@ -75,9 +77,9 @@ export default function SlideshowPickerModal({
             style={{ background: '#F5F0E8', color: '#7C5C3E' }}
             onClick={onClearAll}
           >
-            Clear
+            {t('ot.clear')}
           </button>
-          <span className="text-sm" style={{ color: '#8B6F4E' }}>{selectedIds.size} selected</span>
+          <span className="text-sm" style={{ color: '#8B6F4E' }}>{t('ss.selected', { n: selectedIds.size })}</span>
         </div>
 
         <div
@@ -141,7 +143,7 @@ export default function SlideshowPickerModal({
             style={{ background: '#F5F0E8', color: '#7C5C3E' }}
             onClick={onClose}
           >
-            Cancel
+            {t('ot.cancel')}
           </button>
           <button
             type="button"
@@ -149,7 +151,7 @@ export default function SlideshowPickerModal({
             style={{ background: '#630826', color: '#FDFAF5' }}
             onClick={onCreate}
           >
-            Create slideshow
+            {t('ot.createSlideshow')}
           </button>
         </div>
       </section>

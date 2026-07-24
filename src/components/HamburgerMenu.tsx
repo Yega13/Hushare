@@ -4,6 +4,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import Image from 'next/image'
 import Link from 'next/link'
+import { useT } from '@/i18n/LocaleProvider'
 
 // useLayoutEffect fires synchronously before any useEffect, so isMobile is
 // resolved before AccountNavLink (or any stateful child) runs its effects.
@@ -14,6 +15,7 @@ const useIsomorphicLayoutEffect =
   typeof window !== 'undefined' ? useLayoutEffect : useEffect
 
 export default function HamburgerMenu({ children }: { children: React.ReactNode }) {
+  const { t } = useT()
   const [open, setOpen]       = useState(false)
   const [mounted, setMounted] = useState(false)
   const [isMobile, setIsMobile] = useState(false)
@@ -107,7 +109,7 @@ export default function HamburgerMenu({ children }: { children: React.ReactNode 
       {/* Hamburger button — always in DOM so CSS can show/hide without CLS */}
       <button
         type="button"
-        aria-label={open ? 'Close menu' : 'Open menu'}
+        aria-label={open ? t('menu.close') : t('menu.open')}
         aria-expanded={open}
         className={`hush-hamburger hamburger hamburger--elastic${open ? ' is-active' : ''}`}
         onClick={() => setOpen(o => !o)}

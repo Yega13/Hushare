@@ -2,15 +2,12 @@
 
 import { useState, useMemo, useRef, useEffect } from 'react'
 import { ChevronLeft, ChevronRight } from 'lucide-react'
+import { useT } from '@/i18n/LocaleProvider'
 
 type Props = {
   value: string // datetime-local format: YYYY-MM-DDTHH:mm, or empty
   onChange: (value: string) => void
 }
-
-const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June',
-  'July', 'August', 'September', 'October', 'November', 'December']
-const DAYS = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa']
 
 function parse(v: string) {
   const m = v.match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})$/)
@@ -23,6 +20,9 @@ function fmt(year: number, month: number, day: number, hour: number, minute: num
 }
 
 export default function RevealDatePicker({ value, onChange }: Props) {
+  const { t } = useT()
+  const MONTHS = t('date.months').split(',')
+  const DAYS = t('date.weekdaysShort').split(',')
   const parsed = parse(value)
   const today = new Date()
 
@@ -149,7 +149,7 @@ export default function RevealDatePicker({ value, onChange }: Props) {
       </div>
 
       <div className="flex items-center gap-2 px-4 py-3" style={{ borderTop: '1px solid #EAE0D0' }} ref={pickerRef}>
-        <span className="text-xs font-semibold uppercase tracking-wider" style={{ color: '#C4A882' }}>Time</span>
+        <span className="text-xs font-semibold uppercase tracking-wider" style={{ color: '#C4A882' }}>{t('date.time')}</span>
         <div className="flex items-center gap-1.5 ml-auto">
 
           <div className="relative">

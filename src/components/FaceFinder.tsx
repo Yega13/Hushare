@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { X, Camera, Upload, Search, ChevronLeft } from 'lucide-react'
 import type { Photo } from '@/types'
+import { useT } from '@/i18n/LocaleProvider'
 
 type Props = {
   albumSlug: string
@@ -51,6 +52,7 @@ async function downscaleSelfie(file: File): Promise<File> {
 }
 
 export default function FaceFinder({ albumSlug, photos, onClose }: Props) {
+  const { t } = useT()
   const [step, setStep] = useState<Step>('indexing')
   const [indexed, setIndexed] = useState(0)
   const [total, setTotal] = useState(0)
@@ -94,7 +96,7 @@ export default function FaceFinder({ albumSlug, photos, onClose }: Props) {
         const errBody = await res.json().catch(() => ({})) as { error?: string }
         errorOrigin.current = 'indexing'
         setStep('error')
-        setErrorMsg(errBody.error ?? 'Failed to start indexing. Please try again.')
+        setErrorMsg(errBody.error ?? t('ff.errIndexStart'))
         return
       }
       const data = (await res.json()) as { ids: string[]; total: number }
@@ -104,7 +106,7 @@ export default function FaceFinder({ albumSlug, photos, onClose }: Props) {
       if ((err as { name?: string }).name === 'AbortError') return
       errorOrigin.current = 'indexing'
       setStep('error')
-      setErrorMsg('Network error during indexing. Please try again.')
+      setErrorMsg(t('ff.errIndexNetwork'))
       return
     }
 
@@ -218,20 +220,20 @@ export default function FaceFinder({ albumSlug, photos, onClose }: Props) {
       } catch {
         errorOrigin.current = 'search'
         setStep('error')
-        setErrorMsg(`Server error (${res.status}): ${bodyText.slice(0, 300) || '(empty response)'}`)
+        setErrorMsg(t('ff.errServer', { status: res.status, detail: bodyText.slice(0, 300) || '(empty response)' }))
         return
       }
 
       if (!res.ok) {
         // 422 = user-recoverable (no face / not indexed yet) → back to selfie with an inline note.
         if (res.status === 422) {
-          setErrorMsg(json.error ?? 'Could not find a face in this photo.')
+          setErrorMsg(json.error ?? t('ff.errNoFace'))
           setStep('selfie')
           return
         }
         errorOrigin.current = 'search'
         setStep('error')
-        setErrorMsg(json.error ?? `Search failed (${res.status})`)
+        setErrorMsg(json.error ?? t('ff.errSearchFailed', { status: res.status }))
         return
       }
 
@@ -240,7 +242,7 @@ export default function FaceFinder({ albumSlug, photos, onClose }: Props) {
     } catch {
       errorOrigin.current = 'search'
       setStep('error')
-      setErrorMsg('Network error. Please try again.')
+      setErrorMsg(t('ff.errNetwork'))
     }
   }
 
@@ -278,7 +280,7 @@ export default function FaceFinder({ albumSlug, photos, onClose }: Props) {
                 </button>
               )}
               <h2 className="font-bold text-lg" style={{ fontFamily: 'var(--font-serif)', color: '#FDFAF5' }}>
-                Face Finder
+                {t('guest.faceFinder')}
               </h2>
             </div>
             <button onClick={onClose} className="hush-press p-1.5 rounded-full hover:opacity-70 transition" style={{ color: '#C77690' }}>
@@ -307,14 +309,14 @@ export default function FaceFinder({ albumSlug, photos, onClose }: Props) {
                 </div>
                 <div>
                   <p className="font-semibold text-base mb-1" style={{ color: '#FDFAF5' }}>
-                    Scanning album photos
+                    {t('ff.scanning')}
                   </p>
                   <p className="text-sm" style={{ color: '#B0808F' }}>
-                    {indexed} of {total} photos ready
+                    {t('ff.photosReady', { indexed, total })}
                   </p>
                 </div>
                 <p className="text-xs max-w-xs leading-relaxed" style={{ color: '#8A5A6A' }}>
-                  This runs once. Future searches are instant.
+                  {t('ff.runsOnce')}
                 </p>
               </div>
             )}
@@ -330,7 +332,7 @@ export default function FaceFinder({ albumSlug, photos, onClose }: Props) {
                   </div>
                 )}
                 <p className="text-sm text-center" style={{ color: '#E8C4D0' }}>
-                  Take or upload a photo of yourself — we&apos;ll find every photo you appear in.
+                  {t('ff.selfiePrompt')}
                 </p>
 
                 {selfiePreview ? (
@@ -339,7 +341,7 @@ export default function FaceFinder({ albumSlug, photos, onClose }: Props) {
                       {/* eslint-disable-next-line @next/next/no-img-element */}
                       <img
                         src={selfiePreview}
-                        alt="Your selfie"
+                        alt={t('ff.selfieAlt')}
                         className="w-40 h-40 rounded-2xl object-cover mx-auto"
                         style={{ border: '2px solid rgba(199,118,144,0.4)' }}
                       />
@@ -350,7 +352,7 @@ export default function FaceFinder({ albumSlug, photos, onClose }: Props) {
                         className="hush-press flex-1 py-2.5 rounded-xl text-sm font-semibold transition hover:opacity-80"
                         style={{ background: 'rgba(255,255,255,0.06)', color: '#E8C4D0', border: '1px solid rgba(255,255,255,0.1)' }}
                       >
-                        Retake
+                        {t('ff.retake')}
                       </button>
                       <button
                         onClick={handleSearch}
@@ -358,7 +360,7 @@ export default function FaceFinder({ albumSlug, photos, onClose }: Props) {
                         style={{ background: '#630826', color: '#FDFAF5' }}
                       >
                         <Search className="w-4 h-4" />
-                        Search
+                        {t('ff.search')}
                       </button>
                     </div>
                   </div>
@@ -370,8 +372,8 @@ export default function FaceFinder({ albumSlug, photos, onClose }: Props) {
                       style={{ background: 'rgba(255,255,255,0.04)', border: '2px dashed rgba(199,118,144,0.3)' }}
                     >
                       <Camera className="w-8 h-8" style={{ color: '#C77690' }} />
-                      <span className="text-sm font-semibold" style={{ color: '#E8C4D0' }}>Take a photo or choose from library</span>
-                      <span className="text-xs" style={{ color: '#8A5A6A' }}>JPG, PNG — max 5MB</span>
+                      <span className="text-sm font-semibold" style={{ color: '#E8C4D0' }}>{t('ff.takeOrChoose')}</span>
+                      <span className="text-xs" style={{ color: '#8A5A6A' }}>{t('ff.fileHint')}</span>
                     </button>
                     <input ref={cameraInputRef} type="file" accept="image/*" capture="user" className="hidden" onChange={handleFileChange} />
                     <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={handleFileChange} />
@@ -381,7 +383,7 @@ export default function FaceFinder({ albumSlug, photos, onClose }: Props) {
                       style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', color: '#C77690' }}
                     >
                       <Upload className="w-4 h-4" />
-                      Upload from files
+                      {t('ff.uploadFromFiles')}
                     </button>
                   </div>
                 )}
@@ -391,7 +393,7 @@ export default function FaceFinder({ albumSlug, photos, onClose }: Props) {
             {step === 'searching' && (
               <div className="flex flex-col items-center gap-5 py-10 text-center">
                 <div className="w-12 h-12 rounded-full border-2 border-t-transparent animate-spin" style={{ borderColor: '#C77690', borderTopColor: 'transparent' }} />
-                <p className="font-semibold" style={{ color: '#FDFAF5' }}>Searching for your face…</p>
+                <p className="font-semibold" style={{ color: '#FDFAF5' }}>{t('ff.searching')}</p>
               </div>
             )}
 
@@ -399,22 +401,22 @@ export default function FaceFinder({ albumSlug, photos, onClose }: Props) {
               <div className="flex flex-col gap-4 py-2">
                 {matchedPhotos.length === 0 ? (
                   <div className="text-center py-8">
-                    <p className="font-semibold mb-2" style={{ color: '#FDFAF5' }}>No matches found</p>
+                    <p className="font-semibold mb-2" style={{ color: '#FDFAF5' }}>{t('ff.noMatches')}</p>
                     <p className="text-sm mb-5" style={{ color: '#B0808F' }}>
-                      Try a clearer selfie facing the camera in good lighting.
+                      {t('ff.noMatchesHint')}
                     </p>
                     <button
                       onClick={reset}
                       className="hush-press px-5 py-2.5 rounded-xl text-sm font-semibold transition hover:opacity-90"
                       style={{ background: '#630826', color: '#FDFAF5' }}
                     >
-                      Try again
+                      {t('ff.tryAgain')}
                     </button>
                   </div>
                 ) : (
                   <>
                     <p className="text-sm" style={{ color: '#E8C4D0' }}>
-                      Found you in <strong style={{ color: '#FDFAF5' }}>{matchedPhotos.length}</strong> photo{matchedPhotos.length !== 1 ? 's' : ''}
+                      {t('ff.foundIn', { n: matchedPhotos.length })}
                     </p>
                     <div className="grid grid-cols-3 gap-1.5">
                       {matchedPhotos.map(({ photo, similarity }) => (
@@ -427,7 +429,7 @@ export default function FaceFinder({ albumSlug, photos, onClose }: Props) {
                           {/* eslint-disable-next-line @next/next/no-img-element */}
                           <img
                             src={photo.thumb_url ?? photo.url ?? ''}
-                            alt={photo.caption ?? 'Photo'}
+                            alt={photo.caption ?? t('ff.photoAlt')}
                             className="w-full h-full object-cover"
                           />
                           <div
@@ -446,7 +448,7 @@ export default function FaceFinder({ albumSlug, photos, onClose }: Props) {
 
             {step === 'error' && (
               <div className="flex flex-col items-center gap-4 py-8 text-center">
-                <p className="font-semibold" style={{ color: '#FDFAF5' }}>Something went wrong</p>
+                <p className="font-semibold" style={{ color: '#FDFAF5' }}>{t('ff.error')}</p>
                 <p className="text-sm max-w-xs" style={{ color: '#B0808F' }}>{errorMsg}</p>
                 <button
                   onClick={() => {
@@ -464,7 +466,7 @@ export default function FaceFinder({ albumSlug, photos, onClose }: Props) {
                   className="hush-press px-5 py-2.5 rounded-xl text-sm font-semibold transition hover:opacity-90"
                   style={{ background: '#630826', color: '#FDFAF5' }}
                 >
-                  Try again
+                  {t('ff.tryAgain')}
                 </button>
               </div>
             )}
@@ -482,7 +484,7 @@ export default function FaceFinder({ albumSlug, photos, onClose }: Props) {
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
             src={lightbox.url ?? lightbox.thumb_url ?? ''}
-            alt={lightbox.caption ?? 'Photo'}
+            alt={lightbox.caption ?? t('ff.photoAlt')}
             className="max-w-full max-h-full rounded-2xl object-contain"
             onClick={(e) => e.stopPropagation()}
           />

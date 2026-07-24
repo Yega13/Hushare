@@ -4,6 +4,7 @@ import { useState, useRef, useEffect } from 'react'
 import Image from 'next/image'
 import { Check, Copy, Download, QrCode, Share2, X } from 'lucide-react'
 import { showAppToast } from '@/components/AppToast'
+import { useT } from '@/i18n/LocaleProvider'
 
 type Props = {
   shareUrl: string
@@ -11,6 +12,7 @@ type Props = {
 }
 
 export default function GuestShareButton({ shareUrl, albumTitle }: Props) {
+  const { t } = useT()
   const [open, setOpen] = useState(false)
   const [copied, setCopied] = useState(false)
   const [qrDataUrl, setQrDataUrl] = useState('')
@@ -38,10 +40,10 @@ export default function GuestShareButton({ shareUrl, albumTitle }: Props) {
     try {
       await navigator.clipboard.writeText(shareUrl)
       setCopied(true)
-      showAppToast('Link copied.')
+      showAppToast(t('guest.linkCopied'))
       setTimeout(() => setCopied(false), 2000)
     } catch {
-      showAppToast('Could not copy — please copy the link manually.', 'error')
+      showAppToast(t('guest.copyFail'), 'error')
     }
   }
 
@@ -51,7 +53,7 @@ export default function GuestShareButton({ shareUrl, albumTitle }: Props) {
         await navigator.share({
           url: shareUrl,
           title: albumTitle,
-          text: `Check out "${albumTitle}" on Hushare`,
+          text: t('guest.shareText', { title: albumTitle }),
         })
         return
       } catch {
@@ -70,7 +72,7 @@ export default function GuestShareButton({ shareUrl, albumTitle }: Props) {
         onClick={() => setOpen((v) => !v)}
       >
         <Share2 className="w-4 h-4" />
-        Share
+        {t('guest.share')}
       </button>
 
       {open && (
@@ -79,8 +81,8 @@ export default function GuestShareButton({ shareUrl, albumTitle }: Props) {
           style={{ background: '#FFFFFF', border: '1px solid #DDD5C5', width: 300, padding: 16 }}
         >
           <div className="flex items-center justify-between mb-3">
-            <span className="font-semibold text-sm" style={{ color: '#630826' }}>Share album</span>
-            <button type="button" onClick={() => setOpen(false)} style={{ color: '#A89880' }} aria-label="Close">
+            <span className="font-semibold text-sm" style={{ color: '#630826' }}>{t('guest.shareAlbum')}</span>
+            <button type="button" onClick={() => setOpen(false)} style={{ color: '#A89880' }} aria-label={t('guest.close')}>
               <X className="w-4 h-4" />
             </button>
           </div>
@@ -91,8 +93,8 @@ export default function GuestShareButton({ shareUrl, albumTitle }: Props) {
             onClick={handleShare}
           >
             <span>
-              <span className="block text-sm font-semibold" style={{ color: '#630826' }}>Share album</span>
-              <span className="block text-xs" style={{ color: '#8B6F4E' }}>Send via messages, apps or copy</span>
+              <span className="block text-sm font-semibold" style={{ color: '#630826' }}>{t('guest.shareAlbum')}</span>
+              <span className="block text-xs" style={{ color: '#8B6F4E' }}>{t('guest.shareVia')}</span>
             </span>
             <Share2 className="w-4 h-4 flex-none" style={{ color: '#7C5C3E' }} />
           </button>
@@ -103,7 +105,7 @@ export default function GuestShareButton({ shareUrl, albumTitle }: Props) {
             onClick={copyLink}
           >
             <span>
-              <span className="block text-sm font-semibold" style={{ color: '#630826' }}>Copy link</span>
+              <span className="block text-sm font-semibold" style={{ color: '#630826' }}>{t('guest.copyLink')}</span>
               <span className="block text-xs truncate" style={{ color: '#8B6F4E', maxWidth: 200 }}>{shareUrl}</span>
             </span>
             {copied ? <Check className="w-4 h-4" style={{ color: '#630826' }} /> : <Copy className="w-4 h-4" style={{ color: '#7C5C3E' }} />}
@@ -111,13 +113,13 @@ export default function GuestShareButton({ shareUrl, albumTitle }: Props) {
 
           <div className="mt-3 rounded-xl p-3" style={{ background: '#FFFFFF', border: '1px solid #DDD5C5' }}>
             <div className="flex items-center gap-3">
-              {qrDataUrl && <Image src={qrDataUrl} alt="QR Code" width={80} height={80} unoptimized />}
+              {qrDataUrl && <Image src={qrDataUrl} alt={t('guest.qr')} width={80} height={80} unoptimized />}
               <div className="flex-1 min-w-0">
                 <p className="text-sm font-semibold flex items-center gap-2" style={{ color: '#630826' }}>
                   <QrCode className="w-4 h-4" />
-                  QR code
+                  {t('guest.qr')}
                 </p>
-                <p className="text-xs leading-relaxed" style={{ color: '#7C5C3E' }}>Scan to open this album.</p>
+                <p className="text-xs leading-relaxed" style={{ color: '#7C5C3E' }}>{t('guest.qrScan')}</p>
                 <button
                   type="button"
                   className="mt-2 flex items-center gap-1.5 text-xs font-semibold rounded-lg px-2.5 py-1.5 transition hover:opacity-80"
@@ -133,7 +135,7 @@ export default function GuestShareButton({ shareUrl, albumTitle }: Props) {
                   }}
                 >
                   <Download className="w-3 h-3" />
-                  Download PNG
+                  {t('guest.downloadPng')}
                 </button>
               </div>
             </div>
