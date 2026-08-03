@@ -49,7 +49,7 @@ async function lookupPendingUpload(uid: string): Promise<PendingRow | null> {
 // upload.cloudflarestream.com, since the unguessable upload_url itself IS the capability. This
 // route must build its outbound headers by copying ONLY the incoming client request's headers
 // (minus this blocklist) — it must never separately attach a header from our own secrets.
-const FORWARD_REQUEST_HEADER_BLOCKLIST = new Set(['host', 'cookie', 'content-length', 'connection', 'authorization'])
+const FORWARD_REQUEST_HEADER_BLOCKLIST = new Set(['host', 'cookie', 'content-length', 'connection', 'authorization', 'x-http-method-override'])
 const FORWARD_RESPONSE_HEADER_BLOCKLIST = new Set(['content-length', 'content-encoding', 'transfer-encoding', 'connection'])
 
 function buildForwardHeaders(incoming: Headers): Headers {
@@ -112,24 +112,30 @@ async function buildUpstreamPassthrough(method: string, upstream: Response): Pro
 const MAX_RELAY_BODY_BYTES = 8 * 1024 * 1024
 
 async function relay(req: Request, uid: string): Promise<Response> {
-  const method = req.method
+  const clientMethod = req.method
+  // Some networks/proxies silently drop the HTTP PATCH method (photos upload with PUT and sail
+  // through; video TUS uses PATCH and dies with no HTTP response). tus-js-client's
+  // overridePatchMethod sends POST + "X-HTTP-Method-Override: PATCH" instead — honour that here
+  // and forward a REAL PATCH to Cloudflare. Response shaping still keys off the CLIENT method.
+  const override = req.headers.get('x-http-method-override')
+  const method = (clientMethod === 'POST' && override?.toUpperCase() === 'PATCH') ? 'PATCH' : clientMethod
 
   if (!UID_RE.test(uid)) {
-    return jsonResponse(method, 400, 'Invalid uid')
+    return jsonResponse(clientMethod, 400, 'Invalid uid')
   }
 
   const pending = await lookupPendingUpload(uid)
   if (!pending) {
-    return jsonResponse(method, 404, 'Upload not found')
+    return jsonResponse(clientMethod, 404, 'Upload not found')
   }
   if (!pending.upload_url) {
     // Pre-migration row (created before upload_url existed) — nothing to relay to.
-    return jsonResponse(method, 400, 'Upload not available for relay')
+    return jsonResponse(clientMethod, 400, 'Upload not available for relay')
   }
 
   const contentLengthHeader = req.headers.get('content-length')
   if (contentLengthHeader && Number(contentLengthHeader) > MAX_RELAY_BODY_BYTES) {
-    return jsonResponse(method, 413, 'Chunk too large')
+    return jsonResponse(clientMethod, 413, 'Chunk too large')
   }
 
   // Bounded buffering (not zero-copy streaming) is the right call here, not a shortcut: every
@@ -137,7 +143,7 @@ async function relay(req: Request, uid: string): Promise<Response> {
   // is safe, and simpler/lower-risk than true streaming for a bound this small.
   const body = method === 'PATCH' ? await req.arrayBuffer() : undefined
   if (body && body.byteLength > MAX_RELAY_BODY_BYTES) {
-    return jsonResponse(method, 413, 'Chunk too large')
+    return jsonResponse(clientMethod, 413, 'Chunk too large')
   }
 
   let upstream: Response
@@ -146,13 +152,30 @@ async function relay(req: Request, uid: string): Promise<Response> {
       method,
       headers: buildForwardHeaders(req.headers),
       body,
+      // Fail fast + retryable (TUS resumes from the confirmed offset) rather than leaving the
+      // client hanging if Cloudflare's upstream ever stalls.
+      signal: AbortSignal.timeout(30_000),
     })
   } catch (e) {
     console.error('[stream-relay] upstream fetch failed:', e instanceof Error ? e.message : String(e))
-    return jsonResponse(method, 502, 'Relay failed')
+    return jsonResponse(clientMethod, 502, 'Relay failed')
   }
 
-  return buildUpstreamPassthrough(method, upstream)
+  return buildUpstreamPassthrough(clientMethod, upstream)
+}
+
+// Shared edge rate-limit guard for the write methods (PATCH + its POST-override twin).
+async function relayRateLimit(method: string, uid: string): Promise<Response | null> {
+  try {
+    const limiter = (getCloudflareContext()?.env as RelayEnv | undefined)?.STREAM_RELAY_LIMITER
+    if (limiter) {
+      const { success } = await limiter.limit({ key: uid })
+      if (!success) return jsonResponse(method, 429, 'Too many requests')
+    }
+  } catch (e) {
+    console.warn('[stream-relay] rate limiter check failed, proceeding:', e instanceof Error ? e.message : String(e))
+  }
+  return null
 }
 
 export async function HEAD(req: Request, { params }: { params: Promise<{ uid: string }> }): Promise<Response> {
@@ -177,17 +200,25 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ uid: s
   // that helper was never sized for. Fails OPEN if the binding is unavailable (e.g. local dev
   // without the binding configured) — this is an abuse backstop, not the primary access control
   // (that's the pending_stream_uploads existence check, which always runs regardless).
-  try {
-    const limiter = (getCloudflareContext()?.env as RelayEnv | undefined)?.STREAM_RELAY_LIMITER
-    if (limiter) {
-      const { success } = await limiter.limit({ key: uid })
-      if (!success) {
-        return jsonResponse('PATCH', 429, 'Too many requests')
-      }
-    }
-  } catch (e) {
-    console.warn('[stream-relay] rate limiter check failed, proceeding:', e instanceof Error ? e.message : String(e))
+  const limited = await relayRateLimit('PATCH', uid)
+  if (limited) return limited
+
+  return relay(req, uid)
+}
+
+// POST is the PATCH-via-override twin: for networks that block the PATCH method, tus-js-client sends
+// POST + "X-HTTP-Method-Override: PATCH". Same guards as PATCH; relay() maps it back to a real PATCH.
+export async function POST(req: Request, { params }: { params: Promise<{ uid: string }> }): Promise<Response> {
+  const csrfError = forbidCrossSiteRequest(req)
+  if (csrfError) return csrfError
+
+  const { uid } = await params
+  if (!UID_RE.test(uid)) {
+    return jsonResponse('POST', 400, 'Invalid uid')
   }
+
+  const limited = await relayRateLimit('POST', uid)
+  if (limited) return limited
 
   return relay(req, uid)
 }

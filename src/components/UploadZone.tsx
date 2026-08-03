@@ -904,6 +904,7 @@ const TUS_STALL_MS = 45_000
 function runTusOnce(
   file: File,
   uploadUrl: string,
+  viaRelay: boolean,
   onFraction: (fraction: number) => void,
   signal?: AbortSignal,
 ): Promise<void> {
@@ -923,6 +924,9 @@ function runTusOnce(
       // across our recovery-loop attempts and across user-initiated retries.
       uploadUrl,
       chunkSize: STREAM_CHUNK_SIZE_BYTES,
+      // When relaying (same-origin), send PATCH as POST + X-HTTP-Method-Override so networks that
+      // block the PATCH method still upload video. No effect on the direct Cloudflare path.
+      overridePatchMethod: viaRelay,
       // tus's OWN internal retries per failed chunk (the old [0, 0] fired two instant retries
       // into the same congestion). Longer, more numerous delays ride out a mobile network that
       // drops for several seconds at a time.
@@ -986,7 +990,7 @@ async function runTusWithRecovery(
     // never re-send bytes Cloudflare already has, we just keep reconnecting until it's done.
     if (attempt > 0) await new Promise(r => setTimeout(r, Math.min(15000, 2000 * attempt) + Math.random() * 500))
     try {
-      await runTusOnce(file, effectiveUrl, onFraction, signal)
+      await runTusOnce(file, effectiveUrl, relayState.active, onFraction, signal)
       return
     } catch (e) {
       if (e instanceof DOMException && e.name === 'AbortError') throw e
