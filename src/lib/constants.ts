@@ -4,18 +4,20 @@ export const UPLOAD_CONCURRENCY_MOBILE = 6;
 export const UPLOAD_CONCURRENCY_DESKTOP = 12;
 
 // Videos upload their raw bytes as long, sustained TUS streams — very different from the small
-// (<1MB) images. Several at once can saturate a weak venue-WiFi uplink, so they get a SEPARATE,
-// tight lane (photos keep the wider pool above). Kept deliberately low — NOT photo-level — because
-// once the link is the bottleneck, more parallel streams only split bandwidth (no net gain) and
-// raise the stall/timeout rate. A small overlap (2/3) hides each clip's fixed overhead (poster +
-// Stream handshake + save), which dominates the many-short-clips case, while the per-attempt
-// fail-fast timeout + TUS resume keep a concurrent stall cheap to recover.
-export const UPLOAD_VIDEO_CONCURRENCY_MOBILE = 2;
-export const UPLOAD_VIDEO_CONCURRENCY_DESKTOP = 3;
+// (<1MB) images. STRICTLY ONE at a time on mobile: proven live (2026-08-03) that even TWO concurrent
+// video streams on a weak/filtering network (the exact networks that force the same-origin relay)
+// tip it from "all uploads fine, serial" into a storm of chunk-at-offset-0 failures + 15-min stalls.
+// On such links the uplink is the bottleneck, so parallel streams don't add throughput — they only
+// multiply the failure rate. Desktop (usually a strong wired link) can afford two. The weighted
+// semaphore + VIDEO_SOLO_LANE_BYTES below stay in place as the substrate for a future *adaptive*
+// ramp-up (start at 1, widen only once a network proves it can take it) — the only safe way to
+// speed this up without regressing the venues Hushare actually runs on.
+export const UPLOAD_VIDEO_CONCURRENCY_MOBILE = 1;
+export const UPLOAD_VIDEO_CONCURRENCY_DESKTOP = 2;
 
-// A video at/above this size takes the WHOLE video lane to itself (uploads solo) so it never
-// competes for bandwidth with another sustained stream — the answer to "what if someone posts a
-// 10-minute video". Short event clips fall well under it, so they still overlap for speed.
+// A video at/above this size takes the WHOLE video lane to itself (uploads solo) so it never competes
+// for bandwidth with another sustained stream. Inert while mobile concurrency is 1; ready for the
+// adaptive ramp-up described above.
 export const VIDEO_SOLO_LANE_BYTES = 30 * 1024 * 1024;
 
 // Cloudflare Stream TUS requires minimum 5 MB chunks (except the last)

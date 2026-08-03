@@ -71,7 +71,7 @@ export function extensionFor(file: File, kind: MediaKind): string {
 }
 
 export type PosterResult = {
-  blob: Blob
+  blob: Blob | null   // best-effort poster frame; null if the seek/capture failed — duration is still valid
   width: number
   height: number
   // Intrinsic dimensions of the source video (not the downscaled poster) — used to store the
@@ -101,47 +101,53 @@ export async function generateVideoPoster(file: File): Promise<PosterResult | nu
       new Promise<never>((_, reject) => { t1 = setTimeout(() => reject(new Error('loadedmetadata timeout')), 8_000) }),
     ]).finally(() => clearTimeout(t1))
 
-    // Seek a little way in so the poster isn't the black / fade-in frame many edited clips (and
-    // TikToks) open on. Sample deeper for longer videos (up to 4s), midpoint for very short ones.
-    const dur = Number.isFinite(video.duration) && video.duration > 0 ? video.duration : 0
-    const target = dur >= 3 ? Math.min(Math.max(dur * 0.1, 1.5), 4) : (dur > 0 ? dur * 0.5 : 0.5)
-    video.currentTime = target
+    // Duration + intrinsic dimensions are known NOW (from loadedmetadata). Capture them BEFORE the
+    // seek, so a slow or failed poster capture can never cost us the duration shown in the grid.
+    const durationSeconds = Number.isFinite(video.duration) && video.duration > 0 ? video.duration : 0
+    const vw = video.videoWidth
+    const vh = video.videoHeight
 
-    let t2: ReturnType<typeof setTimeout>
-    await Promise.race([
-      new Promise<void>((resolve, reject) => {
-        video.addEventListener('seeked', () => resolve(), { once: true })
-        video.addEventListener('error', () => reject(new Error('seek failed')), { once: true })
-      }),
-      new Promise<never>((_, reject) => { t2 = setTimeout(() => reject(new Error('seeked timeout')), 5_000) }),
-    ]).finally(() => clearTimeout(t2))
+    // Poster frame is BEST-EFFORT and must never reject the whole result. Keep the seek light —
+    // ~1s in skips the black / fade-in opening frame without the deep-seek cost that was timing out
+    // on slower phones (which lost both the poster AND the duration).
+    let blob: Blob | null = null
+    let cw = vw
+    let ch = vh
+    try {
+      const target = durationSeconds >= 2 ? Math.min(Math.max(durationSeconds * 0.1, 1), 1.5) : (durationSeconds > 0 ? durationSeconds * 0.5 : 0.3)
+      video.currentTime = target
 
-    const w = video.videoWidth
-    const h = video.videoHeight
-    if (!w || !h) return null
+      let t2: ReturnType<typeof setTimeout>
+      await Promise.race([
+        new Promise<void>((resolve, reject) => {
+          video.addEventListener('seeked', () => resolve(), { once: true })
+          video.addEventListener('error', () => reject(new Error('seek failed')), { once: true })
+        }),
+        new Promise<never>((_, reject) => { t2 = setTimeout(() => reject(new Error('seeked timeout')), 5_000) }),
+      ]).finally(() => clearTimeout(t2))
 
-    // 1080px so the poster stays crisp on large/high-DPR tiles (a 720px frame looked soft in
-    // a 2-column grid on a retina phone). Still tiny next to the video file.
-    const MAX_POSTER_DIM = 1080
-    const longest = Math.max(w, h)
-    const scale = longest > MAX_POSTER_DIM ? MAX_POSTER_DIM / longest : 1
-    const cw = Math.max(1, Math.round(w * scale))
-    const ch = Math.max(1, Math.round(h * scale))
+      const w = video.videoWidth
+      const h = video.videoHeight
+      if (w && h) {
+        // 1080px so the poster stays crisp on large/high-DPR tiles. Still tiny next to the video.
+        const MAX_POSTER_DIM = 1080
+        const longest = Math.max(w, h)
+        const scale = longest > MAX_POSTER_DIM ? MAX_POSTER_DIM / longest : 1
+        cw = Math.max(1, Math.round(w * scale))
+        ch = Math.max(1, Math.round(h * scale))
+        const canvas = document.createElement('canvas')
+        canvas.width = cw
+        canvas.height = ch
+        const ctx = canvas.getContext('2d')
+        if (ctx) {
+          ctx.imageSmoothingQuality = 'high'
+          ctx.drawImage(video, 0, 0, cw, ch)
+          blob = await new Promise<Blob | null>((resolve) => canvas.toBlob((b) => resolve(b), 'image/jpeg', 0.92))
+        }
+      }
+    } catch { /* poster best-effort — keep the duration/dimensions we already captured */ }
 
-    const canvas = document.createElement('canvas')
-    canvas.width = cw
-    canvas.height = ch
-    const ctx = canvas.getContext('2d')
-    if (!ctx) return null
-    ctx.imageSmoothingQuality = 'high'
-    ctx.drawImage(video, 0, 0, cw, ch)
-
-    const blob = await new Promise<Blob | null>((resolve) =>
-      canvas.toBlob((b) => resolve(b), 'image/jpeg', 0.92),
-    )
-    if (!blob) return null
-
-    return { blob, width: cw, height: ch, videoWidth: w, videoHeight: h, durationSeconds: Number.isFinite(video.duration) ? video.duration : 0 }
+    return { blob, width: cw, height: ch, videoWidth: vw, videoHeight: vh, durationSeconds }
   } catch {
     return null
   } finally {
