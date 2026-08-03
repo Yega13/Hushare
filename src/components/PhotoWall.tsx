@@ -118,7 +118,9 @@ export default function PhotoWall({
     <main className="hush-wall">
       <style>{`
         .hush-wall { min-height: 100dvh; display: grid; grid-template-columns: 1fr; background: #160A12; color: #F3E0BC; overflow: hidden; }
-        @media (min-width: 900px) { .hush-wall { grid-template-columns: 1fr 300px; } }
+        /* On a real screen/projector the wall is exactly one viewport tall: the grid clips to what
+           fits (newest first) and the side panel — with the join QR at its foot — stays visible. */
+        @media (min-width: 900px) { .hush-wall { grid-template-columns: 1fr 300px; height: 100dvh; } }
         .hush-wall-grid { padding: 14px; display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); grid-auto-rows: 150px; gap: 10px; align-content: start; overflow: hidden; }
         @media (min-width: 1400px) { .hush-wall-grid { grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); grid-auto-rows: 200px; } }
         .hush-wall-tile { border-radius: 14px; overflow: hidden; background: #2A121F; box-shadow: 0 8px 24px rgba(0,0,0,0.35); }
