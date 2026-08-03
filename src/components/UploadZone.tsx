@@ -11,8 +11,10 @@ import { detectKind, uploadCapsForTier, generateVideoPoster } from '@/lib/media'
 import {
   UPLOAD_CONCURRENCY_MOBILE,
   UPLOAD_CONCURRENCY_DESKTOP,
-  UPLOAD_VIDEO_CONCURRENCY_MOBILE,
-  UPLOAD_VIDEO_CONCURRENCY_DESKTOP,
+  VIDEO_CONCURRENCY_START,
+  VIDEO_CONCURRENCY_MAX_MOBILE,
+  VIDEO_CONCURRENCY_MAX_DESKTOP,
+  VIDEO_WIDEN_AFTER_CLEAN,
   VIDEO_SOLO_LANE_BYTES,
   STREAM_CHUNK_SIZE_BYTES,
 } from '@/lib/constants'
@@ -32,28 +34,62 @@ const MAX_IMG_DIM = 2560
 
 // ─── Semaphore ────────────────────────────────────────────────────────────────
 
-// Weighted counting semaphore. Default weight 1 behaves as a plain N-slot semaphore; a caller can
-// acquire/release a larger weight to hold several slots at once — used so a big video takes the
-// WHOLE video lane and uploads alone, while short clips overlap. FIFO, so a heavy waiter can't be
-// starved by a stream of light ones jumping ahead. The caller must release the SAME weight it
-// acquired (release is clamped to capacity so a mismatch can never over-credit the pool).
+// Weighted counting semaphore with a RUNTIME-adjustable capacity (for adaptive video concurrency).
+//   • Default weight 1 = a plain N-slot semaphore. A caller can take a larger weight to hold several
+//     slots at once (a big video takes the whole video lane and uploads alone; short clips overlap).
+//   • acquire() resolves to a RELEASE FUNCTION that returns EXACTLY the weight it took — so capacity
+//     can grow/shrink mid-flight with zero accounting drift, and a double-release is a no-op.
+//   • FIFO: a heavy waiter can't be starved by a stream of light ones jumping the queue.
+//   • setCapacity() grows (frees slots + wakes waiters) or shrinks (never revokes an in-flight
+//     holder — it just caps future grants, so the lane settles to the new size as holders finish).
 class Semaphore {
   private available: number
-  private readonly capacity: number
-  private queue: { weight: number; resolve: () => void }[] = []
-  constructor(capacity: number) { this.capacity = Math.max(1, capacity); this.available = this.capacity }
-  acquire(weight = 1): Promise<void> {
-    const w = Math.min(Math.max(1, Math.floor(weight)), this.capacity)
-    if (this.queue.length === 0 && this.available >= w) { this.available -= w; return Promise.resolve() }
-    return new Promise<void>(resolve => this.queue.push({ weight: w, resolve }))
+  private cap: number
+  private queue: { w: number; resolve: (release: () => void) => void }[] = []
+  constructor(capacity: number) { this.cap = Math.max(1, Math.floor(capacity)); this.available = this.cap }
+  get capacity(): number { return this.cap }
+
+  acquire(weight = 1): Promise<() => void> {
+    const w = Math.min(Math.max(1, Math.floor(weight)), this.cap)
+    if (this.queue.length === 0 && this.available >= w) {
+      this.available -= w
+      return Promise.resolve(this.makeRelease(w))
+    }
+    return new Promise<() => void>(resolve => this.queue.push({ w, resolve }))
   }
-  release(weight = 1): void {
-    const w = Math.min(Math.max(1, Math.floor(weight)), this.capacity)
-    this.available = Math.min(this.capacity, this.available + w)
-    while (this.queue.length > 0 && this.available >= this.queue[0].weight) {
+
+  setCapacity(next: number): void {
+    const target = Math.max(1, Math.floor(next))
+    const delta = target - this.cap
+    this.cap = target
+    if (delta < 0) {
+      if (this.available > this.cap) this.available = this.cap
+      // A shrink must never leave a queued waiter needing more slots than the lane now has — it
+      // would wait forever. Re-clamp to the new capacity (still correct: that weight already means
+      // "the whole lane" at this size).
+      for (const item of this.queue) if (item.w > this.cap) item.w = this.cap
+    } else if (delta > 0) {
+      this.available += delta
+    }
+    this.drain()
+  }
+
+  private makeRelease(w: number): () => void {
+    let released = false
+    return () => {
+      if (released) return
+      released = true
+      this.available += w
+      if (this.available > this.cap) this.available = this.cap // absorb slots retired by a shrink
+      this.drain()
+    }
+  }
+
+  private drain(): void {
+    while (this.queue.length > 0 && this.available >= this.queue[0].w) {
       const next = this.queue.shift()!
-      this.available -= next.weight
-      next.resolve()
+      this.available -= next.w
+      next.resolve(this.makeRelease(next.w))
     }
   }
 }
@@ -318,11 +354,11 @@ type ProcessedImage = {
 }
 
 async function processImage(file: File): Promise<ProcessedImage> {
-  await decodeSem.acquire()
+  const release = await decodeSem.acquire()
   try {
     return await processImageInner(file)
   } finally {
-    decodeSem.release()
+    release()
   }
 }
 
@@ -1314,7 +1350,8 @@ export default function UploadZone({ album, userTier, onPhotosUploaded }: Props)
   // Computed once at mount — userAgent never changes during a session
   const isMobileRef = useRef(typeof navigator !== 'undefined' && /Mobi|Android/i.test(navigator.userAgent))
   const concurrency = isMobileRef.current ? UPLOAD_CONCURRENCY_MOBILE : UPLOAD_CONCURRENCY_DESKTOP
-  const videoConcurrency = isMobileRef.current ? UPLOAD_VIDEO_CONCURRENCY_MOBILE : UPLOAD_VIDEO_CONCURRENCY_DESKTOP
+  // Adaptive video lane widens toward this ceiling only as a network proves it can take it.
+  const videoMax = isMobileRef.current ? VIDEO_CONCURRENCY_MAX_MOBILE : VIDEO_CONCURRENCY_MAX_DESKTOP
 
   // Memoized so startUploads/addFiles/retryEntry are not rebuilt on every progress flush
   const caps = useMemo(() => uploadCapsForTier(userTier), [userTier])
@@ -1333,8 +1370,34 @@ export default function UploadZone({ album, userTier, onPhotosUploaded }: Props)
   // drops never each spawn their own Semaphore and multiply the concurrency limit
   const semRef = useRef<Semaphore | null>(null)
   // Separate, tighter semaphore for VIDEOS — keeps large sustained TUS streams from saturating a
-  // weak uplink. Photos and videos run in independent lanes.
+  // weak uplink. Photos and videos run in independent lanes. Its capacity is ADAPTIVE (see below).
   const videoSemRef = useRef<Semaphore | null>(null)
+  // Adaptive-concurrency state for the video lane (persists across batches for the whole session):
+  //   videoCeilingRef — the highest capacity we'll try; drops to 1 permanently once the network fails.
+  //   videoStreakRef  — clean video uploads in a row since the last widen/reset.
+  const videoCeilingRef = useRef(videoMax)
+  const videoStreakRef = useRef(0)
+
+  // Called after every video upload settles. Fail-safe: only widens on a proven clean streak, and
+  // snaps back to strictly-serial (and stops probing) the moment the network drops one. The worst
+  // this can ever do is behave exactly like a fixed capacity of 1.
+  const noteVideoOutcome = useCallback((ok: boolean) => {
+    const vs = videoSemRef.current
+    if (!vs) return
+    if (ok) {
+      videoStreakRef.current += 1
+      if (videoStreakRef.current >= VIDEO_WIDEN_AFTER_CLEAN && vs.capacity < videoCeilingRef.current) {
+        vs.setCapacity(vs.capacity + 1)
+        videoStreakRef.current = 0
+      }
+    } else {
+      videoStreakRef.current = 0
+      if (vs.capacity > 1) {
+        vs.setCapacity(1)
+        videoCeilingRef.current = 1 // network showed it can't sustain >1 — don't probe again this session
+      }
+    }
+  }, [])
 
   // Counter instead of boolean: multiple concurrent batches each increment on start and
   // decrement on finish — isUploading stays true until the last batch completes
@@ -1383,7 +1446,7 @@ export default function UploadZone({ album, userTier, onPhotosUploaded }: Props)
     // a fresh Semaphore instance that would multiply the concurrency limit
     if (!semRef.current) semRef.current = new Semaphore(concurrency)
     const sem = semRef.current
-    if (!videoSemRef.current) videoSemRef.current = new Semaphore(videoConcurrency)
+    if (!videoSemRef.current) videoSemRef.current = new Semaphore(VIDEO_CONCURRENCY_START)
     const videoSem = videoSemRef.current
 
     // Incremental saver: each file's row is written within ~1.2s of its upload finishing.
@@ -1409,8 +1472,8 @@ export default function UploadZone({ album, userTier, onPhotosUploaded }: Props)
         const gate = kind === 'video' ? videoSem : sem
         // Size-aware lane: a big video takes the WHOLE video lane (uploads solo, no bandwidth
         // competition); short clips and all images weigh 1 and overlap.
-        const weight = kind === 'video' && entry.file.size >= VIDEO_SOLO_LANE_BYTES ? videoConcurrency : 1
-        await gate.acquire(weight)
+        const weight = kind === 'video' && entry.file.size >= VIDEO_SOLO_LANE_BYTES ? videoSem.capacity : 1
+        const release = await gate.acquire(weight)
         try {
           patchEntry(entry.id, { status: 'uploading', progress: 0 })
 
@@ -1430,6 +1493,7 @@ export default function UploadZone({ album, userTier, onPhotosUploaded }: Props)
           // Bytes are in storage; the saver flips this tile to 'done' when the row commits.
           patchEntry(entry.id, { progress: 100, videoResume: undefined })
           saver.add(row, entry.id)
+          if (kind === 'video') noteVideoOutcome(true) // clean video → adaptive lane may widen
         } catch (e) {
           const msg = friendlyUploadError(e)
           patchEntry(entry.id, {
@@ -1439,6 +1503,14 @@ export default function UploadZone({ album, userTier, onPhotosUploaded }: Props)
             // instead of restarting from zero.
             ...(e instanceof VideoUploadError && e.resume ? { videoResume: e.resume } : {}),
           })
+          // Adaptive lane: a genuine upload failure (not a user cancel, not a pre-upload reject like
+          // too-large / unsupported) means the network can't take the current concurrency — snap back
+          // to serial and stop probing.
+          if (kind === 'video'
+            && !(e instanceof DOMException && e.name === 'AbortError')
+            && !(e instanceof Error && (e.message.startsWith('File too large') || e.message.startsWith('Unsupported')))) {
+            noteVideoOutcome(false)
+          }
           // Surface the real error (it was previously hidden in a title tooltip, invisible on
           // mobile). AbortError is a deliberate cancel, not worth toasting.
           if (!(e instanceof DOMException && e.name === 'AbortError')) {
@@ -1450,7 +1522,7 @@ export default function UploadZone({ album, userTier, onPhotosUploaded }: Props)
               { fileType: entry.file.type, sizeMB: Math.round(entry.file.size / 1024 / 1024), status: e instanceof HttpError ? e.status : undefined })
           }
         } finally {
-          gate.release(weight)
+          release()
         }
       }))
     }
@@ -1475,7 +1547,7 @@ export default function UploadZone({ album, userTier, onPhotosUploaded }: Props)
     // and only if still mounted (prevents leaking a timer in AlbumPageClient)
     if (mountedRef.current && savedCount > 0) onPhotosUploaded?.()
     abortCtrlsRef.current.delete(abortCtrl)
-  }, [album.id, caps, concurrency, videoConcurrency, patchEntry, flushProgress, onPhotosUploaded])
+  }, [album.id, caps, concurrency, noteVideoOutcome, patchEntry, flushProgress, onPhotosUploaded])
 
   const addFiles = useCallback((files: File[]) => {
     const valid = files.filter(f => detectKind(f) !== null)
