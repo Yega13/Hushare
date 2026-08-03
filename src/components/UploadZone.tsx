@@ -13,6 +13,7 @@ import {
   UPLOAD_CONCURRENCY_DESKTOP,
   UPLOAD_VIDEO_CONCURRENCY_MOBILE,
   UPLOAD_VIDEO_CONCURRENCY_DESKTOP,
+  VIDEO_SOLO_LANE_BYTES,
   STREAM_CHUNK_SIZE_BYTES,
 } from '@/lib/constants'
 
@@ -31,17 +32,29 @@ const MAX_IMG_DIM = 2560
 
 // ─── Semaphore ────────────────────────────────────────────────────────────────
 
+// Weighted counting semaphore. Default weight 1 behaves as a plain N-slot semaphore; a caller can
+// acquire/release a larger weight to hold several slots at once — used so a big video takes the
+// WHOLE video lane and uploads alone, while short clips overlap. FIFO, so a heavy waiter can't be
+// starved by a stream of light ones jumping ahead. The caller must release the SAME weight it
+// acquired (release is clamped to capacity so a mismatch can never over-credit the pool).
 class Semaphore {
-  private slots: number
-  private queue: (() => void)[] = []
-  constructor(capacity: number) { this.slots = capacity }
-  acquire(): Promise<void> {
-    if (this.slots > 0) { this.slots--; return Promise.resolve() }
-    return new Promise<void>(res => this.queue.push(res))
+  private available: number
+  private readonly capacity: number
+  private queue: { weight: number; resolve: () => void }[] = []
+  constructor(capacity: number) { this.capacity = Math.max(1, capacity); this.available = this.capacity }
+  acquire(weight = 1): Promise<void> {
+    const w = Math.min(Math.max(1, Math.floor(weight)), this.capacity)
+    if (this.queue.length === 0 && this.available >= w) { this.available -= w; return Promise.resolve() }
+    return new Promise<void>(resolve => this.queue.push({ weight: w, resolve }))
   }
-  release(): void {
-    const next = this.queue.shift()
-    if (next) { next() } else { this.slots++ }
+  release(weight = 1): void {
+    const w = Math.min(Math.max(1, Math.floor(weight)), this.capacity)
+    this.available = Math.min(this.capacity, this.available + w)
+    while (this.queue.length > 0 && this.available >= this.queue[0].weight) {
+      const next = this.queue.shift()!
+      this.available -= next.weight
+      next.resolve()
+    }
   }
 }
 
@@ -1394,7 +1407,10 @@ export default function UploadZone({ album, userTier, onPhotosUploaded }: Props)
         // wider one — otherwise several videos could grab the shared pool and saturate the uplink.
         const kind = detectKind(entry.file)
         const gate = kind === 'video' ? videoSem : sem
-        await gate.acquire()
+        // Size-aware lane: a big video takes the WHOLE video lane (uploads solo, no bandwidth
+        // competition); short clips and all images weigh 1 and overlap.
+        const weight = kind === 'video' && entry.file.size >= VIDEO_SOLO_LANE_BYTES ? videoConcurrency : 1
+        await gate.acquire(weight)
         try {
           patchEntry(entry.id, { status: 'uploading', progress: 0 })
 
@@ -1434,7 +1450,7 @@ export default function UploadZone({ album, userTier, onPhotosUploaded }: Props)
               { fileType: entry.file.type, sizeMB: Math.round(entry.file.size / 1024 / 1024), status: e instanceof HttpError ? e.status : undefined })
           }
         } finally {
-          gate.release()
+          gate.release(weight)
         }
       }))
     }

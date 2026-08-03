@@ -13,6 +13,11 @@ export const UPLOAD_CONCURRENCY_DESKTOP = 12;
 export const UPLOAD_VIDEO_CONCURRENCY_MOBILE = 2;
 export const UPLOAD_VIDEO_CONCURRENCY_DESKTOP = 3;
 
+// A video at/above this size takes the WHOLE video lane to itself (uploads solo) so it never
+// competes for bandwidth with another sustained stream — the answer to "what if someone posts a
+// 10-minute video". Short event clips fall well under it, so they still overlap for speed.
+export const VIDEO_SOLO_LANE_BYTES = 30 * 1024 * 1024;
+
 // Cloudflare Stream TUS requires minimum 5 MB chunks (except the last)
 export const STREAM_CHUNK_SIZE_BYTES = 5 * 1024 * 1024;
 
