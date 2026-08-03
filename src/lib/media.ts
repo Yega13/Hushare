@@ -101,7 +101,10 @@ export async function generateVideoPoster(file: File): Promise<PosterResult | nu
       new Promise<never>((_, reject) => { t1 = setTimeout(() => reject(new Error('loadedmetadata timeout')), 8_000) }),
     ]).finally(() => clearTimeout(t1))
 
-    const target = Math.min(0.5, Math.max(0, (video.duration || 1) * 0.05))
+    // Seek a little way in so the poster isn't the black / fade-in frame many edited clips (and
+    // TikToks) open on. Sample deeper for longer videos (up to 4s), midpoint for very short ones.
+    const dur = Number.isFinite(video.duration) && video.duration > 0 ? video.duration : 0
+    const target = dur >= 3 ? Math.min(Math.max(dur * 0.1, 1.5), 4) : (dur > 0 ? dur * 0.5 : 0.5)
     video.currentTime = target
 
     let t2: ReturnType<typeof setTimeout>
