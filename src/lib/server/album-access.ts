@@ -23,7 +23,7 @@ const ALBUM_SELECT_COLS = [
   'media_radius', 'media_filter', 'media_hover', 'mobile_grid_columns', 'photo_layout',
   'slideshow_interval_ms', 'slideshow_animation', 'video_autoplay',
   'cover_photo_id', 'reveal_at', 'guest_uploads_enabled', 'allow_guest_downloads',
-  'face_finder_enabled',
+  'require_approval', 'face_finder_enabled',
   'last_activity_at', 'created_at',
   'password_hash', 'retired_at',
 ].join(', ')
@@ -34,7 +34,7 @@ const PHOTO_SELECT_COLS = [
   'url', 'thumb_url', 'caption', 'author_name', 'created_at',
   'media_type', 'poster_url', 'stream_uid', 'stream_iframe_url',
   'stream_thumbnail_url', 'duration_seconds', 'width', 'height',
-  'display_radius', 'display_filter', 'sort_order', 'face_ids',
+  'display_radius', 'display_filter', 'sort_order', 'face_ids', 'hidden',
 ].join(', ')
 
 type AlbumRow = {
@@ -43,7 +43,7 @@ type AlbumRow = {
   media_hover: string; mobile_grid_columns: number; photo_layout: string
   slideshow_interval_ms: number; slideshow_animation: string; video_autoplay: boolean
   cover_photo_id: string | null; reveal_at: string | null; guest_uploads_enabled: boolean
-  allow_guest_downloads: boolean; face_finder_enabled: boolean
+  allow_guest_downloads: boolean; require_approval: boolean; face_finder_enabled: boolean
   last_activity_at: string; created_at: string
   password_hash: string | null; retired_at: string | null
 }
@@ -129,7 +129,7 @@ export type PhotosResult =
   | { kind: 'notfound' }
   | { kind: 'reveal' }
   | { kind: 'password' }
-  | { kind: 'ok'; photos: Photo[] }
+  | { kind: 'ok'; photos: Photo[]; total?: number }
 
 // Authorized photo listing. Anon RLS only exposes OPEN albums, so password/reveal-gated albums
 // (and an owner's own view of them) are read here via the admin client AFTER verifying the caller
@@ -137,6 +137,7 @@ export type PhotosResult =
 export async function fetchAuthorizedPhotos(
   albumId: string,
   cookieStore: CookieStore,
+  opts: { recentLimit?: number } = {},
 ): Promise<PhotosResult> {
   if (!UUID_RE.test(albumId)) return { kind: 'invalid' }
 
@@ -149,9 +150,9 @@ export async function fetchAuthorizedPhotos(
 
   if (!album || album.retired_at) return { kind: 'notfound' }
 
-  let authorized = false
   const ownerCookie = (cookieStore.get(`hushare_owner_${albumId}`)?.value ?? '').trim()
-  if (ownerCookie) authorized = timingSafeEqual(ownerCookie, album.owner_token)
+  const isOwner = ownerCookie.length > 0 && timingSafeEqual(ownerCookie, album.owner_token)
+  let authorized = isOwner
 
   if (!authorized) {
     if (album.reveal_at && new Date(album.reveal_at) > new Date()) return { kind: 'reveal' }
@@ -166,18 +167,31 @@ export async function fetchAuthorizedPhotos(
     }
   }
 
-  const { data: photos, error } = await admin
-    .from('photos')
-    .select(PHOTO_SELECT_COLS)
-    .eq('album_id', albumId)
-    .order('sort_order', { ascending: true, nullsFirst: false })
-    .order('created_at', { ascending: true })
-    .limit(2000)
+  // Moderation: the owner sees every photo (so they can review/approve); guests only see photos
+  // that aren't hidden (pending approval, or hidden by the owner).
+  const recent = opts.recentLimit && opts.recentLimit > 0 ? opts.recentLimit : null
+
+  let query = admin.from('photos').select(PHOTO_SELECT_COLS).eq('album_id', albumId)
+  if (!isOwner) query = query.eq('hidden', false)
+  // recentLimit (the live wall): fetch only the newest N — the wall shows a bounded window, so
+  // pulling the whole album on every refetch is pure waste on the always-on display device.
+  query = recent
+    ? query.order('created_at', { ascending: false }).limit(recent)
+    : query.order('sort_order', { ascending: true, nullsFirst: false }).order('created_at', { ascending: true }).limit(2000)
+  const { data: photos, error } = await query
 
   if (error) {
     console.error('[album-access] photos fetch failed:', error.message)
     throw new Error('photos_fetch_failed')
   }
 
-  return { kind: 'ok', photos: (photos ?? []) as unknown as Photo[] }
+  let total: number | undefined
+  if (recent) {
+    let countQuery = admin.from('photos').select('id', { count: 'exact', head: true }).eq('album_id', albumId)
+    if (!isOwner) countQuery = countQuery.eq('hidden', false)
+    const { count } = await countQuery
+    total = count ?? photos?.length ?? 0
+  }
+
+  return { kind: 'ok', photos: (photos ?? []) as unknown as Photo[], total }
 }

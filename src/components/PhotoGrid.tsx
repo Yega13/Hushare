@@ -6,6 +6,7 @@ import type { SlideshowAnimation } from '@/types'
 import { DEFAULT_SLIDESHOW_INTERVAL_MS, cssMediaDisplayFilter } from '@/lib/media-display'
 import { MEDIA_AUTHOR_MAX, MEDIA_CAPTION_MAX, SUPPRESS_CLICK_AFTER_REORDER_MS, BTT_UPDATE_EVENT } from '@/lib/constants'
 import { showAppToast } from '@/components/AppToast'
+import { savePhotoHiddenRequest } from '@/components/owner-toolbar/api'
 import { useT } from '@/i18n/LocaleProvider'
 import PhotoSettingsModal from '@/components/photo-grid/PhotoSettingsModal'
 import SlideshowPickerModal from '@/components/SlideshowPickerModal'
@@ -682,6 +683,7 @@ export default function PhotoGrid({ album, photos, isOwner, slug, forceGlobalRad
           filter={settingsFilter}
           caption={settingsCaption}
           author={settingsAuthor}
+          hidden={!!settingsPhoto.hidden}
           radiusMax={radiusMaxFor(settingsPhoto)}
           captionMax={MEDIA_CAPTION_MAX}
           authorMax={MEDIA_AUTHOR_MAX}
@@ -691,6 +693,17 @@ export default function PhotoGrid({ album, photos, isOwner, slug, forceGlobalRad
           onFilterChange={setSettingsFilter}
           onCaptionChange={setSettingsCaption}
           onAuthorChange={setSettingsAuthor}
+          onToggleHidden={async (next) => {
+            const id = settingsPhoto.id
+            onPhotoUpdated(id, { hidden: next })
+            try {
+              const result = await savePhotoHiddenRequest(slug, id, next)
+              if (!result.ok) { onPhotoUpdated(id, { hidden: !next }); showAppToast(result.error, 'error') }
+            } catch (e) {
+              onPhotoUpdated(id, { hidden: !next })
+              showAppToast(e instanceof Error ? e.message : 'Network error', 'error')
+            }
+          }}
         />
       )}
     </>

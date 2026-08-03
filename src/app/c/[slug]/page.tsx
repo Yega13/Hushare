@@ -7,6 +7,8 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { createClient } from '@/lib/supabase/server'
 import { getUserTierById } from '@/lib/subscriptions'
 import { formatDate } from '@/lib/utils'
+import { getServerLocale } from '@/i18n/server'
+import { getDictionary, interpolate } from '@/i18n/get-dictionary'
 
 export const runtime = 'nodejs'
 
@@ -72,6 +74,8 @@ export default async function CollectionPage({ params }: Props) {
 
   if (!collection) notFound()
 
+  const dict = getDictionary(await getServerLocale())
+
   // Is the current viewer the owner of this collection? Collections are shareable PUBLIC pages,
   // so album links must stay plain guest links for everyone else — but when the owner browses
   // their own collection, the album links need the #owner= management token or they'd land on
@@ -92,12 +96,12 @@ export default async function CollectionPage({ params }: Props) {
     return (
       <main className="min-h-screen flex items-center justify-center px-4" style={{ background: '#FDFAF5' }}>
         <div className="max-w-md w-full rounded-2xl p-8 text-center" style={{ background: '#FFFFFF', border: '1px solid #DDD5C5' }}>
-          <p className="text-xs uppercase mb-3" style={{ color: '#8B6F4E', letterSpacing: '0.18em', fontWeight: 600 }}>Temporarily unavailable</p>
+          <p className="text-xs uppercase mb-3" style={{ color: '#8B6F4E', letterSpacing: '0.18em', fontWeight: 600 }}>{dict['c.unavailableEyebrow']}</p>
           <h1 className="text-2xl font-bold mb-3" style={{ color: '#630826', fontFamily: 'var(--font-serif)' }}>
             {collection.name}
           </h1>
           <p className="text-sm leading-relaxed" style={{ color: '#5C4A3C' }}>
-            This collection is temporarily unavailable. Please check back later.
+            {dict['c.unavailableBody']}
           </p>
         </div>
       </main>
@@ -137,12 +141,12 @@ export default async function CollectionPage({ params }: Props) {
     return (
       <main className="min-h-screen flex items-center justify-center px-4" style={{ background: '#FDFAF5' }}>
         <div className="max-w-md w-full rounded-2xl p-8 text-center" style={{ background: '#FFFFFF', border: '1px solid #DDD5C5' }}>
-          <p className="text-xs uppercase mb-3" style={{ color: '#8B6F4E', letterSpacing: '0.18em', fontWeight: 600 }}>Service error</p>
+          <p className="text-xs uppercase mb-3" style={{ color: '#8B6F4E', letterSpacing: '0.18em', fontWeight: 600 }}>{dict['c.serviceError']}</p>
           <h1 className="text-2xl font-bold mb-3" style={{ color: '#630826', fontFamily: 'var(--font-serif)' }}>
-            Temporarily unavailable
+            {dict['c.unavailableEyebrow']}
           </h1>
           <p className="text-sm leading-relaxed" style={{ color: '#5C4A3C' }}>
-            We&apos;re having trouble loading this collection. Please try again in a moment.
+            {dict['c.serviceErrorBody']}
           </p>
         </div>
       </main>
@@ -205,10 +209,10 @@ export default async function CollectionPage({ params }: Props) {
           />
         </Link>
         <HamburgerMenu>
-          <Link href="/" className="text-sm font-medium hover:underline" style={{ color: '#630826' }}>Home</Link>
-          <Link href="/pricing" className="text-sm font-medium hover:underline" style={{ color: '#630826' }}>Pricing</Link>
-          <Link href="/about" className="text-sm font-medium hover:underline" style={{ color: '#630826' }}>About</Link>
-          <Link href="/support" className="text-sm font-medium hover:underline" style={{ color: '#630826' }}>Support</Link>
+          <Link href="/" className="text-sm font-medium hover:underline" style={{ color: '#630826' }}>{dict['nav.home']}</Link>
+          <Link href="/pricing" className="text-sm font-medium hover:underline" style={{ color: '#630826' }}>{dict['nav.pricing']}</Link>
+          <Link href="/about" className="text-sm font-medium hover:underline" style={{ color: '#630826' }}>{dict['nav.about']}</Link>
+          <Link href="/support" className="text-sm font-medium hover:underline" style={{ color: '#630826' }}>{dict['nav.support']}</Link>
         </HamburgerMenu>
       </nav>
 
@@ -241,7 +245,7 @@ export default async function CollectionPage({ params }: Props) {
               className="text-xs uppercase mb-3"
               style={{ color: '#F3E0BC', letterSpacing: '0.18em', fontWeight: 600 }}
             >
-              Studio Collection
+              {dict['c.studioCollection']}
             </p>
             <h1
               className="text-4xl sm:text-5xl font-bold mb-4"
@@ -250,14 +254,14 @@ export default async function CollectionPage({ params }: Props) {
               {collection.name}
             </h1>
             <p className="text-base sm:text-lg leading-relaxed max-w-2xl" style={{ color: '#FBF4E4' }}>
-              {collection.description ?? 'A curated set of shared Hushare albums.'}
+              {collection.description ?? dict['c.descFallback']}
             </p>
           </div>
           <div className="relative z-10 mt-8 grid grid-cols-3 gap-3 max-w-xl">
             {([
-              ['Albums', orderedAlbums.length],
-              ['Media', mediaTotal],
-              ['Videos', videoTotal],
+              [dict['c.statAlbums'], orderedAlbums.length],
+              [dict['c.statMedia'], mediaTotal],
+              [dict['c.statVideos'], videoTotal],
             ] as const).map(([label, value]) => (
               <div
                 key={label}
@@ -308,14 +312,14 @@ export default async function CollectionPage({ params }: Props) {
                       className="flex h-full items-center justify-center text-sm"
                       style={{ color: '#8B6F4E' }}
                     >
-                      No cover yet
+                      {dict['c.noCover']}
                     </div>
                   )}
                   <span
                     className="absolute right-3 top-3 rounded-full px-2 py-1 text-xs font-semibold"
                     style={{ background: 'rgba(253,250,245,0.92)', color: '#630826' }}
                   >
-                    {album.media_count} item{album.media_count === 1 ? '' : 's'}
+                    {interpolate(dict[album.media_count === 1 ? 'c.itemOne' : 'c.itemMany'], { n: album.media_count })}
                   </span>
                 </div>
                 <div className="p-4">
@@ -323,7 +327,7 @@ export default async function CollectionPage({ params }: Props) {
                     {album.title}
                   </h2>
                   <p className="text-xs" style={{ color: '#8B6F4E' }}>
-                    Created {formatDate(album.created_at)}
+                    {dict['c.created']} {formatDate(album.created_at)}
                   </p>
                 </div>
               </Link>
@@ -336,9 +340,9 @@ export default async function CollectionPage({ params }: Props) {
             className="mt-8 rounded-2xl px-5 py-8 text-center"
             style={{ background: '#FFFFFF', border: '1px solid #DDD5C5' }}
           >
-            <p className="font-semibold" style={{ color: '#630826' }}>No albums here yet</p>
+            <p className="font-semibold" style={{ color: '#630826' }}>{dict['c.emptyTitle']}</p>
             <p className="mt-2 text-sm" style={{ color: '#8B6F4E' }}>
-              The owner has not added any albums to this collection.
+              {dict['c.emptyBody']}
             </p>
           </div>
         )}

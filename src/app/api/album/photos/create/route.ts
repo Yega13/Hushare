@@ -7,6 +7,8 @@ import { streamVideoUrls } from '@/lib/cloudflare/stream'
 import { queueAlbumChangedBroadcast, runAfterResponse } from '@/lib/broadcast'
 import { track } from '@/lib/analytics'
 import { timingSafeEqual } from '@/lib/timing-safe'
+import { getUserTierById } from '@/lib/subscriptions'
+import { albumMediaCapForTier, ANON_ALBUM_MEDIA } from '@/lib/media'
 import { cookies } from 'next/headers'
 
 export const runtime = 'nodejs'
@@ -18,7 +20,6 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 const STREAM_UID_RE = /^[a-f0-9]{32}$/
 
 const MAX_PHOTOS_PER_CALL = 200
-const MAX_ALBUM_PHOTOS = 10_000
 const MAX_CAPTION_LEN = 30
 const MAX_AUTHOR_NAME_LEN = 16
 
@@ -60,10 +61,18 @@ type AlbumRow = {
   id: string
   user_id: string | null
   guest_uploads_enabled: boolean
+  require_approval: boolean
   title: string
   slug: string
   owner_token: string
+  created_at: string
 }
+
+// Albums created BEFORE this are grandfathered: the strict new per-tier caps don't apply, but they
+// still get a generous ceiling (1000) so an already-active album keeps accepting uploads for a
+// while, with an upsell to register once it's full.
+const GRANDFATHER_CUTOFF = '2026-08-02T00:00:00Z'
+const LEGACY_ALBUM_CAP = 1000
 
 function r2UrlPrefix(host: string, albumId: string, prefix: 'albums' | 'thumbs') {
   return `https://${host}/${prefix}/${albumId}/`
@@ -165,7 +174,7 @@ export async function POST(req: Request) {
 
   // Per-IP, but events share one venue-WiFi IP, and the client saves rows in incremental batches
   // (several calls per guest per upload session). 500/hr throttled a crowd. 12000/hr fits a big
-  // event; MAX_ALBUM_PHOTOS (10000) below is the true per-album flood backstop.
+  // event; the per-album media cap below (500–10000 by the owner's tier) is the true flood backstop.
   const ipRl = await checkRateLimit(clientIpKey(req, 'photos_create_ip'), 3600, 12000, { failOpen: false })
   if (!ipRl.ok) {
     return NextResponse.json(
@@ -205,7 +214,7 @@ export async function POST(req: Request) {
 
   const { data: album, error: albumError } = await admin
     .from('albums')
-    .select('id, user_id, guest_uploads_enabled, title, slug, owner_token')
+    .select('id, user_id, guest_uploads_enabled, require_approval, title, slug, owner_token, created_at')
     .eq('id', albumId)
     .is('retired_at', null)
     .maybeSingle<AlbumRow>()
@@ -221,6 +230,12 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: 'Uploads disabled for this album' }, { status: 403, headers: NO_STORE })
   }
 
+  // Owner vs guest (owner cookie === owner_token). When the album requires approval, GUEST uploads
+  // land hidden (pending) until the owner approves; the owner's own uploads are always visible.
+  const ownerCookie = ((await cookies()).get(`hushare_owner_${albumId}`)?.value ?? '').trim()
+  const isOwner = ownerCookie.length > 0 && timingSafeEqual(ownerCookie, album.owner_token)
+  const hideNewUploads = album.require_approval && !isOwner
+
   const albumRl = await checkRateLimit(`photos_create_album:${albumId}`, 3600, 40000, { failOpen: false })
   if (!albumRl.ok) {
     return NextResponse.json(
@@ -229,13 +244,48 @@ export async function POST(req: Request) {
     )
   }
 
-  // Hard cap: prevent storage exhaustion via unlimited guest uploads
+  // Per-album media cap by the OWNER's tier (Free 500 / Pro 2500 / Max 10000). The tier lookup is
+  // only done once the album is at/over the smallest cap — the vast majority never reach 500, so
+  // normal uploads pay nothing extra.
   const { count: photoCount, error: countErr } = await admin
     .from('photos')
     .select('id', { count: 'exact', head: true })
     .eq('album_id', albumId)
-  if (!countErr && photoCount != null && photoCount >= MAX_ALBUM_PHOTOS) {
-    return NextResponse.json({ error: 'Album photo limit reached' }, { status: 429, headers: NO_STORE })
+  // `warning` is returned on a SUCCESSFUL upload (not a block) to nag over-allowance albums to
+  // register. It only fires once the album is past the free allowance (150), so albums under it are
+  // never nagged — they only ever see the block message when genuinely full.
+  // User-facing messages intentionally NEVER reveal the exact numbers — just a friendly nudge.
+  let warning: string | undefined
+  if (!countErr && photoCount != null && photoCount >= ANON_ALBUM_MEDIA) {
+    if (album.created_at < GRANDFATHER_CUTOFF) {
+      // Grandfathered: generous ceiling. Full → block; otherwise nudge to register every session.
+      if (photoCount >= LEGACY_ALBUM_CAP) {
+        return NextResponse.json(
+          { error: "You've reached this album's upload limit. Register on Hushare to get more space." },
+          { status: 429, headers: NO_STORE },
+        )
+      }
+      warning = 'This album is filling up — register on Hushare to unlock more space.'
+    } else if (!album.user_id) {
+      // Guest album (no account).
+      if (photoCount >= ANON_ALBUM_MEDIA) {
+        return NextResponse.json(
+          { error: "You've reached this album's upload limit. Register on Hushare — it's free — for more space." },
+          { status: 429, headers: NO_STORE },
+        )
+      }
+    } else {
+      const tier = await getUserTierById(album.user_id)
+      const cap = albumMediaCapForTier(tier)
+      if (photoCount >= cap) {
+        const nudge = tier === 'studio' ? '' : ' Upgrade your plan for more space.'
+        return NextResponse.json(
+          { error: `You've reached this album's upload limit.${nudge}` },
+          { status: 429, headers: NO_STORE },
+        )
+      }
+      // Registered-free / paid under their cap: no nudge.
+    }
   }
 
   // R2 (image) dedup is intentionally NOT pre-checked here: the upsert below
@@ -290,6 +340,7 @@ export async function POST(req: Request) {
         height: dims?.height ?? null,
         caption: typeof p.caption === 'string' ? p.caption.trim() : null,
         author_name: typeof p.author_name === 'string' ? p.author_name.trim() : null,
+        hidden: hideNewUploads,
       }
     }
     return {
@@ -303,6 +354,7 @@ export async function POST(req: Request) {
       height: dims?.height ?? null,
       caption: typeof p.caption === 'string' ? p.caption.trim() : null,
       author_name: typeof p.author_name === 'string' ? p.author_name.trim() : null,
+      hidden: hideNewUploads,
     }
   })
 
@@ -374,10 +426,9 @@ export async function POST(req: Request) {
 
   const inserted = insertedImages + insertedVideos
 
-  // Attribute the upload to owner vs guest via the owner cookie (same check the download route uses).
+  // Attribute the upload to owner vs guest (computed above from the owner cookie).
   if (inserted > 0) {
-    const ownerCookie = ((await cookies()).get(`hushare_owner_${albumId}`)?.value ?? '').trim()
-    const source = ownerCookie.length > 0 && timingSafeEqual(ownerCookie, album.owner_token) ? 'owner' : 'guest'
+    const source = isOwner ? 'owner' : 'guest'
     if (insertedImages > 0) track({ name: 'media_uploaded', albumId, mediaType: 'image', count: insertedImages, source })
     if (insertedVideos > 0) track({ name: 'media_uploaded', albumId, mediaType: 'video', count: insertedVideos, source })
   }
@@ -413,5 +464,5 @@ export async function POST(req: Request) {
 
   // Recompute skipped from actual insertedCount — the pre-insert dedup may undercount
   // if the upsert's ignoreDuplicates silently handled a concurrent race
-  return NextResponse.json({ inserted, skipped: photos.length - inserted }, { headers: NO_STORE })
+  return NextResponse.json({ inserted, skipped: photos.length - inserted, warning }, { headers: NO_STORE })
 }

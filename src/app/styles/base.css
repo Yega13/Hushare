@@ -14,11 +14,18 @@
   --foreground: #630826;
 }
 
-/* Armenian gets Braind Amanor everywhere by overriding the shared font variables — headings
-   (var(--font-serif)) and body/UI (var(--font-sans)) both pick it up automatically. */
+/* Playfair/Geist (the English fonts) have no Armenian glyphs, so Armenian needs its own faces — but
+   chosen to MATCH the English look, not a decorative display face: Noto Serif Armenian for headings
+   (mirrors Playfair) and Noto Sans Armenian for body/UI (mirrors Geist). Overriding the shared
+   variables means every heading and every body sentence picks the right one automatically. */
 html[lang="hy"] {
-  --font-serif: 'Braind Amanor', Georgia, serif;
-  --font-sans: 'Braind Amanor', var(--font-geist-sans), system-ui, sans-serif;
+  --font-serif: var(--font-serif-am), Georgia, serif;
+  --font-sans: var(--font-sans-am), var(--font-geist-sans), system-ui, sans-serif;
+  /* Armenian (Noto Armenian) has a smaller visual size per em than the Latin/Cyrillic faces, so at
+     the same px it reads smaller. Bump the root font-size ONLY on Armenian pages so everything (all
+     rem-based text) scales up to match English's presence. Breakpoints are pinned to px elsewhere,
+     so this doesn't shift the responsive layout. */
+  font-size: 112.5%;
 }
 
 @theme inline {

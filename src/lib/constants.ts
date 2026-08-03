@@ -3,6 +3,13 @@
 export const UPLOAD_CONCURRENCY_MOBILE = 6;
 export const UPLOAD_CONCURRENCY_DESKTOP = 12;
 
+// Videos upload their raw bytes as long, sustained TUS streams — very different from the small
+// (<1MB) images. Several running at once saturate a weak venue-WiFi uplink, which is the main cause
+// of chunk-at-offset-0 failures, stalls and timeouts. Give them a SEPARATE, tight lane so at most
+// one (mobile) / two (desktop) stream at a time; photos keep the wider pool above.
+export const UPLOAD_VIDEO_CONCURRENCY_MOBILE = 1;
+export const UPLOAD_VIDEO_CONCURRENCY_DESKTOP = 2;
+
 // Cloudflare Stream TUS requires minimum 5 MB chunks (except the last)
 export const STREAM_CHUNK_SIZE_BYTES = 5 * 1024 * 1024;
 

@@ -1,8 +1,11 @@
 import { NextResponse } from 'next/server'
+import { cookies } from 'next/headers'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { createClient } from '@/lib/supabase/server'
 import { checkRateLimit, clientIpKey } from '@/lib/rate-limit'
 import { forbidCrossSiteRequest } from '@/lib/request-security'
+import { getUserTier } from '@/lib/subscriptions'
+import { albumCountLimitForTier, ANON_ALBUM_LIMIT } from '@/lib/media'
 import { track } from '@/lib/analytics'
 
 export const runtime = 'nodejs'
@@ -74,6 +77,30 @@ export async function POST(req: Request) {
   const { data: { user } } = await supabase.auth.getUser()
 
   const admin = createAdminClient()
+
+  // Album-count cap. Registered users get a hard cap by tier (counting their live albums). Anon
+  // users have no stable identity, so their cap is a soft per-device cookie — bypassable, but a
+  // reasonable nudge to sign in; the per-IP rate limit above stays as the real abuse backstop.
+  const anonCount = user ? 0 : Math.max(0, Number((await cookies()).get('hushare_anon_albums')?.value ?? '0') || 0)
+  if (user) {
+    const tier = await getUserTier(user)
+    const cap = albumCountLimitForTier(tier)
+    const { count } = await admin
+      .from('albums').select('id', { count: 'exact', head: true })
+      .eq('user_id', user.id).is('retired_at', null)
+    if ((count ?? 0) >= cap) {
+      return NextResponse.json(
+        { error: `You've reached your plan's album limit.${tier === 'studio' ? '' : ' Upgrade your plan to create more albums.'}` },
+        { status: 403, headers: NO_STORE },
+      )
+    }
+  } else if (anonCount >= ANON_ALBUM_LIMIT) {
+    return NextResponse.json(
+      { error: "You've reached your album limit. Register on Hushare — it's free — to create more." },
+      { status: 403, headers: NO_STORE },
+    )
+  }
+
   const ownerToken = generateOwnerToken()
 
   for (let attempt = 0; attempt < MAX_SLUG_RETRIES; attempt++) {
@@ -99,6 +126,12 @@ export async function POST(req: Request) {
         path: '/',
         maxAge: OWNER_COOKIE_MAX_AGE,
       })
+      // Track anon album count for the soft guest cap (registered users are capped by DB count).
+      if (!user) {
+        res.cookies.set('hushare_anon_albums', String(anonCount + 1), {
+          httpOnly: true, secure: true, sameSite: 'lax', path: '/', maxAge: 60 * 60 * 24 * 365,
+        })
+      }
       return res
     }
 

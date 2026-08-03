@@ -1,11 +1,15 @@
 import { NextResponse } from 'next/server'
+import { randomUUID } from 'node:crypto'
 import { createAdminClient } from '@/lib/supabase/admin'
-import { verifyWebhookSignature, tierFromProduct } from '@/lib/polar'
+import { verifyWebhookSignature, tierFromProduct, getCustomerEmail } from '@/lib/polar'
+import { findOrCreateUserByEmail } from '@/lib/provision-user'
 import { track } from '@/lib/analytics'
 
 export const runtime = 'nodejs'
 
 const NO_STORE = { 'Cache-Control': 'no-store' }
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
 type PolarSubscription = {
   id: string
@@ -15,6 +19,8 @@ type PolarSubscription = {
   current_period_end: string | null
   cancel_at_period_end?: boolean
   ended_at?: string | null
+  // Some events embed the customer (with email); if absent we fetch it by customer_id.
+  customer?: { email?: string | null } | null
   metadata?: { userId?: string; tier?: string; cycle?: string }
 }
 
@@ -67,15 +73,18 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: 'Missing subscription data' }, { status: 400, headers: NO_STORE })
   }
 
-  const userId = sub.metadata?.userId
-  if (!userId) {
-    console.error('[polar/webhook] subscription has no userId metadata:', sub.id)
-    return NextResponse.json({ ok: true, error: 'no_user_metadata' }, { headers: NO_STORE })
+  // Resolve the account. Preferred: the userId the app attaches at in-app checkout. Fallback: link
+  // by the Polar customer's email (out-of-flow purchases — e.g. a direct Polar link — carry no
+  // userId; without this fallback the payment is silently dropped and never appears in the app).
+  let userId = sub.metadata?.userId
+  if (!userId || !UUID_RE.test(userId)) {
+    const email = sub.customer?.email ?? (sub.customer_id ? await getCustomerEmail(sub.customer_id) : null)
+    userId = email ? (await findOrCreateUserByEmail(email)) ?? undefined : undefined
+    if (userId) console.warn('[polar/webhook] linked by email (no userId metadata):', sub.id)
   }
-  const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
-  if (!UUID_RE.test(userId)) {
-    console.error('[polar/webhook] userId metadata is not a valid UUID:', sub.id, userId)
-    return NextResponse.json({ ok: true, error: 'invalid_user_metadata' }, { headers: NO_STORE })
+  if (!userId) {
+    console.error('[polar/webhook] could not resolve a user for subscription:', sub.id)
+    return NextResponse.json({ ok: true, error: 'no_user_resolved' }, { headers: NO_STORE })
   }
 
   const tierMatch = tierFromProduct(sub.product_id)
@@ -85,27 +94,40 @@ export async function POST(req: Request) {
   }
 
   const admin = createAdminClient()
-  const { error } = await admin
+
+  // Robust write that does NOT depend on the table's id default (the live table drifted and has
+  // none): explicit UUID on insert, update on an existing row — never touching the primary key.
+  const fields = {
+    user_id: userId,
+    polar_subscription_id: sub.id,
+    polar_customer_id: sub.customer_id ?? '',
+    polar_product_id: sub.product_id,
+    tier: tierMatch.tier,
+    status: sub.status,
+    current_period_end: sub.current_period_end,
+    cancel_at_period_end: sub.cancel_at_period_end ?? false,
+    updated_at: new Date().toISOString(),
+  }
+
+  const { data: existing } = await admin
     .from('subscriptions')
-    .upsert(
-      {
-        user_id: userId,
-        polar_subscription_id: sub.id,
-        polar_customer_id: sub.customer_id,
-        polar_product_id: sub.product_id,
-        tier: tierMatch.tier,
-        status: sub.status,
-        current_period_end: sub.current_period_end,
-        cancel_at_period_end: sub.cancel_at_period_end ?? false,
-        updated_at: new Date().toISOString(),
-      },
-      { onConflict: 'polar_subscription_id' },
-    )
+    .select('id')
+    .eq('polar_subscription_id', sub.id)
+    .maybeSingle<{ id: string }>()
+
+  const { error } = existing
+    ? await admin.from('subscriptions').update(fields).eq('polar_subscription_id', sub.id)
+    : await admin.from('subscriptions').insert({ id: randomUUID(), ...fields })
 
   if (error) {
-    console.error('[polar/webhook] upsert failed:', error.message, 'event=', event.type)
+    console.error('[polar/webhook] write failed:', error.message, 'event=', event.type)
     return NextResponse.json({ error: 'DB write failed' }, { status: 500, headers: NO_STORE })
   }
+
+  // A real Polar row now exists for this user — clear any manual-recovery placeholder, otherwise a
+  // stale "active" placeholder could keep granting access after the real subscription is canceled.
+  await admin.from('subscriptions')
+    .delete().eq('user_id', userId).like('polar_subscription_id', 'manual-recovery-%')
 
   if (sub.status === 'active' || sub.status === 'trialing') {
     track({ name: 'subscription_active', userId, tier: tierMatch.tier })

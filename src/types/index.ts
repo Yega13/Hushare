@@ -28,6 +28,8 @@ export type Album = {
   slideshow_animation: SlideshowAnimation;
   allow_guest_downloads: boolean;
   guest_uploads_enabled: boolean;
+  // When true, GUEST uploads are hidden (pending) until the owner approves them.
+  require_approval: boolean;
   // Owner opt-in (Studio tier) for AI Face Finder — lets guests find photos of themselves.
   face_finder_enabled: boolean;
   // Derived server-side from password_hash presence — the hash itself is never sent
@@ -62,6 +64,9 @@ export type Photo = {
   width: number | null;
   height: number | null;
   face_ids?: string[] | null;
+  // Moderation: a hidden photo is shown to the OWNER only (pending approval, or hidden by the owner);
+  // guests never receive it. Absent on legacy rows → treated as visible.
+  hidden?: boolean;
   created_at: string;
 };
 

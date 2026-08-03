@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { CircleUserRound } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
+import { useT } from '@/i18n/LocaleProvider'
 
 type AuthState =
   | { kind: 'loading' }
@@ -16,6 +17,7 @@ const linkStyle = { color: '#630826' } as const
 
 export default function AccountNavLink() {
   const router = useRouter()
+  const { t } = useT()
   const [supabase] = useState(() => createClient())
   const [state, setState] = useState<AuthState>({ kind: 'loading' })
   const [signingOut, setSigningOut] = useState(false)
@@ -80,7 +82,7 @@ export default function AccountNavLink() {
   if (state.kind === 'loading') {
     return (
       <span className={linkClass} aria-hidden="true" style={{ color: 'transparent' }}>
-        Sign in
+        {t('nav.signIn')}
       </span>
     )
   }
@@ -88,15 +90,15 @@ export default function AccountNavLink() {
   if (state.kind === 'signed-out') {
     return (
       <Link href="/login" className={linkClass} style={linkStyle}>
-        Sign in
+        {t('nav.signIn')}
       </Link>
     )
   }
 
   if (state.canAccess) {
     return (
-      <Link href="/account" className={`${linkClass} hush-account-nav-link`} style={linkStyle} aria-label="Account">
-        <span className="hush-account-label-full">Account</span>
+      <Link href="/account" className={`${linkClass} hush-account-nav-link`} style={linkStyle} aria-label={t('nav.account')}>
+        <span className="hush-account-label-full">{t('nav.account')}</span>
         <CircleUserRound className="hush-account-icon" aria-hidden="true" />
       </Link>
     )
@@ -110,7 +112,7 @@ export default function AccountNavLink() {
       className={`${linkClass} disabled:opacity-50`}
       style={linkStyle}
     >
-      {signingOut ? 'Signing out...' : 'Sign out'}
+      {signingOut ? t('acct.signingOut') : t('acct.signOut')}
     </button>
   )
 }

@@ -1,5 +1,5 @@
 import type { Metadata, Viewport } from "next";
-import { Geist, Geist_Mono, Playfair_Display, Playwrite_GB_J } from "next/font/google";
+import { Geist, Geist_Mono, Playfair_Display, Playwrite_GB_J, Noto_Serif_Armenian, Noto_Sans_Armenian } from "next/font/google";
 import Script from "next/script";
 import AppToastViewport from "@/components/AppToast";
 import SiteFooter from "@/components/SiteFooter";
@@ -24,8 +24,25 @@ const geistMono = Geist_Mono({
 
 const playfair = Playfair_Display({
   variable: "--font-serif",
-  subsets: ["latin"],
+  // 'cyrillic' so Russian headings render in Playfair itself instead of falling back to Times.
+  subsets: ["latin", "cyrillic"],
   style: ["normal", "italic"],
+  display: "swap",
+});
+
+// Playfair/Geist have no Armenian glyphs. To keep Armenian looking like the English design (elegant
+// serif headings + clean sans body), Armenian pages use Noto Serif Armenian (matches Playfair's role)
+// and Noto Sans Armenian (matches Geist's role) — swapped in via html[lang="hy"] in styles/base.css.
+// Only downloaded when Armenian is actually rendered.
+const notoSerifArmenian = Noto_Serif_Armenian({
+  variable: "--font-serif-am",
+  subsets: ["armenian"],
+  display: "swap",
+});
+
+const notoSansArmenian = Noto_Sans_Armenian({
+  variable: "--font-sans-am",
+  subsets: ["armenian"],
   display: "swap",
 });
 
@@ -351,7 +368,7 @@ export default async function RootLayout({
   return (
     <html
       lang={locale}
-      className={`${geistSans.variable} ${geistMono.variable} ${playfair.variable} ${handwriting.variable} h-full antialiased`}
+      className={`${geistSans.variable} ${geistMono.variable} ${playfair.variable} ${notoSerifArmenian.variable} ${notoSansArmenian.variable} ${handwriting.variable} h-full antialiased`}
     >
       <head>
         <link rel="preconnect" href="https://yqngmyjquwemwogdyuwv.supabase.co" />

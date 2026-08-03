@@ -15,12 +15,14 @@ type Props = {
   radiusMax: number
   captionMax: number
   authorMax: number
+  hidden: boolean
   onClose: () => void
   onRadiusChange: (value: number) => void
   onRadiusReset: () => void
   onFilterChange: (value: PhotoFilterChoice) => void
   onCaptionChange: (value: string) => void
   onAuthorChange: (value: string) => void
+  onToggleHidden: (next: boolean) => void
 }
 
 export default function PhotoSettingsModal({
@@ -33,12 +35,14 @@ export default function PhotoSettingsModal({
   radiusMax,
   captionMax,
   authorMax,
+  hidden,
   onClose,
   onRadiusChange,
   onRadiusReset,
   onFilterChange,
   onCaptionChange,
   onAuthorChange,
+  onToggleHidden,
 }: Props) {
   const { t } = useT()
   const [radiusDraft, setRadiusDraft] = useState(String(radius))
@@ -92,6 +96,14 @@ export default function PhotoSettingsModal({
         </div>
 
         <div className="space-y-4 p-5">
+          <label className="flex items-center justify-between gap-3 rounded-xl px-3 py-2.5" style={{ background: hidden ? '#FBEEF0' : '#FDFAF5', border: `1px solid ${hidden ? '#E8B9C4' : '#DDD5C5'}`, cursor: 'pointer' }}>
+            <span>
+              <span className="block text-sm font-semibold" style={{ color: '#630826' }}>{t('ps.hideFromGuests')}</span>
+              <span className="block text-xs" style={{ color: '#7C5C3E' }}>{t('ps.hideFromGuestsSub')}</span>
+            </span>
+            <input type="checkbox" checked={hidden} onChange={(e) => onToggleHidden(e.target.checked)} className="h-4 w-4" />
+          </label>
+
           <div className="space-y-3">
             <div>
               <div className="mb-2 flex items-center justify-between gap-3">

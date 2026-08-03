@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useT } from '@/i18n/LocaleProvider'
 import { useZipDownload } from '@/components/photo-grid/useZipDownload'
-import { Check, ChevronDown, Clock, Copy, Download, FolderPlus, Images, Link2, Loader2, Lock, LockOpen, Move, Play, ScanFace, Settings, Trash2, X } from 'lucide-react'
+import { Check, ChevronDown, Clock, Copy, Download, FolderPlus, Images, Link2, Loader2, Lock, LockOpen, MonitorPlay, Move, Play, ScanFace, Settings, ShieldCheck, Trash2, X } from 'lucide-react'
 import type { Album, Photo, Tier } from '@/types'
 import {
   DEFAULT_SLIDESHOW_INTERVAL_MS,
@@ -29,6 +29,7 @@ import {
   saveBackgroundRequest,
   saveCustomUrlRequest,
   saveGuestDownloadsRequest,
+  saveRequireApprovalRequest,
   savePhotoLayoutRequest,
   saveMediaSettingsRequest,
   savePasswordRequest,
@@ -133,6 +134,7 @@ export default function OwnerToolbar({ album, photos, ownerToken, userTier, medi
   const { zipping, zipProgress, downloadZip } = useZipDownload(photos, album.title ?? '')
 
   const [allowGuestDownloads, setAllowGuestDownloads] = useState(album.allow_guest_downloads !== false)
+  const [requireApproval, setRequireApproval] = useState(!!album.require_approval)
   const [faceFinderEnabled, setFaceFinderEnabled] = useState(!!album.face_finder_enabled)
 
   const shareRef = useRef<HTMLDivElement>(null)
@@ -233,6 +235,7 @@ export default function OwnerToolbar({ album, photos, ownerToken, userTier, medi
       setVideoAutoplay(!!album.video_autoplay)
       setPhotoLayout(album.photo_layout === 'justified' ? 'justified' : 'grid')
       setAllowGuestDownloads(album.allow_guest_downloads !== false)
+      setRequireApproval(!!album.require_approval)
       setFaceFinderEnabled(!!album.face_finder_enabled)
       setMediaFilter(album.media_filter ?? 'none')
       setSavedMediaFilter(album.media_filter ?? 'none')
@@ -671,6 +674,20 @@ export default function OwnerToolbar({ album, photos, ownerToken, userTier, medi
         </button>
 
         <button
+          className="hush-press hush-owner-action"
+          style={btnBase}
+          onClick={() => {
+            setShowShare(false)
+            setShowSettings(false)
+            window.open(`/wall/${album.custom_slug ?? album.slug}`, '_blank', 'noopener')
+          }}
+          title={t('ot.liveWallTitle')}
+        >
+          <MonitorPlay className="w-4 h-4" style={{ color: '#7C5C3E' }} />
+          {t('ot.liveWall')}
+        </button>
+
+        <button
           className="hush-press hush-owner-action hush-owner-arrange-action"
           style={{ ...btnBase, background: arrangeMode ? '#630826' : btnBase.background, color: arrangeMode ? '#FDFAF5' : btnBase.color }}
           onClick={() => {
@@ -1079,6 +1096,49 @@ export default function OwnerToolbar({ album, photos, ownerToken, userTier, medi
               </section>
 
               {/* Files */}
+              <section style={settingsSectionStyle}>
+                <button type="button" className="hush-motion" style={accordionButton} onClick={() => toggleSection('guests')}>
+                  <ShieldCheck className="w-4 h-4" style={{ color: '#7C5C3E' }} />
+                  <span style={sectionTitle}>{t('ot.guests')}</span>
+                  <ChevronDown
+                    className="ml-auto w-4 h-4 transition-transform"
+                    style={{ color: '#A89880', transform: openSection === 'guests' ? 'rotate(180deg)' : 'rotate(0deg)' }}
+                  />
+                </button>
+                {openSection === 'guests' && (
+                  <div className="px-4 pb-4 space-y-3">
+                    <label className="flex items-center justify-between gap-4 rounded-xl px-3 py-3" style={{ background: '#FDFAF5', border: '1px solid #DDD5C5', cursor: 'pointer' }}>
+                      <span>
+                        <span className="block text-sm font-semibold" style={{ color: '#630826' }}>{t('ot.requireApproval')}</span>
+                        <span className="block text-xs" style={{ color: '#7C5C3E' }}>{t('ot.requireApprovalSub')}</span>
+                      </span>
+                      <input
+                        type="checkbox"
+                        checked={requireApproval}
+                        onChange={async (e) => {
+                          const next = e.target.checked
+                          setRequireApproval(next)
+                          onAlbumUpdated({ require_approval: next })
+                          try {
+                            const result = await saveRequireApprovalRequest(album.slug, next)
+                            if (!result.ok) {
+                              showAppToast(result.error, 'error')
+                              setRequireApproval(!next)
+                              onAlbumUpdated({ require_approval: !next })
+                            }
+                          } catch (err) {
+                            showAppToast(err instanceof Error ? err.message : t('common.networkError'), 'error')
+                            setRequireApproval(!next)
+                            onAlbumUpdated({ require_approval: !next })
+                          }
+                        }}
+                        className="h-4 w-4"
+                      />
+                    </label>
+                  </div>
+                )}
+              </section>
+
               <section style={settingsSectionStyle}>
                 <button type="button" className="hush-motion" style={accordionButton} onClick={() => toggleSection('files')}>
                   <Download className="w-4 h-4" style={{ color: '#7C5C3E' }} />

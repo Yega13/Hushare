@@ -3,8 +3,10 @@
 import { useEffect, useState } from 'react'
 import { ArrowUp } from 'lucide-react'
 import { BTT_UPDATE_EVENT } from '@/lib/constants'
+import { useT } from '@/i18n/LocaleProvider'
 
 export default function BackToTop() {
+  const { t } = useT()
   const [visible, setVisible] = useState(false)
   const [bottom, setBottom]   = useState(24)
 
@@ -43,7 +45,7 @@ export default function BackToTop() {
   return (
     <button
       type="button"
-      aria-label="Back to top"
+      aria-label={t('common.backToTop')}
       className="hush-back-to-top"
       onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
       style={{

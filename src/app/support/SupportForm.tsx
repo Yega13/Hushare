@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import Script from 'next/script'
 import { Send, CheckCircle2, AlertCircle } from 'lucide-react'
+import { useT } from '@/i18n/LocaleProvider'
 
 type Status = 'idle' | 'sending' | 'sent' | 'error'
 
@@ -17,6 +18,7 @@ declare global {
 }
 
 export default function SupportForm() {
+  const { t } = useT()
   const [status, setStatus] = useState<Status>('idle')
   const [errorMsg, setErrorMsg] = useState('')
   const [subject, setSubject] = useState('')
@@ -47,7 +49,7 @@ export default function SupportForm() {
     const turnstileToken = String(data.get('cf-turnstile-response') ?? '')
     if (!turnstileToken && TURNSTILE_SITE_KEY) {
       setStatus('error')
-      setErrorMsg('Please wait for the verification to finish before sending')
+      setErrorMsg(t('support.verifyWait'))
       return
     }
 
@@ -79,7 +81,7 @@ export default function SupportForm() {
       window.turnstile?.reset()
     } catch (err) {
       setStatus('error')
-      setErrorMsg(err instanceof Error ? err.message : 'Something went wrong')
+      setErrorMsg(err instanceof Error ? err.message : t('support.genericError'))
       window.turnstile?.reset()
     }
   }
@@ -98,10 +100,10 @@ export default function SupportForm() {
           className="text-xl font-bold mb-2"
           style={{ color: '#630826', fontFamily: 'var(--font-serif)' }}
         >
-          Message sent
+          {t('support.sentTitle')}
         </h3>
         <p className="text-sm" style={{ color: '#5C4A3C' }}>
-          Thanks - we&apos;ll reply to your inbox within one business day.
+          {t('support.sentBody')}
         </p>
         <button
           type="button"
@@ -109,7 +111,7 @@ export default function SupportForm() {
           className="hush-press mt-5 text-sm font-semibold hover:underline"
           style={{ color: '#630826' }}
         >
-          Send another message
+          {t('support.sendAnother')}
         </button>
       </div>
     )
@@ -146,7 +148,7 @@ export default function SupportForm() {
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
           <div>
             <label htmlFor="name" className="block text-sm font-medium mb-2" style={{ color: '#8B6F4E' }}>
-              Your name <span style={{ color: '#B0A090' }}>(optional)</span>
+              {t('support.nameLabel')} <span style={{ color: '#B0A090' }}>{t('support.optional')}</span>
             </label>
             <input
               id="name"
@@ -160,7 +162,7 @@ export default function SupportForm() {
           </div>
           <div>
             <label htmlFor="email" className="block text-sm font-medium mb-2" style={{ color: '#8B6F4E' }}>
-              Your email <span style={{ color: '#C0392B' }}>*</span>
+              {t('support.emailLabel')} <span style={{ color: '#C0392B' }}>*</span>
             </label>
             <input
               id="email"
@@ -177,14 +179,14 @@ export default function SupportForm() {
 
         <div className="mb-4">
           <label htmlFor="subject" className="block text-sm font-medium mb-2" style={{ color: '#8B6F4E' }}>
-            Subject <span style={{ color: '#B0A090' }}>(optional)</span>
+            {t('support.subjectLabel')} <span style={{ color: '#B0A090' }}>{t('support.optional')}</span>
           </label>
           <input
             id="subject"
             name="subject"
             type="text"
             maxLength={120}
-            placeholder="e.g. I lost my owner link for an album"
+            placeholder={t('support.subjectPlaceholder')}
             value={subject}
             onChange={(e) => setSubject(e.target.value)}
             className="w-full rounded-xl px-4 py-3 focus:outline-none transition text-base"
@@ -194,7 +196,7 @@ export default function SupportForm() {
 
         <div className="mb-5">
           <label htmlFor="message" className="block text-sm font-medium mb-2" style={{ color: '#8B6F4E' }}>
-            Message <span style={{ color: '#C0392B' }}>*</span>
+            {t('support.messageLabel')} <span style={{ color: '#C0392B' }}>*</span>
           </label>
           <textarea
             id="message"
@@ -202,7 +204,7 @@ export default function SupportForm() {
             required
             rows={6}
             maxLength={4000}
-            placeholder="Tell us what's going on. Album link, screenshots, anything that helps."
+            placeholder={t('support.messagePlaceholder')}
             value={message}
             onChange={(e) => setMessage(e.target.value)}
             className="w-full rounded-xl px-4 py-3 focus:outline-none transition text-base resize-y"
@@ -231,9 +233,9 @@ export default function SupportForm() {
           >
             <AlertCircle className="w-4 h-4 flex-none mt-0.5" style={{ color: '#C0392B' }} />
             <div className="text-sm" style={{ color: '#7A2A1F' }}>
-              <p className="font-semibold mb-0.5">Couldn&apos;t send your message</p>
+              <p className="font-semibold mb-0.5">{t('support.errorTitle')}</p>
               <p>
-                {errorMsg}. You can also email us directly at{' '}
+                {errorMsg}. {t('support.errorEmailFallback')}{' '}
                 <a href="mailto:husharesupport@gmail.com" className="underline" style={{ color: '#7A2A1F' }}>
                   husharesupport@gmail.com
                 </a>
@@ -250,10 +252,10 @@ export default function SupportForm() {
           style={{ background: '#630826', color: '#FDFAF5' }}
         >
           {status === 'sending' ? (
-            'Sending...'
+            t('support.sending')
           ) : (
             <>
-              Send message <Send className="w-4 h-4" />
+              {t('support.send')} <Send className="w-4 h-4" />
             </>
           )}
         </button>

@@ -17,20 +17,24 @@ function isSubActive(sub: { status: string; current_period_end: string | null })
 export async function getActiveSubscription(userId: string): Promise<Subscription | null> {
   // Must use admin client — subscriptions table has RLS deny-all for anon/user clients
   const admin = createAdminClient()
+  // A user can have MORE THAN ONE row (a resubscribe, or a bulk Polar sync). Never trust just the
+  // newest — pick an ACTIVE one, preferring the higher tier, so a stale/canceled newest row can't
+  // hide a genuinely active subscription and drop a paying user to free.
   const { data, error } = await admin
     .from('subscriptions')
     .select('id, user_id, polar_subscription_id, polar_customer_id, polar_product_id, tier, status, current_period_end, cancel_at_period_end, created_at')
     .eq('user_id', userId)
     .order('created_at', { ascending: false })
-    .limit(1)
-    .maybeSingle<Subscription>()
+    .limit(20)
+    .returns<Subscription[]>()
 
   if (error) {
     console.error('[subscriptions] query failed:', error.message)
     return null
   }
-  if (!data || !isSubActive(data)) return null
-  return data
+  const active = (data ?? []).filter(isSubActive)
+  if (active.length === 0) return null
+  return active.find((s) => s.tier === 'studio') ?? active[0]
 }
 
 type UserLike = { id?: string | null; email?: string | null } | null | undefined
@@ -53,17 +57,21 @@ export async function getUserTierById(userId: string | null | undefined): Promis
   if (!userId) return 'free'
 
   const admin = createAdminClient()
-  const { data: sub, error: subErr } = await admin
+  // Consider ALL of the user's rows (resubscribe / bulk sync can create several), and return the
+  // highest ACTIVE tier — not merely the newest row, which might be a stale/canceled one.
+  const { data: subs, error: subErr } = await admin
     .from('subscriptions')
     .select('tier, status, current_period_end, cancel_at_period_end')
     .eq('user_id', userId)
     .order('created_at', { ascending: false })
-    .limit(1)
-    .maybeSingle<SubForTierCheck>()
+    .limit(20)
+    .returns<SubForTierCheck[]>()
 
   if (subErr) console.error('[subscriptions] getUserTierById query failed:', subErr.message)
 
-  if (sub && isSubActive(sub)) return sub.tier
+  const active = (subs ?? []).filter(isSubActive)
+  if (active.some((s) => s.tier === 'studio')) return 'studio'
+  if (active.some((s) => s.tier === 'pro')) return 'pro'
 
   // Only make the auth round-trip when admin emails are configured — avoids unconditional
   // DB hit for every free-tier user when the admin override feature is not in use

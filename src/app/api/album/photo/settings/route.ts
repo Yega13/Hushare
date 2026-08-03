@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { verifyOwnerViaCookieWithRateLimit } from '@/lib/album-owner-access'
 import { forbidCrossSiteRequest } from '@/lib/request-security'
+import { queueAlbumChangedBroadcast } from '@/lib/broadcast'
 
 export const runtime = 'nodejs'
 
@@ -23,6 +24,7 @@ export async function POST(req: Request) {
     author_name?: unknown
     display_radius?: unknown
     display_filter?: unknown
+    hidden?: unknown
   } | null
 
   if (!body || typeof body.slug !== 'string') {
@@ -73,6 +75,13 @@ export async function POST(req: Request) {
     updates.display_filter = body.display_filter
   }
 
+  if (body.hidden !== undefined) {
+    if (typeof body.hidden !== 'boolean') {
+      return NextResponse.json({ error: 'hidden must be a boolean' }, { status: 400, headers: NO_STORE })
+    }
+    updates.hidden = body.hidden
+  }
+
   if (Object.keys(updates).length === 0) {
     return NextResponse.json({ error: 'No fields to update' }, { status: 400, headers: NO_STORE })
   }
@@ -87,7 +96,7 @@ export async function POST(req: Request) {
     .update(updates)
     .eq('id', body.photo_id)
     .eq('album_id', access.album.id)
-    .select('id, display_radius, display_filter, caption, author_name')
+    .select('id, display_radius, display_filter, caption, author_name, hidden')
 
   if (error) {
     console.error('[photo/settings] update failed:', error.message)
@@ -96,6 +105,9 @@ export async function POST(req: Request) {
   if (!data || data.length === 0) {
     return NextResponse.json({ error: 'Photo not found in this album' }, { status: 404, headers: NO_STORE })
   }
+
+  // Visibility changed → tell every viewer to refetch so guests drop/add the photo immediately.
+  if (updates.hidden !== undefined) queueAlbumChangedBroadcast(access.album.id)
 
   // Return the full current values from the DB row so the client always gets the correct
   // state — even for fields not included in this particular update.
@@ -106,5 +118,6 @@ export async function POST(req: Request) {
     display_filter: row.display_filter ?? null,
     caption: row.caption ?? null,
     author_name: row.author_name ?? null,
+    hidden: row.hidden ?? false,
   }, { headers: NO_STORE })
 }

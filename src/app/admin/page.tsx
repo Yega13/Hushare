@@ -1,5 +1,6 @@
 import { notFound } from 'next/navigation'
 import Link from 'next/link'
+import Image from 'next/image'
 import type { Metadata } from 'next'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
@@ -7,6 +8,8 @@ import { isAccountAdmin } from '@/lib/auth'
 import AdminRefreshButton from '@/components/AdminRefreshButton'
 import AdminResetErrorsButton from '@/components/AdminResetErrorsButton'
 import AdminDeleteAlbumButton from '@/components/AdminDeleteAlbumButton'
+import AdminSyncPolarButton from '@/components/AdminSyncPolarButton'
+import AdminPublishStatement from '@/components/AdminPublishStatement'
 
 // Live data, never cached, never indexed. Access is gated to ADMIN_EMAILS below.
 export const runtime = 'nodejs'
@@ -97,15 +100,28 @@ export default async function AdminPage() {
   const emailById = new Map<string, string>()
   for (const u of allUsers) if (u.id) emailById.set(u.id, u.email ?? '(no email)')
 
-  // Per-album media counts for the recent list (one photos query, aggregated in JS)
+  // Per-album media counts for the recent list, aggregated in JS. PostgREST caps a single
+  // response at max_rows (default 1000), and the recent albums together hold far MORE than 1000
+  // photo rows — so an unbounded select silently truncates and big albums show wildly-low counts.
+  // Paginate with an explicit order (stable range windows) until a short page ends the loop.
   const albumIds = recentAlbums.map(a => a.id)
   const countsByAlbum = new Map<string, { img: number; vid: number }>()
   if (albumIds.length) {
-    const { data: media } = await admin.from('photos').select('album_id, media_type').in('album_id', albumIds)
-    for (const m of media ?? []) {
-      const c = countsByAlbum.get(m.album_id) ?? { img: 0, vid: 0 }
-      if (m.media_type === 'video') c.vid++; else c.img++
-      countsByAlbum.set(m.album_id, c)
+    const PAGE = 1000
+    for (let from = 0; ; from += PAGE) {
+      const { data: media, error } = await admin
+        .from('photos')
+        .select('album_id, media_type')
+        .in('album_id', albumIds)
+        .order('id', { ascending: true })
+        .range(from, from + PAGE - 1)
+      if (error || !media || media.length === 0) break
+      for (const m of media) {
+        const c = countsByAlbum.get(m.album_id) ?? { img: 0, vid: 0 }
+        if (m.media_type === 'video') c.vid++; else c.img++
+        countsByAlbum.set(m.album_id, c)
+      }
+      if (media.length < PAGE) break
     }
   }
 
@@ -131,6 +147,10 @@ export default async function AdminPage() {
   return (
     <main style={{ minHeight: '100vh', background: '#FDFAF5', padding: '28px 20px', fontFamily: 'var(--font-sans)' }}>
       <div style={{ maxWidth: 1080, margin: '0 auto' }}>
+        {/* Logo → home */}
+        <Link href="/" aria-label="Go to Hushare home" style={{ display: 'inline-block', marginBottom: 18 }}>
+          <Image src="/logo/logo-dark-transparent.png" alt="Hushare" width={618} height={146} priority style={{ width: 'auto', height: 32 }} />
+        </Link>
         <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 6 }}>
           <h1 style={{ fontSize: 24, fontWeight: 700, color: BRAND, fontFamily: 'var(--font-serif)' }}>Hushare Admin</h1>
           <div style={{ display: 'flex', gap: 14, fontSize: 13, alignItems: 'center' }}>
@@ -150,6 +170,26 @@ export default async function AdminPage() {
               {c.hint && <div style={{ fontSize: 11, color: MUTED, marginTop: 3 }}>{c.hint}</div>}
             </div>
           ))}
+        </div>
+
+        {/* Billing reconcile — pull subscriptions straight from Polar (webhook-independent) */}
+        <div style={{ background: CARD, border: `1px solid ${BORDER}`, borderRadius: 12, padding: '14px 16px', marginBottom: 28, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
+          <div>
+            <div style={{ fontSize: 14, fontWeight: 700, color: INK }}>Payments</div>
+            <div style={{ fontSize: 12, color: MUTED, marginTop: 2 }}>Reconcile all Polar subscriptions into the DB (provisions accounts by email). Safe to re-run.</div>
+          </div>
+          <AdminSyncPolarButton />
+        </div>
+
+        {/* Announcements — publish to the public /statement archive */}
+        <div style={{ background: CARD, border: `1px solid ${BORDER}`, borderRadius: 12, padding: '14px 16px', marginBottom: 28 }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', marginBottom: 10 }}>
+            <div>
+              <div style={{ fontSize: 14, fontWeight: 700, color: INK }}>Announcements</div>
+              <div style={{ fontSize: 12, color: MUTED, marginTop: 2 }}>Publish a statement to the public <a href="/statement" target="_blank" rel="noreferrer" style={{ color: '#630826', textDecoration: 'underline' }}>/statement</a> archive. Searchable by title & date.</div>
+            </div>
+          </div>
+          <AdminPublishStatement />
         </div>
 
         {/* Errors — top recurring + recent stream */}

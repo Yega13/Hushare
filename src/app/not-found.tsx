@@ -1,13 +1,16 @@
 import Link from 'next/link'
 import Image from 'next/image'
 import type { Metadata } from 'next'
+import { getServerLocale } from '@/i18n/server'
+import { getDictionary } from '@/i18n/get-dictionary'
 
 export const metadata: Metadata = {
   title: 'Album not found — Hushare',
   robots: { index: false, follow: false },
 }
 
-export default function NotFound() {
+export default async function NotFound() {
+  const dict = getDictionary(await getServerLocale())
   return (
     <div
       className="min-h-dvh flex flex-col items-center justify-center px-6 text-center"
@@ -41,10 +44,10 @@ export default function NotFound() {
               lineHeight: 1.2,
             }}
           >
-            Album not found
+            {dict['notFound.title']}
           </h1>
           <p className="mt-3 text-sm" style={{ color: '#8B6F4E' }}>
-            This album may have been deleted, expired, or the link might be wrong.
+            {dict['notFound.body']}
           </p>
         </div>
 
@@ -53,7 +56,7 @@ export default function NotFound() {
           className="rounded-xl px-6 py-3 font-semibold text-sm transition hover:opacity-85"
           style={{ background: '#630826', color: '#FDFAF5' }}
         >
-          Create a new album
+          {dict['notFound.cta']}
         </Link>
       </div>
     </div>

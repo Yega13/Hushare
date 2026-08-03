@@ -9,11 +9,15 @@ const NO_STORE = { 'Cache-Control': 'no-store' }
 // Thin wrapper over the shared fetchAuthorizedPhotos() (src/lib/server/album-access.ts), also used
 // by the server-rendered album page so the owner/password/reveal checks can never drift apart.
 export async function GET(req: Request) {
-  const albumId = new URL(req.url).searchParams.get('albumId') ?? ''
+  const url = new URL(req.url)
+  const albumId = url.searchParams.get('albumId') ?? ''
+  // `recent` (the live wall) caps the response to the newest N photos + returns the true total.
+  const recentRaw = Number(url.searchParams.get('recent'))
+  const recentLimit = Number.isFinite(recentRaw) && recentRaw > 0 ? Math.min(200, Math.floor(recentRaw)) : undefined
   const cookieStore = await cookies()
 
   try {
-    const result = await fetchAuthorizedPhotos(albumId, cookieStore)
+    const result = await fetchAuthorizedPhotos(albumId, cookieStore, { recentLimit })
     switch (result.kind) {
       case 'invalid':
         return NextResponse.json({ error: 'Invalid album id' }, { status: 400, headers: NO_STORE })
@@ -24,7 +28,7 @@ export async function GET(req: Request) {
       case 'password':
         return NextResponse.json({ error: 'Password required' }, { status: 403, headers: NO_STORE })
       case 'ok':
-        return NextResponse.json({ photos: result.photos }, { headers: NO_STORE })
+        return NextResponse.json({ photos: result.photos, total: result.total }, { headers: NO_STORE })
     }
   } catch {
     return NextResponse.json({ error: 'Failed to load photos' }, { status: 500, headers: NO_STORE })

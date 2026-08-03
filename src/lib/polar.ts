@@ -78,6 +78,72 @@ export async function createCustomerSession(customerId: string): Promise<string>
   return data.customer_portal_url
 }
 
+// Fetch a Polar customer's email by id. Used by the webhook to link an out-of-flow payment (one
+// made without the app's userId metadata, e.g. via a direct Polar checkout link) to an account.
+export async function getCustomerEmail(customerId: string): Promise<string | null> {
+  try {
+    const res = await fetch(`${apiBase()}/v1/customers/${customerId}`, {
+      headers: { Authorization: `Bearer ${apiKey()}` },
+    })
+    if (!res.ok) {
+      console.error('[polar] getCustomerEmail failed:', res.status)
+      return null
+    }
+    const data = (await res.json()) as { email?: string }
+    return data.email ?? null
+  } catch (err) {
+    console.error('[polar] getCustomerEmail threw:', err instanceof Error ? err.message : String(err))
+    return null
+  }
+}
+
+// Polar's list API nests product/customer as objects; the webhook payload uses flat *_id fields.
+// Accept BOTH so the reconcile is robust to either shape.
+export type PolarSubscriptionItem = {
+  id: string
+  status: string
+  current_period_end: string | null
+  cancel_at_period_end?: boolean
+  product_id?: string | null
+  product?: { id?: string | null } | null
+  customer_id?: string | null
+  customer?: { id?: string | null; email?: string | null } | null
+  metadata?: { userId?: string } | null
+}
+
+// Normalise either shape to the flat ids we need.
+export function subProductId(sub: PolarSubscriptionItem): string | null {
+  return sub.product_id ?? sub.product?.id ?? null
+}
+export function subCustomerId(sub: PolarSubscriptionItem): string | null {
+  return sub.customer_id ?? sub.customer?.id ?? null
+}
+
+// Pull ALL subscriptions from Polar (paginated). Used by the admin "Sync from Polar" reconcile to
+// backfill payments the webhook missed — works regardless of webhook delivery/registration.
+export async function listAllSubscriptions(): Promise<PolarSubscriptionItem[]> {
+  const out: PolarSubscriptionItem[] = []
+  for (let page = 1; page <= 50; page++) {
+    const url = new URL(`${apiBase()}/v1/subscriptions/`)
+    url.searchParams.set('limit', '100')
+    url.searchParams.set('page', String(page))
+    const res = await fetch(url.toString(), { headers: { Authorization: `Bearer ${apiKey()}` } })
+    if (!res.ok) {
+      const text = await res.text()
+      throw new Error(`Polar list subscriptions failed: ${res.status} ${text.slice(0, 200)}`)
+    }
+    const data = (await res.json()) as {
+      items?: PolarSubscriptionItem[]
+      pagination?: { max_page?: number; total_count?: number }
+    }
+    const items = data.items ?? []
+    out.push(...items)
+    const maxPage = data.pagination?.max_page ?? 1
+    if (items.length === 0 || page >= maxPage) break
+  }
+  return out
+}
+
 export async function verifyWebhookSignature(
   rawBody: string,
   headers: Headers,

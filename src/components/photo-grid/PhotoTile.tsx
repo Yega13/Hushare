@@ -255,6 +255,15 @@ const PhotoTile = React.memo(function PhotoTile({
           </div>
         )}
 
+        {isOwner && photo.hidden && !selectMode && (
+          <span
+            className="absolute top-2 right-2 z-20 rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide pointer-events-none"
+            style={{ background: 'rgba(99,8,38,0.92)', color: '#FDFAF5' }}
+          >
+            {t('pg.hiddenBadge')}
+          </span>
+        )}
+
         {arrangeMode && (
           <div
             className="absolute top-1.5 left-1.5 z-20 flex items-center justify-center rounded-md w-7 h-7 md:w-9 md:h-9"

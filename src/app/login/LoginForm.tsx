@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import { Send, CheckCircle2, AlertCircle } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
+import { useT } from '@/i18n/LocaleProvider'
 
 type Status = 'idle' | 'sending' | 'sent' | 'error'
 
@@ -30,6 +31,7 @@ function buildCallbackUrl(): string {
 }
 
 export default function LoginForm() {
+  const { t } = useT()
   const [supabase] = useState(() => createClient())
   const [email, setEmail] = useState('')
   const [status, setStatus] = useState<Status>('idle')
@@ -85,7 +87,7 @@ export default function LoginForm() {
     const trimmed = email.trim()
     if (!EMAIL_RE.test(trimmed)) {
       setStatus('error')
-      setErrorMsg('Please enter a valid email')
+      setErrorMsg(t('login.invalidEmail'))
       return
     }
     setStatus('sending')
@@ -113,14 +115,13 @@ export default function LoginForm() {
           className="text-xl font-bold mb-2"
           style={{ color: '#630826', fontFamily: 'var(--font-serif)' }}
         >
-          Check your inbox
+          {t('login.sentTitle')}
         </h3>
         <p className="text-sm mb-1" style={{ color: '#5C4A3C' }}>
-          We sent a sign-in link to <strong>{email}</strong>.
+          {t('login.sentTo')} <strong>{email}</strong>.
         </p>
         <p className="text-xs mt-3" style={{ color: '#8B6F4E' }}>
-          The link expires in 1 hour. Open it in this same browser — this tab
-          will follow automatically. If you don&apos;t see the email, check your spam folder.
+          {t('login.sentExpiry')}
         </p>
       </div>
     )
@@ -139,18 +140,18 @@ export default function LoginForm() {
         style={{ background: '#FFFFFF', color: '#630826', border: '1px solid #DDD5C5' }}
       >
         <GoogleIcon />
-        {oauthBusy ? 'Redirecting…' : 'Continue with Google'}
+        {oauthBusy ? t('login.googleRedirecting') : t('login.google')}
       </button>
 
       <div className="flex items-center gap-3 my-5" aria-hidden="true">
         <div className="flex-1 h-px" style={{ background: '#E8E0D0' }} />
-        <span className="text-xs uppercase tracking-wider" style={{ color: '#8B6F4E' }}>or</span>
+        <span className="text-xs uppercase tracking-wider" style={{ color: '#8B6F4E' }}>{t('login.or')}</span>
         <div className="flex-1 h-px" style={{ background: '#E8E0D0' }} />
       </div>
 
       <form onSubmit={onSubmit}>
         <label htmlFor="email" className="block text-sm font-medium mb-2" style={{ color: '#8B6F4E' }}>
-          Your email
+          {t('login.emailLabel')}
         </label>
         <input
           id="email"
@@ -161,7 +162,7 @@ export default function LoginForm() {
           maxLength={120}
           value={email}
           onChange={(e) => setEmail(e.target.value)}
-          placeholder="you@example.com"
+          placeholder={t('login.emailPlaceholder')}
           className="w-full rounded-xl px-4 py-3 mb-4 focus:outline-none transition text-base"
           style={{ background: '#FDFAF5', border: '1px solid #DDD5C5', color: '#630826' }}
         />
@@ -180,7 +181,7 @@ export default function LoginForm() {
           className="w-full flex items-center justify-center gap-2 font-semibold rounded-xl py-3 transition hover:opacity-90 disabled:opacity-50"
           style={{ background: '#630826', color: '#FDFAF5' }}
         >
-          {status === 'sending' ? 'Sending link…' : <><span>Send magic link</span> <Send className="w-4 h-4" /></>}
+          {status === 'sending' ? t('login.sending') : <><span>{t('login.sendLink')}</span> <Send className="w-4 h-4" /></>}
         </button>
       </form>
     </div>

@@ -3,18 +3,21 @@
 import { useEffect, useState } from 'react'
 import Script from 'next/script'
 import { AlertCircle, CheckCircle2, Send } from 'lucide-react'
+import { useT } from '@/i18n/LocaleProvider'
 
 type Status = 'idle' | 'sending' | 'sent' | 'error'
 
 const TURNSTILE_SITE_KEY = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY
 
+// `value` is the canonical English string submitted to /api/report (email + moderation stay
+// language-independent); `labelKey` is the translated text shown to the user.
 const REPORT_REASONS = [
-  'Illegal or abusive content',
-  'Harassment or privacy concern',
-  'Spam, scam, or phishing',
-  'Copyright or ownership issue',
-  'Other',
-]
+  { value: 'Illegal or abusive content', labelKey: 'report.reason.illegal' },
+  { value: 'Harassment or privacy concern', labelKey: 'report.reason.harassment' },
+  { value: 'Spam, scam, or phishing', labelKey: 'report.reason.spam' },
+  { value: 'Copyright or ownership issue', labelKey: 'report.reason.copyright' },
+  { value: 'Other', labelKey: 'report.reason.other' },
+] as const
 
 declare global {
   interface Window {
@@ -25,9 +28,10 @@ declare global {
 }
 
 export default function ReportForm() {
+  const { t } = useT()
   const [status, setStatus] = useState<Status>('idle')
   const [errorMsg, setErrorMsg] = useState('')
-  const [reason, setReason] = useState(REPORT_REASONS[0])
+  const [reason, setReason] = useState<string>(REPORT_REASONS[0].value)
   const [details, setDetails] = useState('')
   const [albumTitle, setAlbumTitle] = useState('')
   const [albumUrl, setAlbumUrl] = useState('')
@@ -58,7 +62,7 @@ export default function ReportForm() {
     const turnstileToken = String(data.get('cf-turnstile-response') ?? '')
     if (!turnstileToken && TURNSTILE_SITE_KEY) {
       setStatus('error')
-      setErrorMsg('Please wait for the verification to finish before sending')
+      setErrorMsg(t('support.verifyWait'))
       return
     }
 
@@ -87,12 +91,12 @@ export default function ReportForm() {
 
       setStatus('sent')
       form.reset()
-      setReason(REPORT_REASONS[0])
+      setReason(REPORT_REASONS[0].value)
       setDetails('')
       window.turnstile?.reset()
     } catch (err) {
       setStatus('error')
-      setErrorMsg(err instanceof Error ? err.message : 'Something went wrong')
+      setErrorMsg(err instanceof Error ? err.message : t('support.genericError'))
       window.turnstile?.reset()
     }
   }
@@ -108,10 +112,10 @@ export default function ReportForm() {
       >
         <CheckCircle2 className="mx-auto mb-3 h-10 w-10" style={{ color: '#630826' }} />
         <h2 className="mb-2 text-xl font-bold" style={{ color: '#630826', fontFamily: 'var(--font-serif)' }}>
-          Report sent
+          {t('report.sentTitle')}
         </h2>
         <p className="text-sm" style={{ color: '#5C4A3C' }}>
-          Thank you. We will review this album as soon as possible.
+          {t('report.sentBody')}
         </p>
         <button
           type="button"
@@ -119,7 +123,7 @@ export default function ReportForm() {
           className="hush-press mt-5 text-sm font-semibold hover:underline"
           style={{ color: '#630826' }}
         >
-          Send another report
+          {t('report.sendAnother')}
         </button>
       </div>
     )
@@ -148,7 +152,7 @@ export default function ReportForm() {
         {(albumTitle || albumUrl) && (
           <div className="mb-5 rounded-xl px-4 py-3" style={{ background: '#F8F1E6', border: '1px solid #E8E0D0' }}>
             <p className="text-xs font-semibold uppercase" style={{ color: '#8B6F4E', letterSpacing: '0.12em' }}>
-              Reporting
+              {t('report.reporting')}
             </p>
             {albumTitle && <p className="mt-1 font-semibold" style={{ color: '#630826' }}>{albumTitle}</p>}
             {albumUrl && <p className="mt-1 break-all text-xs" style={{ color: '#7C5C3E' }}>{albumUrl}</p>}
@@ -157,28 +161,28 @@ export default function ReportForm() {
 
         <fieldset className="mb-5">
           <legend className="mb-3 block text-sm font-medium" style={{ color: '#8B6F4E' }}>
-            Reason <span style={{ color: '#C0392B' }}>*</span>
+            {t('report.reasonLabel')} <span style={{ color: '#C0392B' }}>*</span>
           </legend>
           <div className="grid gap-2">
             {REPORT_REASONS.map((item) => (
               <label
-                key={item}
+                key={item.value}
                 className="flex cursor-pointer items-center gap-3 rounded-xl px-4 py-3 text-sm font-semibold transition"
                 style={{
-                  background: reason === item ? '#F6E9EE' : '#FDFAF5',
-                  border: reason === item ? '1px solid #9DBB99' : '1px solid #DDD5C5',
+                  background: reason === item.value ? '#F6E9EE' : '#FDFAF5',
+                  border: reason === item.value ? '1px solid #9DBB99' : '1px solid #DDD5C5',
                   color: '#630826',
                 }}
               >
                 <input
                   type="radio"
                   name="reason"
-                  value={item}
-                  checked={reason === item}
-                  onChange={() => setReason(item)}
+                  value={item.value}
+                  checked={reason === item.value}
+                  onChange={() => setReason(item.value)}
                   className="h-4 w-4"
                 />
-                {item}
+                {t(item.labelKey)}
               </label>
             ))}
           </div>
@@ -186,7 +190,7 @@ export default function ReportForm() {
 
         <div className="mb-4">
           <label htmlFor="report-details" className="mb-2 block text-sm font-medium" style={{ color: '#8B6F4E' }}>
-            Details {reason === 'Other' ? <span style={{ color: '#C0392B' }}>*</span> : <span style={{ color: '#B0A090' }}>(optional)</span>}
+            {t('report.detailsLabel')} {reason === 'Other' ? <span style={{ color: '#C0392B' }}>*</span> : <span style={{ color: '#B0A090' }}>{t('support.optional')}</span>}
           </label>
           <textarea
             id="report-details"
@@ -196,7 +200,7 @@ export default function ReportForm() {
             maxLength={4000}
             value={details}
             onChange={(e) => setDetails(e.target.value)}
-            placeholder="Tell us what is wrong with this album."
+            placeholder={t('report.detailsPlaceholder')}
             className="w-full resize-y rounded-xl px-4 py-3 text-base transition focus:outline-none"
             style={{ minHeight: '140px', background: '#FDFAF5', border: '1px solid #DDD5C5', color: '#630826' }}
           />
@@ -204,7 +208,7 @@ export default function ReportForm() {
 
         <div className="mb-5">
           <label htmlFor="reporter-email" className="mb-2 block text-sm font-medium" style={{ color: '#8B6F4E' }}>
-            Your email <span style={{ color: '#B0A090' }}>(optional)</span>
+            {t('support.emailLabel')} <span style={{ color: '#B0A090' }}>{t('support.optional')}</span>
           </label>
           <input
             id="reporter-email"
@@ -225,8 +229,8 @@ export default function ReportForm() {
           <div role="alert" aria-live="polite" aria-atomic="true" className="mb-4 flex items-start gap-3 rounded-xl px-4 py-3" style={{ background: '#FBEAE6', border: '1px solid #E8C2B8' }}>
             <AlertCircle className="mt-0.5 h-4 w-4 flex-none" style={{ color: '#C0392B' }} />
             <div className="text-sm" style={{ color: '#7A2A1F' }}>
-              <p className="mb-0.5 font-semibold">Couldn&apos;t send the report</p>
-              <p>{errorMsg}. You can also email husharesupport@gmail.com directly.</p>
+              <p className="mb-0.5 font-semibold">{t('report.errorTitle')}</p>
+              <p>{errorMsg}. {t('report.errorEmail')}</p>
             </div>
           </div>
         )}
@@ -237,7 +241,7 @@ export default function ReportForm() {
           className="hush-press flex w-full items-center justify-center gap-2 rounded-xl py-3 font-semibold transition hover:opacity-90 disabled:opacity-50"
           style={{ background: '#8A0032', color: '#FDFAF5' }}
         >
-          {status === 'sending' ? 'Sending...' : <>Send urgent report <Send className="h-4 w-4" /></>}
+          {status === 'sending' ? t('support.sending') : <>{t('report.submit')} <Send className="h-4 w-4" /></>}
         </button>
       </form>
     </>

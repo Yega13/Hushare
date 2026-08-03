@@ -4,6 +4,9 @@ import Link from 'next/link'
 import AccountNavLink from '@/components/AccountNavLink'
 import HamburgerMenu from '@/components/HamburgerMenu'
 import { ArrowUpRight } from 'lucide-react'
+import { getServerLocale } from '@/i18n/server'
+import { getDictionary } from '@/i18n/get-dictionary'
+import type { DictKey } from '@/i18n/dictionaries/en'
 
 export const runtime = 'nodejs'
 
@@ -40,22 +43,28 @@ export const metadata: Metadata = {
 
 const SERIF = { fontFamily: 'var(--font-serif)' } as const
 
-const collabs = [
+const collabs: Array<{
+  name: string
+  originKey: DictKey
+  roleKey: DictKey
+  descKey: DictKey
+  photo: string
+  photoAlt: string
+  href: string
+}> = [
   {
     name: 'Tali Golergant',
-    origin: 'Luxembourg',
-    flag: '🇱🇺',
-    role: 'Singer & Artist',
-    description:
-      'Tali Golergant is a Luxembourgish singer whose music bridges pop and soul with deeply personal storytelling. Her community uses Hushare at concerts and events so every fan can contribute their own photos — building a shared visual memory of every show.',
+    originKey: 'collab.tali.origin',
+    roleKey: 'collab.tali.role',
+    descKey: 'collab.tali.desc',
     photo: '/collabs/tali-golergant.jpg',
     photoAlt: 'Tali Golergant',
     href: 'https://taligolergant.org/hushare-collab/',
-    hrefLabel: 'See the collab',
   },
 ]
 
-export default function CollabsPage() {
+export default async function CollabsPage() {
+  const dict = getDictionary(await getServerLocale())
   return (
     <main className="min-h-screen" style={{ background: '#FDFAF5' }}>
 
@@ -81,10 +90,10 @@ export default function CollabsPage() {
           />
         </Link>
         <HamburgerMenu>
-          <Link href="/pricing" className="text-sm font-medium hover:underline" style={{ color: '#630826' }}>Pricing</Link>
-          <Link href="/about" className="text-sm font-medium hover:underline" style={{ color: '#630826' }}>About</Link>
-          <span className="text-sm font-semibold underline underline-offset-4" style={{ color: '#630826' }}>Collabs</span>
-          <Link href="/support" className="text-sm font-medium hover:underline" style={{ color: '#630826' }}>Support</Link>
+          <Link href="/pricing" className="text-sm font-medium hover:underline" style={{ color: '#630826' }}>{dict['nav.pricing']}</Link>
+          <Link href="/about" className="text-sm font-medium hover:underline" style={{ color: '#630826' }}>{dict['nav.about']}</Link>
+          <span className="text-sm font-semibold underline underline-offset-4" style={{ color: '#630826' }}>{dict['nav.collabs']}</span>
+          <Link href="/support" className="text-sm font-medium hover:underline" style={{ color: '#630826' }}>{dict['nav.support']}</Link>
           <AccountNavLink />
         </HamburgerMenu>
       </nav>
@@ -95,19 +104,19 @@ export default function CollabsPage() {
           className="text-xs sm:text-sm font-medium uppercase mb-4"
           style={{ color: '#8B6F4E', letterSpacing: '0.18em' }}
         >
-          Collabs
+          {dict['nav.collabs']}
         </p>
         <h1
           className="text-3xl sm:text-4xl md:text-5xl font-bold mb-5 leading-tight"
           style={{ ...SERIF, color: '#630826' }}
         >
-          Communities who trust Hushare
+          {dict['collabs.title']}
         </h1>
         <p
           className="text-base sm:text-lg max-w-lg mx-auto leading-relaxed"
           style={{ color: '#5C4A3C' }}
         >
-          Fans, families, and event communities using Hushare to turn every gathering into a shared album.
+          {dict['collabs.subtitle']}
         </p>
       </section>
 
@@ -145,12 +154,11 @@ export default function CollabsPage() {
                 style={{ background: '#FDFAF5' }}
               >
                 <div className="flex items-center gap-2">
-                  <span className="text-lg" aria-hidden="true">{collab.flag}</span>
                   <span
                     className="text-xs font-semibold uppercase tracking-widest"
                     style={{ color: '#8B6F4E' }}
                   >
-                    {collab.origin} · {collab.role}
+                    {dict[collab.originKey]} · {dict[collab.roleKey]}
                   </span>
                 </div>
 
@@ -164,7 +172,7 @@ export default function CollabsPage() {
                 <div className="w-10 h-px" style={{ background: 'rgba(196,166,120,0.5)' }} />
 
                 <p className="text-sm sm:text-base leading-relaxed" style={{ color: '#5C4A3C' }}>
-                  {collab.description}
+                  {dict[collab.descKey]}
                 </p>
 
                 <a
@@ -174,7 +182,7 @@ export default function CollabsPage() {
                   className="inline-flex items-center gap-2 self-start rounded-xl px-5 py-2.5 text-sm font-semibold transition hover:opacity-85"
                   style={{ background: '#630826', color: '#FDFAF5' }}
                 >
-                  {collab.hrefLabel}
+                  {dict['collabs.seeCollab']}
                   <ArrowUpRight className="w-4 h-4" />
                 </a>
               </div>
@@ -195,23 +203,23 @@ export default function CollabsPage() {
               className="text-xs font-semibold uppercase mb-4"
               style={{ color: 'rgba(253,250,245,0.55)', letterSpacing: '0.18em' }}
             >
-              Join the community
+              {dict['collabs.ctaEyebrow']}
             </p>
             <h2
               className="text-xl sm:text-2xl font-bold mb-3"
               style={{ ...SERIF, color: '#FDFAF5' }}
             >
-              Do you use Hushare for your events?
+              {dict['collabs.ctaTitle']}
             </h2>
             <p className="text-sm leading-relaxed mb-6 max-w-md mx-auto" style={{ color: 'rgba(253,250,245,0.72)' }}>
-              If your community, event, or project runs on Hushare and you want to be featured here, reach out.
+              {dict['collabs.ctaBody']}
             </p>
             <a
               href="mailto:husharesupport@gmail.com"
               className="inline-block rounded-xl px-6 py-2.5 text-sm font-semibold transition hover:opacity-90"
               style={{ background: '#FDFAF5', color: '#630826' }}
             >
-              Get in touch
+              {dict['collabs.ctaButton']}
             </a>
           </div>
         </div>

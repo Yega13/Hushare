@@ -26,6 +26,7 @@ export async function POST(req: Request) {
     slideshow_interval_ms?: unknown
     slideshow_animation?: unknown
     video_autoplay?: unknown
+    require_approval?: unknown
     reset_radius_overrides?: unknown
     reset_filter_overrides?: unknown
   } | null
@@ -79,6 +80,12 @@ export async function POST(req: Request) {
     }
     updates.video_autoplay = body.video_autoplay
   }
+  if (body.require_approval !== undefined) {
+    if (typeof body.require_approval !== 'boolean') {
+      return NextResponse.json({ error: 'require_approval must be a boolean' }, { status: 400, headers: NO_STORE })
+    }
+    updates.require_approval = body.require_approval
+  }
 
   const hasResetFlags = body.reset_radius_overrides === true || body.reset_filter_overrides === true
   if (Object.keys(updates).length === 0 && !hasResetFlags) {
@@ -118,5 +125,6 @@ export async function POST(req: Request) {
     mobile_grid_columns: updates.mobile_grid_columns,
     slideshow_interval_ms: updates.slideshow_interval_ms,
     slideshow_animation: updates.slideshow_animation,
+    require_approval: updates.require_approval,
   }, { headers: NO_STORE })
 }

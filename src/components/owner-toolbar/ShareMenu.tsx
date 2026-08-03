@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import Image from 'next/image'
 import { useRouter } from 'next/navigation'
-import { ArrowLeft, Check, Copy, Download, QrCode, Share2, SquareMenu, X } from 'lucide-react'
+import { ArrowLeft, Check, Copy, Download, MonitorPlay, QrCode, Share2, SquareMenu, X } from 'lucide-react'
 import { useIsNarrow } from '@/lib/useIsNarrow'
 import { useT } from '@/i18n/LocaleProvider'
 import { renderBrandedCard, renderBWCard } from './TableCardModal'
@@ -208,6 +208,18 @@ export default function ShareMenu({ copied, ownerUrl, shareUrl, albumTitle, onCl
               <span className="block text-xs truncate" style={{ color: '#8B6F4E', maxWidth: 220 }}>{shareUrl}</span>
             </span>
             {copied === 'share' ? <Check className="w-4 h-4 flex-none" style={{ color: '#630826' }} /> : <Copy className="w-4 h-4 flex-none" style={{ color: '#7C5C3E' }} />}
+          </button>
+
+          <button
+            className="hush-hover-lift w-full flex items-center justify-between gap-3 rounded-xl px-3 py-3 mt-2 text-left transition hover:opacity-90"
+            style={{ background: '#FBF4E4', border: '1px solid #E4D3A8', cursor: 'pointer' }}
+            onClick={() => window.open(shareUrl.replace(/\/([^/]+)\/?$/, '/wall/$1'), '_blank', 'noopener')}
+          >
+            <span>
+              <span className="block text-sm font-semibold" style={{ color: '#7C4A2D' }}>{t('sm.liveWall')}</span>
+              <span className="block text-xs" style={{ color: '#8B6F4E' }}>{t('sm.liveWallDesc')}</span>
+            </span>
+            <MonitorPlay className="w-4 h-4 flex-none" style={{ color: '#7C4A2D' }} />
           </button>
 
           {ownerUrl && (

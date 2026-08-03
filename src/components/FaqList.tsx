@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, type ReactNode } from 'react'
+import { useT } from '@/i18n/LocaleProvider'
 
 type FaqItem = {
   q: string
@@ -14,6 +15,7 @@ type Props = {
 }
 
 export default function FaqList({ items, compactCount = 4, plusSize = 28 }: Props) {
+  const { t } = useT()
   const [expanded, setExpanded] = useState(false)
 
   return (
@@ -68,7 +70,7 @@ export default function FaqList({ items, compactCount = 4, plusSize = 28 }: Prop
           style={{ background: '#FFFFFF', border: '1px solid #DDD5C5', color: '#630826' }}
           onClick={() => setExpanded((v) => !v)}
         >
-          {expanded ? 'See less' : 'See more'}
+          {expanded ? t('faq.seeLess') : t('faq.seeMore')}
         </button>
       )}
     </>

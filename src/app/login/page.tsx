@@ -3,6 +3,8 @@ import type { Metadata } from 'next'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/server'
 import { hasAccountAccess } from '@/lib/access'
+import { getServerLocale } from '@/i18n/server'
+import { getDictionary } from '@/i18n/get-dictionary'
 import LoginForm from './LoginForm'
 
 export const runtime = 'nodejs'
@@ -38,6 +40,8 @@ export default async function LoginPage({ searchParams }: Props) {
     redirect('/')
   }
 
+  const dict = getDictionary(await getServerLocale())
+
   return (
     <main className="min-h-screen flex flex-col px-4" style={{ background: '#FDFAF5' }}>
       <div className="pt-8 text-center">
@@ -54,10 +58,10 @@ export default async function LoginPage({ searchParams }: Props) {
               className="text-3xl font-bold mb-2"
               style={{ color: '#630826', fontFamily: 'var(--font-serif)' }}
             >
-              Sign in
+              {dict['login.heading']}
             </h1>
             <p className="text-sm" style={{ color: '#5C4A3C' }}>
-              Continue with Google or get a magic link by email.
+              {dict['login.subtitle']}
             </p>
           </div>
           <LoginForm />

@@ -1,17 +1,11 @@
 'use client'
 
 import { useT } from '@/i18n/LocaleProvider'
-import { LOCALES, LOCALE_COOKIE, type Locale } from '@/i18n/config'
+import { LOCALES, LOCALE_COOKIE, LOCALE_LABELS, type Locale } from '@/i18n/config'
+import LocaleFlag from '@/components/LocaleFlag'
 
-// Flag + native-name buttons for the account settings page. Sets the locale cookie and reloads
-// so server-rendered content re-renders in the chosen language. (Flag emoji may render as 2-letter
-// codes on Windows desktop — that's a Windows font limitation; the label is always shown too.)
-const OPTIONS: Record<Locale, { flag: string; label: string }> = {
-  en: { flag: '🇬🇧', label: 'English' },
-  ru: { flag: '🇷🇺', label: 'Русский' },
-  hy: { flag: '🇦🇲', label: 'Հայերեն' },
-}
-
+// Flag + native-name buttons for the account settings page. Sets the locale cookie and reloads so
+// server-rendered content re-renders in the chosen language. Flags are inline SVG (see LocaleFlag).
 export default function LanguageSwitcherFlags() {
   const { locale } = useT()
 
@@ -40,8 +34,8 @@ export default function LanguageSwitcherFlags() {
               fontWeight: active ? 700 : 500, fontSize: 15,
             }}
           >
-            <span style={{ fontSize: 20, lineHeight: 1 }} aria-hidden="true">{OPTIONS[l].flag}</span>
-            {OPTIONS[l].label}
+            <LocaleFlag locale={l} />
+            {LOCALE_LABELS[l]}
           </button>
         )
       })}

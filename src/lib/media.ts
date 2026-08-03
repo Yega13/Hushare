@@ -26,6 +26,33 @@ export function uploadCapsForTier(tier: Tier): UploadCaps {
 
 export const DEFAULT_UPLOAD_CAPS: UploadCaps = uploadCapsForTier('free')
 
+// Max total media (photos + videos) in ONE album.
+// A guest album (no account) gets less than a registered free account — a nudge to sign up.
+export const ANON_ALBUM_MEDIA = 150   // album owned by a guest (no account)
+export const FREE_ALBUM_MEDIA = 250   // registered free account
+export const PRO_ALBUM_MEDIA = 2500
+export const STUDIO_ALBUM_MEDIA = 10_000
+
+// Cap for a REGISTERED owner by tier. Guest albums use ANON_ALBUM_MEDIA directly (see photos/create).
+export function albumMediaCapForTier(tier: Tier): number {
+  if (tier === 'studio') return STUDIO_ALBUM_MEDIA
+  if (tier === 'pro') return PRO_ALBUM_MEDIA
+  return FREE_ALBUM_MEDIA
+}
+
+// Max number of albums a user can own, by tier. Anon (no account) is a separate soft cap — kept
+// BELOW the free registered cap so signing in always unlocks more.
+export const ANON_ALBUM_LIMIT = 2
+export const FREE_ALBUM_LIMIT = 3
+export const PRO_ALBUM_LIMIT = 15
+export const STUDIO_ALBUM_LIMIT = 50
+
+export function albumCountLimitForTier(tier: Tier): number {
+  if (tier === 'studio') return STUDIO_ALBUM_LIMIT
+  if (tier === 'pro') return PRO_ALBUM_LIMIT
+  return FREE_ALBUM_LIMIT
+}
+
 const IMAGE_EXT_FALLBACK = /\.(jpe?g|png|gif|webp|heic|heif)$/i
 const VIDEO_EXT_FALLBACK = /\.(mp4|mov|m4v|webm)$/i
 

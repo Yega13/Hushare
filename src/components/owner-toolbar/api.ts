@@ -244,6 +244,35 @@ export async function saveGuestDownloadsRequest(
   return { ok: true, allow_guest_downloads: body.allow_guest_downloads ?? allowGuestDownloads }
 }
 
+export async function saveRequireApprovalRequest(
+  slug: string,
+  requireApproval: boolean,
+): Promise<{ ok: true; require_approval: boolean } | { ok: false; error: string }> {
+  const res = await fetch('/api/album/media-settings', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ slug, require_approval: requireApproval }),
+  })
+  const body = await jsonBody<{ error?: string; require_approval?: boolean }>(res)
+  if (!res.ok) return { ok: false, error: body.error ?? `Save failed (${res.status})` }
+  return { ok: true, require_approval: body.require_approval ?? requireApproval }
+}
+
+export async function savePhotoHiddenRequest(
+  slug: string,
+  photoId: string,
+  hidden: boolean,
+): Promise<{ ok: true; hidden: boolean } | { ok: false; error: string }> {
+  const res = await fetch('/api/album/photo/settings', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ slug, photo_id: photoId, hidden }),
+  })
+  const body = await jsonBody<{ error?: string; hidden?: boolean }>(res)
+  if (!res.ok) return { ok: false, error: body.error ?? `Save failed (${res.status})` }
+  return { ok: true, hidden: body.hidden ?? hidden }
+}
+
 export async function deleteAlbumRequest(
   slug: string,
 ): Promise<{ ok: true } | { ok: false; error: string }> {

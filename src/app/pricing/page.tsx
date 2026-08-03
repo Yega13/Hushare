@@ -79,7 +79,7 @@ const tiers: Tier[] = [
     href: '/',
     highlight: false,
     features: [
-      'Unlimited photos per album',
+      'Up to 250 photos & videos per album (150 as a guest)',
       'Anyone can view & add via the link',
       'Download full album as ZIP',
       'Photos up to 25 MB · videos up to 50 MB',
@@ -106,6 +106,7 @@ const tiers: Tier[] = [
       'HD video - large uploads up to 1 GB (Free: 50 MB)',
       'Larger photos - up to 200 MB per upload',
       'Account dashboard to manage your subscription',
+      'Up to 2,500 photos & videos per album',
     ],
   },
   {
@@ -128,6 +129,7 @@ const tiers: Tier[] = [
       'Client-ready download links',
       'Priority support - replies within 24 hrs',
       'Account dashboard to manage your subscription',
+      'Up to 10,000 photos & videos per album',
     ],
   },
 ]

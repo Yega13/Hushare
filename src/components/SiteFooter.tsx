@@ -17,6 +17,7 @@ const footerLinks = [
   { href: '/event-photo-sharing', labelKey: 'nav.events' },
   { href: '/qr-code-photo-album', labelKey: 'nav.qrAlbums' },
   { href: '/support', labelKey: 'nav.support' },
+  { href: '/statement', labelKey: 'nav.statement' },
   { href: '/privacy', labelKey: 'nav.privacy' },
   { href: '/terms', labelKey: 'nav.terms' },
 ]
@@ -33,6 +34,7 @@ const footerRoutes = new Set([
   '/qr-code-photo-album',
   '/report',
   '/shared-photo-album',
+  '/statement',
   '/support',
   '/terms',
   '/wedding-photo-sharing',

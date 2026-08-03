@@ -8,3 +8,9 @@
 @import "./styles/album.css";
 @import "./styles/photo-grid.css";
 @import "./styles/slideshow.css";
+
+/* Armenian display serif: Mirage Expanded (https://fonter.am/en/fonts/mirage-expanded).
+   Self-hosted — drop the file(s) into /public/fonts/ (woff2 preferred; .otf works too). Until then
+   it silently falls back to Noto Serif Armenian, so Armenian never regresses to Times. */
+/* Armenian font handling lives in styles/base.css (html[lang="hy"] overrides the shared font
+   variables to Noto Serif/Sans Armenian, matching the English Playfair + Geist pairing). */

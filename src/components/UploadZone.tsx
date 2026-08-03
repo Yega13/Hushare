@@ -11,6 +11,8 @@ import { detectKind, uploadCapsForTier, generateVideoPoster } from '@/lib/media'
 import {
   UPLOAD_CONCURRENCY_MOBILE,
   UPLOAD_CONCURRENCY_DESKTOP,
+  UPLOAD_VIDEO_CONCURRENCY_MOBILE,
+  UPLOAD_VIDEO_CONCURRENCY_DESKTOP,
   STREAM_CHUNK_SIZE_BYTES,
 } from '@/lib/constants'
 
@@ -40,6 +42,19 @@ class Semaphore {
   release(): void {
     const next = this.queue.shift()
     if (next) { next() } else { this.slots++ }
+  }
+}
+
+// Parse a JSON response body defensively. A flaky mobile network can deliver a 200 with a
+// truncated/empty body — res.json() then throws the cryptic "Unexpected end of JSON input".
+// Reading text first turns that into a clean, retryable error the user actually understands.
+async function readJson<T>(res: Response): Promise<T> {
+  const text = await res.text()
+  if (!text) throw new Error('Empty response from the server — please retry')
+  try {
+    return JSON.parse(text) as T
+  } catch {
+    throw new Error('Incomplete response from the server — please retry')
   }
 }
 
@@ -789,12 +804,12 @@ async function uploadImageToR2(
     const err = await presignRes.json().catch(() => ({})) as { error?: string }
     throw new Error(err.error ?? `Presign failed (${presignRes.status})`)
   }
-  const { presignedUrl, key, publicUrl, thumb } = await presignRes.json() as {
+  const { presignedUrl, key, publicUrl, thumb } = await readJson<{
     presignedUrl: string
     key: string
     publicUrl: string
     thumb?: { presignedUrl: string; key: string; publicUrl: string }
-  }
+  }>(presignRes)
   onProgress(16)
 
   // Main and thumbnail PUT in PARALLEL — the ~30KB thumb rides along for free instead of
@@ -842,7 +857,7 @@ async function uploadPosterToR2(albumId: string, blob: Blob, signal?: AbortSigna
     body: JSON.stringify({ albumId, fileName: 'poster.jpg', contentType: 'image/jpeg', fileSize: blob.size, isThumb: true }),
   })
   if (!presign.ok) throw new Error(`Poster presign failed (${presign.status})`)
-  const { presignedUrl, key, publicUrl } = await presign.json() as { presignedUrl: string; key: string; publicUrl: string }
+  const { presignedUrl, key, publicUrl } = await readJson<{ presignedUrl: string; key: string; publicUrl: string }>(presign)
   const result = await putImageWithRelay(
     key, publicUrl, presignedUrl,
     { albumId, fileName: 'poster.jpg', contentType: 'image/jpeg', isThumb: true },
@@ -1064,9 +1079,9 @@ async function uploadVideoToStream(
       throw new Error(err.error ?? `Stream init failed (${initRes.status})`)
     }
     // Route returns camelCase: { uploadUrl, streamUid, iframeUrl, thumbnailUrl }
-    const init = await initRes.json() as {
+    const init = await readJson<{
       uploadUrl: string; streamUid: string; iframeUrl: string; thumbnailUrl: string
-    }
+    }>(initRes)
     if (!init.uploadUrl || !init.streamUid || !init.iframeUrl) throw new Error('Stream init returned incomplete response')
     ;({ uploadUrl, streamUid, iframeUrl } = init)
     thumbnailUrl = init.thumbnailUrl ?? null
@@ -1124,7 +1139,7 @@ async function uploadVideoToStream(
 
 // ─── Incremental DB save ──────────────────────────────────────────────────────
 
-async function saveUploadedRows(albumId: string, rows: PhotoRow[]): Promise<void> {
+async function saveUploadedRows(albumId: string, rows: PhotoRow[]): Promise<{ warning?: string }> {
   const res = await fetchWithRetry('/api/album/photos/create', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -1135,6 +1150,8 @@ async function saveUploadedRows(albumId: string, rows: PhotoRow[]): Promise<void
     const err = await res.json().catch(() => ({})) as { error?: string }
     throw new Error(err.error ?? `Save failed (${res.status})`)
   }
+  const data = await res.json().catch(() => ({})) as { warning?: string }
+  return { warning: data.warning }
 }
 
 // Fire-and-forget telemetry so real guest failures/near-misses surface in /admin. Never throws,
@@ -1214,12 +1231,14 @@ function createRowSaver(
   albumId: string,
   onSaved: (entryIds: string[]) => void,
   onFailed: (entryIds: string[], message: string) => void,
+  onWarning?: (message: string) => void,
 ) {
   let queue: { row: PhotoRow; entryId: string }[] = []
   let timer: ReturnType<typeof setTimeout> | null = null
   // Flushes chain serially — a slow save never interleaves with the next one.
   let chain: Promise<void> = Promise.resolve()
   let savedCount = 0
+  let warned = false // over-limit nag: show once per upload session, not per saved batch
 
   const flush = () => {
     if (timer) { clearTimeout(timer); timer = null }
@@ -1228,9 +1247,10 @@ function createRowSaver(
     queue = []
     chain = chain.then(async () => {
       try {
-        await saveUploadedRows(albumId, batch.map(b => b.row))
+        const { warning } = await saveUploadedRows(albumId, batch.map(b => b.row))
         savedCount += batch.length
         onSaved(batch.map(b => b.entryId))
+        if (warning && !warned) { warned = true; onWarning?.(warning) }
       } catch (e) {
         onFailed(batch.map(b => b.entryId), e instanceof Error ? e.message : 'Failed to save')
       }
@@ -1277,6 +1297,7 @@ export default function UploadZone({ album, userTier, onPhotosUploaded }: Props)
   // Computed once at mount — userAgent never changes during a session
   const isMobileRef = useRef(typeof navigator !== 'undefined' && /Mobi|Android/i.test(navigator.userAgent))
   const concurrency = isMobileRef.current ? UPLOAD_CONCURRENCY_MOBILE : UPLOAD_CONCURRENCY_DESKTOP
+  const videoConcurrency = isMobileRef.current ? UPLOAD_VIDEO_CONCURRENCY_MOBILE : UPLOAD_VIDEO_CONCURRENCY_DESKTOP
 
   // Memoized so startUploads/addFiles/retryEntry are not rebuilt on every progress flush
   const caps = useMemo(() => uploadCapsForTier(userTier), [userTier])
@@ -1294,6 +1315,9 @@ export default function UploadZone({ album, userTier, onPhotosUploaded }: Props)
   // Shared semaphore — persists across concurrent addFiles calls so multiple simultaneous
   // drops never each spawn their own Semaphore and multiply the concurrency limit
   const semRef = useRef<Semaphore | null>(null)
+  // Separate, tighter semaphore for VIDEOS — keeps large sustained TUS streams from saturating a
+  // weak uplink. Photos and videos run in independent lanes.
+  const videoSemRef = useRef<Semaphore | null>(null)
 
   // Counter instead of boolean: multiple concurrent batches each increment on start and
   // decrement on finish — isUploading stays true until the last batch completes
@@ -1342,6 +1366,8 @@ export default function UploadZone({ album, userTier, onPhotosUploaded }: Props)
     // a fresh Semaphore instance that would multiply the concurrency limit
     if (!semRef.current) semRef.current = new Semaphore(concurrency)
     const sem = semRef.current
+    if (!videoSemRef.current) videoSemRef.current = new Semaphore(videoConcurrency)
+    const videoSem = videoSemRef.current
 
     // Incremental saver: each file's row is written within ~1.2s of its upload finishing.
     // A tile flips to 'done' only once its row is actually IN the database — before that a
@@ -1354,15 +1380,20 @@ export default function UploadZone({ album, userTier, onPhotosUploaded }: Props)
         // Report — this is the worst kind of failure (bytes in storage, no album row = orphaned).
         reportClientEvent('error', 'save', msg, album.id, { count: ids.length })
       },
+      // Over-limit nag (once per upload session): the server flags albums past the free allowance.
+      (msg) => showAppToast(msg, 'success'),
     )
 
     const run = async () => {
       await Promise.all(toUpload.map(async (entry) => {
-        await sem.acquire()
+        // Detect kind BEFORE acquiring so videos take the dedicated (tighter) lane and photos the
+        // wider one — otherwise several videos could grab the shared pool and saturate the uplink.
+        const kind = detectKind(entry.file)
+        const gate = kind === 'video' ? videoSem : sem
+        await gate.acquire()
         try {
           patchEntry(entry.id, { status: 'uploading', progress: 0 })
 
-          const kind = detectKind(entry.file)
           if (!kind) throw new Error('Unsupported file type')
 
           // Videos upload their raw bytes — cap the original size. Images are compressed
@@ -1394,13 +1425,12 @@ export default function UploadZone({ album, userTier, onPhotosUploaded }: Props)
             showAppToast(`Upload failed: ${msg}`, 'error')
             // Report to /admin so real guest failures are visible, not invisible. Raw message
             // (not the friendly one) is the diagnostic value; include device + file context.
-            const kind = detectKind(entry.file)
             reportClientEvent('error', kind === 'video' ? 'upload:video' : 'upload:image',
               e instanceof Error ? e.message : String(e), album.id,
               { fileType: entry.file.type, sizeMB: Math.round(entry.file.size / 1024 / 1024), status: e instanceof HttpError ? e.status : undefined })
           }
         } finally {
-          sem.release()
+          gate.release()
         }
       }))
     }
@@ -1425,7 +1455,7 @@ export default function UploadZone({ album, userTier, onPhotosUploaded }: Props)
     // and only if still mounted (prevents leaking a timer in AlbumPageClient)
     if (mountedRef.current && savedCount > 0) onPhotosUploaded?.()
     abortCtrlsRef.current.delete(abortCtrl)
-  }, [album.id, caps, concurrency, patchEntry, flushProgress, onPhotosUploaded])
+  }, [album.id, caps, concurrency, videoConcurrency, patchEntry, flushProgress, onPhotosUploaded])
 
   const addFiles = useCallback((files: File[]) => {
     const valid = files.filter(f => detectKind(f) !== null)
