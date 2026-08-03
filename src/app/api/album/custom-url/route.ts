@@ -46,7 +46,7 @@ export async function POST(req: Request) {
   // Custom URL requires Pro+
   const tier = await getUserTierById(access.userId)
   if (tier === 'free') {
-    return NextResponse.json({ error: 'Custom URLs require a Pro or Studio plan' }, { status: 403, headers: NO_STORE })
+    return NextResponse.json({ error: 'Custom URLs require a Pro or Max plan' }, { status: 403, headers: NO_STORE })
   }
 
   const admin = createAdminClient()

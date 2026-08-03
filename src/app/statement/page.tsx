@@ -1,8 +1,6 @@
 import type { Metadata } from 'next'
 import Image from 'next/image'
 import Link from 'next/link'
-import HamburgerMenu from '@/components/HamburgerMenu'
-import AccountNavLink from '@/components/AccountNavLink'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { getServerLocale } from '@/i18n/server'
 import { getDictionary } from '@/i18n/get-dictionary'
@@ -46,34 +44,19 @@ export default async function StatementIndexPage() {
 
   return (
     <main className="min-h-screen" style={{ background: '#FDFAF5', fontFamily: 'var(--font-sans)' }}>
-      {/* Nav */}
-      <nav
-        className="hush-nav sticky top-0 z-50 flex items-center justify-between"
-        style={{
-          background: 'rgba(253, 250, 245, 0.85)',
-          backdropFilter: 'blur(12px)',
-          WebkitBackdropFilter: 'blur(12px)',
-          borderBottom: '1px solid rgba(221, 213, 197, 0.5)',
-        }}
-      >
+      {/* Minimal header — just the logo, centered (link home) */}
+      <header className="hush-nav flex items-center justify-center" style={{ borderBottom: '1px solid rgba(221, 213, 197, 0.5)' }}>
         <Link href="/" className="flex items-center" aria-label="Hushare home">
           <Image src="/logo/logo-dark-transparent.png" alt="Hushare" width={618} height={146} className="hush-logo" style={{ width: 'auto' }} draggable={false} />
         </Link>
-        <HamburgerMenu>
-          <Link href="/pricing" className="text-sm font-medium hover:underline" style={{ color: '#630826' }}>{dict['nav.pricing']}</Link>
-          <Link href="/about" className="text-sm font-medium hover:underline" style={{ color: '#630826' }}>{dict['nav.about']}</Link>
-          <Link href="/collabs" className="text-sm font-medium hover:underline" style={{ color: '#630826' }}>{dict['nav.collabs']}</Link>
-          <Link href="/support" className="text-sm font-medium hover:underline" style={{ color: '#630826' }}>{dict['nav.support']}</Link>
-          <AccountNavLink />
-        </HamburgerMenu>
-      </nav>
+      </header>
 
       {/* Hero */}
       <section className="hush-readable hush-fade-up pt-12 sm:pt-20 pb-8 text-center">
         <p className="text-xs sm:text-sm font-medium uppercase mb-4" style={{ color: '#8B6F4E', letterSpacing: '0.18em' }}>
           {dict['st.eyebrow']}
         </p>
-        <h1 style={{ fontFamily: 'var(--font-serif)', color: '#630826', fontSize: 'clamp(2.2rem, 6vw, 4rem)', lineHeight: 1.1, fontWeight: 700 }}>
+        <h1 style={{ fontFamily: 'var(--font-serif)', color: '#630826', fontSize: 'clamp(2rem, 4.2vw, 3.25rem)', lineHeight: 1.1, fontWeight: 700 }}>
           {dict['st.title']}
         </h1>
         <p style={{ color: '#5C4A3C', fontSize: '1.05rem', lineHeight: 1.6, maxWidth: 560, margin: '1rem auto 0' }}>

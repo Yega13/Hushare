@@ -115,7 +115,7 @@ export default function GuestActionsBar({ album, photos, shareUrl, onOpenSlidesh
           {t('guest.slideshow')}
         </button>
 
-        {/* Find my photos — AI face finder (owner-enabled, Studio) */}
+        {/* Find my photos — AI face finder (owner-enabled, Max) */}
         {hasFaceFinder && (
           <button
             className="hush-press"

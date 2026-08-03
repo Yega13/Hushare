@@ -32,7 +32,7 @@ export async function POST(req: Request) {
   }
   const tier = await getUserTierById(access.userId)
   if (tier !== 'studio') {
-    return NextResponse.json({ error: 'Face Finder requires a Studio plan' }, { status: 403, headers: NO_STORE })
+    return NextResponse.json({ error: 'Face Finder requires a Max plan' }, { status: 403, headers: NO_STORE })
   }
 
   const admin = createAdminClient()

@@ -89,7 +89,7 @@ export default function ReportPage() {
           style={{
             color: '#630826',
             fontFamily: 'var(--font-serif)',
-            fontSize: 'clamp(2.2rem, 6vw, 4.2rem)',
+            fontSize: 'clamp(2rem, 4.2vw, 3.25rem)',
             fontWeight: 700,
             lineHeight: 1.1,
           }}

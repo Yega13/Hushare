@@ -84,6 +84,7 @@ const tiers: Tier[] = [
       'Download full album as ZIP',
       'Photos up to 25 MB · videos up to 50 MB',
       'Album auto-retires after 3 months of inactivity',
+      'Create up to 3 albums (2 as a guest)',
     ],
   },
   {
@@ -107,6 +108,7 @@ const tiers: Tier[] = [
       'Larger photos - up to 200 MB per upload',
       'Account dashboard to manage your subscription',
       'Up to 2,500 photos & videos per album',
+      'Create up to 15 albums',
     ],
   },
   {
@@ -130,6 +132,7 @@ const tiers: Tier[] = [
       'Priority support - replies within 24 hrs',
       'Account dashboard to manage your subscription',
       'Up to 10,000 photos & videos per album',
+      'Create up to 50 albums',
     ],
   },
 ]
@@ -361,7 +364,7 @@ export default async function PricingPage() {
           style={{
             ...SERIF,
             ...INK,
-            fontSize: 'clamp(2.2rem, 6vw, 4.4rem)',
+            fontSize: 'clamp(2rem, 4.2vw, 3.25rem)',
             lineHeight: 1.1,
             fontWeight: 700,
           }}

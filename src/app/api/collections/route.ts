@@ -39,7 +39,7 @@ export async function GET(req: Request) {
   }
   const gate = await requireTier(user, 'studio')
   if (gate) {
-    return NextResponse.json({ error: 'Studio plan required' }, { status: 403, headers: NO_STORE })
+    return NextResponse.json({ error: 'Max plan required' }, { status: 403, headers: NO_STORE })
   }
 
   const admin = createAdminClient()
@@ -148,7 +148,7 @@ export async function POST(req: Request) {
   }
   const gate = await requireTier(user, 'studio')
   if (gate) {
-    return NextResponse.json({ error: 'Studio plan required' }, { status: 403, headers: NO_STORE })
+    return NextResponse.json({ error: 'Max plan required' }, { status: 403, headers: NO_STORE })
   }
 
   const admin = createAdminClient()
@@ -229,7 +229,7 @@ export async function PATCH(req: Request) {
   }
   const gate = await requireTier(user, 'studio')
   if (gate) {
-    return NextResponse.json({ error: 'Studio plan required' }, { status: 403, headers: NO_STORE })
+    return NextResponse.json({ error: 'Max plan required' }, { status: 403, headers: NO_STORE })
   }
 
   const admin = createAdminClient()
@@ -299,7 +299,7 @@ export async function DELETE(req: Request) {
   }
   const gate = await requireTier(user, 'studio')
   if (gate) {
-    return NextResponse.json({ error: 'Studio plan required' }, { status: 403, headers: NO_STORE })
+    return NextResponse.json({ error: 'Max plan required' }, { status: 403, headers: NO_STORE })
   }
 
   const admin = createAdminClient()

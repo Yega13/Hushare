@@ -147,7 +147,7 @@ export default function SupportPage() {
           style={{
             ...SERIF,
             ...INK,
-            fontSize: 'clamp(2.2rem, 6vw, 4.2rem)',
+            fontSize: 'clamp(2rem, 4.2vw, 3.25rem)',
             lineHeight: 1.1,
             fontWeight: 700,
           }}

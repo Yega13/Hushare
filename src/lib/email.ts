@@ -106,7 +106,7 @@ export async function sendBillingReminderEmail(
 ) {
   requireSafeUrl(accountUrl, 'accountUrl')
   const MAILING_ADDRESS = process.env.MAILING_ADDRESS ?? 'Hushare, Yerevan, Armenia'
-  const tierLabel = safeSubjectField(tier === 'studio' ? 'Studio' : 'Pro')
+  const tierLabel = safeSubjectField(tier === 'studio' ? 'Max' : 'Pro')
   const subject = `Your Hushare ${tierLabel} plan renews tomorrow`
 
   const html = `

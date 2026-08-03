@@ -3,8 +3,6 @@ import Image from 'next/image'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { ArrowLeft } from 'lucide-react'
-import HamburgerMenu from '@/components/HamburgerMenu'
-import AccountNavLink from '@/components/AccountNavLink'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { getServerLocale } from '@/i18n/server'
 import { getDictionary } from '@/i18n/get-dictionary'
@@ -59,26 +57,12 @@ export default async function StatementPage({ params }: { params: Promise<{ slug
 
   return (
     <main className="min-h-screen" style={{ background: '#FDFAF5', fontFamily: 'var(--font-sans)' }}>
-      <nav
-        className="hush-nav sticky top-0 z-50 flex items-center justify-between"
-        style={{
-          background: 'rgba(253, 250, 245, 0.85)',
-          backdropFilter: 'blur(12px)',
-          WebkitBackdropFilter: 'blur(12px)',
-          borderBottom: '1px solid rgba(221, 213, 197, 0.5)',
-        }}
-      >
+      {/* Minimal header — just the logo, centered (link home) */}
+      <header className="hush-nav flex items-center justify-center" style={{ borderBottom: '1px solid rgba(221, 213, 197, 0.5)' }}>
         <Link href="/" className="flex items-center" aria-label="Hushare home">
           <Image src="/logo/logo-dark-transparent.png" alt="Hushare" width={618} height={146} className="hush-logo" style={{ width: 'auto' }} draggable={false} />
         </Link>
-        <HamburgerMenu>
-          <Link href="/pricing" className="text-sm font-medium hover:underline" style={{ color: '#630826' }}>{dict['nav.pricing']}</Link>
-          <Link href="/about" className="text-sm font-medium hover:underline" style={{ color: '#630826' }}>{dict['nav.about']}</Link>
-          <Link href="/collabs" className="text-sm font-medium hover:underline" style={{ color: '#630826' }}>{dict['nav.collabs']}</Link>
-          <Link href="/support" className="text-sm font-medium hover:underline" style={{ color: '#630826' }}>{dict['nav.support']}</Link>
-          <AccountNavLink />
-        </HamburgerMenu>
-      </nav>
+      </header>
 
       <article style={{ width: 'min(100% - 3rem, 1200px)', marginInline: 'auto', padding: '2.5rem 0 5rem' }}>
         <Link href="/statement" className="inline-flex items-center gap-1.5 text-sm font-medium hover:underline" style={{ color: '#8B6F4E' }}>
@@ -94,24 +78,22 @@ export default async function StatementPage({ params }: { params: Promise<{ slug
 
         <div className="hush-statement-body" style={{ marginTop: '2rem' }} dangerouslySetInnerHTML={{ __html: s.body_html }} />
 
-        {/* Official Hushare seal — engraved-style ring with curved lettering + the aperture mark */}
-        <div style={{ marginTop: '4.5rem', paddingTop: '2.5rem', borderTop: '1px solid #E7DDCC', display: 'flex', justifyContent: 'center' }}>
-          <svg width="164" height="164" viewBox="0 0 200 200" role="img" aria-label="Official Hushare seal" style={{ opacity: 0.92 }}>
-            <defs>
-              <path id="seal-top" d="M 30,100 A 70,70 0 0 1 170,100" fill="none" />
-            </defs>
-            <circle cx="100" cy="100" r="94" fill="none" stroke="#630826" strokeWidth="1.4" />
-            <circle cx="100" cy="100" r="82" fill="none" stroke="#630826" strokeWidth="0.7" />
-            <text fill="#630826" fontSize="11" style={{ fontFamily: 'var(--font-sans)', fontWeight: 700, letterSpacing: '4px' }}>
-              <textPath href="#seal-top" startOffset="50%" textAnchor="middle">OFFICIAL · STATEMENT</textPath>
-            </text>
-            {/* side ornaments at 9 & 3 o'clock */}
-            <path d="M 15,100 l 4,-4 4,4 -4,4 z" fill="#630826" />
-            <path d="M 185,100 l -4,-4 -4,4 4,4 z" fill="#630826" />
-            <image href="/logo/logo-icon-dark-transparent.png" x="68" y="60" width="64" height="64" />
-            <text x="100" y="150" textAnchor="middle" fill="#630826" fontSize="11" style={{ fontFamily: 'var(--font-serif)', fontWeight: 700, letterSpacing: '2px' }}>HUSHARE</text>
-            <text x="100" y="165" textAnchor="middle" fill="#8B6F4E" fontSize="7.5" style={{ fontFamily: 'var(--font-sans)', letterSpacing: '1.5px' }}>HUSHARE.SPACE</text>
-          </svg>
+        {/* Official Hushare seal — solid wax-seal with the mark knocked out */}
+        <div style={{ marginTop: '4.5rem', paddingTop: '2.75rem', borderTop: '1px solid #E7DDCC', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 16 }}>
+          <div
+            style={{
+              width: 96, height: 96, borderRadius: '50%',
+              background: 'radial-gradient(circle at 38% 32%, #7A1533 0%, #630826 55%, #4E0620 100%)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              boxShadow: '0 8px 22px rgba(99,8,38,0.28), inset 0 1px 2px rgba(255,255,255,0.28), inset 0 0 0 5px rgba(255,255,255,0.10)',
+            }}
+          >
+            <Image src="/logo/logo-icon-light-transparent.png" alt="Hushare" width={120} height={120} style={{ width: 44, height: 'auto' }} draggable={false} />
+          </div>
+          <div style={{ textAlign: 'center' }}>
+            <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.3em', textTransform: 'uppercase', color: '#630826' }}>Official Statement</div>
+            <div style={{ fontSize: 11.5, letterSpacing: '0.05em', color: '#8B6F4E', marginTop: 6 }}>Hushare · {fmtDate(s.published_at)}</div>
+          </div>
         </div>
       </article>
 

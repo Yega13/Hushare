@@ -1207,7 +1207,7 @@ export default function OwnerToolbar({ album, photos, ownerToken, userTier, medi
                         <span className="flex items-center gap-2 text-sm font-semibold" style={{ color: '#630826' }}>
                           <ScanFace className="w-4 h-4" />
                           {t('ot.faceFinder')}
-                          {!canUseCollections && <span className="text-[10px] font-semibold uppercase" style={{ color: '#7C4A2D', letterSpacing: '0.06em' }}>Studio</span>}
+                          {!canUseCollections && <span className="text-[10px] font-semibold uppercase" style={{ color: '#7C4A2D', letterSpacing: '0.06em' }}>Max</span>}
                         </span>
                         <span className="block text-xs" style={{ color: '#7C5C3E' }}>{t('ot.faceFinderSub')}</span>
                       </span>

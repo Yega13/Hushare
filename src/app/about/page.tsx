@@ -96,7 +96,7 @@ export default async function AboutPage() {
                 fontFamily: 'var(--font-serif)',
                 fontStyle: 'italic',
                 color: '#630826',
-                fontSize: 'clamp(2.4rem, 4.5vw, 4rem)',
+                fontSize: 'clamp(2rem, 4.2vw, 3.25rem)',
                 lineHeight: 1.07,
                 fontWeight: 700,
               }}

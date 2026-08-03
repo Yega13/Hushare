@@ -44,37 +44,51 @@ export default function SiteFooter() {
   const { t } = useT()
   const pathname = usePathname()
   const normalizedPathname = pathname === '/' ? pathname : pathname.replace(/\/$/, '')
-  if (!footerRoutes.has(normalizedPathname)) return null
+  // Show on the listed routes, plus every individual statement page (/statement/<slug>).
+  if (!footerRoutes.has(normalizedPathname) && !normalizedPathname.startsWith('/statement/')) return null
 
   const visibleLinks = footerLinks.filter((link) => link.href !== normalizedPathname)
 
   return (
-    <footer
-      className="hush-footer mt-auto py-6 flex flex-col md:flex-row items-center md:justify-between gap-3 text-sm"
-      style={{ background: '#FDFAF5', borderTop: '1px solid #E8E0D0' }}
-    >
-      <Link href="/" className="hush-footer-logo flex items-center" aria-label="Hushare home">
-        <Image
-          src="/logo/logo-dark-transparent.png"
-          alt="Hushare"
-          width={618}
-          height={146}
-          className="hush-logo"
-          style={{ width: 'auto' }}
-          draggable={false}
-        />
-      </Link>
-      <nav className="hush-footer-links" aria-label="Footer">
-        {visibleLinks.map((link) => (
-          <Link key={link.href} href={link.href} className="hush-footer-link" style={{ color: '#7C5C3E' }}>
-            {t(link.labelKey)}
-          </Link>
-        ))}
-        <span className="hush-footer-note" style={{ color: '#B0A090' }} suppressHydrationWarning>
-          {t('footer.copyright', { year: new Date().getFullYear() })}
-        </span>
-        {LANGUAGE_UI_ENABLED && <LanguageSwitcher className="hush-footer-link" />}
-      </nav>
+    <footer className="hush-site-footer mt-auto" style={{ background: '#FBF6EC', borderTop: '1px solid #E8E0D0' }}>
+      <div style={{ width: 'min(100% - 2.5rem, 1200px)', marginInline: 'auto', paddingBlock: 'clamp(1.75rem, 3vw, 2.75rem)' }}>
+        {/* Top tier: brand + tagline on the left, links on the right */}
+        <div className="hush-foot-top" style={{ display: 'flex', flexWrap: 'wrap', gap: '1.5rem 2rem', alignItems: 'flex-start', justifyContent: 'space-between' }}>
+          <div style={{ maxWidth: 300 }}>
+            <Link href="/" aria-label="Hushare home" style={{ display: 'inline-flex' }}>
+              <Image src="/logo/logo-dark-transparent.png" alt="Hushare" width={618} height={146} style={{ height: 30, width: 'auto' }} draggable={false} />
+            </Link>
+            <p style={{ marginTop: 12, fontFamily: 'var(--font-serif)', fontStyle: 'italic', fontSize: '0.98rem', lineHeight: 1.5, color: '#8B6F4E' }}>
+              {t('footer.tagline')}
+            </p>
+          </div>
+          <nav aria-label="Footer" className="hush-foot-nav" style={{ display: 'flex', flexWrap: 'wrap', gap: '0.55rem 1.4rem', maxWidth: 620, justifyContent: 'flex-end' }}>
+            {visibleLinks.map((link) => (
+              <Link key={link.href} href={link.href} className="hush-foot-link" style={{ fontSize: '0.875rem', color: '#5C4A3C', textDecoration: 'none', whiteSpace: 'nowrap' }}>
+                {t(link.labelKey)}
+              </Link>
+            ))}
+          </nav>
+        </div>
+
+        {/* Base tier: copyright + language */}
+        <div className="hush-foot-base" style={{ marginTop: 'clamp(1.25rem, 2.5vw, 1.9rem)', paddingTop: '1rem', borderTop: '1px solid #ECE4D4', display: 'flex', flexWrap: 'wrap', gap: '0.75rem 1rem', alignItems: 'center', justifyContent: 'space-between' }}>
+          <span suppressHydrationWarning style={{ fontSize: '0.8rem', color: '#A99A87', letterSpacing: '0.01em' }}>
+            {t('footer.copyright', { year: new Date().getFullYear() })}
+          </span>
+          {LANGUAGE_UI_ENABLED && <LanguageSwitcher className="hush-foot-link" />}
+        </div>
+      </div>
+
+      <style>{`
+        .hush-foot-link { transition: color 140ms ease; }
+        .hush-foot-link:hover { color: #630826 !important; }
+        @media (max-width: 640px) {
+          .hush-foot-top { flex-direction: column; align-items: center !important; text-align: center; }
+          .hush-foot-nav { justify-content: center !important; max-width: none !important; }
+          .hush-foot-base { justify-content: center !important; }
+        }
+      `}</style>
     </footer>
   )
 }
