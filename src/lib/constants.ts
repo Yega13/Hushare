@@ -4,11 +4,14 @@ export const UPLOAD_CONCURRENCY_MOBILE = 6;
 export const UPLOAD_CONCURRENCY_DESKTOP = 12;
 
 // Videos upload their raw bytes as long, sustained TUS streams — very different from the small
-// (<1MB) images. Several running at once saturate a weak venue-WiFi uplink, which is the main cause
-// of chunk-at-offset-0 failures, stalls and timeouts. Give them a SEPARATE, tight lane so at most
-// one (mobile) / two (desktop) stream at a time; photos keep the wider pool above.
-export const UPLOAD_VIDEO_CONCURRENCY_MOBILE = 1;
-export const UPLOAD_VIDEO_CONCURRENCY_DESKTOP = 2;
+// (<1MB) images. Several at once can saturate a weak venue-WiFi uplink, so they get a SEPARATE,
+// tight lane (photos keep the wider pool above). Kept deliberately low — NOT photo-level — because
+// once the link is the bottleneck, more parallel streams only split bandwidth (no net gain) and
+// raise the stall/timeout rate. A small overlap (2/3) hides each clip's fixed overhead (poster +
+// Stream handshake + save), which dominates the many-short-clips case, while the per-attempt
+// fail-fast timeout + TUS resume keep a concurrent stall cheap to recover.
+export const UPLOAD_VIDEO_CONCURRENCY_MOBILE = 2;
+export const UPLOAD_VIDEO_CONCURRENCY_DESKTOP = 3;
 
 // Cloudflare Stream TUS requires minimum 5 MB chunks (except the last)
 export const STREAM_CHUNK_SIZE_BYTES = 5 * 1024 * 1024;
