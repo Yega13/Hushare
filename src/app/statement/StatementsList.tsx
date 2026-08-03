@@ -35,9 +35,8 @@ export default function StatementsList({ statements }: { statements: StatementCa
   return (
     <div>
       <style>{`
-        .hush-statement-card { transition: border-color 180ms ease, box-shadow 180ms ease; }
-        .hush-statement-card:hover { border-color: #630826; box-shadow: 0 8px 24px rgba(99,8,38,0.11); }
-        .hush-statement-card:hover h2 { text-decoration: underline; text-underline-offset: 3px; text-decoration-thickness: 1.5px; }
+        .hush-statement-card { transition: background-color 160ms ease, box-shadow 160ms ease; }
+        .hush-statement-card:hover { background-color: #FBF6EE; box-shadow: inset 3px 0 0 #630826, 0 10px 30px rgba(99,8,38,0.09); }
       `}</style>
       <div style={{ position: 'relative', maxWidth: 560, margin: '0 auto 2.5rem' }}>
         <Search size={17} style={{ position: 'absolute', left: 14, top: '50%', transform: 'translateY(-50%)', color: '#8B6F4E' }} aria-hidden="true" />

@@ -94,29 +94,32 @@ export default async function StatementPage({ params }: { params: Promise<{ slug
 
         <div className="hush-statement-body" style={{ marginTop: '2rem' }} dangerouslySetInnerHTML={{ __html: s.body_html }} />
 
-        {/* Official Hushare stamp */}
-        <div style={{ marginTop: '4rem', paddingTop: '2.5rem', borderTop: '1px solid #E7DDCC', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 14 }}>
-          <div
-            style={{
-              width: 112, height: 112, borderRadius: '50%',
-              border: '2px solid #630826', boxShadow: 'inset 0 0 0 5px rgba(99,8,38,0.07)',
-              display: 'flex', alignItems: 'center', justifyContent: 'center', opacity: 0.94,
-            }}
-          >
-            <Image src="/logo/logo-icon-dark-transparent.png" alt="Hushare" width={120} height={120} style={{ width: 54, height: 'auto' }} draggable={false} />
-          </div>
-          <div style={{ textAlign: 'center' }}>
-            <div style={{ fontSize: 12, fontWeight: 700, letterSpacing: '0.24em', textTransform: 'uppercase', color: '#630826' }}>Official Statement</div>
-            <div style={{ fontSize: 12, letterSpacing: '0.08em', color: '#8B6F4E', marginTop: 5 }}>Hushare · hushare.space · {fmtDate(s.published_at)}</div>
-          </div>
+        {/* Official Hushare seal — engraved-style ring with curved lettering + the aperture mark */}
+        <div style={{ marginTop: '4.5rem', paddingTop: '2.5rem', borderTop: '1px solid #E7DDCC', display: 'flex', justifyContent: 'center' }}>
+          <svg width="164" height="164" viewBox="0 0 200 200" role="img" aria-label="Official Hushare seal" style={{ opacity: 0.92 }}>
+            <defs>
+              <path id="seal-top" d="M 30,100 A 70,70 0 0 1 170,100" fill="none" />
+            </defs>
+            <circle cx="100" cy="100" r="94" fill="none" stroke="#630826" strokeWidth="1.4" />
+            <circle cx="100" cy="100" r="82" fill="none" stroke="#630826" strokeWidth="0.7" />
+            <text fill="#630826" fontSize="11" style={{ fontFamily: 'var(--font-sans)', fontWeight: 700, letterSpacing: '4px' }}>
+              <textPath href="#seal-top" startOffset="50%" textAnchor="middle">OFFICIAL · STATEMENT</textPath>
+            </text>
+            {/* side ornaments at 9 & 3 o'clock */}
+            <path d="M 15,100 l 4,-4 4,4 -4,4 z" fill="#630826" />
+            <path d="M 185,100 l -4,-4 -4,4 4,4 z" fill="#630826" />
+            <image href="/logo/logo-icon-dark-transparent.png" x="68" y="60" width="64" height="64" />
+            <text x="100" y="150" textAnchor="middle" fill="#630826" fontSize="11" style={{ fontFamily: 'var(--font-serif)', fontWeight: 700, letterSpacing: '2px' }}>HUSHARE</text>
+            <text x="100" y="165" textAnchor="middle" fill="#8B6F4E" fontSize="7.5" style={{ fontFamily: 'var(--font-sans)', letterSpacing: '1.5px' }}>HUSHARE.SPACE</text>
+          </svg>
         </div>
       </article>
 
       <style>{`
-        .hush-statement-body { color: #2A211C; font-size: 1.075rem; line-height: 1.72; }
-        .hush-statement-body p { margin: 0 0 1.15rem; }
-        .hush-statement-body h2 { font-family: var(--font-serif); color: #2A211C; font-size: 1.55rem; font-weight: 700; margin: 2.4rem 0 .9rem; padding-bottom: .5rem; border-bottom: 2px solid #E7DDCC; }
-        .hush-statement-body h3 { font-family: var(--font-serif); color: #630826; font-size: 1.2rem; font-weight: 700; margin: 1.6rem 0 .35rem; }
+        .hush-statement-body { color: #2A211C; font-size: 0.95rem; line-height: 1.72; }
+        .hush-statement-body p { margin: 0 0 1rem; }
+        .hush-statement-body h2 { font-family: var(--font-serif); color: #2A211C; font-size: 1.4rem; font-weight: 700; margin: 2.6rem 0 1rem; padding-bottom: .5rem; border-bottom: 2px solid #E7DDCC; }
+        .hush-statement-body h3 { font-family: var(--font-serif); color: #630826; font-size: 1.12rem; font-weight: 700; margin: 1.8rem 0 .5rem; }
         .hush-statement-body strong { color: #630826; }
         .hush-statement-body ul { margin: 0 0 1.15rem; padding-left: 1.25rem; }
         .hush-statement-body li { margin: 0 0 .5rem; }
