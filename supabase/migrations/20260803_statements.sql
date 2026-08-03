@@ -15,6 +15,8 @@ create index if not exists statements_published_idx on public.statements (publis
 
 alter table public.statements enable row level security;
 -- Public read (these are announcements meant to be seen); writes are server-only.
+-- drop-then-create so the migration is idempotent (safe to re-run / apply after a manual run).
+drop policy if exists statements_public_read on public.statements;
 create policy statements_public_read on public.statements for select using (true);
 
 -- Seed the launch announcement (idempotent).

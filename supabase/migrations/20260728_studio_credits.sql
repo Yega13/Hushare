@@ -106,5 +106,6 @@ create table if not exists public.studio_generations (
 );
 create index if not exists studio_generations_user_idx on public.studio_generations (user_id, created_at desc);
 alter table public.studio_generations enable row level security;
+drop policy if exists studio_generations_owner_read on public.studio_generations;
 create policy studio_generations_owner_read on public.studio_generations
   for select using (auth.uid() = user_id);
