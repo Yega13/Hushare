@@ -915,6 +915,15 @@ async function uploadPosterToR2(albumId: string, blob: Blob, signal?: AbortSigna
   return result.publicUrl
 }
 
+// Settle to `fallback` if `p` hasn't resolved within `ms`. Used so a best-effort side task (the
+// poster upload) can NEVER hold the video — and therefore its concurrency slot — hostage: however
+// the poster path behaves on a hostile network, the video still finishes/errors and frees the lane.
+function settleWithin<T>(p: Promise<T>, ms: number, fallback: T): Promise<T> {
+  let timer: ReturnType<typeof setTimeout>
+  const timeout = new Promise<T>(resolve => { timer = setTimeout(() => resolve(fallback), ms) })
+  return Promise.race([p, timeout]).finally(() => clearTimeout(timer))
+}
+
 // A TUS error with a 4xx response is a final server verdict (expired/invalid upload URL,
 // bad request) — retrying the same URL cannot succeed. Everything else (network drop, stall,
 // 5xx) is transient. Used for tus-js-client's OWN internal onShouldRetry, and for deciding whether
@@ -1163,8 +1172,9 @@ async function uploadVideoToStream(
       // (recursion is bounded: the recursive call passes no `resume`, so it can't loop).
       return uploadVideoToStream(file, albumId, onProgress, signal)
     }
-    // Await the poster (never rejects) so the resume record carries it and Retry skips redoing it.
-    const posterUrl = await posterPromise
+    // Await the poster (never rejects) so the resume record carries it and Retry skips redoing it —
+    // but bounded, so a hung poster can't stop this error from surfacing and freeing the lane.
+    const posterUrl = await settleWithin(posterPromise, 12_000, null)
     throw new VideoUploadError(
       e instanceof Error ? e.message : 'Video upload failed',
       { uploadUrl, streamUid, iframeUrl, thumbnailUrl, posterUrl, durationSeconds, videoWidth, videoHeight, viaRelay: relayState.active },
@@ -1172,7 +1182,7 @@ async function uploadVideoToStream(
     )
   }
 
-  const posterUrl = await posterPromise
+  const posterUrl = await settleWithin(posterPromise, 12_000, null)
   onProgress(98)
 
   return {
