@@ -35,7 +35,7 @@ const btnBase: React.CSSProperties = {
 
 export default function GuestActionsBar({ album, photos, shareUrl, onOpenSlideshow, onOpenFaceFinder }: Props) {
   const { t } = useT()
-  const { zipping, zipProgress, downloadZip } = useZipDownload(photos, album.title ?? '')
+  const { zipping, zipProgress, zipStatus, downloadZip } = useZipDownload(photos, album)
 
   // Face Finder button appears only when the owner enabled it and there are images to search.
   const hasFaceFinder = album.face_finder_enabled && photos.some((p) => p.media_type !== 'video')
@@ -138,7 +138,7 @@ export default function GuestActionsBar({ album, photos, shareUrl, onOpenSlidesh
             {zipping ? (
               <>
                 <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                {zipProgress < 100 ? `${zipProgress}%` : t('guest.zipping')}
+                {zipStatus ? `${zipStatus} · ${zipProgress}%` : (zipProgress < 100 ? `${zipProgress}%` : t('guest.zipping'))}
               </>
             ) : (
               <>

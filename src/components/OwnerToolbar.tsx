@@ -131,7 +131,7 @@ export default function OwnerToolbar({ album, photos, ownerToken, userTier, medi
   const [revealError, setRevealError] = useState('')
   const [revealSaved, setRevealSaved] = useState(false)
 
-  const { zipping, zipProgress, downloadZip } = useZipDownload(photos, album.title ?? '')
+  const { zipping, zipProgress, zipStatus, downloadZip } = useZipDownload(photos, album)
 
   const [allowGuestDownloads, setAllowGuestDownloads] = useState(album.allow_guest_downloads !== false)
   const [requireApproval, setRequireApproval] = useState(!!album.require_approval)
@@ -1159,7 +1159,7 @@ export default function OwnerToolbar({ album, photos, ownerToken, userTier, medi
                       {zipping ? (
                         <>
                           <Loader2 className="w-4 h-4 animate-spin" />
-                          {zipProgress < 100 ? t('ot.downloading', { n: zipProgress }) : t('ot.creatingZip')}
+                          {zipStatus ? `${zipStatus} · ${zipProgress}%` : (zipProgress < 100 ? t('ot.downloading', { n: zipProgress }) : t('ot.creatingZip'))}
                         </>
                       ) : (
                         <>
