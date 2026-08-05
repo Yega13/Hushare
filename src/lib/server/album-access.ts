@@ -134,10 +134,14 @@ export type PhotosResult =
 // Authorized photo listing. Anon RLS only exposes OPEN albums, so password/reveal-gated albums
 // (and an owner's own view of them) are read here via the admin client AFTER verifying the caller
 // is the owner (owner cookie) or an unlocked guest (password access-token cookie).
+// Default page size for the full album view. Small albums (≤ this) fetch everything in one shot —
+// exactly the pre-pagination behaviour. Only albums LARGER than this ever paginate.
+export const ALBUM_PAGE_SIZE = 2000
+
 export async function fetchAuthorizedPhotos(
   albumId: string,
   cookieStore: CookieStore,
-  opts: { recentLimit?: number } = {},
+  opts: { recentLimit?: number; offset?: number; limit?: number } = {},
 ): Promise<PhotosResult> {
   if (!UUID_RE.test(albumId)) return { kind: 'invalid' }
 
@@ -170,6 +174,10 @@ export async function fetchAuthorizedPhotos(
   // Moderation: the owner sees every photo (so they can review/approve); guests only see photos
   // that aren't hidden (pending approval, or hidden by the owner).
   const recent = opts.recentLimit && opts.recentLimit > 0 ? opts.recentLimit : null
+  // Full-view paging window. Defaults (offset 0, limit ALBUM_PAGE_SIZE) reproduce the old
+  // single-shot `.limit(2000)` exactly; callers only pass offset/limit for a big album's next page.
+  const offset = Math.max(0, Math.floor(opts.offset ?? 0))
+  const limit = Math.min(ALBUM_PAGE_SIZE, Math.max(1, Math.floor(opts.limit ?? ALBUM_PAGE_SIZE)))
 
   let query = admin.from('photos').select(PHOTO_SELECT_COLS).eq('album_id', albumId)
   if (!isOwner) query = query.eq('hidden', false)
@@ -177,7 +185,10 @@ export async function fetchAuthorizedPhotos(
   // pulling the whole album on every refetch is pure waste on the always-on display device.
   query = recent
     ? query.order('created_at', { ascending: false }).limit(recent)
-    : query.order('sort_order', { ascending: true, nullsFirst: false }).order('created_at', { ascending: true }).limit(2000)
+    // id is the deterministic tiebreaker: without it two photos sharing (sort_order, created_at)
+    // could swap places between page fetches, so range() paging would skip/duplicate one. With it
+    // the total order is stable, which is what makes offset paging correct.
+    : query.order('sort_order', { ascending: true, nullsFirst: false }).order('created_at', { ascending: true }).order('id', { ascending: true }).range(offset, offset + limit - 1)
   const { data: photos, error } = await query
 
   if (error) {
@@ -185,13 +196,12 @@ export async function fetchAuthorizedPhotos(
     throw new Error('photos_fetch_failed')
   }
 
-  let total: number | undefined
-  if (recent) {
-    let countQuery = admin.from('photos').select('id', { count: 'exact', head: true }).eq('album_id', albumId)
-    if (!isOwner) countQuery = countQuery.eq('hidden', false)
-    const { count } = await countQuery
-    total = count ?? photos?.length ?? 0
-  }
+  // Always return the true total now: the wall shows a counter, and the album view needs it to
+  // know whether more pages exist (hasMore = loaded < total). One cheap indexed HEAD count.
+  let countQuery = admin.from('photos').select('id', { count: 'exact', head: true }).eq('album_id', albumId)
+  if (!isOwner) countQuery = countQuery.eq('hidden', false)
+  const { count } = await countQuery
+  const total = count ?? photos?.length ?? 0
 
   return { kind: 'ok', photos: (photos ?? []) as unknown as Photo[], total }
 }

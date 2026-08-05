@@ -109,16 +109,39 @@ type Props = {
   // immediately from these instead of showing a skeleton and doing the client resolve+photos fetch.
   initialAlbum?: Album | null
   initialPhotos?: Photo[]
+  initialTotal?: number
   initialGate?: InitialGate
 }
 
-export default function AlbumPageClient({ initialAlbum = null, initialPhotos, initialGate }: Props = {}) {
+// Full album view server-renders the first window; a BIG album (> first window) loads its tail on
+// demand. Small albums (every album today) load fully in the first window — pagination never engages.
+const ALBUM_FIRST_WINDOW = 2000 // must match ALBUM_PAGE_SIZE in lib/server/album-access.ts
+const LOAD_MORE_PAGE = 500
+
+// Refresh the FIRST window in place while preserving any already-loaded tail (pages fetched via
+// "Load more"). Small album → windowPhotos IS everything, extras is empty, so this is a plain
+// replace (identical to the old behaviour). Big album → the tail survives a realtime refetch.
+function mergeWindow(prev: Photo[], windowPhotos: Photo[]): Photo[] {
+  const inWindow = new Set(windowPhotos.map(p => p.id))
+  const extras = prev.filter(p => !inWindow.has(p.id))
+  return extras.length ? [...windowPhotos, ...extras] : windowPhotos
+}
+
+export default function AlbumPageClient({ initialAlbum = null, initialPhotos, initialTotal, initialGate }: Props = {}) {
   const { slug } = useParams<{ slug: string }>()
   const [supabase] = useState(() => createClient())
 
   // Album data — seeded from the server render when available.
   const [album, setAlbum] = useState<Album | null>(initialAlbum)
   const [photos, setPhotos] = useState<Photo[]>(initialPhotos ?? [])
+  // Total authorized photos in the album (may exceed what's loaded on a big album). `hasMore` drives
+  // the "Load more" control. Refs mirror the latest values so loadMore stays a stable callback.
+  const [total, setTotal] = useState<number>(initialTotal ?? initialPhotos?.length ?? 0)
+  const [loadingMore, setLoadingMore] = useState(false)
+  const loadingMoreRef = useRef(false)
+  const photosLenRef = useRef(photos.length); photosLenRef.current = photos.length
+  const totalRef = useRef(total); totalRef.current = total
+  const albumIdRef = useRef<string | null>(initialAlbum?.id ?? null); albumIdRef.current = album?.id ?? null
 
   // Loading gates — not loading when the server already provided album or gate state.
   const [loading, setLoading] = useState(!initialAlbum && !initialGate)
@@ -191,27 +214,70 @@ export default function AlbumPageClient({ initialAlbum = null, initialPhotos, in
   // This lets callers gate the state update with their own cancellation guard
   // (generation counter for fetchAlbum; active flag for the realtime channel).
 
-  const fetchPhotos = useCallback(async (albumId: string): Promise<Photo[]> => {
-    // Fetch via the authenticated API route (admin client, server-side access check)
-    // rather than the anon client. The anon client can only read photos of OPEN albums
-    // (RLS), so password-protected / reveal-gated albums — and the owner's own view of
-    // them — came back empty. The route returns photos when the caller is the owner, an
-    // unlocked guest, or the album is open.
+  // Fetch ONE window (offset/limit) of photos + the true total, via the authenticated API route
+  // (admin client, server-side access check) rather than the anon client. The anon client can only
+  // read photos of OPEN albums (RLS), so gated albums — and the owner's own view of them — came
+  // back empty. The route returns photos when the caller is owner, an unlocked guest, or open.
+  const fetchPage = useCallback(async (albumId: string, offset: number, limit: number): Promise<{ photos: Photo[]; total: number }> => {
     try {
-      const res = await fetch(`/api/album/photos?albumId=${encodeURIComponent(albumId)}`, { cache: 'no-store' })
+      const res = await fetch(`/api/album/photos?albumId=${encodeURIComponent(albumId)}&offset=${offset}&limit=${limit}`, { cache: 'no-store' })
       if (!res.ok) {
-        console.error('[AlbumPageClient] fetchPhotos failed', res.status)
-        return []
+        console.error('[AlbumPageClient] fetchPage failed', res.status)
+        return { photos: [], total: 0 }
       }
-      const json = await res.json() as { photos?: Photo[] }
-      // Drop any photo the user just deleted — guards against a stale/racing refetch
-      // reinstating it before the delete has fully propagated.
-      return (json.photos ?? []).filter(p => !isRecentlyDeleted(p.id))
+      const json = await res.json() as { photos?: Photo[]; total?: number }
+      // Drop any photo the user just deleted — guards against a stale/racing refetch reinstating it.
+      const list = (json.photos ?? []).filter(p => !isRecentlyDeleted(p.id))
+      return { photos: list, total: typeof json.total === 'number' ? json.total : list.length }
     } catch (e) {
-      console.error('[AlbumPageClient] fetchPhotos error', e)
-      return []
+      console.error('[AlbumPageClient] fetchPage error', e)
+      return { photos: [], total: 0 }
     }
   }, [isRecentlyDeleted])
+
+  // First-window fetch (offset 0) — used by the initial load and every realtime refetch.
+  const fetchPhotos = useCallback((albumId: string) => fetchPage(albumId, 0, ALBUM_FIRST_WINDOW), [fetchPage])
+
+  // Load the next page of a BIG album's tail (appended after what's loaded). Self-gates on refs so
+  // it's safe from a button or a scroll observer without stale-closure bugs. No-op once caught up.
+  const loadMore = useCallback(async () => {
+    const albumId = albumIdRef.current
+    if (!albumId || loadingMoreRef.current) return
+    if (photosLenRef.current >= totalRef.current) return
+    loadingMoreRef.current = true
+    setLoadingMore(true)
+    try {
+      const r = await fetchPage(albumId, photosLenRef.current, LOAD_MORE_PAGE)
+      setTotal(r.total)
+      setPhotos(prev => {
+        const have = new Set(prev.map(p => p.id))
+        const add = r.photos.filter(p => !have.has(p.id))
+        return add.length ? [...prev, ...add] : prev
+      })
+    } finally {
+      loadingMoreRef.current = false
+      setLoadingMore(false)
+    }
+  }, [fetchPage])
+
+  // Infinite scroll: auto-load the next page as the sentinel nears view. loadMore self-gates, so
+  // firing on every intersection is safe; the visible button is the manual fallback. The sentinel
+  // only renders while more remain, so when caught up the observer detaches. rootMargin prefetches.
+  const loadMoreSentinelRef = useRef<HTMLDivElement | null>(null)
+  useEffect(() => {
+    const el = loadMoreSentinelRef.current
+    if (!el || totalRef.current <= ALBUM_FIRST_WINDOW || totalRef.current <= photosLenRef.current) return
+    const io = new IntersectionObserver(entries => { if (entries[0]?.isIntersecting) void loadMore() }, { rootMargin: '600px' })
+    io.observe(el)
+    return () => io.disconnect()
+  }, [loadMore, total, photos.length])
+
+  // Apply a first-window refetch (realtime). Small album (fits the window) → plain replace, exactly
+  // the pre-pagination behaviour. Big album → merge so the already-loaded tail survives the refresh.
+  const applyWindowRefresh = useCallback((r: { photos: Photo[]; total: number }) => {
+    setTotal(r.total)
+    setPhotos(prev => (r.total <= ALBUM_FIRST_WINDOW ? r.photos : mergeWindow(prev, r.photos)))
+  }, [])
 
   // ─── fetchAlbum ─────────────────────────────────────────────────────────────
 
@@ -338,7 +404,8 @@ export default function AlbumPageClient({ initialAlbum = null, initialPhotos, in
       ])
       if (isCancelled()) return
       setAlbum(data)
-      setPhotos(photoData)
+      setPhotos(photoData.photos)
+      setTotal(photoData.total)
       // Remember this album on the device whenever we're on its owner link, so the owner can
       // always get back to management view (read the token fresh from the hash — it's kept there).
       if (ownerTokenFromUrlRef.current) {
@@ -499,7 +566,7 @@ export default function AlbumPageClient({ initialAlbum = null, initialPhotos, in
           // 50 uploads in 2s cost ~1 refetch, not 50 list rebuilds.
           if (refetchTimer) clearTimeout(refetchTimer)
           refetchTimer = setTimeout(() => {
-            void fetchPhotos(albumId).then(data => { if (active) setPhotos(data) })
+            void fetchPhotos(albumId).then(r => { if (active) applyWindowRefresh(r) })
           }, 500)
         })
         .on('postgres_changes', {
@@ -531,7 +598,7 @@ export default function AlbumPageClient({ initialAlbum = null, initialPhotos, in
             // fetchPhotos call and when the channel becomes SUBSCRIBED. Photos uploaded
             // in that gap would be missed if we only refetch on reconnect.
             // The `active` guard on the .then() prevents updating state after cleanup.
-            void fetchPhotos(albumId).then(data => { if (active) setPhotos(data) })
+            void fetchPhotos(albumId).then(r => { if (active) applyWindowRefresh(r) })
             retryCount = 0
           } else if (
             status === 'CHANNEL_ERROR' ||
@@ -556,7 +623,7 @@ export default function AlbumPageClient({ initialAlbum = null, initialPhotos, in
       if (refetchTimer) clearTimeout(refetchTimer)
       if (currentChannel) supabase.removeChannel(currentChannel)
     }
-  }, [album?.id, supabase, fetchPhotos])
+  }, [album?.id, supabase, fetchPhotos, applyWindowRefresh])
 
   // ─── Effect 4: Realtime settings broadcast channel ──────────────────────────
   useEffect(() => {
@@ -637,12 +704,9 @@ export default function AlbumPageClient({ initialAlbum = null, initialPhotos, in
       uploadRefetchTimerRef.current = null
       // Merge instead of replace: Realtime may have delivered photos after the query was
       // issued but before it resolves — a full replace would briefly remove them
-      void fetchPhotos(albumId).then(data => {
-        setPhotos(prev => {
-          const inDB = new Map(data.map(p => [p.id, p]))
-          const extras = prev.filter(p => !inDB.has(p.id))
-          return extras.length > 0 ? [...data, ...extras] : data
-        })
+      void fetchPhotos(albumId).then(r => {
+        setPhotos(prev => mergeWindow(prev, r.photos))
+        setTotal(r.total)
       })
     }, 3000)
   }, [album?.id, fetchPhotos])
@@ -843,10 +907,18 @@ export default function AlbumPageClient({ initialAlbum = null, initialPhotos, in
           />
         </div>
 
-        {photos.length >= 2000 && (
-          <p className="text-center text-xs py-4" style={{ color: '#8B6F4E' }}>
-            Showing the first 2,000 photos
-          </p>
+        {total > ALBUM_FIRST_WINDOW && total > photos.length && (
+          <div ref={loadMoreSentinelRef} className="text-center py-6">
+            <button
+              type="button"
+              onClick={() => { void loadMore() }}
+              disabled={loadingMore}
+              className="hush-press"
+              style={{ fontSize: 14, fontWeight: 600, color: '#FDFAF5', background: '#630826', border: 'none', borderRadius: 999, padding: '10px 24px', cursor: loadingMore ? 'default' : 'pointer', opacity: loadingMore ? 0.6 : 1 }}
+            >
+              {loadingMore ? 'Loading…' : `Load more · ${photos.length.toLocaleString()} of ${total.toLocaleString()}`}
+            </button>
+          </div>
         )}
       </main>
     </>

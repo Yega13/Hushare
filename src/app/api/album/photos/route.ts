@@ -14,10 +14,16 @@ export async function GET(req: Request) {
   // `recent` (the live wall) caps the response to the newest N photos + returns the true total.
   const recentRaw = Number(url.searchParams.get('recent'))
   const recentLimit = Number.isFinite(recentRaw) && recentRaw > 0 ? Math.min(200, Math.floor(recentRaw)) : undefined
+  // Pagination window for the full album view (a big album's "load more"). fetchAuthorizedPhotos
+  // clamps the limit to ALBUM_PAGE_SIZE; omitted params reproduce the original single-shot fetch.
+  const offsetRaw = Number(url.searchParams.get('offset'))
+  const offset = Number.isFinite(offsetRaw) && offsetRaw > 0 ? Math.floor(offsetRaw) : undefined
+  const limitRaw = Number(url.searchParams.get('limit'))
+  const limit = Number.isFinite(limitRaw) && limitRaw > 0 ? Math.floor(limitRaw) : undefined
   const cookieStore = await cookies()
 
   try {
-    const result = await fetchAuthorizedPhotos(albumId, cookieStore, { recentLimit })
+    const result = await fetchAuthorizedPhotos(albumId, cookieStore, { recentLimit, offset, limit })
     switch (result.kind) {
       case 'invalid':
         return NextResponse.json({ error: 'Invalid album id' }, { status: 400, headers: NO_STORE })

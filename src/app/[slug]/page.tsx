@@ -135,13 +135,17 @@ export default async function AlbumPage({ params }: Props) {
 
   // Open / already-unlocked — fetch photos server-side so they land in the initial HTML.
   let initialPhotos: Photo[] = []
+  let initialTotal = 0
   try {
     const photosRes = await fetchAuthorizedPhotos(resolved.album.id, cookieStore)
-    if (photosRes.kind === 'ok') initialPhotos = photosRes.photos
+    if (photosRes.kind === 'ok') {
+      initialPhotos = photosRes.photos
+      initialTotal = photosRes.total ?? photosRes.photos.length
+    }
   } catch {
     // Server-side photo fetch failed — render the shell; the client effect refetches.
     initialPhotos = []
   }
 
-  return <AlbumPageClient initialAlbum={resolved.album} initialPhotos={initialPhotos} />
+  return <AlbumPageClient initialAlbum={resolved.album} initialPhotos={initialPhotos} initialTotal={initialTotal} />
 }
