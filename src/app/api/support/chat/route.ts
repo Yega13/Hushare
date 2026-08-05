@@ -6,10 +6,10 @@ export const runtime = 'nodejs'
 
 const NO_STORE = { 'Cache-Control': 'no-store' }
 
-// Fast, cheap instruct model — plenty for grounded FAQ support, and affordable at event-scale
-// traffic. Swap this one line for a larger model (e.g. @cf/meta/llama-3.3-70b-instruct-fp8-fast)
-// if answer quality ever needs a bump.
-const MODEL = '@cf/meta/llama-3.1-8b-instruct'
+// Llama 3.3 70B (fp8, fast) — strong answer quality for grounded FAQ support, still cheap/fast on
+// Workers AI. Must be an ID actually available on the account (verified via `wrangler ai models`).
+// For lower cost at extreme traffic, @cf/meta/llama-3.1-8b-instruct-fp8 is the swap.
+const MODEL = '@cf/meta/llama-3.3-70b-instruct-fp8-fast'
 
 const MAX_MESSAGES = 16
 const MAX_CHARS = 1500 // per message
