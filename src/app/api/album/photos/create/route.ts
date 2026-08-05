@@ -66,6 +66,7 @@ type AlbumRow = {
   slug: string
   owner_token: string
   created_at: string
+  media_cap_override: number | null
 }
 
 // Albums created BEFORE this are grandfathered: the strict new per-tier caps don't apply, but they
@@ -73,6 +74,11 @@ type AlbumRow = {
 // while, with an upsell to register once it's full.
 const GRANDFATHER_CUTOFF = '2026-08-02T00:00:00Z'
 const LEGACY_ALBUM_CAP = 1000
+
+// A partner/event album can carry a per-album cap override (albums.media_cap_override) that
+// supersedes ALL tier/grandfather logic — e.g. a festival album set to 30000. Hard-ceiled so a typo
+// (or a compromised admin) can never create a runaway, unbounded-cost album.
+const MAX_MEDIA_CAP_OVERRIDE = 200_000
 
 function r2UrlPrefix(host: string, albumId: string, prefix: 'albums' | 'thumbs') {
   return `https://${host}/${prefix}/${albumId}/`
@@ -214,7 +220,7 @@ export async function POST(req: Request) {
 
   const { data: album, error: albumError } = await admin
     .from('albums')
-    .select('id, user_id, guest_uploads_enabled, require_approval, title, slug, owner_token, created_at')
+    .select('id, user_id, guest_uploads_enabled, require_approval, title, slug, owner_token, created_at, media_cap_override')
     .eq('id', albumId)
     .is('retired_at', null)
     .maybeSingle<AlbumRow>()
@@ -255,8 +261,22 @@ export async function POST(req: Request) {
   // register. It only fires once the album is past the free allowance (150), so albums under it are
   // never nagged — they only ever see the block message when genuinely full.
   // User-facing messages intentionally NEVER reveal the exact numbers — just a friendly nudge.
+  // A custom per-album cap (partner/event album) supersedes ALL tier + grandfather logic. Clamped to
+  // the hard ceiling so it can never be an unbounded, runaway-cost album.
+  const capOverride = typeof album.media_cap_override === 'number' && album.media_cap_override > 0
+    ? Math.min(album.media_cap_override, MAX_MEDIA_CAP_OVERRIDE)
+    : null
+
   let warning: string | undefined
-  if (!countErr && photoCount != null && photoCount >= ANON_ALBUM_MEDIA) {
+  if (capOverride != null) {
+    if (!countErr && photoCount != null && photoCount >= capOverride) {
+      return NextResponse.json(
+        { error: "You've reached this album's upload limit." },
+        { status: 429, headers: NO_STORE },
+      )
+    }
+    // Custom-cap album: no register/upgrade nudge — it's a deliberate high limit.
+  } else if (!countErr && photoCount != null && photoCount >= ANON_ALBUM_MEDIA) {
     if (album.created_at < GRANDFATHER_CUTOFF) {
       // Grandfathered: generous ceiling. Full → block; otherwise nudge to register every session.
       if (photoCount >= LEGACY_ALBUM_CAP) {
