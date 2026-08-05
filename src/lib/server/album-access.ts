@@ -196,12 +196,19 @@ export async function fetchAuthorizedPhotos(
     throw new Error('photos_fetch_failed')
   }
 
-  // Always return the true total now: the wall shows a counter, and the album view needs it to
-  // know whether more pages exist (hasMore = loaded < total). One cheap indexed HEAD count.
-  let countQuery = admin.from('photos').select('id', { count: 'exact', head: true }).eq('album_id', albumId)
-  if (!isOwner) countQuery = countQuery.eq('hidden', false)
-  const { count } = await countQuery
-  const total = count ?? photos?.length ?? 0
+  // Total drives the wall counter + the album's hasMore. Optimisation: if the full view returned
+  // FEWER than a full page, we've reached the end — so total = offset + what we got, no count query
+  // (the common small-album case). Only a full page (maybe more) or the wall needs a HEAD count.
+  const got = photos?.length ?? 0
+  let total: number
+  if (!recent && got < limit) {
+    total = offset + got
+  } else {
+    let countQuery = admin.from('photos').select('id', { count: 'exact', head: true }).eq('album_id', albumId)
+    if (!isOwner) countQuery = countQuery.eq('hidden', false)
+    const { count } = await countQuery
+    total = count ?? offset + got
+  }
 
   return { kind: 'ok', photos: (photos ?? []) as unknown as Photo[], total }
 }
