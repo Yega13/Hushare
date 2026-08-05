@@ -8,6 +8,7 @@ import { getDictionary } from "@/i18n/get-dictionary";
 import { LocaleProvider } from "@/i18n/LocaleProvider";
 import InitialPreloader from "@/components/InitialPreloader";
 import BackToTop from "@/components/BackToTop";
+import SupportChat from "@/components/SupportChat";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -402,6 +403,7 @@ export default async function RootLayout({
           <SiteFooter />
         </LocaleProvider>
         <BackToTop />
+        <SupportChat />
         <AppToastViewport />
       </body>
     </html>

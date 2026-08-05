@@ -43,6 +43,20 @@ namespace_id = "1001"
   limit = 600
   period = 60
 
+# Cloudflare Workers AI — powers the on-site AI support chat (src/app/api/support/chat/route.ts).
+# No external API key: the model runs on Cloudflare's network, billed per-token at Workers AI rates.
+[ai]
+binding = "AI"
+
+# Edge rate limit for the support chat (abuse / cost backstop). Generous so a venue's shared IP with
+# many guests asking questions isn't throttled, but a single spammer hammering the model is stopped.
+[[ratelimits]]
+name = "SUPPORT_CHAT_LIMITER"
+namespace_id = "1002"
+  [ratelimits.simple]
+  limit = 100
+  period = 60
+
 [vars]
 NEXT_PUBLIC_SITE_URL = "https://hushare.space"
 NEXT_PUBLIC_SUPABASE_URL = "https://yqngmyjquwemwogdyuwv.supabase.co"
