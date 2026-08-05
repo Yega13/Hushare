@@ -39,6 +39,10 @@ KEY FEATURES
 - Moderation: hosts can turn on "Require approval" so guest photos are reviewed before they show.
 - Works in English, Russian, and Armenian (switch in the footer).
 
+WHO USES HUSHARE / COLLABORATIONS
+- Hushare is a young startup but already partners with musicians and events. Examples: Eurovision artists Ladaniva and Tali Golergant — fans upload their concert photos via a QR into one shared album; and running events like the Tricolor Night Run and Puma Run Club, where runners find and download their own photos (including by selfie with Face Finder). We've powered events across roughly 15 countries.
+- For a specific partnership, sponsorship, event booking, or press question, point them to hushare.space/support.
+
 PLANS (photos & videos = same pool)
 - Guest (no account): 2 albums, up to 150 items each.
 - Free (free account): 3 albums, up to 250 items each.
