@@ -142,6 +142,8 @@ export default function SupportChat() {
         .hush-typing span:nth-child(3) { animation-delay: 0.30s; }
         @keyframes hushDot { 0%,60%,100% { transform: translateY(0); opacity: 0.35; } 30% { transform: translateY(-5px); opacity: 1; } }
         body.hush-chat-open .hush-back-to-top { opacity: 0 !important; pointer-events: none !important; }
+        .hush-noscroll { scrollbar-width: none; -ms-overflow-style: none; }
+        .hush-noscroll::-webkit-scrollbar { width: 0; height: 0; display: none; }
         @media (prefers-reduced-motion: reduce) { .hush-chat-launcher, .hush-chat-in, .hush-chat-out { animation-duration: 1ms !important; } }
       `}</style>
 
@@ -190,7 +192,7 @@ export default function SupportChat() {
             </button>
           </div>
 
-          <div ref={scrollRef} style={{ flex: 1, overflowY: 'auto', padding: '12px', display: 'flex', flexDirection: 'column', gap: 9 }}>
+          <div ref={scrollRef} className="hush-noscroll" style={{ flex: 1, overflowY: 'auto', padding: '12px', display: 'flex', flexDirection: 'column', gap: 9 }}>
             {messages.map((m, i) => (
               <div
                 key={i}
@@ -215,7 +217,7 @@ export default function SupportChat() {
 
           <div style={{ display: 'flex', alignItems: 'flex-end', gap: 8, padding: 9, borderTop: '1px solid #ECE4D4' }}>
             <textarea
-              ref={inputRef} value={input} rows={1}
+              ref={inputRef} value={input} rows={1} className="hush-noscroll"
               onChange={(e) => {
                 setInput(e.target.value)
                 e.target.style.height = 'auto'
