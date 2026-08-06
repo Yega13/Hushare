@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { getCloudflareContext } from '@opennextjs/cloudflare'
 import { forbidCrossSiteRequest } from '@/lib/request-security'
+import { track } from '@/lib/analytics'
 
 export const runtime = 'nodejs'
 
@@ -104,6 +105,39 @@ function parseHandoff(reply: string): { clean: string; info: { email: string; su
 
 function escapeHtml(str: string): string {
   return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#039;')
+}
+
+// Server-side crisis backstop — a guaranteed net under the model's own judgement. Checks ONLY the
+// latest user message (so a past crisis turn doesn't re-fire forever once the chat moves on).
+// Patterns are deliberately specific to avoid idioms ("this bug is killing me" won't match).
+const CRISIS_PATTERNS: RegExp[] = [
+  /\bkill(?:ing)? (?:myself|my ?self)\b/i,
+  /\b(?:end|ending|take|taking) (?:my|my own) life\b/i,
+  /\bend it all\b/i,
+  /\b(?:want|wanna|going) to die\b/i,
+  /\bdon'?t (?:want to|wanna) (?:live|be alive|exist)\b/i,
+  /\bbetter off dead\b/i,
+  /\b(?:self[-\s]?harm|harm(?:ing)? myself|hurt(?:ing)? myself|cut(?:ting)? myself)\b/i,
+  /\bsuicid(?:e|al)\b/i,
+  /\bno (?:reason|point|purpose) (?:to|in|for) (?:live|living|life|being alive)\b/i,
+  /покончить с собой/i, /не хочу (?:больше )?жить/i, /убить себя/i, /суицид/i, /свести счёты с жизнью/i,
+  /ինքնասպան/i, /չեմ ուզում ապրել/i,
+]
+function detectCrisisKeywords(msgs: ChatMsg[]): boolean {
+  const last = [...msgs].reverse().find(m => m.role === 'user')?.content ?? ''
+  return CRISIS_PATTERNS.some(re => re.test(last))
+}
+const CRISIS_RESOURCES = "You matter, and people trained for exactly this are available right now. If you're in immediate danger, call your local emergency number — 112 or 911. To reach a free, confidential helpline in your country, go to findahelpline.com (in the US, call or text 988). Please reach out to one of them, and to someone you trust if you can."
+const HAS_RESOURCES_RE = /findahelpline|helpline|hotline|emergency|\b988\b|\b112\b|\b911\b/i
+
+// Strip PII before anything gets logged to analytics.
+function redactPII(text: string): string {
+  return text
+    .replace(/[^\s@]+@[^\s@]+\.[^\s@]+/g, '[email]')
+    .replace(/\+?\d[\d\s().-]{6,}\d/g, '[number]')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 240)
 }
 
 // Best-effort escalation email to the support inbox with the full chat transcript. Returns true on
@@ -244,10 +278,12 @@ export async function POST(req: Request): Promise<Response> {
 
     const rawReply = (result?.response ?? '').trim() || "Sorry, I didn't catch that — could you rephrase? For anything account-specific, hushare.space/support can help."
 
-    // Crisis/self-harm flag takes precedence over everything: strip the tag, alert the team silently,
-    // and return the bot's own compassionate reply (which already carries the crisis resources).
-    if (WELFARE_RE.test(rawReply)) {
-      const clean = rawReply.replace(WELFARE_RE, '').replace(/[`\s]+$/, '').trimEnd()
+    // Crisis/self-harm takes precedence over everything. Fires on EITHER the model's own [[WELFARE]]
+    // flag OR the server-side keyword backstop, so a missed model flag can't leave someone unhelped.
+    // We guarantee crisis resources are in the reply, alert the team silently, and never log the text.
+    if (WELFARE_RE.test(rawReply) || detectCrisisKeywords(messages)) {
+      let clean = rawReply.replace(WELFARE_RE, '').replace(/[`\s]+$/, '').trimEnd()
+      if (!HAS_RESOURCES_RE.test(clean)) clean = clean ? `${clean}\n\n${CRISIS_RESOURCES}` : CRISIS_RESOURCES
       await sendWelfareAlert(messages, clean)
       return NextResponse.json({ reply: clean }, { headers: NO_STORE })
     }
@@ -256,12 +292,14 @@ export async function POST(req: Request): Promise<Response> {
 
     if (info) {
       const sent = await sendHandoffEmail(messages, clean, info)
+      track({ name: 'support_chat', outcome: 'handoff' })
       const reply = sent
         ? clean
         : `${clean}\n\nIf you don't hear back within a day, please also reach us at hushare.space/support.`
       return NextResponse.json({ reply, handoff: sent }, { headers: NO_STORE })
     }
 
+    track({ name: 'support_chat', question: redactPII(messages[messages.length - 1].content), outcome: 'answered' })
     return NextResponse.json({ reply: clean }, { headers: NO_STORE })
   } catch (e) {
     console.error('[support/chat] AI run failed:', e instanceof Error ? e.message : String(e))

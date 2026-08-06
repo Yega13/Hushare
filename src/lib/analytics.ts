@@ -29,6 +29,9 @@ export type AnalyticsEvent =
   | { name: 'album_retired';        albumId: string }
   | { name: 'support_submitted' }
   | { name: 'report_submitted' }
+  // Support-chat turn. blob5 = outcome, blob6 = the visitor's question (PII-redacted, truncated).
+  // Never logged for crisis/welfare turns — we don't store self-harm disclosures.
+  | { name: 'support_chat'; question?: string; outcome: 'answered' | 'handoff' }
 
 // ── Fixed positional column schema (keep stable — queries reference these positions) ──
 //   index1 = event name         (sampling key; groups adaptive sampling per event type)
@@ -69,6 +72,8 @@ function shape(e: AnalyticsEvent): { blobs: string[]; doubles: number[] } {
     case 'support_submitted':
     case 'report_submitted':
       return { blobs: [e.name, '', '', '', '', ''], doubles: [1, 0] }
+    case 'support_chat':
+      return { blobs: [e.name, '', '', '', e.outcome, s(e.question)], doubles: [1, e.question ? e.question.length : 0] }
   }
 }
 
