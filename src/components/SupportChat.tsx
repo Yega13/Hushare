@@ -87,26 +87,24 @@ export default function SupportChat() {
     }
   }
 
-  // Panel position: default bottom-left until the user drags it, then free-floating.
+  // Panel position: default bottom-right (near the edge tab) until the user drags it, then free.
   const panelPos: React.CSSProperties = pos
     ? { left: pos.left, top: pos.top }
-    : { left: 16, bottom: 16 }
+    : { right: 16, bottom: 16 }
 
   return (
     <>
       <style>{`
-        @keyframes hushChatPop {
-          0%   { transform: scale(0) translateY(24px); opacity: 0; }
-          55%  { transform: scale(1.18) translateY(0);  opacity: 1; }
-          75%  { transform: scale(0.94); }
-          100% { transform: scale(1); }
+        @keyframes hushChatSlideIn {
+          0%   { transform: translateX(100%); opacity: 0; }
+          100% { transform: translateX(0);    opacity: 1; }
         }
-        .hush-chat-launcher { animation: hushChatPop 620ms cubic-bezier(0.16, 1, 0.3, 1) 500ms both; }
-        .hush-chat-launcher:hover { transform: scale(1.06); }
+        .hush-chat-launcher { animation: hushChatSlideIn 520ms cubic-bezier(0.16, 1, 0.3, 1) 500ms backwards; }
+        .hush-chat-launcher:hover { transform: translateX(-3px); background: #7A1533 !important; }
         @media (prefers-reduced-motion: reduce) { .hush-chat-launcher { animation: none; } }
       `}</style>
 
-      {/* Launcher */}
+      {/* Launcher — a slim tab docked to the right edge (never floating in a corner) */}
       {!open && (
         <button
           type="button"
@@ -114,14 +112,17 @@ export default function SupportChat() {
           onClick={() => setOpen(true)}
           className="hush-chat-launcher"
           style={{
-            position: 'fixed', left: 20, bottom: 20, zIndex: 60,
-            width: 54, height: 54, borderRadius: '50%', border: 'none', cursor: 'pointer',
+            position: 'fixed', right: 0, top: '58%', zIndex: 60,
+            display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3,
+            padding: '11px 8px 12px', border: 'none', cursor: 'pointer',
+            borderRadius: '13px 0 0 13px',
             background: '#630826', color: '#FDFAF5',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            boxShadow: '0 8px 24px rgba(99,8,38,0.32)', transition: 'transform 160ms ease',
+            boxShadow: '-4px 4px 18px rgba(99,8,38,0.30)',
+            transition: 'transform 160ms ease, background 160ms ease',
           }}
         >
-          <MessageCircle size={24} aria-hidden="true" />
+          <MessageCircle size={20} aria-hidden="true" />
+          <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.04em' }}>Help</span>
         </button>
       )}
 
