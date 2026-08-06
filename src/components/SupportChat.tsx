@@ -34,12 +34,18 @@ export default function SupportChat() {
   const [busy, setBusy] = useState(false)         // whole turn (fetch + typing) → input disabled
   const [pos, setPos] = useState<{ left: number; top: number } | null>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
-  const inputRef = useRef<HTMLInputElement>(null)
+  const inputRef = useRef<HTMLTextAreaElement>(null)
   const panelRef = useRef<HTMLDivElement>(null)
   const dragRef = useRef<{ offX: number; offY: number } | null>(null)
   const aliveRef = useRef(true)
 
   useEffect(() => () => { aliveRef.current = false }, [])
+  // Hide the "back to top" button while the panel is open — they share the bottom-right corner.
+  useEffect(() => {
+    if (open) document.body.classList.add('hush-chat-open')
+    else document.body.classList.remove('hush-chat-open')
+    return () => document.body.classList.remove('hush-chat-open')
+  }, [open])
   useEffect(() => {
     if (open) scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' })
   }, [messages, open, thinking])
@@ -83,6 +89,7 @@ export default function SupportChat() {
     const next = [...messages, { role: 'user' as const, content: text }]
     setMessages(next)
     setInput('')
+    if (inputRef.current) inputRef.current.style.height = 'auto'
     setBusy(true)
     setThinking(true)
     const started = Date.now()
@@ -134,6 +141,7 @@ export default function SupportChat() {
         .hush-typing span:nth-child(2) { animation-delay: 0.15s; }
         .hush-typing span:nth-child(3) { animation-delay: 0.30s; }
         @keyframes hushDot { 0%,60%,100% { transform: translateY(0); opacity: 0.35; } 30% { transform: translateY(-5px); opacity: 1; } }
+        body.hush-chat-open .hush-back-to-top { opacity: 0 !important; pointer-events: none !important; }
         @media (prefers-reduced-motion: reduce) { .hush-chat-launcher, .hush-chat-in, .hush-chat-out { animation-duration: 1ms !important; } }
       `}</style>
 
@@ -189,7 +197,7 @@ export default function SupportChat() {
                 style={{
                   alignSelf: m.role === 'user' ? 'flex-end' : 'flex-start',
                   maxWidth: '86%', padding: '8px 11px', borderRadius: 13, fontSize: 13.5, lineHeight: 1.5,
-                  whiteSpace: 'pre-wrap', wordBreak: 'break-word',
+                  whiteSpace: 'pre-wrap', overflowWrap: 'anywhere', wordBreak: 'break-word',
                   background: m.role === 'user' ? '#630826' : '#FFFFFF',
                   color: m.role === 'user' ? '#FDFAF5' : '#2A211C',
                   border: m.role === 'user' ? 'none' : '1px solid #E7DDCC',
@@ -205,16 +213,21 @@ export default function SupportChat() {
             )}
           </div>
 
-          <div style={{ display: 'flex', gap: 8, padding: 9, borderTop: '1px solid #ECE4D4' }}>
-            <input
-              ref={inputRef} value={input} onChange={(e) => setInput(e.target.value)}
+          <div style={{ display: 'flex', alignItems: 'flex-end', gap: 8, padding: 9, borderTop: '1px solid #ECE4D4' }}>
+            <textarea
+              ref={inputRef} value={input} rows={1}
+              onChange={(e) => {
+                setInput(e.target.value)
+                e.target.style.height = 'auto'
+                e.target.style.height = Math.min(e.target.scrollHeight, 96) + 'px'
+              }}
               onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); void send() } }}
               placeholder="Ask about Hushare…" aria-label="Type your question" maxLength={1500}
-              style={{ flex: 1, padding: '9px 11px', borderRadius: 11, border: '1px solid #DDD5C5', background: '#FFFFFF', color: '#2A211C', fontSize: 13.5, outline: 'none', minWidth: 0 }}
+              style={{ flex: 1, padding: '9px 11px', borderRadius: 11, border: '1px solid #DDD5C5', background: '#FFFFFF', color: '#2A211C', fontSize: 13.5, lineHeight: 1.4, outline: 'none', minWidth: 0, resize: 'none', maxHeight: 96, overflowY: 'auto', fontFamily: 'inherit' }}
             />
             <button
               type="button" onClick={() => void send()} disabled={busy || !input.trim()} aria-label="Send"
-              style={{ width: 40, flexShrink: 0, borderRadius: 11, border: 'none', background: '#630826', color: '#FDFAF5', cursor: busy || !input.trim() ? 'default' : 'pointer', opacity: busy || !input.trim() ? 0.5 : 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+              style={{ width: 40, height: 38, flexShrink: 0, borderRadius: 11, border: 'none', background: '#630826', color: '#FDFAF5', cursor: busy || !input.trim() ? 'default' : 'pointer', opacity: busy || !input.trim() ? 0.5 : 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
             >
               <Send size={16} aria-hidden="true" />
             </button>
