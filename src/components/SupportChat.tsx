@@ -2,13 +2,13 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { usePathname } from 'next/navigation'
-import { MessageCircle, X, Send, Loader2 } from 'lucide-react'
+import { MessageCircle, X, Send } from 'lucide-react'
 
 type Msg = { role: 'user' | 'assistant'; content: string }
 
 const GREETING: Msg = {
   role: 'assistant',
-  content: "Hi! I'm Hushare's assistant 👋 Ask me anything — how to create an album, share it with guests, the plans, Face Finder, and more.",
+  content: "Hi! I'm Hushare's assistant 👋 Ask me anything about albums, sharing, the plans, or Face Finder.",
 }
 
 // Only the public "main website" pages — never on albums, the admin, account, the wall, editors, etc.
@@ -18,32 +18,39 @@ const CHAT_ROUTES = new Set([
   '/shared-photo-album', '/wedding-photo-sharing', '/event-photo-sharing', '/qr-code-photo-album',
 ])
 
+const MIN_THINK_MS = 750   // hold the "thinking" dots at least this long so replies never feel abrupt
+const REVEAL_CHUNK = 3     // chars revealed per tick (typewriter)
+const REVEAL_INTERVAL = 15 // ms per tick
+
+const sleep = (ms: number) => new Promise<void>(r => setTimeout(r, ms))
+
 export default function SupportChat() {
   const pathname = usePathname()
   const [open, setOpen] = useState(false)
+  const [closing, setClosing] = useState(false)
   const [messages, setMessages] = useState<Msg[]>([GREETING])
   const [input, setInput] = useState('')
-  const [loading, setLoading] = useState(false)
-  const [pos, setPos] = useState<{ left: number; top: number } | null>(null) // null = default (bottom-left)
+  const [thinking, setThinking] = useState(false) // fetch phase → dots
+  const [busy, setBusy] = useState(false)         // whole turn (fetch + typing) → input disabled
+  const [pos, setPos] = useState<{ left: number; top: number } | null>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
   const panelRef = useRef<HTMLDivElement>(null)
   const dragRef = useRef<{ offX: number; offY: number } | null>(null)
+  const aliveRef = useRef(true)
 
+  useEffect(() => () => { aliveRef.current = false }, [])
   useEffect(() => {
     if (open) scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' })
-  }, [messages, open, loading])
+  }, [messages, open, thinking])
+  useEffect(() => { if (open && !closing) inputRef.current?.focus() }, [open, closing])
 
-  useEffect(() => { if (open) inputRef.current?.focus() }, [open])
-
-  // Dragging: window-level listeners gated by the ref, so add/remove always match and there are no
-  // stale closures. clamps the panel inside the viewport.
   useEffect(() => {
     function move(e: PointerEvent) {
       const d = dragRef.current
       if (!d) return
-      const w = panelRef.current?.offsetWidth ?? 336
-      const h = panelRef.current?.offsetHeight ?? 460
+      const w = panelRef.current?.offsetWidth ?? 320
+      const h = panelRef.current?.offsetHeight ?? 440
       const left = Math.max(8, Math.min(e.clientX - d.offX, window.innerWidth - w - 8))
       const top = Math.max(8, Math.min(e.clientY - d.offY, window.innerHeight - h - 8))
       setPos({ left, top })
@@ -55,10 +62,16 @@ export default function SupportChat() {
   }, [])
 
   function startDrag(e: React.PointerEvent) {
-    if ((e.target as HTMLElement).closest('[data-no-drag]')) return // don't drag when hitting the close button
+    if ((e.target as HTMLElement).closest('[data-no-drag]')) return
     const rect = panelRef.current?.getBoundingClientRect()
     if (!rect) return
     dragRef.current = { offX: e.clientX - rect.left, offY: e.clientY - rect.top }
+  }
+
+  function closePanel() {
+    if (closing) return
+    setClosing(true)
+    setTimeout(() => { setOpen(false); setClosing(false) }, 180)
   }
 
   const normalized = pathname === '/' ? '/' : (pathname ?? '').replace(/\/$/, '')
@@ -66,82 +79,96 @@ export default function SupportChat() {
 
   async function send() {
     const text = input.trim()
-    if (!text || loading) return
+    if (!text || busy) return
     const next = [...messages, { role: 'user' as const, content: text }]
     setMessages(next)
     setInput('')
-    setLoading(true)
+    setBusy(true)
+    setThinking(true)
+    const started = Date.now()
+    let reply: string
     try {
       const res = await fetch('/api/support/chat', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ messages: next.filter(m => m !== GREETING) }),
       })
       const data = await res.json().catch(() => ({})) as { reply?: string; error?: string }
-      const reply = data.reply ?? data.error ?? "Something went wrong — please try again, or email us at hushare.space/support."
-      setMessages(prev => [...prev, { role: 'assistant', content: reply }])
+      reply = data.reply ?? data.error ?? "Something went wrong — please try again, or email us via hushare.space/support."
     } catch {
-      setMessages(prev => [...prev, { role: 'assistant', content: "I couldn't reach the server. Please check your connection, or email us at hushare.space/support." }])
-    } finally {
-      setLoading(false)
+      reply = "I couldn't reach the server. Please check your connection, or email us at hushare.space/support."
     }
+    // Hold the thinking dots a beat so an instant answer doesn't feel abrupt.
+    const elapsed = Date.now() - started
+    if (elapsed < MIN_THINK_MS) await sleep(MIN_THINK_MS - elapsed)
+    if (!aliveRef.current) return
+    setThinking(false)
+
+    // Typewriter reveal — feels like it's being written, not dumped all at once.
+    setMessages(prev => [...prev, { role: 'assistant', content: '' }])
+    for (let i = 0; i <= reply.length; i += REVEAL_CHUNK) {
+      if (!aliveRef.current) return
+      const slice = reply.slice(0, i)
+      setMessages(prev => { const c = [...prev]; c[c.length - 1] = { role: 'assistant', content: slice }; return c })
+      await sleep(REVEAL_INTERVAL)
+    }
+    if (!aliveRef.current) return
+    setMessages(prev => { const c = [...prev]; c[c.length - 1] = { role: 'assistant', content: reply }; return c })
+    setBusy(false)
   }
 
-  // Panel position: default bottom-right (near the edge tab) until the user drags it, then free.
-  const panelPos: React.CSSProperties = pos
-    ? { left: pos.left, top: pos.top }
-    : { right: 16, bottom: 16 }
+  const panelPos: React.CSSProperties = pos ? { left: pos.left, top: pos.top } : { right: 16, bottom: 16 }
 
   return (
     <>
       <style>{`
-        @keyframes hushChatSlideIn {
-          0%   { transform: translateX(100%); opacity: 0; }
-          100% { transform: translateX(0);    opacity: 1; }
-        }
-        .hush-chat-launcher { animation: hushChatSlideIn 520ms cubic-bezier(0.16, 1, 0.3, 1) 500ms backwards; }
+        @keyframes hushChatSlideIn { 0% { transform: translateX(100%); opacity: 0; } 100% { transform: translateX(0); opacity: 1; } }
+        .hush-chat-launcher { animation: hushChatSlideIn 520ms cubic-bezier(0.16,1,0.3,1) 500ms backwards; }
         .hush-chat-launcher:hover { transform: translateX(-3px); background: #7A1533 !important; }
-        @media (prefers-reduced-motion: reduce) { .hush-chat-launcher { animation: none; } }
+        @keyframes hushPanelIn  { 0% { transform: scale(0.9) translateY(16px); opacity: 0; } 100% { transform: scale(1) translateY(0); opacity: 1; } }
+        @keyframes hushPanelOut { 0% { transform: scale(1) translateY(0); opacity: 1; } 100% { transform: scale(0.9) translateY(16px); opacity: 0; } }
+        .hush-chat-panel { transform-origin: bottom right; }
+        .hush-chat-in  { animation: hushPanelIn  200ms cubic-bezier(0.16,1,0.3,1) both; }
+        .hush-chat-out { animation: hushPanelOut 175ms ease both; }
+        .hush-typing { display: flex; gap: 4px; align-items: center; padding: 6px 3px; }
+        .hush-typing span { width: 7px; height: 7px; border-radius: 50%; background: #B98E4C; animation: hushDot 1s infinite ease-in-out; }
+        .hush-typing span:nth-child(2) { animation-delay: 0.15s; }
+        .hush-typing span:nth-child(3) { animation-delay: 0.30s; }
+        @keyframes hushDot { 0%,60%,100% { transform: translateY(0); opacity: 0.35; } 30% { transform: translateY(-5px); opacity: 1; } }
+        @media (prefers-reduced-motion: reduce) { .hush-chat-launcher, .hush-chat-in, .hush-chat-out { animation-duration: 1ms !important; } }
       `}</style>
 
-      {/* Launcher — a slim tab docked to the right edge (never floating in a corner) */}
+      {/* Launcher — slim tab docked to the right edge */}
       {!open && (
         <button
-          type="button"
-          aria-label="Open help chat"
-          onClick={() => setOpen(true)}
+          type="button" aria-label="Open help chat" onClick={() => setOpen(true)}
           className="hush-chat-launcher"
           style={{
-            position: 'fixed', right: 0, top: '58%', zIndex: 60,
-            display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3,
-            padding: '11px 8px 12px', border: 'none', cursor: 'pointer',
-            borderRadius: '13px 0 0 13px',
-            background: '#630826', color: '#FDFAF5',
-            boxShadow: '-4px 4px 18px rgba(99,8,38,0.30)',
+            position: 'fixed', right: 0, top: '68%', zIndex: 60,
+            display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2,
+            padding: '8px 6px 9px', border: 'none', cursor: 'pointer',
+            borderRadius: '11px 0 0 11px', background: '#630826', color: '#FDFAF5',
+            boxShadow: '-4px 4px 16px rgba(99,8,38,0.28)',
             transition: 'transform 160ms ease, background 160ms ease',
           }}
         >
-          <MessageCircle size={20} aria-hidden="true" />
-          <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.04em' }}>Help</span>
+          <MessageCircle size={17} aria-hidden="true" />
+          <span style={{ fontSize: 9, fontWeight: 700, letterSpacing: '0.03em' }}>Help</span>
         </button>
       )}
 
-      {/* Panel — smaller on desktop, draggable by its header */}
+      {/* Panel */}
       {open && (
         <div
-          ref={panelRef}
-          role="dialog"
-          aria-label="Hushare help chat"
+          ref={panelRef} role="dialog" aria-label="Hushare help chat"
+          className={`hush-chat-panel ${closing ? 'hush-chat-out' : 'hush-chat-in'}`}
           style={{
             position: 'fixed', zIndex: 61, ...panelPos,
-            width: 'min(336px, calc(100vw - 24px))', height: 'min(460px, calc(100dvh - 24px))',
+            width: 'min(332px, calc(100vw - 24px))', height: 'min(452px, calc(100dvh - 24px))',
             display: 'flex', flexDirection: 'column',
             background: '#FDFAF5', border: '1px solid #E4DCCB', borderRadius: 18,
-            boxShadow: '0 20px 60px rgba(99,8,38,0.28)', overflow: 'hidden',
-            fontFamily: 'var(--font-sans)',
+            boxShadow: '0 20px 60px rgba(99,8,38,0.28)', overflow: 'hidden', fontFamily: 'var(--font-sans)',
           }}
         >
-          {/* Header (drag handle) */}
           <div
             onPointerDown={startDrag}
             style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '11px 12px', background: '#630826', color: '#FDFAF5', cursor: 'grab', touchAction: 'none', userSelect: 'none' }}
@@ -150,12 +177,11 @@ export default function SupportChat() {
               <MessageCircle size={17} aria-hidden="true" />
               <span style={{ fontWeight: 700, fontSize: 14 }}>Hushare help</span>
             </div>
-            <button type="button" data-no-drag aria-label="Close chat" onClick={() => setOpen(false)} style={{ background: 'transparent', border: 'none', color: '#FDFAF5', cursor: 'pointer', display: 'flex', padding: 4 }}>
+            <button type="button" data-no-drag aria-label="Close chat" onClick={closePanel} style={{ background: 'transparent', border: 'none', color: '#FDFAF5', cursor: 'pointer', display: 'flex', padding: 4 }}>
               <X size={18} aria-hidden="true" />
             </button>
           </div>
 
-          {/* Messages */}
           <div ref={scrollRef} style={{ flex: 1, overflowY: 'auto', padding: '12px', display: 'flex', flexDirection: 'column', gap: 9 }}>
             {messages.map((m, i) => (
               <div
@@ -172,31 +198,23 @@ export default function SupportChat() {
                 {m.content}
               </div>
             ))}
-            {loading && (
-              <div style={{ alignSelf: 'flex-start', display: 'flex', alignItems: 'center', gap: 6, color: '#8B6F4E', fontSize: 13, padding: '2px' }}>
-                <Loader2 size={15} className="animate-spin" aria-hidden="true" /> typing…
+            {thinking && (
+              <div className="hush-typing" style={{ alignSelf: 'flex-start' }} aria-label="Assistant is typing">
+                <span /><span /><span />
               </div>
             )}
           </div>
 
-          {/* Input */}
           <div style={{ display: 'flex', gap: 8, padding: 9, borderTop: '1px solid #ECE4D4' }}>
             <input
-              ref={inputRef}
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
+              ref={inputRef} value={input} onChange={(e) => setInput(e.target.value)}
               onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); void send() } }}
-              placeholder="Ask about Hushare…"
-              aria-label="Type your question"
-              maxLength={1500}
+              placeholder="Ask about Hushare…" aria-label="Type your question" maxLength={1500}
               style={{ flex: 1, padding: '9px 11px', borderRadius: 11, border: '1px solid #DDD5C5', background: '#FFFFFF', color: '#2A211C', fontSize: 13.5, outline: 'none', minWidth: 0 }}
             />
             <button
-              type="button"
-              onClick={() => void send()}
-              disabled={loading || !input.trim()}
-              aria-label="Send"
-              style={{ width: 40, flexShrink: 0, borderRadius: 11, border: 'none', background: '#630826', color: '#FDFAF5', cursor: loading || !input.trim() ? 'default' : 'pointer', opacity: loading || !input.trim() ? 0.5 : 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+              type="button" onClick={() => void send()} disabled={busy || !input.trim()} aria-label="Send"
+              style={{ width: 40, flexShrink: 0, borderRadius: 11, border: 'none', background: '#630826', color: '#FDFAF5', cursor: busy || !input.trim() ? 'default' : 'pointer', opacity: busy || !input.trim() ? 0.5 : 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
             >
               <Send size={16} aria-hidden="true" />
             </button>
