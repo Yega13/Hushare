@@ -58,16 +58,16 @@ export async function saveBackgroundRequest(
 
 export async function saveDesignRequest(
   slug: string,
-  fields: { accent_color?: string | null },
-): Promise<{ ok: true; accent_color?: string | null } | { ok: false; error: string }> {
+  fields: { accent_color?: string | null; welcome_message?: string | null },
+): Promise<{ ok: true; accent_color?: string | null; welcome_message?: string | null } | { ok: false; error: string }> {
   const res = await fetch('/api/album/design', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ slug, ...fields }),
   })
-  const body = await jsonBody<{ error?: string; accent_color?: string | null }>(res)
+  const body = await jsonBody<{ error?: string; accent_color?: string | null; welcome_message?: string | null }>(res)
   if (!res.ok) return { ok: false, error: body.error ?? `Save failed (${res.status})` }
-  return { ok: true, accent_color: body.accent_color }
+  return { ok: true, accent_color: body.accent_color, welcome_message: body.welcome_message }
 }
 
 export async function saveMediaSettingsRequest(

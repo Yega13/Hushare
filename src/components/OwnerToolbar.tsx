@@ -118,6 +118,8 @@ export default function OwnerToolbar({ album, photos, ownerToken, userTier, medi
   const accentTimerRef = useRef<number | null>(null)
   const accentPendingRef = useRef<string | null>(null)
   const accentSavedRef = useRef<string | null>(album.accent_color ?? null)
+  const [welcomeInput, setWelcomeInput] = useState(album.welcome_message ?? '')
+  const [welcomeError, setWelcomeError] = useState('')
   const [showBackgroundLibrary, setShowBackgroundLibrary] = useState(false)
   const [mediaRadius, setMediaRadius] = useState(album.media_radius ?? 16)
   const [mediaRadiusDraft, setMediaRadiusDraft] = useState(String(album.media_radius ?? 16))
@@ -476,6 +478,29 @@ export default function OwnerToolbar({ album, photos, ownerToken, userTier, medi
 
   // Clean up the debounced accent-save timer on unmount so it can't fire after the panel is gone.
   useEffect(() => () => { if (accentTimerRef.current !== null) window.clearTimeout(accentTimerRef.current) }, [])
+  // Keep the welcome-message input in sync when the album value changes (save/broadcast).
+  useEffect(() => { setWelcomeInput(album.welcome_message ?? '') }, [album.welcome_message])
+
+  async function saveWelcome(): Promise<void> {
+    const next = welcomeInput.replace(/\s+/g, ' ').trim()
+    const prev = album.welcome_message ?? null
+    if ((next || null) === prev) return
+    setWelcomeError('')
+    onAlbumUpdated({ welcome_message: next || null })
+    try {
+      const result = await saveDesignRequest(album.slug, { welcome_message: next || null })
+      if (!result.ok) {
+        onAlbumUpdated({ welcome_message: prev })
+        setWelcomeError(result.error)
+        showAppToast(result.error, 'error')
+      }
+    } catch (e) {
+      onAlbumUpdated({ welcome_message: prev })
+      const message = e instanceof Error ? e.message : t('common.networkError')
+      setWelcomeError(message)
+      showAppToast(message, 'error')
+    }
+  }
 
   function scheduleAutoSave(
     nextRadius: number,
@@ -956,6 +981,23 @@ export default function OwnerToolbar({ album, photos, ownerToken, userTier, medi
                         </button>
                       </div>
                       {accentError && <p className="text-xs mt-2" style={{ color: '#C0392B' }}>{accentError}</p>}
+                    </div>
+
+                    {/* Welcome message + cover-photo hint */}
+                    <div className="mt-4 pt-3" style={{ borderTop: '1px solid #ECE4D4' }}>
+                      <p className="text-xs font-medium mb-2" style={{ color: '#7C5C3E' }}>{t('ot.welcomeMessage')}</p>
+                      <input
+                        value={welcomeInput}
+                        maxLength={200}
+                        onChange={(e) => setWelcomeInput(e.target.value)}
+                        onBlur={() => void saveWelcome()}
+                        onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur() }}
+                        placeholder={t('ot.welcomePlaceholder')}
+                        className="w-full rounded-lg px-3 py-2 text-sm focus:outline-none"
+                        style={{ background: '#FDFAF5', border: '1px solid #DDD5C5', color: '#2A211C' }}
+                      />
+                      <p className="text-xs mt-2" style={{ color: '#A89880' }}>{t('ot.coverHint')}</p>
+                      {welcomeError && <p className="text-xs mt-1" style={{ color: '#C0392B' }}>{welcomeError}</p>}
                     </div>
                   </div>
                 )}

@@ -826,6 +826,15 @@ export default function AlbumPageClient({ initialAlbum = null, initialPhotos, in
   const bgIsImage = isImageBackground(album.background_theme)
   const bgStyle = getBackgroundColorStyle(album.background_theme)
 
+  // Resolve the cover photo's image URL (if one is set + loaded) → AlbumHeader shows it as a hero
+  // banner. Videos use their poster/thumbnail. Falls back to the accent band when unset/not loaded.
+  const coverPhoto = album.cover_photo_id ? photos.find((p) => p.id === album.cover_photo_id) : undefined
+  const coverUrl = coverPhoto
+    ? (coverPhoto.media_type === 'video'
+        ? (coverPhoto.poster_url || coverPhoto.stream_thumbnail_url || coverPhoto.thumb_url || null)
+        : (coverPhoto.url || coverPhoto.thumb_url || null))
+    : null
+
   return (
     <>
       {/* Fixed background image — lives outside <main> so any stacking context on
@@ -853,6 +862,7 @@ export default function AlbumPageClient({ initialAlbum = null, initialPhotos, in
           photoCount={photos.length}
           isOwner={effectiveIsOwner}
           onAlbumUpdated={handleAlbumUpdated}
+          coverUrl={coverUrl}
         />
 
         {effectiveIsOwner ? (
