@@ -474,46 +474,8 @@ export default function OwnerToolbar({ album, photos, ownerToken, userTier, medi
     }
   }, [])
 
-  // Native <input type="color"> fires onChange continuously while the user drags inside the
-  // picker (dozens of events/sec), so the network save must be debounced separately from the
-  // instant visual update — otherwise every drag tick hits the API and trips its rate limit.
-  const accentSaveRef = useRef<number | null>(null)
-  const accentRevertRef = useRef<string | null>(album.accent_color ?? null)
-  const backgroundColorSaveRef = useRef<number | null>(null)
-  const backgroundColorRevertRef = useRef<string | null>(null)
-  useEffect(() => () => {
-    if (accentSaveRef.current !== null) window.clearTimeout(accentSaveRef.current)
-    if (backgroundColorSaveRef.current !== null) window.clearTimeout(backgroundColorSaveRef.current)
-  }, [])
-
-  function applyAccent(color: string | null) {
-    if (accentSaveRef.current === null) {
-      // Start of a new drag/typing burst — remember the last server-confirmed value to revert to on failure.
-      accentRevertRef.current = album.accent_color ?? null
-    } else {
-      window.clearTimeout(accentSaveRef.current)
-    }
-    setAccentError('')
-    onAlbumUpdated({ accent_color: color }) // instant preview, no network yet
-    accentSaveRef.current = window.setTimeout(() => {
-      accentSaveRef.current = null
-      void saveAccent(color, accentRevertRef.current)
-    }, 400)
-  }
-
-  function applyBackgroundColor(color: string) {
-    if (backgroundColorSaveRef.current === null) {
-      backgroundColorRevertRef.current = album.background_theme ?? null
-    } else {
-      window.clearTimeout(backgroundColorSaveRef.current)
-    }
-    setBackgroundError('')
-    onAlbumUpdated({ background_theme: color }) // instant preview, no network yet
-    backgroundColorSaveRef.current = window.setTimeout(() => {
-      backgroundColorSaveRef.current = null
-      void saveBackground(color, backgroundColorRevertRef.current)
-    }, 400)
-  }
+  // Clean up the debounced accent-save timer on unmount so it can't fire after the panel is gone.
+  useEffect(() => () => { if (accentTimerRef.current !== null) window.clearTimeout(accentTimerRef.current) }, [])
 
   function scheduleAutoSave(
     nextRadius: number,
