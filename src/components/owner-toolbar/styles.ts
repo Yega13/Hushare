@@ -12,7 +12,7 @@ export const btnBase: CSSProperties = {
   transition: 'opacity 0.15s',
   background: '#FFFFFF',
   border: '1px solid #DDD5C5',
-  color: '#630826',
+  color: 'var(--album-accent, #630826)',
 }
 
 export const sectionTitle: CSSProperties = {

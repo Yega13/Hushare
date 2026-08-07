@@ -666,7 +666,7 @@ export default function OwnerToolbar({ album, photos, ownerToken, userTier, medi
               setShowSettings(false)
             }}
           >
-            <Copy className="w-4 h-4" style={{ color: '#7C5C3E' }} />
+            <Copy className="w-4 h-4" style={{ color: 'var(--album-accent, #630826)' }} />
             {t('ot.share')}
           </button>
 
@@ -696,7 +696,7 @@ export default function OwnerToolbar({ album, photos, ownerToken, userTier, medi
           }}
           title={t('ot.createSlideshow')}
         >
-          <Play className="w-4 h-4" style={{ color: '#7C5C3E' }} />
+          <Play className="w-4 h-4" style={{ color: 'var(--album-accent, #630826)' }} />
           {t('ot.slideshow')}
         </button>
 
@@ -710,13 +710,13 @@ export default function OwnerToolbar({ album, photos, ownerToken, userTier, medi
           }}
           title={t('ot.liveWallTitle')}
         >
-          <MonitorPlay className="w-4 h-4" style={{ color: '#7C5C3E' }} />
+          <MonitorPlay className="w-4 h-4" style={{ color: 'var(--album-accent, #630826)' }} />
           {t('ot.liveWall')}
         </button>
 
         <button
           className="hush-press hush-owner-action hush-owner-arrange-action"
-          style={{ ...btnBase, background: arrangeMode ? '#630826' : btnBase.background, color: arrangeMode ? '#FDFAF5' : btnBase.color }}
+          style={{ ...btnBase, background: arrangeMode ? 'var(--album-accent, #630826)' : btnBase.background, color: arrangeMode ? '#FDFAF5' : btnBase.color }}
           onClick={() => {
             setShowShare(false)
             setShowSettings(false)
@@ -724,7 +724,7 @@ export default function OwnerToolbar({ album, photos, ownerToken, userTier, medi
           }}
           title={t('ot.arrangeMedia')}
         >
-          <Move className="w-4 h-4" style={{ color: arrangeMode ? '#FDFAF5' : '#7C5C3E' }} />
+          <Move className="w-4 h-4" style={{ color: arrangeMode ? '#FDFAF5' : 'var(--album-accent, #630826)' }} />
           {arrangeMode ? t('ot.done') : t('ot.arrange')}
         </button>
 
@@ -746,7 +746,7 @@ export default function OwnerToolbar({ album, photos, ownerToken, userTier, medi
             }}
             title={t('ot.settingsTitle')}
           >
-            <Settings className="w-4 h-4" style={{ color: '#7C5C3E' }} />
+            <Settings className="w-4 h-4" style={{ color: 'var(--album-accent, #630826)' }} />
             Settings
           </button>
 
