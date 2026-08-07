@@ -127,6 +127,9 @@ export default function AlbumHeader({ album, photoCount, isOwner, onAlbumUpdated
           onPointerLeave={clearHoldTimer}
           title={isOwner ? t('album.dblclickRename') : undefined}
         >
+          {/* Invisible left spacer balances the edit pencil so the CENTERED (band) title stays truly
+              centered. Skipped in hero mode, where the title is left-aligned. */}
+          {isOwner && !hero && <span aria-hidden="true" style={{ display: 'inline-block', width: '1.4rem', verticalAlign: 'middle' }} />}
           {album.title}
           {isOwner && (
             <button

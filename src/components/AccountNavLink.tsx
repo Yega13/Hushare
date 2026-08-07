@@ -2,84 +2,48 @@
 
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
-import { useRouter } from 'next/navigation'
 import { CircleUserRound } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { useT } from '@/i18n/LocaleProvider'
 
-type AuthState =
-  | { kind: 'loading' }
-  | { kind: 'signed-out' }
-  | { kind: 'signed-in'; canAccess: boolean }
+type AuthState = 'loading' | 'signed-out' | 'signed-in'
 
 const linkClass = 'text-sm font-medium hover:underline'
 const linkStyle = { color: '#630826' } as const
 
 export default function AccountNavLink() {
-  const router = useRouter()
   const { t } = useT()
   const [supabase] = useState(() => createClient())
-  const [state, setState] = useState<AuthState>({ kind: 'loading' })
-  const [signingOut, setSigningOut] = useState(false)
+  const [state, setState] = useState<AuthState>('loading')
 
   useEffect(() => {
     let cancelled = false
 
     async function refresh() {
-      // Fast path: read the LOCAL session (no network) so the nav resolves immediately
-      // instead of popping in after a getUser() round-trip. Security is unaffected — /api/me
-      // and the account page both validate server-side; this only decides which link to show.
+      // Fast path: read the LOCAL session (no network) so the nav resolves immediately instead of
+      // popping in after a round-trip. Security is unaffected — the account page validates server-side.
       const { data: { session } } = await supabase.auth.getSession()
       if (cancelled) return
-      if (!session) {
-        setState({ kind: 'signed-out' })
-        return
-      }
-      // Optimistically show the Account link right away; refine canAccess from the server.
-      setState(prev => (prev.kind === 'signed-in' ? prev : { kind: 'signed-in', canAccess: true }))
+      if (!session) { setState('signed-out'); return }
+      setState('signed-in')
+      // Confirm the session is still valid server-side; downgrade to signed-out if it's stale.
       try {
         const res = await fetch('/api/me', { cache: 'no-store' })
-        if (cancelled) return
-        if (res.status === 401) {
-          setState({ kind: 'signed-out' })  // local session was stale
-        } else if (res.ok) {
-          const me = await res.json() as { canAccessAccount: boolean }
-          setState({ kind: 'signed-in', canAccess: me.canAccessAccount })
-        } else {
-          setState({ kind: 'signed-in', canAccess: false })
-        }
-      } catch {
-        if (!cancelled) setState({ kind: 'signed-in', canAccess: false })
-      }
+        if (!cancelled && res.status === 401) setState('signed-out')
+      } catch { /* keep the optimistic signed-in state */ }
     }
 
     refresh()
-    // Skip INITIAL_SESSION — it fires on every mount and would trigger a second concurrent
-    // refresh() call on top of the explicit one above, wasting a getUser() round-trip.
-    const { data: subscription } = supabase.auth.onAuthStateChange((event) => {
+    // Skip INITIAL_SESSION — it fires on every mount and would double the refresh() work.
+    const { data: sub } = supabase.auth.onAuthStateChange((event) => {
       if (event === 'INITIAL_SESSION') return
       void refresh()
     })
 
-    return () => {
-      cancelled = true
-      subscription.subscription.unsubscribe()
-    }
+    return () => { cancelled = true; sub.subscription.unsubscribe() }
   }, [supabase])
 
-  async function handleSignOut() {
-    if (signingOut) return
-    setSigningOut(true)
-    try {
-      await supabase.auth.signOut()
-      router.push('/')
-      router.refresh()
-    } finally {
-      setSigningOut(false)
-    }
-  }
-
-  if (state.kind === 'loading') {
+  if (state === 'loading') {
     return (
       <span className={linkClass} aria-hidden="true" style={{ color: 'transparent' }}>
         {t('nav.signIn')}
@@ -87,7 +51,7 @@ export default function AccountNavLink() {
     )
   }
 
-  if (state.kind === 'signed-out') {
+  if (state === 'signed-out') {
     return (
       <Link href="/login" className={linkClass} style={linkStyle}>
         {t('nav.signIn')}
@@ -95,24 +59,11 @@ export default function AccountNavLink() {
     )
   }
 
-  if (state.canAccess) {
-    return (
-      <Link href="/account" className={`${linkClass} hush-account-nav-link`} style={linkStyle} aria-label={t('nav.account')}>
-        <span className="hush-account-label-full">{t('nav.account')}</span>
-        <CircleUserRound className="hush-account-icon" aria-hidden="true" />
-      </Link>
-    )
-  }
-
+  // Signed in — every account (free included) now has a dashboard, and sign-out lives there.
   return (
-    <button
-      type="button"
-      onClick={handleSignOut}
-      disabled={signingOut}
-      className={`${linkClass} disabled:opacity-50`}
-      style={linkStyle}
-    >
-      {signingOut ? t('acct.signingOut') : t('acct.signOut')}
-    </button>
+    <Link href="/account" className={`${linkClass} hush-account-nav-link`} style={linkStyle} aria-label={t('nav.account')}>
+      <span className="hush-account-label-full">{t('nav.account')}</span>
+      <CircleUserRound className="hush-account-icon" aria-hidden="true" />
+    </Link>
   )
 }
