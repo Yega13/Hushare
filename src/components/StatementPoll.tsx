@@ -2,16 +2,8 @@
 
 import { useEffect, useState } from 'react'
 
-type Option = { key: string; label: string; hint?: string }
+type Option = { key: string; label: string; hint?: string; swatch?: string }
 type Results = { question: string; note: string | null; options: Option[]; tallies: Record<string, number>; total: number }
-
-// Cover gradients per look — mirrors the mockup so the poll shows what you're voting on.
-const SWATCH: Record<string, string> = {
-  blossom: 'linear-gradient(135deg, #e9c6b3, #d98c93 55%, #a85c6e)',
-  encore:  'radial-gradient(120% 140% at 20% 10%, #3a2f66, #201a3a 55%, #12101f)',
-  trail:   'linear-gradient(135deg, #1f5136, #2f7a4f 62%, #12351f)',
-  linen:   'linear-gradient(135deg, #f3efe8, #e5dccd)',
-}
 
 function getVoterId(): string {
   try {
@@ -96,8 +88,10 @@ export default function StatementPoll({ pollKey }: { pollKey: string }) {
                 display: 'flex', flexDirection: 'column',
               }}
             >
-              <div style={{ height: 54, background: SWATCH[o.key] ?? '#630826' }} />
-              <div style={{ padding: '10px 12px 12px' }}>
+              {o.swatch
+                ? <div style={{ height: 54, background: o.swatch }} />
+                : <div style={{ height: 4, background: mine ? '#630826' : '#C49A6C' }} />}
+              <div style={{ padding: '11px 13px 13px' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontFamily: 'var(--font-serif)', fontSize: 16, color: '#2A211C' }}>
                   {o.label}{mine && <span style={{ color: '#630826', fontSize: 13 }}>✓ your pick</span>}
                 </div>
