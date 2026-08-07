@@ -103,35 +103,11 @@ export default async function AccountPage({ searchParams }: Props) {
     redirect('/login?next=/account')
   }
 
-  if (!(await hasAccountAccess(user))) {
-    if (welcome === '1') {
-      return <SubscriptionPolling email={user.email ?? ''} />
-    }
-    return (
-      <div className="min-h-screen" style={{ background: '#FDFAF5' }}>
-        <AccountNav />
-        <main className="flex items-center justify-center px-4 py-16">
-          <div
-            className="max-w-md w-full rounded-2xl p-8 text-center"
-            style={{ background: '#FFFFFF', border: '1px solid #DDD5C5', boxShadow: '0 4px 32px rgba(99,8,38,0.10)' }}
-          >
-            <p className="text-xs uppercase mb-3" style={{ color: '#8B6F4E', letterSpacing: '0.18em', fontWeight: 600 }}>
-              403 - Forbidden
-            </p>
-            <h1 className="text-2xl font-bold mb-3" style={{ color: '#630826', fontFamily: 'var(--font-serif)' }}>
-              No account dashboard yet
-            </h1>
-            <p className="text-sm leading-relaxed mb-5" style={{ color: '#5C4A3C' }}>
-              The account dashboard is reserved for Hushare Pro and Max subscribers.
-              You&apos;re signed in as <strong className="break-all">{user.email}</strong>,
-              but you don&apos;t have an active subscription.
-            </p>
-            <SignOutButton />
-          </div>
-        </main>
-      </div>
-    )
+  // Just back from checkout — poll until the subscription webhook lands, then show the full page.
+  if (!(await hasAccountAccess(user)) && welcome === '1') {
+    return <SubscriptionPolling email={user.email ?? ''} />
   }
+  // Everyone signed in gets a dashboard — free accounts see a trimmed version (below).
 
   const subscription = await getActiveSubscription(user.id)
   const isAdmin = isAccountAdmin(user)
@@ -144,13 +120,16 @@ export default async function AccountPage({ searchParams }: Props) {
         year: 'numeric', month: 'long', day: 'numeric',
       })
     : null
-  const planName = isAdmin ? 'Hushare Admin' : tierLabel ?? 'Max test access'
+  const isFree = !subscription && !isAdmin
+  const planName = isAdmin ? 'Hushare Admin' : tierLabel ?? 'Hushare Free'
   const isStudio = isAdmin || subscription?.tier === 'studio'
   const planFeatures = isAdmin
     ? ['Everything enabled', 'Max Collections', 'Custom album backgrounds', 'Password protection', 'Custom URLs', '200 MB uploads']
     : isStudio
     ? ['Max Collections', 'Custom album backgrounds', 'Password protection', 'Custom URLs', '200 MB uploads']
-    : ['Custom album backgrounds', 'Password protection', 'Custom URLs', '200 MB uploads']
+    : subscription
+    ? ['Custom album backgrounds', 'Password protection', 'Custom URLs', '200 MB uploads']
+    : ['3 albums', 'Up to 250 items each', 'Live Photo Wall', 'QR code sharing']
   const nextLabel = subscription?.cancel_at_period_end ? dict['acct.accessEnds'] : dict['acct.nextRenewal']
 
   let admin: ReturnType<typeof createAdminClient>
@@ -351,7 +330,7 @@ export default async function AccountPage({ searchParams }: Props) {
                 <div className="rounded-xl p-4" style={{ background: '#FDFAF5', border: '1px solid #E8E0D2' }}>
                   <dt className="text-xs uppercase tracking-wide mb-1" style={{ color: '#8B6F4E' }}>{dict['acct.uploads']}</dt>
                   <dd className="font-semibold" style={{ color: '#630826' }}>
-                    {isAdmin ? dict['acct.everythingEnabled'] : subscription ? dict['acct.upTo200'] : dict['acct.studioLimits']}
+                    {isAdmin ? dict['acct.everythingEnabled'] : subscription ? dict['acct.upTo200'] : '25 MB images · 50 MB videos'}
                   </dd>
                 </div>
                 <div className="rounded-xl p-4" style={{ background: '#FDFAF5', border: '1px solid #E8E0D2' }}>
@@ -372,7 +351,7 @@ export default async function AccountPage({ searchParams }: Props) {
                 ))}
               </div>
 
-              {subscription && (
+              {subscription ? (
                 <form action="/api/portal" method="POST" className="mt-6">
                   <button
                     type="submit"
@@ -382,7 +361,15 @@ export default async function AccountPage({ searchParams }: Props) {
                     {dict['acct.manageSub']}
                   </button>
                 </form>
-              )}
+              ) : isFree ? (
+                <Link
+                  href="/pricing"
+                  className="mt-6 flex w-full items-center justify-center font-semibold rounded-xl py-3 text-sm transition hover:opacity-90"
+                  style={{ background: '#630826', color: '#FDFAF5' }}
+                >
+                  Upgrade to Pro or Max
+                </Link>
+              ) : null}
             </section>
 
             <section
@@ -426,7 +413,8 @@ export default async function AccountPage({ searchParams }: Props) {
           )}
 
           {/* Collections + Albums */}
-          <section className="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-[1.15fr_0.85fr]">
+          <section className={`mt-6 grid grid-cols-1 gap-6${isStudio ? ' lg:grid-cols-[1.15fr_0.85fr]' : ''}`}>
+            {isStudio && (
             <div className="rounded-2xl p-6" style={{ background: '#FFFFFF', border: '1px solid #DDD5C5', boxShadow: '0 4px 32px rgba(99,8,38,0.08)' }}>
               <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                 <div>
@@ -474,6 +462,7 @@ export default async function AccountPage({ searchParams }: Props) {
                 )}
               </div>
             </div>
+            )}
 
             <div className="rounded-2xl p-6" style={{ background: '#FFFFFF', border: '1px solid #DDD5C5', boxShadow: '0 4px 32px rgba(99,8,38,0.08)' }}>
               <div className="mb-5">

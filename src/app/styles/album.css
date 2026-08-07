@@ -126,11 +126,9 @@
     width: min(calc(100% - 0.4rem), 100%) !important;
   }
 
-  .hush-album-header-shell {
-    background: rgba(253, 250, 245, 0.96) !important;
-    backdrop-filter: blur(12px);
-    -webkit-backdrop-filter: blur(12px);
-  }
+  /* The header background is set inline (accent band or cover photo) with adaptive text — do NOT
+     force a cream background here, or a dark accent's white text becomes invisible and a cover photo
+     is wiped out. Mobile only handles layout below. */
 
   .hush-album-header {
     flex-direction: column !important;
@@ -145,12 +143,9 @@
     justify-content: center;
   }
 
+  /* No boxed card here — the title sits directly on the accent band / cover photo, like desktop. */
   .hush-album-title-wrap {
     width: 100%;
-    border: 1px solid rgba(221, 213, 197, 0.9);
-    border-radius: 1.1rem;
-    background: rgba(255, 255, 255, 0.72);
-    box-shadow: 0 10px 28px rgba(99, 8, 38, 0.08);
     padding: 0.95rem 1rem !important;
   }
 
@@ -171,11 +166,8 @@
     font-size: 0.86rem !important;
   }
 
-  .hush-owner-pill {
-    border-radius: 999px;
-    background: #E8F0FB;
-    padding: 0.12rem 0.45rem;
-  }
+  /* Owner-view is plain inline text in the adaptive header colour (a light-blue pill would clash on
+     a dark accent band). */
 
   .hush-owner-dot,
   .hush-album-header-spacer {
