@@ -115,6 +115,9 @@ export default function OwnerToolbar({ album, photos, ownerToken, userTier, medi
   const [backgroundError, setBackgroundError] = useState('')
   const [accentSaving, setAccentSaving] = useState(false)
   const [accentError, setAccentError] = useState('')
+  const accentTimerRef = useRef<number | null>(null)
+  const accentPendingRef = useRef<string | null>(null)
+  const accentSavedRef = useRef<string | null>(album.accent_color ?? null)
   const [showBackgroundLibrary, setShowBackgroundLibrary] = useState(false)
   const [mediaRadius, setMediaRadius] = useState(album.media_radius ?? 16)
   const [mediaRadiusDraft, setMediaRadiusDraft] = useState(String(album.media_radius ?? 16))
@@ -370,20 +373,33 @@ export default function OwnerToolbar({ album, photos, ownerToken, userTier, medi
     }
   }
 
-  async function saveAccent(color: string | null): Promise<void> {
-    setAccentSaving(true)
+  // Preview the color INSTANTLY (optimistic), but debounce the network save so rapidly clicking
+  // through swatches sends ONE request when the owner settles — not one per click (which hit the
+  // owner rate-limit and caused rollback flicker). accentSavedRef tracks the last value the server
+  // actually accepted, so a failed commit rolls back to that, not to a mid-drag value.
+  function saveAccent(color: string | null): void {
     setAccentError('')
-    const previousAccent = album.accent_color ?? null
-    onAlbumUpdated({ accent_color: color }) // optimistic
+    onAlbumUpdated({ accent_color: color })
+    accentPendingRef.current = color
+    if (accentTimerRef.current !== null) window.clearTimeout(accentTimerRef.current)
+    accentTimerRef.current = window.setTimeout(() => { void commitAccent() }, 450)
+  }
+
+  async function commitAccent(): Promise<void> {
+    accentTimerRef.current = null
+    const color = accentPendingRef.current
+    setAccentSaving(true)
     try {
       const result = await saveDesignRequest(album.slug, { accent_color: color })
-      if (!result.ok) {
-        onAlbumUpdated({ accent_color: previousAccent })
+      if (result.ok) {
+        accentSavedRef.current = color
+      } else {
+        onAlbumUpdated({ accent_color: accentSavedRef.current })
         setAccentError(result.error)
         showAppToast(result.error, 'error')
       }
     } catch (e) {
-      onAlbumUpdated({ accent_color: previousAccent })
+      onAlbumUpdated({ accent_color: accentSavedRef.current })
       const message = e instanceof Error ? e.message : t('common.networkError')
       setAccentError(message)
       showAppToast(message, 'error')
@@ -457,6 +473,47 @@ export default function OwnerToolbar({ album, photos, ownerToken, userTier, medi
       window.clearTimeout(debouncedSaveRef.current)
     }
   }, [])
+
+  // Native <input type="color"> fires onChange continuously while the user drags inside the
+  // picker (dozens of events/sec), so the network save must be debounced separately from the
+  // instant visual update — otherwise every drag tick hits the API and trips its rate limit.
+  const accentSaveRef = useRef<number | null>(null)
+  const accentRevertRef = useRef<string | null>(album.accent_color ?? null)
+  const backgroundColorSaveRef = useRef<number | null>(null)
+  const backgroundColorRevertRef = useRef<string | null>(null)
+  useEffect(() => () => {
+    if (accentSaveRef.current !== null) window.clearTimeout(accentSaveRef.current)
+    if (backgroundColorSaveRef.current !== null) window.clearTimeout(backgroundColorSaveRef.current)
+  }, [])
+
+  function applyAccent(color: string | null) {
+    if (accentSaveRef.current === null) {
+      // Start of a new drag/typing burst — remember the last server-confirmed value to revert to on failure.
+      accentRevertRef.current = album.accent_color ?? null
+    } else {
+      window.clearTimeout(accentSaveRef.current)
+    }
+    setAccentError('')
+    onAlbumUpdated({ accent_color: color }) // instant preview, no network yet
+    accentSaveRef.current = window.setTimeout(() => {
+      accentSaveRef.current = null
+      void saveAccent(color, accentRevertRef.current)
+    }, 400)
+  }
+
+  function applyBackgroundColor(color: string) {
+    if (backgroundColorSaveRef.current === null) {
+      backgroundColorRevertRef.current = album.background_theme ?? null
+    } else {
+      window.clearTimeout(backgroundColorSaveRef.current)
+    }
+    setBackgroundError('')
+    onAlbumUpdated({ background_theme: color }) // instant preview, no network yet
+    backgroundColorSaveRef.current = window.setTimeout(() => {
+      backgroundColorSaveRef.current = null
+      void saveBackground(color, backgroundColorRevertRef.current)
+    }, 400)
+  }
 
   function scheduleAutoSave(
     nextRadius: number,
@@ -896,13 +953,12 @@ export default function OwnerToolbar({ album, photos, ownerToken, userTier, medi
                             <button
                               key={color}
                               title={color}
-                              onClick={() => void saveAccent(color)}
-                              disabled={accentSaving}
+                              onClick={() => saveAccent(color)}
                               style={{
                                 width: '100%', aspectRatio: '1', borderRadius: 999,
                                 background: color,
                                 border: selected ? '2px solid #2A211C' : '1.5px solid #DDD5C5',
-                                cursor: accentSaving ? 'wait' : 'pointer', position: 'relative',
+                                cursor: 'pointer', position: 'relative',
                               }}
                             >
                               {selected && (
