@@ -1651,18 +1651,18 @@ export default function UploadZone({ album, userTier, onPhotosUploaded }: Props)
           className="flex items-center justify-center rounded-full transition-transform group-hover:scale-105 w-9 h-9 sm:w-[52px] sm:h-[52px]"
           style={{ background: isDragging ? '#630826' : 'rgba(99,8,38,0.10)' }}
         >
-          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke={isDragging ? '#FDFAF5' : '#630826'} strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke={isDragging ? '#FDFAF5' : 'var(--album-accent, #630826)'} strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
             <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
             <polyline points="17 8 12 3 7 8" />
             <line x1="12" y1="3" x2="12" y2="15" />
           </svg>
         </div>
         <div className="text-center">
-          <p className="text-sm sm:text-[0.95rem]" style={{ fontWeight: 600, color: '#630826' }}>
+          <p className="text-sm sm:text-[0.95rem]" style={{ fontWeight: 600, color: 'var(--album-accent, #630826)' }}>
             {isDragging ? t('upload.drop') : t('upload.add')}
           </p>
           <p className="text-xs sm:text-[0.8rem]" style={{ color: '#8A7A66', marginTop: 2 }}>
-            {t('upload.dragdrop')} <span style={{ color: '#630826', fontWeight: 600 }}>{t('upload.browse')}</span>
+            {t('upload.dragdrop')} <span style={{ color: 'var(--album-accent, #630826)', fontWeight: 600 }}>{t('upload.browse')}</span>
           </p>
         </div>
         {/* Format pills — hidden on mobile to keep the drop zone compact */}

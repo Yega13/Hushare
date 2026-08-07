@@ -104,7 +104,7 @@ export default function AlbumHeader({ album, photoCount, isOwner, onAlbumUpdated
           ) : (
             <h1
               className={`hush-album-title text-xl font-bold truncate${isOwner ? ' hush-album-title-editable' : ''}`}
-              style={{ color: '#630826' }}
+              style={{ color: 'var(--album-accent, #630826)' }}
               onDoubleClick={openEditor}
               onPointerDown={(e) => {
                 if (!isOwner || e.pointerType === 'mouse') return
