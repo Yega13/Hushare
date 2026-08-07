@@ -4,7 +4,7 @@ import { verifyOwnerViaCookieWithRateLimit } from '@/lib/album-owner-access'
 import { forbidCrossSiteRequest } from '@/lib/request-security'
 import { queueAlbumSettingsBroadcast } from '@/lib/broadcast'
 import { getActiveSubscription } from '@/lib/subscriptions'
-import { isValidHex, isPaletteColor, isDarkEnoughForWhiteText } from '@/lib/album-design'
+import { isValidHex, isPaletteColor } from '@/lib/album-design'
 
 export const runtime = 'nodejs'
 
@@ -36,16 +36,13 @@ export async function POST(req: Request) {
   const access = await verifyOwnerViaCookieWithRateLimit(req, body.slug.trim())
   if (!access.ok) return NextResponse.json({ error: access.error }, { status: access.status, headers: NO_STORE })
 
-  // Palette colors are free for everyone. A custom (non-palette) color is a paid feature AND must
-  // pass the darkness check so white button text stays readable. Gating is enforced HERE on the
-  // server — never trust the client to have hidden the control.
+  // Palette colors are free for everyone. A custom (non-palette) color is a paid feature. No darkness
+  // restriction — the header text/logo auto-contrast, so any color reads fine. Gating is enforced
+  // HERE on the server — never trust the client to have hidden the control.
   if (accent && !isPaletteColor(accent)) {
     const isPaid = access.userId ? (await getActiveSubscription(access.userId)) !== null : false
     if (!isPaid) {
       return NextResponse.json({ error: 'Custom colors are a paid feature — pick a palette color or upgrade.' }, { status: 403, headers: NO_STORE })
-    }
-    if (!isDarkEnoughForWhiteText(accent)) {
-      return NextResponse.json({ error: 'That color is too light for readable buttons — please pick a darker shade.' }, { status: 400, headers: NO_STORE })
     }
   }
 

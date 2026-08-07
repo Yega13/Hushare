@@ -20,7 +20,7 @@ import {
 import { formatFileSize } from '@/lib/utils'
 import { showAppToast, storeAppToast } from '@/components/AppToast'
 import BackgroundLibraryModal from '@/components/owner-toolbar/BackgroundLibraryModal'
-import { ACCENT_PALETTE, DEFAULT_ACCENT } from '@/lib/album-design'
+import { ACCENT_PALETTE, DEFAULT_ACCENT, contrastText } from '@/lib/album-design'
 import RevealDatePicker from '@/components/RevealDatePicker'
 import ShareMenu from '@/components/owner-toolbar/ShareMenu'
 import {
@@ -666,7 +666,7 @@ export default function OwnerToolbar({ album, photos, ownerToken, userTier, medi
               setShowSettings(false)
             }}
           >
-            <Copy className="w-4 h-4" style={{ color: 'var(--album-accent, #630826)' }} />
+            <Copy className="w-4 h-4" style={{ color: '#7C5C3E' }} />
             {t('ot.share')}
           </button>
 
@@ -696,7 +696,7 @@ export default function OwnerToolbar({ album, photos, ownerToken, userTier, medi
           }}
           title={t('ot.createSlideshow')}
         >
-          <Play className="w-4 h-4" style={{ color: 'var(--album-accent, #630826)' }} />
+          <Play className="w-4 h-4" style={{ color: '#7C5C3E' }} />
           {t('ot.slideshow')}
         </button>
 
@@ -710,13 +710,13 @@ export default function OwnerToolbar({ album, photos, ownerToken, userTier, medi
           }}
           title={t('ot.liveWallTitle')}
         >
-          <MonitorPlay className="w-4 h-4" style={{ color: 'var(--album-accent, #630826)' }} />
+          <MonitorPlay className="w-4 h-4" style={{ color: '#7C5C3E' }} />
           {t('ot.liveWall')}
         </button>
 
         <button
           className="hush-press hush-owner-action hush-owner-arrange-action"
-          style={{ ...btnBase, background: arrangeMode ? 'var(--album-accent, #630826)' : btnBase.background, color: arrangeMode ? '#FDFAF5' : btnBase.color }}
+          style={{ ...btnBase, background: arrangeMode ? '#630826' : btnBase.background, color: arrangeMode ? '#FDFAF5' : btnBase.color }}
           onClick={() => {
             setShowShare(false)
             setShowSettings(false)
@@ -724,7 +724,7 @@ export default function OwnerToolbar({ album, photos, ownerToken, userTier, medi
           }}
           title={t('ot.arrangeMedia')}
         >
-          <Move className="w-4 h-4" style={{ color: arrangeMode ? '#FDFAF5' : 'var(--album-accent, #630826)' }} />
+          <Move className="w-4 h-4" style={{ color: arrangeMode ? '#FDFAF5' : '#7C5C3E' }} />
           {arrangeMode ? t('ot.done') : t('ot.arrange')}
         </button>
 
@@ -746,7 +746,7 @@ export default function OwnerToolbar({ album, photos, ownerToken, userTier, medi
             }}
             title={t('ot.settingsTitle')}
           >
-            <Settings className="w-4 h-4" style={{ color: 'var(--album-accent, #630826)' }} />
+            <Settings className="w-4 h-4" style={{ color: '#7C5C3E' }} />
             Settings
           </button>
 
@@ -907,7 +907,7 @@ export default function OwnerToolbar({ album, photos, ownerToken, userTier, medi
                             >
                               {selected && (
                                 <span className="absolute inset-0 flex items-center justify-center">
-                                  <Check className="w-3.5 h-3.5" style={{ color: '#FFFFFF' }} />
+                                  <Check className="w-3.5 h-3.5" style={{ color: contrastText(color) }} />
                                 </span>
                               )}
                             </button>

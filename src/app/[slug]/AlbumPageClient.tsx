@@ -825,10 +825,6 @@ export default function AlbumPageClient({ initialAlbum = null, initialPhotos, in
 
   const bgIsImage = isImageBackground(album.background_theme)
   const bgStyle = getBackgroundColorStyle(album.background_theme)
-  // Accent color → a CSS variable on the album root. Descendants (buttons, controls) tint off
-  // var(--album-accent, #630826), so a null accent falls back to the Hushare maroon (unchanged look).
-  const accentColor = album.accent_color || '#630826'
-  const rootStyle = { ...bgStyle, ['--album-accent' as string]: accentColor } as CSSProperties
 
   return (
     <>
@@ -849,7 +845,7 @@ export default function AlbumPageClient({ initialAlbum = null, initialPhotos, in
 
       <main
         className="hush-album-page min-h-dvh relative"
-        style={rootStyle}
+        style={bgStyle}
         aria-label={album.title}
       >
         <AlbumHeader
@@ -918,7 +914,7 @@ export default function AlbumPageClient({ initialAlbum = null, initialPhotos, in
               onClick={() => { void loadMore() }}
               disabled={loadingMore}
               className="hush-press"
-              style={{ fontSize: 14, fontWeight: 600, color: '#FDFAF5', background: 'var(--album-accent, #630826)', border: 'none', borderRadius: 999, padding: '10px 24px', cursor: loadingMore ? 'default' : 'pointer', opacity: loadingMore ? 0.6 : 1 }}
+              style={{ fontSize: 14, fontWeight: 600, color: '#FDFAF5', background: '#630826', border: 'none', borderRadius: 999, padding: '10px 24px', cursor: loadingMore ? 'default' : 'pointer', opacity: loadingMore ? 0.6 : 1 }}
             >
               {loadingMore ? 'Loading…' : `Load more · ${photos.length.toLocaleString()} of ${total.toLocaleString()}`}
             </button>

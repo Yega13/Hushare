@@ -8,6 +8,7 @@ import { useT } from '@/i18n/LocaleProvider'
 import Image from 'next/image'
 import Link from 'next/link'
 import { Check, Pencil, X } from 'lucide-react'
+import { contrastText, DEFAULT_ACCENT } from '@/lib/album-design'
 
 type Props = {
   album: Album
@@ -65,12 +66,17 @@ export default function AlbumHeader({ album, photoCount, isOwner, onAlbumUpdated
     }
   }
 
+  // The header band fills with the accent; text/logo/border auto-contrast so ANY color reads well.
+  const accent = album.accent_color || DEFAULT_ACCENT
+  const ink = contrastText(accent)
+  const useLightLogo = ink === '#FDFAF5'
+
   return (
-    <div className="hush-album-header-shell" style={{ borderBottom: '1px solid rgba(255,255,255,0.14)', background: 'var(--album-accent, #630826)' }}>
+    <div className="hush-album-header-shell" style={{ borderBottom: `1px solid ${useLightLogo ? 'rgba(255,255,255,0.14)' : 'rgba(0,0,0,0.10)'}`, background: accent }}>
       <div className="hush-container hush-album-header py-6 flex items-center justify-between" style={{ paddingInline: 'clamp(14px, 4vw, 20px)' }}>
         <Link href="/" className="hush-album-logo-link flex items-center transition hover:opacity-70" aria-label="Hushare home">
           <Image
-            src="/logo/logo-light-transparent.png"
+            src={useLightLogo ? '/logo/logo-light-transparent.png' : '/logo/logo-dark-transparent.png'}
             alt="Hushare"
             width={618}
             height={146}
@@ -104,7 +110,7 @@ export default function AlbumHeader({ album, photoCount, isOwner, onAlbumUpdated
           ) : (
             <h1
               className={`hush-album-title text-xl font-bold truncate${isOwner ? ' hush-album-title-editable' : ''}`}
-              style={{ color: '#FDFAF5' }}
+              style={{ color: ink }}
               onDoubleClick={openEditor}
               onPointerDown={(e) => {
                 if (!isOwner || e.pointerType === 'mouse') return
@@ -135,14 +141,14 @@ export default function AlbumHeader({ album, photoCount, isOwner, onAlbumUpdated
               )}
             </h1>
           )}
-          <p className="hush-album-meta text-xs mt-0.5" style={{ color: 'rgba(253,250,245,0.82)' }}>
+          <p className="hush-album-meta text-xs mt-0.5" style={{ color: ink, opacity: 0.82 }}>
             <span>{t('album.photos', { n: photoCount })}</span>
             <span aria-hidden="true"> · </span>
             <span>{t('album.created', { date: formatDate(album.created_at) })}</span>
             {isOwner && (
               <>
                 <span className="hush-owner-dot" aria-hidden="true"> · </span>
-                <span className="hush-owner-pill font-semibold" style={{ color: '#FDFAF5' }}>{t('album.ownerView')}</span>
+                <span className="hush-owner-pill font-semibold" style={{ color: ink }}>{t('album.ownerView')}</span>
               </>
             )}
           </p>

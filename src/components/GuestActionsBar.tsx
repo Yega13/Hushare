@@ -27,7 +27,7 @@ const btnBase: React.CSSProperties = {
   fontSize: '0.8125rem',
   fontWeight: 600,
   background: '#FDFAF5',
-  color: 'var(--album-accent, #630826)',
+  color: '#630826',
   border: '1px solid #DDD5C5',
   cursor: 'pointer',
   whiteSpace: 'nowrap' as const,
