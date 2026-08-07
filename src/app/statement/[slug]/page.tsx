@@ -6,20 +6,21 @@ import { ArrowLeft } from 'lucide-react'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { getServerLocale } from '@/i18n/server'
 import { getDictionary } from '@/i18n/get-dictionary'
+import StatementPoll from '@/components/StatementPoll'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL ?? 'https://hushare.space'
 
-type Statement = { slug: string; title: string; summary: string | null; body_html: string; published_at: string }
+type Statement = { slug: string; title: string; summary: string | null; body_html: string; published_at: string; poll_key: string | null }
 
 async function fetchStatement(slug: string): Promise<Statement | null> {
   try {
     const admin = createAdminClient()
     const { data } = await admin
       .from('statements')
-      .select('slug, title, summary, body_html, published_at')
+      .select('slug, title, summary, body_html, published_at, poll_key')
       .eq('slug', slug)
       .maybeSingle()
     return (data as Statement) ?? null
@@ -77,6 +78,8 @@ export default async function StatementPage({ params }: { params: Promise<{ slug
         </h1>
 
         <div className="hush-statement-body" style={{ marginTop: '2rem' }} dangerouslySetInnerHTML={{ __html: s.body_html }} />
+
+        {s.poll_key && <StatementPoll pollKey={s.poll_key} />}
 
         {/* Official Hushare seal — solid wax-seal with the mark knocked out */}
         <div style={{ marginTop: '4.5rem', paddingTop: '2.75rem', borderTop: '1px solid #E7DDCC', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 16 }}>
