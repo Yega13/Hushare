@@ -8,7 +8,6 @@ import { useCallback, useRef, useState } from 'react'
 const TILES = ['#c9b7a6', '#9fb0a2', '#d8c4b0', '#b9a48f', '#a7b8b0', '#cbb9a4', '#b0a595', '#c4b2a0']
 
 const tileGrid: React.CSSProperties = { flex: 1, display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gridTemplateRows: 'repeat(2, 1fr)', gap: 5, padding: 8, background: '#FDFAF5' }
-const tag: React.CSSProperties = { position: 'absolute', top: 10, fontSize: 10, fontWeight: 800, letterSpacing: '0.14em', padding: '3px 8px', borderRadius: 999, zIndex: 2 }
 
 function Tiles() {
   return <div style={tileGrid}>{TILES.map((c, i) => <span key={i} style={{ background: c, borderRadius: 5 }} />)}</div>
@@ -46,7 +45,6 @@ export default function StatementCompare() {
         <div style={{ flex: '0 0 62%', position: 'relative', display: 'flex', flexDirection: 'column', justifyContent: 'flex-end', padding: 16, background: 'linear-gradient(135deg, #e9c6b3, #d98c93 55%, #a85c6e)' }}>
           <img src="/logo/logo-light-transparent.png" alt="" aria-hidden="true" style={{ position: 'absolute', top: 12, left: 14, height: 14, width: 'auto', zIndex: 2 }} />
           <div aria-hidden="true" style={{ position: 'absolute', inset: 0, background: 'linear-gradient(180deg, rgba(20,10,14,0) 42%, rgba(20,10,14,0.62) 100%)' }} />
-          <span style={{ ...tag, right: 10, background: 'rgba(255,255,255,0.9)', color: '#2D7A4F' }}>PROPOSED</span>
           <div style={{ position: 'relative', zIndex: 1, color: '#FDFAF5' }}>
             <div style={{ fontFamily: 'var(--font-serif)', fontStyle: 'italic', fontSize: 'clamp(18px, 3.6vw, 30px)', lineHeight: 1 }}>Aram &amp; Ani</div>
             <div style={{ fontSize: 'clamp(10px, 1.6vw, 13px)', opacity: 0.9, marginTop: 6 }}>Yerevan · 12 September 2026</div>
@@ -66,7 +64,6 @@ export default function StatementCompare() {
             </div>
             <span style={{ width: 26 }} />
           </div>
-          <span style={{ ...tag, left: 10, background: '#630826', color: '#FDFAF5' }}>NOW</span>
         </div>
         <Tiles />
       </div>
