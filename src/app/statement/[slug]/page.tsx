@@ -6,7 +6,9 @@ import { ArrowLeft } from 'lucide-react'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { getServerLocale } from '@/i18n/server'
 import { getDictionary } from '@/i18n/get-dictionary'
+import { Fragment } from 'react'
 import StatementPoll from '@/components/StatementPoll'
+import StatementCompare from '@/components/StatementCompare'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -77,7 +79,12 @@ export default async function StatementPage({ params }: { params: Promise<{ slug
           {s.title}
         </h1>
 
-        <div className="hush-statement-body" style={{ marginTop: '2rem' }} dangerouslySetInnerHTML={{ __html: s.body_html }} />
+        {s.body_html.split('%%COMPARE%%').map((part, i, arr) => (
+          <Fragment key={i}>
+            <div className="hush-statement-body" style={{ marginTop: i === 0 ? '2rem' : '1.75rem' }} dangerouslySetInnerHTML={{ __html: part }} />
+            {i < arr.length - 1 && <StatementCompare />}
+          </Fragment>
+        ))}
 
         {s.poll_key && <StatementPoll pollKey={s.poll_key} />}
 

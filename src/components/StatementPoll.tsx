@@ -29,6 +29,11 @@ export default function StatementPoll({ pollKey }: { pollKey: string }) {
     return () => { alive = false }
   }, [pollKey])
 
+  function changeVote() {
+    setVoted(null)
+    try { localStorage.removeItem(`hush_poll_${pollKey}`) } catch { /* no storage */ }
+  }
+
   async function vote(optionKey: string) {
     if (busy || voted) return
     setBusy(true); setErr('')
@@ -112,9 +117,16 @@ export default function StatementPoll({ pollKey }: { pollKey: string }) {
         })}
       </div>
 
-      <p style={{ fontSize: 12.5, color: '#8B6F4E', margin: '1.1rem 0 0' }}>
-        {showResults ? `${data.total} ${data.total === 1 ? 'vote' : 'votes'} so far · thanks for weighing in.` : 'Tap a look to cast your vote — one per person.'}
-      </p>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap', margin: '1.1rem 0 0' }}>
+        <p style={{ fontSize: 12.5, color: '#8B6F4E', margin: 0 }}>
+          {showResults ? `${data.total} ${data.total === 1 ? 'vote' : 'votes'} so far · thanks for weighing in.` : 'Tap an option to vote — one per person.'}
+        </p>
+        {showResults && (
+          <button type="button" onClick={changeVote} style={{ fontSize: 12.5, fontWeight: 600, color: '#630826', background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline', padding: 0 }}>
+            Change my vote
+          </button>
+        )}
+      </div>
       {err && <p style={{ fontSize: 12.5, color: '#C0392B', margin: '.5rem 0 0' }}>{err}</p>}
     </section>
   )
