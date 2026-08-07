@@ -39,7 +39,7 @@ export default function StatementCompare() {
       onPointerUp={(e) => { dragging.current = false; try { (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId) } catch { /* ignore */ } }}
       onPointerCancel={() => { dragging.current = false }}
       onKeyDown={(e) => { if (e.key === 'ArrowLeft') setPos((p) => Math.max(3, p - 4)); if (e.key === 'ArrowRight') setPos((p) => Math.min(97, p + 4)) }}
-      style={{ position: 'relative', width: '100%', aspectRatio: '16 / 11', borderRadius: 16, overflow: 'hidden', border: '1px solid #E7DDCC', boxShadow: '0 12px 34px rgba(60,40,20,0.14)', cursor: 'ew-resize', userSelect: 'none', touchAction: 'none', margin: '1.6rem 0' }}
+      style={{ position: 'relative', width: '100%', maxWidth: 430, aspectRatio: '16 / 12', borderRadius: 14, overflow: 'hidden', border: '1px solid #E7DDCC', boxShadow: '0 10px 28px rgba(60,40,20,0.14)', cursor: 'ew-resize', userSelect: 'none', touchAction: 'none', margin: '1.5rem auto' }}
     >
       {/* Base layer — PROPOSED (cover banner) */}
       <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column' }}>

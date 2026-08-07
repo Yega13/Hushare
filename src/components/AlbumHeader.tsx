@@ -154,7 +154,11 @@ export default function AlbumHeader({ album, photoCount, isOwner, onAlbumUpdated
         )}
       </p>
       {welcome && (
-        <p style={{ color: fg, opacity: 0.92, fontSize: 13.5, lineHeight: 1.5, marginTop: 6, maxWidth: '52ch', textShadow: shadow }}>
+        <p style={{
+          color: fg, opacity: 0.9, fontFamily: 'var(--font-serif)', fontStyle: 'italic',
+          fontSize: 15, lineHeight: 1.5, marginTop: 8, maxWidth: '46ch', textShadow: shadow,
+          ...(hero ? {} : { marginInline: 'auto', textAlign: 'center' as const }),
+        }}>
           {welcome}
         </p>
       )}
