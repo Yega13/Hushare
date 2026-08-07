@@ -285,6 +285,8 @@ export const en = {
   'ot.addPicture': 'Add picture',
   'ot.seeAll': 'See all',
   'ot.customColor': 'Custom color',
+  'ot.albumColor': 'Album color',
+  'ot.customColorPro': 'Custom color · Pro',
   'ot.reset': 'Reset',
   'ot.mediaDisplay': 'Media display',
   'ot.cornerRadius': 'Global corner radius',

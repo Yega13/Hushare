@@ -274,6 +274,8 @@ export const hy: Partial<Record<DictKey, string>> = {
   'ot.addPicture': 'Ավելացնել նկար',
   'ot.seeAll': 'Տեսնել բոլորը',
   'ot.customColor': 'Սեփական գույն',
+  'ot.albumColor': 'Ալբոմի գույն',
+  'ot.customColorPro': 'Սեփական գույն · Pro',
   'ot.reset': 'Վերականգնել',
   'ot.mediaDisplay': 'Մեդիայի ցուցադրում',
   'ot.cornerRadius': 'Անկյունների կլորացում',

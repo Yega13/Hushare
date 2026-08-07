@@ -1687,7 +1687,7 @@ export default function UploadZone({ album, userTier, onPhotosUploaded }: Props)
         type="button"
         onClick={() => cameraInputRef.current?.click()}
         className="mt-2 flex w-full items-center justify-center gap-2 rounded-2xl py-3 font-semibold transition-transform active:scale-[0.99] sm:hidden"
-        style={{ background: '#630826', color: '#FDFAF5' }}
+        style={{ background: 'var(--album-accent, #630826)', color: '#FDFAF5' }}
       >
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
           <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" />

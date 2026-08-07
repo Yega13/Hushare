@@ -274,6 +274,8 @@ export const ru: Partial<Record<DictKey, string>> = {
   'ot.addPicture': 'Добавить фото',
   'ot.seeAll': 'Показать все',
   'ot.customColor': 'Свой цвет',
+  'ot.albumColor': 'Цвет альбома',
+  'ot.customColorPro': 'Свой цвет · Pro',
   'ot.reset': 'Сбросить',
   'ot.mediaDisplay': 'Отображение медиа',
   'ot.cornerRadius': 'Скругление углов',

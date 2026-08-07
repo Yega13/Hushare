@@ -20,6 +20,7 @@ import {
 import { formatFileSize } from '@/lib/utils'
 import { showAppToast, storeAppToast } from '@/components/AppToast'
 import BackgroundLibraryModal from '@/components/owner-toolbar/BackgroundLibraryModal'
+import { ACCENT_PALETTE, DEFAULT_ACCENT } from '@/lib/album-design'
 import RevealDatePicker from '@/components/RevealDatePicker'
 import ShareMenu from '@/components/owner-toolbar/ShareMenu'
 import {
@@ -27,6 +28,7 @@ import {
   deleteAlbumRequest,
   fetchCollections,
   saveBackgroundRequest,
+  saveDesignRequest,
   saveCustomUrlRequest,
   saveGuestDownloadsRequest,
   saveRequireApprovalRequest,
@@ -111,6 +113,8 @@ export default function OwnerToolbar({ album, photos, ownerToken, userTier, medi
 
   const [backgroundSaving, setBackgroundSaving] = useState(false)
   const [backgroundError, setBackgroundError] = useState('')
+  const [accentSaving, setAccentSaving] = useState(false)
+  const [accentError, setAccentError] = useState('')
   const [showBackgroundLibrary, setShowBackgroundLibrary] = useState(false)
   const [mediaRadius, setMediaRadius] = useState(album.media_radius ?? 16)
   const [mediaRadiusDraft, setMediaRadiusDraft] = useState(String(album.media_radius ?? 16))
@@ -173,6 +177,7 @@ export default function OwnerToolbar({ album, photos, ownerToken, userTier, medi
   const canUseCollections = userTier === 'studio'
   const bgChoice = album.background_theme ?? DEFAULT_BG
   const currentColor = bgChoice.startsWith('#') ? bgChoice : DEFAULT_BG
+  const currentAccent = album.accent_color || DEFAULT_ACCENT
   const isDark = bgChoice === '#1C2333' || bgChoice === '#1A2B1A' || bgChoice.startsWith('image:') || bgChoice.startsWith('stock:')
   const radiusMax = Math.max(1, Math.round(mediaRadiusMax))
 
@@ -362,6 +367,28 @@ export default function OwnerToolbar({ album, photos, ownerToken, userTier, medi
       return false
     } finally {
       setBackgroundSaving(false)
+    }
+  }
+
+  async function saveAccent(color: string | null): Promise<void> {
+    setAccentSaving(true)
+    setAccentError('')
+    const previousAccent = album.accent_color ?? null
+    onAlbumUpdated({ accent_color: color }) // optimistic
+    try {
+      const result = await saveDesignRequest(album.slug, { accent_color: color })
+      if (!result.ok) {
+        onAlbumUpdated({ accent_color: previousAccent })
+        setAccentError(result.error)
+        showAppToast(result.error, 'error')
+      }
+    } catch (e) {
+      onAlbumUpdated({ accent_color: previousAccent })
+      const message = e instanceof Error ? e.message : t('common.networkError')
+      setAccentError(message)
+      showAppToast(message, 'error')
+    } finally {
+      setAccentSaving(false)
     }
   }
 
@@ -858,6 +885,60 @@ export default function OwnerToolbar({ album, photos, ownerToken, userTier, medi
                       </button>
                     </div>
                     {backgroundError && <p className="text-xs mt-2" style={{ color: '#C0392B' }}>{backgroundError}</p>}
+
+                    {/* Album accent color — tints the album's buttons & controls */}
+                    <div className="mt-4 pt-3" style={{ borderTop: '1px solid #ECE4D4' }}>
+                      <p className="text-xs font-medium mb-2" style={{ color: '#7C5C3E' }}>{t('ot.albumColor')}</p>
+                      <div className="grid grid-cols-9 gap-2 mb-3">
+                        {ACCENT_PALETTE.map((color) => {
+                          const selected = currentAccent.toLowerCase() === color.toLowerCase()
+                          return (
+                            <button
+                              key={color}
+                              title={color}
+                              onClick={() => void saveAccent(color)}
+                              disabled={accentSaving}
+                              style={{
+                                width: '100%', aspectRatio: '1', borderRadius: 999,
+                                background: color,
+                                border: selected ? '2px solid #2A211C' : '1.5px solid #DDD5C5',
+                                cursor: accentSaving ? 'wait' : 'pointer', position: 'relative',
+                              }}
+                            >
+                              {selected && (
+                                <span className="absolute inset-0 flex items-center justify-center">
+                                  <Check className="w-3.5 h-3.5" style={{ color: '#FFFFFF' }} />
+                                </span>
+                              )}
+                            </button>
+                          )
+                        })}
+                      </div>
+                      <div className="flex items-center gap-2">
+                        {canCustomize ? (
+                          <>
+                            <label className="text-xs font-medium" style={{ color: '#7C5C3E' }}>{t('ot.customColor')}</label>
+                            <input
+                              type="color"
+                              value={currentAccent}
+                              onChange={(e) => void saveAccent(e.target.value)}
+                              style={{ width: 36, height: 28, borderRadius: 8, border: '1.5px solid #DDD5C5', cursor: 'pointer', padding: 2 }}
+                            />
+                            <span className="text-xs font-mono" style={{ color: '#A89880' }}>{currentAccent}</span>
+                          </>
+                        ) : (
+                          <span className="text-xs" style={{ color: '#A89880' }}>{t('ot.customColorPro')}</span>
+                        )}
+                        <button
+                          className="ml-auto text-xs"
+                          style={{ color: '#A89880', cursor: 'pointer' }}
+                          onClick={() => void saveAccent(null)}
+                        >
+                          {t('ot.reset')}
+                        </button>
+                      </div>
+                      {accentError && <p className="text-xs mt-2" style={{ color: '#C0392B' }}>{accentError}</p>}
+                    </div>
                   </div>
                 )}
               </section>

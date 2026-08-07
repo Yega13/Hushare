@@ -56,6 +56,20 @@ export async function saveBackgroundRequest(
   return { ok: true, background_theme: body.background_theme !== undefined ? body.background_theme : backgroundTheme }
 }
 
+export async function saveDesignRequest(
+  slug: string,
+  fields: { accent_color?: string | null },
+): Promise<{ ok: true; accent_color?: string | null } | { ok: false; error: string }> {
+  const res = await fetch('/api/album/design', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ slug, ...fields }),
+  })
+  const body = await jsonBody<{ error?: string; accent_color?: string | null }>(res)
+  if (!res.ok) return { ok: false, error: body.error ?? `Save failed (${res.status})` }
+  return { ok: true, accent_color: body.accent_color }
+}
+
 export async function saveMediaSettingsRequest(
   slug: string,
   mediaRadius: number,

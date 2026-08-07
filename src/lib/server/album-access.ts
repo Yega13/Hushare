@@ -24,6 +24,7 @@ const ALBUM_SELECT_COLS = [
   'slideshow_interval_ms', 'slideshow_animation', 'video_autoplay',
   'cover_photo_id', 'reveal_at', 'guest_uploads_enabled', 'allow_guest_downloads',
   'require_approval', 'face_finder_enabled',
+  'accent_color', 'logo_url', 'template', 'welcome_message', 'hide_branding',
   'last_activity_at', 'created_at',
   'password_hash', 'retired_at',
 ].join(', ')
@@ -44,6 +45,8 @@ type AlbumRow = {
   slideshow_interval_ms: number; slideshow_animation: string; video_autoplay: boolean
   cover_photo_id: string | null; reveal_at: string | null; guest_uploads_enabled: boolean
   allow_guest_downloads: boolean; require_approval: boolean; face_finder_enabled: boolean
+  accent_color: string | null; logo_url: string | null; template: string | null
+  welcome_message: string | null; hide_branding: boolean
   last_activity_at: string; created_at: string
   password_hash: string | null; retired_at: string | null
 }

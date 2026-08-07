@@ -17,6 +17,14 @@ export type Album = {
   title: string;
   background_theme: string | null;
   cover_photo_id: string | null;
+  // Album design (Part A). accent_color: curated palette (all) or custom hex (paid). logo_url:
+  // owner-uploaded logo (paid). template: one-click preset key. welcome_message: welcome-header line.
+  // hide_branding: paid — hides "Powered by Hushare". All default empty → legacy albums look unchanged.
+  accent_color: string | null;
+  logo_url: string | null;
+  template: string | null;
+  welcome_message: string | null;
+  hide_branding: boolean;
   reveal_at: string | null;
   media_radius: number;
   video_autoplay: boolean;
