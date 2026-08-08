@@ -113,7 +113,6 @@ export default function OwnerToolbar({ album, photos, ownerToken, userTier, medi
 
   const [backgroundSaving, setBackgroundSaving] = useState(false)
   const [backgroundError, setBackgroundError] = useState('')
-  const [accentSaving, setAccentSaving] = useState(false)
   const [accentError, setAccentError] = useState('')
   const accentTimerRef = useRef<number | null>(null)
   const accentPendingRef = useRef<string | null>(null)
@@ -390,7 +389,6 @@ export default function OwnerToolbar({ album, photos, ownerToken, userTier, medi
   async function commitAccent(): Promise<void> {
     accentTimerRef.current = null
     const color = accentPendingRef.current
-    setAccentSaving(true)
     try {
       const result = await saveDesignRequest(album.slug, { accent_color: color })
       if (result.ok) {
@@ -405,8 +403,6 @@ export default function OwnerToolbar({ album, photos, ownerToken, userTier, medi
       const message = e instanceof Error ? e.message : t('common.networkError')
       setAccentError(message)
       showAppToast(message, 'error')
-    } finally {
-      setAccentSaving(false)
     }
   }
 
