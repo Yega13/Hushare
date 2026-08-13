@@ -4,6 +4,7 @@ import type { Metadata } from 'next'
 import type { Photo } from '@/types'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { resolveAlbum, fetchAuthorizedPhotos } from '@/lib/server/album-access'
+import { track } from '@/lib/analytics'
 import { getServerLocale } from '@/i18n/server'
 import { getDictionary } from '@/i18n/get-dictionary'
 import AlbumPageClient from './AlbumPageClient'
@@ -18,6 +19,7 @@ type AlbumMeta = {
   title: string
   custom_slug: string | null
   cover_photo_id: string | null
+  header_image: string | null
   reveal_at: string | null
   password_hash: string | null
 }
@@ -45,7 +47,7 @@ function photoOgUrl(photo: PhotoMeta): string | null {
 
 async function fetchAlbumMeta(slug: string): Promise<AlbumMeta | null> {
   const admin = createAdminClient()
-  const cols = 'id, title, custom_slug, cover_photo_id, reveal_at, password_hash'
+  const cols = 'id, title, custom_slug, cover_photo_id, header_image, reveal_at, password_hash'
   const [bySlug, byCustom] = await Promise.all([
     admin.from('albums').select(cols).eq('slug', slug).is('retired_at', null).maybeSingle(),
     admin.from('albums').select(cols).eq('custom_slug', slug).is('retired_at', null).maybeSingle(),
@@ -90,7 +92,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   // Don't expose cover photo URL in OG tags for locked or password-protected albums —
   // the password check on the page itself would be bypassed by crawlers reading meta tags.
   const isPubliclyViewable = isRevealed && !album.password_hash
-  const coverUrl = isPubliclyViewable ? await fetchCoverUrl(album) : null
+  const coverUrl = isPubliclyViewable ? (album.header_image ?? await fetchCoverUrl(album)) : null
   const ogImage = coverUrl ?? BRAND_OG_IMAGE
 
   return {
@@ -132,6 +134,12 @@ export default async function AlbumPage({ params }: Props) {
   if (resolved.kind === 'password') {
     return <AlbumPageClient initialGate={{ type: 'password', slug: resolved.slug, title: resolved.title }} />
   }
+
+  // Count an album view — one per server-rendered page load. Fire-and-forget (writeDataPoint is
+  // synchronous + non-blocking and track() swallows all errors), so it never affects the render.
+  // The server can't read the #owner= fragment, so views are recorded as guest — which is what the
+  // overwhelming majority are; a rare owner reload counting is acceptable noise for a views metric.
+  track({ name: 'album_viewed', albumId: resolved.album.id, source: 'guest' })
 
   // Open / already-unlocked — fetch photos server-side so they land in the initial HTML.
   let initialPhotos: Photo[] = []

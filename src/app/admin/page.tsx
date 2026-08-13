@@ -10,6 +10,10 @@ import AdminResetErrorsButton from '@/components/AdminResetErrorsButton'
 import AdminDeleteAlbumButton from '@/components/AdminDeleteAlbumButton'
 import AdminSyncPolarButton from '@/components/AdminSyncPolarButton'
 import AdminPublishStatement from '@/components/AdminPublishStatement'
+import AdminLiveUsers from '@/components/AdminLiveUsers'
+import AdminGrowthChart from '@/components/AdminGrowthChart'
+import { getTrafficAnalytics } from '@/lib/cf-analytics'
+import AdminSupportLookup from '@/components/AdminSupportLookup'
 
 // Live data, never cached, never indexed. Access is gated to ADMIN_EMAILS below.
 export const runtime = 'nodejs'
@@ -21,6 +25,22 @@ const BRAND = '#630826'
 const MUTED = '#8A7A66'
 const CARD = '#FFFFFF'
 const BORDER = '#E4DAC9'
+
+const EVENT_LABELS: Record<string, string> = {
+  album_viewed: 'Album views',
+  album_created: 'Albums created',
+  media_uploaded: 'Uploads',
+  media_downloaded: 'Downloads',
+  media_deleted: 'Deletes',
+  face_search_run: 'Face searches',
+  checkout_started: 'Checkouts',
+  subscription_active: 'Subs activated',
+  subscription_canceled: 'Subs canceled',
+  album_retired: 'Albums retired',
+  support_submitted: 'Support forms',
+  report_submitted: 'Reports',
+  support_chat: 'Support chats',
+}
 
 type AlbumRow = {
   id: string
@@ -129,6 +149,65 @@ export default async function AdminPage() {
     .sort((a, b) => (b.created_at ?? '').localeCompare(a.created_at ?? ''))
     .slice(0, 15)
 
+  // ── Growth: new users/albums/uploads over the last 7 and 30 days, plus 7-day active albums.
+  // Cheap head-counts; user growth is derived from the already-fetched listUsers result (no extra
+  // auth call). Note: newUsers counts are bounded by the 200-user listUsers page — fine at current
+  // scale; revisit with a dedicated created_at query once registrations exceed a few hundred.
+  const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString()
+  const monthAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString()
+  const [newAlbums7d, newAlbums30d, newUploads7d, newUploads30d, activeAlbums7d] = await Promise.all([
+    admin.from('albums').select('id', { count: 'exact', head: true }).gte('created_at', weekAgo),
+    admin.from('albums').select('id', { count: 'exact', head: true }).gte('created_at', monthAgo),
+    admin.from('photos').select('id', { count: 'exact', head: true }).gte('created_at', weekAgo),
+    admin.from('photos').select('id', { count: 'exact', head: true }).gte('created_at', monthAgo),
+    admin.from('albums').select('id', { count: 'exact', head: true }).is('retired_at', null).gte('last_activity_at', weekAgo),
+  ])
+  const newUsers7d = allUsers.filter((u) => (u.created_at ?? '') >= weekAgo).length
+  const newUsers30d = allUsers.filter((u) => (u.created_at ?? '') >= monthAgo).length
+
+  const growthCards: { label: string; value: string; hint?: string }[] = [
+    { label: 'New users', value: String(newUsers7d), hint: `${newUsers30d} in 30d` },
+    { label: 'New albums', value: String(newAlbums7d.count ?? 0), hint: `${newAlbums30d.count ?? 0} in 30d` },
+    { label: 'New uploads', value: String(newUploads7d.count ?? 0), hint: `${newUploads30d.count ?? 0} in 30d` },
+    { label: 'Active albums', value: String(activeAlbums7d.count ?? 0), hint: 'touched in 7d' },
+  ]
+
+  // ── Growth charts: daily new albums/uploads (aggregated DB-side) + signups (from the users page).
+  const { data: growthRaw } = await admin.rpc('admin_growth_series', { p_days: 14 })
+  const series = (growthRaw ?? []) as { day: string; albums: number | string; uploads: number | string }[]
+  const signupByDay = new Map<string, number>()
+  for (const u of allUsers) {
+    const d = (u.created_at ?? '').slice(0, 10)
+    if (d) signupByDay.set(d, (signupByDay.get(d) ?? 0) + 1)
+  }
+  const albumsPts = series.map((s) => ({ day: s.day, value: Number(s.albums) }))
+  const uploadsPts = series.map((s) => ({ day: s.day, value: Number(s.uploads) }))
+  const signupsPts = series.map((s) => ({ day: s.day, value: signupByDay.get(s.day) ?? 0 }))
+
+  // ── Cloudflare analytics: worker perf (GraphQL) + product events (Analytics Engine). All optional —
+  // each is null when the token/query is unavailable, so the section just shows what it can.
+  const analytics = await getTrafficAnalytics()
+  const analyticsOn = analytics.configured
+  const workerMetrics = analytics.workerMetrics
+  const eventTotals = analytics.eventTotals
+  const topAlbumsRaw = analytics.topAlbums
+  const viewsPerDay = analytics.viewsPerDay
+  // Resolve top-album IDs → titles/slugs for a clickable table.
+  const topAlbumIds = (topAlbumsRaw ?? []).map((a) => a.albumId)
+  const topAlbumMeta = new Map<string, { slug: string; title: string }>()
+  if (topAlbumIds.length) {
+    const { data: metaRows } = await admin.from('albums').select('id, slug, custom_slug, title').in('id', topAlbumIds)
+    for (const a of (metaRows ?? []) as { id: string; slug: string; custom_slug: string | null; title: string }[]) {
+      topAlbumMeta.set(a.id, { slug: a.custom_slug ?? a.slug, title: a.title })
+    }
+  }
+  const trafficCards: { label: string; value: string; hint?: string }[] = workerMetrics ? [
+    { label: 'Requests', value: workerMetrics.requests.toLocaleString(), hint: 'last 24h' },
+    { label: 'Errors', value: workerMetrics.errors.toLocaleString(), hint: workerMetrics.requests > 0 ? `${((workerMetrics.errors / workerMetrics.requests) * 100).toFixed(2)}%` : 'last 24h' },
+    { label: 'CPU p50', value: `${workerMetrics.cpuP50} µs`, hint: 'per request' },
+    { label: 'CPU p99', value: `${workerMetrics.cpuP99} µs`, hint: 'per request' },
+  ] : []
+
   const cards: { label: string; value: string; hint?: string }[] = [
     { label: 'Active albums', value: String(albumsActive.count ?? 0), hint: `${albumsRetired.count ?? 0} retired` },
     { label: 'Photos', value: String(imgCount.count ?? 0) },
@@ -161,7 +240,22 @@ export default async function AdminPage() {
         </div>
         <p style={{ fontSize: 12, color: MUTED, marginBottom: 22 }}>Signed in as {user?.email}. Live data — reload to update.</p>
 
-        {/* Stat cards */}
+        {/* Real-time active users — self-updating (polls every 5s) */}
+        {/* Sticky jump-nav so every section is one click away */}
+        <nav style={{ position: 'sticky', top: 0, zIndex: 30, background: '#FDFAF5', borderBottom: `1px solid ${BORDER}`, padding: '10px 0', marginBottom: 22, display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+          {(([['support', 'Support'], ['live', 'Live'], ['overview', 'Overview'], ['growth', 'Growth'], ['traffic', 'Traffic'], ['ops', 'Ops'], ['errors', 'Errors'], ['albums', 'Albums'], ['users', 'Users']]) as [string, string][]).map(([id, label]) => (
+            <a key={id} href={`#${id}`} style={{ fontSize: 12.5, fontWeight: 600, color: BRAND, background: CARD, border: `1px solid ${BORDER}`, borderRadius: 999, padding: '5px 13px', textDecoration: 'none' }}>{label}</a>
+          ))}
+        </nav>
+        {/* Support — look up a user or album by email/link and act on it */}
+        <h2 id="support" style={{ fontSize: 15, fontWeight: 700, color: INK, margin: '0 0 10px', scrollMarginTop: 64 }}>Support lookup</h2>
+        <AdminSupportLookup />
+
+        <h2 id="live" style={{ fontSize: 15, fontWeight: 700, color: INK, margin: '0 0 10px', scrollMarginTop: 64 }}>Live now</h2>
+        <AdminLiveUsers />
+
+        {/* Overview — headline totals */}
+        <h2 id="overview" style={{ fontSize: 15, fontWeight: 700, color: INK, margin: '20px 0 10px', scrollMarginTop: 64 }}>Overview</h2>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 12, marginBottom: 28 }}>
           {cards.map((c) => (
             <div key={c.label} style={{ background: CARD, border: `1px solid ${BORDER}`, borderRadius: 12, padding: '14px 16px' }}>
@@ -172,7 +266,101 @@ export default async function AdminPage() {
           ))}
         </div>
 
+        {/* Growth — new activity over the last 7 days (30-day total shown in gray) */}
+        <h2 id="growth" style={{ fontSize: 15, fontWeight: 700, color: INK, margin: '0 0 10px', scrollMarginTop: 64 }}>
+          Growth <span style={{ fontSize: 12, fontWeight: 400, color: MUTED }}>· last 7 days (30-day total in gray)</span>
+        </h2>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 12, marginBottom: 28 }}>
+          {growthCards.map((c) => (
+            <div key={c.label} style={{ background: CARD, border: `1px solid ${BORDER}`, borderRadius: 12, padding: '14px 16px' }}>
+              <div style={{ fontSize: 12, color: MUTED, marginBottom: 6 }}>{c.label}</div>
+              <div style={{ fontSize: 22, fontWeight: 700, color: INK }}>{c.value}</div>
+              {c.hint && <div style={{ fontSize: 11, color: MUTED, marginTop: 3 }}>{c.hint}</div>}
+            </div>
+          ))}
+        </div>
+
+        {/* Growth charts — daily trend over the last 14 days (hover a bar for its value) */}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 12, marginBottom: 28 }}>
+          <AdminGrowthChart label="New albums / day" points={albumsPts} color={BRAND} unit="albums" />
+          <AdminGrowthChart label="Uploads / day" points={uploadsPts} color="#B4531F" unit="items" />
+          <AdminGrowthChart label="Signups / day" points={signupsPts} color="#1F5136" unit="users" />
+        </div>
+
+        {/* Traffic & performance — Cloudflare worker metrics + product events */}
+        <h2 style={{ fontSize: 15, fontWeight: 700, color: INK, margin: '0 0 10px' }}>
+          Traffic &amp; performance <span style={{ fontSize: 12, fontWeight: 400, color: MUTED }}>· Cloudflare · worker 24h · events 7d</span>
+        </h2>
+        <span id="traffic" style={{ display: 'block', height: 0, scrollMarginTop: 64 }} aria-hidden="true" />
+        {!analyticsOn ? (
+          <div style={{ background: CARD, border: `1px solid ${BORDER}`, borderRadius: 12, padding: '14px 16px', marginBottom: 28, fontSize: 13, color: MUTED }}>
+            Add a <code>CLOUDFLARE_ANALYTICS_TOKEN</code> secret (Account Analytics: Read) to light this up.
+          </div>
+        ) : (
+          <div style={{ marginBottom: 28 }}>
+            {analytics.errors.length > 0 && (
+              <div style={{ fontSize: 11, color: '#B3261E', background: '#FBEEF0', border: `1px solid #EAD3D8`, borderRadius: 8, padding: '8px 10px', marginBottom: 10, whiteSpace: 'pre-wrap' }}>
+                Diagnostics: {analytics.errors.join('  ·  ')}
+              </div>
+            )}
+            {trafficCards.length > 0 && (
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 12, marginBottom: 12 }}>
+                {trafficCards.map((c) => (
+                  <div key={c.label} style={{ background: CARD, border: `1px solid ${BORDER}`, borderRadius: 12, padding: '14px 16px' }}>
+                    <div style={{ fontSize: 12, color: MUTED, marginBottom: 6 }}>{c.label}</div>
+                    <div style={{ fontSize: 22, fontWeight: 700, color: INK }}>{c.value}</div>
+                    {c.hint && <div style={{ fontSize: 11, color: MUTED, marginTop: 3 }}>{c.hint}</div>}
+                  </div>
+                ))}
+              </div>
+            )}
+
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 12, marginBottom: 12 }}>
+              {viewsPerDay && viewsPerDay.length > 0 && (
+                <AdminGrowthChart label="Album views / day" points={viewsPerDay} color="#21458c" unit="views" />
+              )}
+              {eventTotals && eventTotals.length > 0 && (
+                <div style={{ background: CARD, border: `1px solid ${BORDER}`, borderRadius: 12, padding: '14px 16px' }}>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: INK, marginBottom: 10 }}>Events · 7 days</div>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                    {eventTotals.map((e) => (
+                      <span key={e.event} style={{ fontSize: 12, background: '#F5F0E8', color: INK, border: `1px solid ${BORDER}`, borderRadius: 999, padding: '4px 10px' }}>
+                        {EVENT_LABELS[e.event] ?? e.event} <strong>{e.count.toLocaleString()}</strong>
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {topAlbumsRaw && topAlbumsRaw.length > 0 && (
+              <div style={{ overflowX: 'auto', background: CARD, border: `1px solid ${BORDER}`, borderRadius: 12 }}>
+                <table style={{ borderCollapse: 'collapse', width: '100%', minWidth: 420 }}>
+                  <thead><tr><th style={th}>Top albums · 7d</th><th style={th}>Views</th><th style={th}></th></tr></thead>
+                  <tbody>
+                    {topAlbumsRaw.map((a) => {
+                      const meta = topAlbumMeta.get(a.albumId)
+                      return (
+                        <tr key={a.albumId}>
+                          <td style={{ ...td, whiteSpace: 'normal', maxWidth: 320 }}>{meta?.title ?? '(deleted / unknown)'}</td>
+                          <td style={td}>{a.views.toLocaleString()}</td>
+                          <td style={td}>{meta && <a href={`/${meta.slug}`} target="_blank" rel="noreferrer" style={{ color: BRAND }}>open</a>}</td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+
+            {!workerMetrics && (!eventTotals || eventTotals.length === 0) && (!topAlbumsRaw || topAlbumsRaw.length === 0) && (
+              <div style={{ fontSize: 12, color: MUTED, marginTop: 4 }}>Token is set, but no data came back yet — Cloudflare analytics can lag a few minutes; confirm the token has Account · Account Analytics · Read.</div>
+            )}
+          </div>
+        )}
+
         {/* Billing reconcile — pull subscriptions straight from Polar (webhook-independent) */}
+        <h2 id="ops" style={{ fontSize: 15, fontWeight: 700, color: INK, margin: '0 0 10px', scrollMarginTop: 64 }}>Operations</h2>
         <div style={{ background: CARD, border: `1px solid ${BORDER}`, borderRadius: 12, padding: '14px 16px', marginBottom: 28, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
           <div>
             <div style={{ fontSize: 14, fontWeight: 700, color: INK }}>Payments</div>
@@ -194,7 +382,7 @@ export default async function AdminPage() {
 
         {/* Errors — top recurring + recent stream */}
         <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 12, margin: '0 0 10px' }}>
-          <h2 style={{ fontSize: 15, fontWeight: 700, color: INK, margin: 0 }}>
+          <h2 id="errors" style={{ fontSize: 15, fontWeight: 700, color: INK, margin: 0, scrollMarginTop: 64 }}>
             Errors <span style={{ fontSize: 12, fontWeight: 400, color: MUTED }}>(real guest failures reported from their devices)</span>
           </h2>
           {recentErrors.length > 0 && <AdminResetErrorsButton />}
@@ -234,7 +422,7 @@ export default async function AdminPage() {
         )}
 
         {/* Recent albums */}
-        <h2 style={{ fontSize: 15, fontWeight: 700, color: INK, margin: '0 0 10px' }}>Recent albums</h2>
+        <h2 id="albums" style={{ fontSize: 15, fontWeight: 700, color: INK, margin: '0 0 10px', scrollMarginTop: 64 }}>Recent albums</h2>
         <div style={{ overflowX: 'auto', background: CARD, border: `1px solid ${BORDER}`, borderRadius: 12, marginBottom: 28 }}>
           <table style={{ borderCollapse: 'collapse', width: '100%', minWidth: 640 }}>
             <thead><tr><th style={th}>Created</th><th style={th}>Title</th><th style={th}>Owner</th><th style={th}>Photos</th><th style={th}>Videos</th><th style={th}></th></tr></thead>
@@ -263,6 +451,7 @@ export default async function AdminPage() {
         </div>
 
         {/* Two columns: signups + subscriptions */}
+        <h2 id="users" style={{ fontSize: 15, fontWeight: 700, color: INK, margin: '0 0 10px', scrollMarginTop: 64 }}>Users &amp; subscriptions</h2>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: 20 }}>
           <div>
             <h2 style={{ fontSize: 15, fontWeight: 700, color: INK, margin: '0 0 10px' }}>Recent signups</h2>

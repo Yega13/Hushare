@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { X, Camera, Upload, Search, ChevronLeft } from 'lucide-react'
 import type { Photo } from '@/types'
 import { useT } from '@/i18n/LocaleProvider'
+import SignInPrompt from '@/components/SignInPrompt'
 
 type Props = {
   albumSlug: string
@@ -441,6 +442,13 @@ export default function FaceFinder({ albumSlug, photos, onClose }: Props) {
                         </button>
                       ))}
                     </div>
+                    {/* Peak moment — they just found photos of themselves. Offer to save them. */}
+                    <SignInPrompt
+                      title="Keep your photos"
+                      subtitle="Sign in to save them and get notified when new ones of you are added."
+                      next={`/${albumSlug}`}
+                      storageKey={`hushare.ffPrompt.${albumSlug}`}
+                    />
                   </>
                 )}
               </div>

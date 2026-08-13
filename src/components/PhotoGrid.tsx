@@ -24,6 +24,10 @@ import { useSwipeNavigation } from '@/components/photo-grid/useSwipeNavigation'
 import PhotoTile, { type TileHandlers } from '@/components/photo-grid/PhotoTile'
 import { useMediaAspects, computeMasonryColumns } from '@/components/photo-grid/mediaLayout'
 import { X, Play, Move } from 'lucide-react'
+import { createPortal } from 'react-dom'
+import SignInPrompt from '@/components/SignInPrompt'
+import { createClient } from '@/lib/supabase/client'
+import { photoStyleTile } from '@/lib/album-design'
 
 const MASONRY_GAP = 8
 
@@ -55,6 +59,24 @@ export default function PhotoGrid({ album, photos, isOwner, slug, forceGlobalRad
   // so the grid shows the placeholder while the lightbox can still open the video.
   const [posterBroken, setPosterBroken] = useState<Set<string>>(new Set())
   const [settingCover, setSettingCover] = useState(false)
+  const [supabaseClient] = useState(() => createClient())
+  const [downloadPromptOpen, setDownloadPromptOpen] = useState(false)
+
+  // Single-photo download (lightbox). Kicks off the download, then — for a signed-OUT GUEST — offers
+  // a one-tap Google sign-in so they can keep it. Owner and guest both get it; a runtime guard just
+  // below stops it ever stacking on top of another sign-in card (e.g. the save-album prompt). Shares
+  // the dismiss key with "Download all" so we never nag twice. Videos aren't downloadable.
+  const handleSinglePhotoDownload = useCallback((photo: Photo) => {
+    downloadPhoto(photo)
+    if (photo.media_type === 'video') return
+    try {
+      if (sessionStorage.getItem(`hushare.dlPrompt.${album.id}`)) return
+    } catch { /* private mode — ignore */ }
+    if (document.querySelector('.hush-signin-card')) return
+    void supabaseClient.auth.getSession().then(({ data: { session } }) => {
+      if (!session) setDownloadPromptOpen(true)
+    }).catch(() => { /* can't tell — don't nag */ })
+  }, [album.id, supabaseClient])
 
   // ── Layout: masonry (Pinterest, true aspect ratios) vs the default square grid ──
   // DB value is 'justified' (kept to avoid a migration); it renders a masonry layout.
@@ -483,12 +505,19 @@ export default function PhotoGrid({ album, photos, isOwner, slug, forceGlobalRad
         // is the one that changes on every pointer move, and now only affects the 1-2 tiles it's
         // actually true for instead of forcing every tile to re-render.
         const isReorderMode = arrangeMode || reorderDraggingId != null
+        // Album "photo style": a named style overrides every tile's radius and adds a white matte
+        // when "framed"; the default style keeps the album's own per-tile radius.
+        const ps = album.photo_style
+        const psActive = ps === 'edge' || ps === 'rounded' || ps === 'framed'
+        const psFramed = ps === 'framed'
+        const psRadius = photoStyleTile(ps, 0).radius
         const renderTile = (photo: Photo, index: number, boxW?: number, boxH?: number) => (
           <PhotoTile
             key={photo.id}
             photo={photo}
             index={index}
-            mediaRadius={previewRadiusFor(photo)}
+            mediaRadius={psActive ? psRadius : previewRadiusFor(photo)}
+            framed={psFramed}
             filter={cssMediaDisplayFilter(previewFilterFor(photo))}
             arrangeMode={arrangeMode}
             isReorderMode={isReorderMode}
@@ -498,6 +527,7 @@ export default function PhotoGrid({ album, photos, isOwner, slug, forceGlobalRad
             isBroken={broken.has(photo.id)}
             isPosterBroken={posterBroken.has(photo.id)}
             isOwner={isOwner}
+            isHeaderPhoto={coverPhotoId === photo.id}
             selectMode={selectMode}
             isSelected={selectedIds.has(photo.id)}
             handlers={tileHandlersRef}
@@ -572,7 +602,7 @@ export default function PhotoGrid({ album, photos, isOwner, slug, forceGlobalRad
           onSetLightboxFlipped={setLightboxFlipped}
           onSetOriginalLoaded={setLightboxOriginalLoadedIds}
           onThumbnailClick={(index) => { setLightbox(index); setSlideshowPaused(true) }}
-          onDownload={downloadPhoto}
+          onDownload={handleSinglePhotoDownload}
           onSetCover={(photo) => void setCoverPhoto(photo)}
           onOpenSettings={openSettings}
           onRemoveFromSlideshow={removeFromSlideshow}
@@ -705,6 +735,22 @@ export default function PhotoGrid({ album, photos, isOwner, slug, forceGlobalRad
             }
           }}
         />
+      )}
+
+      {downloadPromptOpen && createPortal(
+        <>
+          <div className="hush-share-backdrop" onClick={() => setDownloadPromptOpen(false)} />
+          <div style={{ position: 'fixed', left: '50%', top: '50%', transform: 'translate(-50%, -50%)', zIndex: 210, width: 'min(92vw, 420px)' }}>
+            <SignInPrompt
+              title="Keep this photo"
+              subtitle="Sign in so you can find it again anytime."
+              next={`/${slug}`}
+              storageKey={`hushare.dlPrompt.${album.id}`}
+              onDismiss={() => setDownloadPromptOpen(false)}
+            />
+          </div>
+        </>,
+        document.body,
       )}
     </>
   )

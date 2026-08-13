@@ -1,5 +1,6 @@
 import type { CollectionSummary } from '@/components/owner-toolbar/types'
 import type { MediaDisplayFilter, MediaHoverEffect, MobileGridColumns, SlideshowAnimation } from '@/lib/media-display'
+import type { SponsorLogo } from '@/types'
 import { readFileRobust } from '@/lib/file-read'
 
 async function jsonBody<T>(res: Response): Promise<T> {
@@ -58,16 +59,16 @@ export async function saveBackgroundRequest(
 
 export async function saveDesignRequest(
   slug: string,
-  fields: { accent_color?: string | null; welcome_message?: string | null },
-): Promise<{ ok: true; accent_color?: string | null; welcome_message?: string | null } | { ok: false; error: string }> {
+  fields: { accent_color?: string | null; welcome_message?: string | null; title_font?: string | null; template?: string | null; photo_style?: string | null; header_focal?: string | null; header_video_mode?: string | null },
+): Promise<{ ok: true } | { ok: false; error: string }> {
   const res = await fetch('/api/album/design', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ slug, ...fields }),
   })
-  const body = await jsonBody<{ error?: string; accent_color?: string | null; welcome_message?: string | null }>(res)
+  const body = await jsonBody<{ error?: string }>(res)
   if (!res.ok) return { ok: false, error: body.error ?? `Save failed (${res.status})` }
-  return { ok: true, accent_color: body.accent_color, welcome_message: body.welcome_message }
+  return { ok: true }
 }
 
 export async function saveMediaSettingsRequest(
@@ -212,6 +213,117 @@ export async function uploadBackgroundRequest(
   }
 
   return { ok: true, background_theme: presignBody.backgroundTheme }
+}
+
+export async function saveHeaderImageRequest(
+  slug: string,
+  url: string | null,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const res = await fetch('/api/album/header-image', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ slug, header_image: url }),
+  })
+  const body = await jsonBody<{ error?: string }>(res)
+  if (!res.ok) return { ok: false, error: body.error ?? `Save failed (${res.status})` }
+  return { ok: true }
+}
+
+// Uploads an arbitrary picture to R2 via a presign endpoint that returns {presignedUrl, publicUrl}
+// (header-image/upload, logo/upload, and any future one of these follow the same shape), returning
+// the public URL. Does NOT record it on the album — the caller wraps that in its own
+// optimistic-update/rollback (via `persist`), same as every other design setting.
+async function uploadImageViaPresign(
+  presignEndpoint: string,
+  slug: string,
+  file: File,
+): Promise<{ ok: true; url: string } | { ok: false; error: string }> {
+  let bytes: ArrayBuffer
+  try {
+    bytes = await readFileRobust(file)
+  } catch {
+    return { ok: false, error: 'Could not read this image from your device. Please pick it again.' }
+  }
+  const blob = new Blob([bytes], { type: file.type })
+
+  const presignRes = await fetch(presignEndpoint, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      slug,
+      contentType: file.type,
+      fileName: file.name,
+      fileSize: blob.size,
+    }),
+  })
+  const presignBody = await jsonBody<{
+    error?: string
+    presignedUrl?: string
+    publicUrl?: string
+  }>(presignRes)
+  if (!presignRes.ok || !presignBody.presignedUrl || !presignBody.publicUrl) {
+    return { ok: false, error: presignBody.error ?? `Upload failed (${presignRes.status})` }
+  }
+
+  let putRes: Response
+  try {
+    putRes = await fetch(presignBody.presignedUrl, {
+      method: 'PUT',
+      body: blob,
+      headers: {
+        'Content-Type': file.type,
+        'Cache-Control': 'public, max-age=31536000, immutable',
+      },
+    })
+  } catch {
+    return { ok: false, error: 'Upload to storage failed (network error). Please try again.' }
+  }
+  if (!putRes.ok) {
+    return { ok: false, error: `Upload to storage failed (${putRes.status})` }
+  }
+
+  return { ok: true, url: presignBody.publicUrl }
+}
+
+export function uploadHeaderImageFile(slug: string, file: File) {
+  return uploadImageViaPresign('/api/album/header-image/upload', slug, file)
+}
+
+export function uploadLogoFile(slug: string, file: File) {
+  return uploadImageViaPresign('/api/album/logo/upload', slug, file)
+}
+
+export async function saveLogoRequest(
+  slug: string,
+  url: string | null,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const res = await fetch('/api/album/logo', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ slug, logo_url: url }),
+  })
+  const body = await jsonBody<{ error?: string }>(res)
+  if (!res.ok) return { ok: false, error: body.error ?? `Save failed (${res.status})` }
+  return { ok: true }
+}
+
+export function uploadSponsorLogoFile(slug: string, file: File) {
+  return uploadImageViaPresign('/api/album/sponsor-logo/upload', slug, file)
+}
+
+// Replace-whole-array: always send the complete desired list (see /api/album/sponsors).
+export async function saveSponsorsRequest(
+  slug: string,
+  sponsors: SponsorLogo[],
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const res = await fetch('/api/album/sponsors', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ slug, sponsor_logos: sponsors }),
+  })
+  const body = await jsonBody<{ error?: string }>(res)
+  if (!res.ok) return { ok: false, error: body.error ?? `Save failed (${res.status})` }
+  return { ok: true }
 }
 
 export async function addAlbumToCollectionRequest(

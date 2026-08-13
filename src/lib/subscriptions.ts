@@ -120,3 +120,13 @@ export async function requireTier(
   if (TIER_RANK[have] >= TIER_RANK[min]) return null
   return { have }
 }
+
+// Server-side paid-feature gate. Uses getUserTierById (NOT getActiveSubscription) so it applies
+// the SAME rules the client's /api/me/tier sees — including the account-admin override, which
+// grants studio with no subscription row. Gating on getActiveSubscription instead silently
+// disagrees with the UI: the owner sees an unlocked control, uses it, and the server 403s, so the
+// optimistic update rolls back and the change appears to "delete itself" a moment later.
+export async function hasPaidAccess(userId: string | null | undefined): Promise<boolean> {
+  if (!userId) return false
+  return (await getUserTierById(userId)) !== 'free'
+}

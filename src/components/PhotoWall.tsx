@@ -5,6 +5,7 @@ import type { RealtimeChannel } from '@supabase/supabase-js'
 import QRCode from 'qrcode'
 import { createClient } from '@/lib/supabase/client'
 import type { Photo } from '@/types'
+import { qrForegroundColor } from '@/lib/album-design'
 
 const MAX_TILES = 60 // a wall doesn't need the whole album — show the most recent
 
@@ -21,12 +22,14 @@ export default function PhotoWall({
   albumId,
   title,
   albumUrl,
+  accentColor,
   initialPhotos,
   initialTotal,
 }: {
   albumId: string
   title: string
   albumUrl: string
+  accentColor: string | null
   initialPhotos: Photo[]
   initialTotal: number
 }) {
@@ -42,10 +45,10 @@ export default function PhotoWall({
 
   // QR of the album link — guests scan it to add their own photos, which then appear live here.
   useEffect(() => {
-    QRCode.toDataURL(albumUrl, { margin: 1, width: 320, color: { dark: '#160A12', light: '#FFFFFF' } })
+    QRCode.toDataURL(albumUrl, { margin: 1, width: 320, color: { dark: qrForegroundColor(accentColor), light: '#FFFFFF' } })
       .then(setQr)
       .catch(() => setQr(''))
-  }, [albumUrl])
+  }, [albumUrl, accentColor])
 
   const refetch = useCallback(async () => {
     try {

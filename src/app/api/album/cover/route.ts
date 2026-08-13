@@ -2,13 +2,21 @@ import { NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { verifyOwnerViaCookieWithRateLimit } from '@/lib/album-owner-access'
 import { forbidCrossSiteRequest } from '@/lib/request-security'
-import { queueAlbumSettingsBroadcast } from '@/lib/broadcast'
+import { setAlbumHeader } from '@/lib/server/album-header'
 
 export const runtime = 'nodejs'
 
 const NO_STORE = { 'Cache-Control': 'no-store' }
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
+type CoverAlbum = {
+  id: string
+  owner_token: string
+  user_id: string | null
+  custom_slug?: string | null
+  header_image: string | null
+}
 
 export async function POST(req: Request) {
   const csrfError = forbidCrossSiteRequest(req)
@@ -26,7 +34,7 @@ export async function POST(req: Request) {
     }
   }
 
-  const access = await verifyOwnerViaCookieWithRateLimit(req, slug.trim())
+  const access = await verifyOwnerViaCookieWithRateLimit<CoverAlbum>(req, slug.trim(), 'header_image')
   if (!access.ok) return NextResponse.json({ error: access.error }, { status: access.status, headers: NO_STORE })
 
   const admin = createAdminClient()
@@ -46,16 +54,18 @@ export async function POST(req: Request) {
     }
   }
 
-  const { error } = await admin
-    .from('albums')
-    .update({ cover_photo_id: targetPhotoId })
-    .eq('id', access.album.id)
-
-  if (error) {
-    console.error('[album/cover] update failed:', error.message)
-    return NextResponse.json({ error: 'Could not update cover photo' }, { status: 500, headers: NO_STORE })
+  // Picking an existing photo (or clearing, targetPhotoId null) always replaces any custom header
+  // image — setAlbumHeader is the single place that enforces the "one source at a time" rule and
+  // cleans up R2, so this route never has to remember either half of that itself.
+  const result = await setAlbumHeader(
+    admin,
+    access.album.id,
+    { coverPhotoId: targetPhotoId, headerImage: null },
+    access.album.header_image,
+  )
+  if (!result.ok) {
+    return NextResponse.json({ error: result.error }, { status: 500, headers: NO_STORE })
   }
 
-  queueAlbumSettingsBroadcast(access.album.id, { cover_photo_id: targetPhotoId })
   return NextResponse.json({ ok: true }, { headers: NO_STORE })
 }

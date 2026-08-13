@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useT } from '@/i18n/LocaleProvider'
 import { useZipDownload } from '@/components/photo-grid/useZipDownload'
-import { Check, ChevronDown, Clock, Copy, Download, FolderPlus, Images, Link2, Loader2, Lock, LockOpen, MonitorPlay, Move, Play, ScanFace, Settings, ShieldCheck, Trash2, X } from 'lucide-react'
+import { ChevronDown, Clock, Copy, Download, FolderPlus, Images, Link2, Loader2, Lock, LockOpen, MonitorPlay, Move, Play, ScanFace, Settings, ShieldCheck, Trash2, X } from 'lucide-react'
 import type { Album, Photo, Tier } from '@/types'
 import {
   DEFAULT_SLIDESHOW_INTERVAL_MS,
@@ -17,33 +17,20 @@ import {
   type MobileGridColumns,
   type SlideshowAnimation,
 } from '@/lib/media-display'
-import { formatFileSize } from '@/lib/utils'
 import { showAppToast, storeAppToast } from '@/components/AppToast'
-import BackgroundLibraryModal from '@/components/owner-toolbar/BackgroundLibraryModal'
-import { ACCENT_PALETTE, DEFAULT_ACCENT, contrastText } from '@/lib/album-design'
 import RevealDatePicker from '@/components/RevealDatePicker'
 import ShareMenu from '@/components/owner-toolbar/ShareMenu'
 import {
   addAlbumToCollectionRequest,
   deleteAlbumRequest,
   fetchCollections,
-  saveBackgroundRequest,
-  saveDesignRequest,
   saveCustomUrlRequest,
   saveGuestDownloadsRequest,
   saveRequireApprovalRequest,
   savePhotoLayoutRequest,
   saveMediaSettingsRequest,
   savePasswordRequest,
-  uploadBackgroundRequest,
 } from '@/components/owner-toolbar/api'
-import {
-  BACKGROUND_IMAGE_TYPES,
-  DEFAULT_BG,
-  FEATURED_STOCK_BACKGROUNDS,
-  MAX_BACKGROUND_BYTES,
-  PRESETS,
-} from '@/components/owner-toolbar/constants'
 import { accordionButton, btnBase, inputStyle, sectionTitle, settingsSectionStyle } from '@/components/owner-toolbar/styles'
 import type { CollectionSummary, SettingsSection } from '@/components/owner-toolbar/types'
 
@@ -64,6 +51,7 @@ type Props = {
   onOpenSlideshow: () => void
   arrangeMode: boolean
   onToggleArrangeMode: () => void
+  onOpenDesigner?: () => void
 }
 
 // ownerToken is kept in props only to build the owner share URL (the #owner=… link
@@ -78,7 +66,7 @@ function toDatetimeLocal(iso: string | null): string {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
 }
 
-export default function OwnerToolbar({ album, photos, ownerToken, userTier, mediaRadiusMax, onAlbumUpdated, onOpenSlideshow, arrangeMode, onToggleArrangeMode }: Props) {
+export default function OwnerToolbar({ album, photos, ownerToken, userTier, mediaRadiusMax, onAlbumUpdated, onOpenSlideshow, arrangeMode, onToggleArrangeMode, onOpenDesigner }: Props) {
   const { t } = useT()
   const [copied, setCopied] = useState<'share' | 'owner' | null>(null)
   const [showShare, setShowShare] = useState(false)
@@ -111,15 +99,6 @@ export default function OwnerToolbar({ album, photos, ownerToken, userTier, medi
   const [collections, setCollections] = useState<CollectionSummary[]>([])
   const [collectionsLoading, setCollectionsLoading] = useState(false)
 
-  const [backgroundSaving, setBackgroundSaving] = useState(false)
-  const [backgroundError, setBackgroundError] = useState('')
-  const [accentError, setAccentError] = useState('')
-  const accentTimerRef = useRef<number | null>(null)
-  const accentPendingRef = useRef<string | null>(null)
-  const accentSavedRef = useRef<string | null>(album.accent_color ?? null)
-  const [welcomeInput, setWelcomeInput] = useState(album.welcome_message ?? '')
-  const [welcomeError, setWelcomeError] = useState('')
-  const [showBackgroundLibrary, setShowBackgroundLibrary] = useState(false)
   const [mediaRadius, setMediaRadius] = useState(album.media_radius ?? 16)
   const [mediaRadiusDraft, setMediaRadiusDraft] = useState(String(album.media_radius ?? 16))
   const [mediaRadiusEditing, setMediaRadiusEditing] = useState(false)
@@ -147,7 +126,6 @@ export default function OwnerToolbar({ album, photos, ownerToken, userTier, medi
 
   const shareRef = useRef<HTMLDivElement>(null)
   const settingsRef = useRef<HTMLDivElement>(null)
-  const backgroundInputRef = useRef<HTMLInputElement>(null)
 
   const publicSlug = album.custom_slug ?? album.slug
   // shareUrl and ownerUrl depend on window.location.origin, which is not available during
@@ -179,10 +157,6 @@ export default function OwnerToolbar({ album, photos, ownerToken, userTier, medi
   const ownerUrl = effectiveOwnerToken && origin ? `${origin}/${album.slug}#owner=${effectiveOwnerToken}` : null
   const canCustomize = userTier === 'pro' || userTier === 'studio'
   const canUseCollections = userTier === 'studio'
-  const bgChoice = album.background_theme ?? DEFAULT_BG
-  const currentColor = bgChoice.startsWith('#') ? bgChoice : DEFAULT_BG
-  const currentAccent = album.accent_color || DEFAULT_ACCENT
-  const isDark = bgChoice === '#1C2333' || bgChoice === '#1A2B1A' || bgChoice.startsWith('image:') || bgChoice.startsWith('stock:')
   const radiusMax = Math.max(1, Math.round(mediaRadiusMax))
 
   useEffect(() => {
@@ -347,65 +321,6 @@ export default function OwnerToolbar({ album, photos, ownerToken, userTier, medi
     }
   }
 
-  async function saveBackground(choice: string | null): Promise<boolean> {
-    setBackgroundSaving(true)
-    setBackgroundError('')
-    const previousBackground = album.background_theme ?? null
-    onAlbumUpdated({ background_theme: choice })
-    try {
-      const result = await saveBackgroundRequest(album.slug, choice)
-      if (!result.ok) {
-        onAlbumUpdated({ background_theme: previousBackground })
-        setBackgroundError(result.error)
-        showAppToast(result.error, 'error')
-        return false
-      }
-      onAlbumUpdated({ background_theme: result.background_theme })
-      // No success toast — only failures are worth interrupting the user for.
-      return true
-    } catch (e) {
-      onAlbumUpdated({ background_theme: previousBackground })
-      const message = e instanceof Error ? e.message : t('common.networkError')
-      setBackgroundError(message)
-      showAppToast(message, 'error')
-      return false
-    } finally {
-      setBackgroundSaving(false)
-    }
-  }
-
-  // Preview the color INSTANTLY (optimistic), but debounce the network save so rapidly clicking
-  // through swatches sends ONE request when the owner settles — not one per click (which hit the
-  // owner rate-limit and caused rollback flicker). accentSavedRef tracks the last value the server
-  // actually accepted, so a failed commit rolls back to that, not to a mid-drag value.
-  function saveAccent(color: string | null): void {
-    setAccentError('')
-    onAlbumUpdated({ accent_color: color })
-    accentPendingRef.current = color
-    if (accentTimerRef.current !== null) window.clearTimeout(accentTimerRef.current)
-    accentTimerRef.current = window.setTimeout(() => { void commitAccent() }, 450)
-  }
-
-  async function commitAccent(): Promise<void> {
-    accentTimerRef.current = null
-    const color = accentPendingRef.current
-    try {
-      const result = await saveDesignRequest(album.slug, { accent_color: color })
-      if (result.ok) {
-        accentSavedRef.current = color
-      } else {
-        onAlbumUpdated({ accent_color: accentSavedRef.current })
-        setAccentError(result.error)
-        showAppToast(result.error, 'error')
-      }
-    } catch (e) {
-      onAlbumUpdated({ accent_color: accentSavedRef.current })
-      const message = e instanceof Error ? e.message : t('common.networkError')
-      setAccentError(message)
-      showAppToast(message, 'error')
-    }
-  }
-
   async function saveMediaSettings(
     nextRadius = mediaRadius,
     nextAutoplay = videoAutoplay,
@@ -472,32 +387,6 @@ export default function OwnerToolbar({ album, photos, ownerToken, userTier, medi
     }
   }, [])
 
-  // Clean up the debounced accent-save timer on unmount so it can't fire after the panel is gone.
-  useEffect(() => () => { if (accentTimerRef.current !== null) window.clearTimeout(accentTimerRef.current) }, [])
-  // Keep the welcome-message input in sync when the album value changes (save/broadcast).
-  useEffect(() => { setWelcomeInput(album.welcome_message ?? '') }, [album.welcome_message])
-
-  async function saveWelcome(): Promise<void> {
-    const next = welcomeInput.replace(/\s+/g, ' ').trim()
-    const prev = album.welcome_message ?? null
-    if ((next || null) === prev) return
-    setWelcomeError('')
-    onAlbumUpdated({ welcome_message: next || null })
-    try {
-      const result = await saveDesignRequest(album.slug, { welcome_message: next || null })
-      if (!result.ok) {
-        onAlbumUpdated({ welcome_message: prev })
-        setWelcomeError(result.error)
-        showAppToast(result.error, 'error')
-      }
-    } catch (e) {
-      onAlbumUpdated({ welcome_message: prev })
-      const message = e instanceof Error ? e.message : t('common.networkError')
-      setWelcomeError(message)
-      showAppToast(message, 'error')
-    }
-  }
-
   function scheduleAutoSave(
     nextRadius: number,
     nextAutoplay: boolean,
@@ -561,45 +450,6 @@ export default function OwnerToolbar({ album, photos, ownerToken, userTier, medi
     setSlideshowIntervalMs(nextInterval)
     onAlbumUpdated({ slideshow_interval_ms: nextInterval })
     scheduleAutoSave(mediaRadius, videoAutoplay, mediaFilter, mediaHover, mobileGridColumns, nextInterval, slideshowAnimation)
-  }
-
-  async function chooseBackground(choice: string, closeLibrary = false) {
-    const saved = await saveBackground(choice)
-    if (saved && closeLibrary) setShowBackgroundLibrary(false)
-  }
-
-  async function uploadBackgroundImage(file: File) {
-    setBackgroundError('')
-    if (!BACKGROUND_IMAGE_TYPES.has(file.type)) {
-      setBackgroundError('Use a JPG, PNG, WebP, or AVIF image.')
-      showAppToast(t('ot.badImageFormat'), 'error')
-      return
-    }
-    if (file.size > MAX_BACKGROUND_BYTES) {
-      const message = `Background image must be ${formatFileSize(MAX_BACKGROUND_BYTES)} or smaller.`
-      setBackgroundError(message)
-      showAppToast(message, 'error')
-      return
-    }
-
-    setBackgroundSaving(true)
-    try {
-      const result = await uploadBackgroundRequest(album.slug, file)
-      if (!result.ok) {
-        setBackgroundError(result.error)
-        showAppToast(result.error, 'error')
-        return
-      }
-      onAlbumUpdated({ background_theme: result.background_theme })
-      // No success toast — the new background is visible immediately; only surface failures.
-    } catch (e) {
-      const message = e instanceof Error ? e.message : t('common.networkError')
-      setBackgroundError(message)
-      showAppToast(message, 'error')
-    } finally {
-      setBackgroundSaving(false)
-      if (backgroundInputRef.current) backgroundInputRef.current.value = ''
-    }
   }
 
   async function addAlbumToCollection(collectionId: string) {
@@ -716,6 +566,7 @@ export default function OwnerToolbar({ album, photos, ownerToken, userTier, medi
               ownerUrl={ownerUrl}
               shareUrl={shareUrl}
               albumTitle={album.title ?? 'Album'}
+              accentColor={album.accent_color}
               onClose={() => setShowShare(false)}
               onCopy={copy}
             />
@@ -809,194 +660,11 @@ export default function OwnerToolbar({ album, photos, ownerToken, userTier, medi
 
               {/* Customization */}
               <section style={settingsSectionStyle}>
-                <button type="button" className="hush-motion" style={accordionButton} onClick={() => toggleSection('customization')}>
+                <button type="button" className="hush-motion" style={accordionButton} onClick={() => onOpenDesigner?.()}>
                   <Images className="w-4 h-4" style={{ color: '#7C5C3E' }} />
                   <span style={sectionTitle}>{t('ot.customization')}</span>
-                  <ChevronDown
-                    className="ml-auto w-4 h-4 transition-transform"
-                    style={{ color: '#A89880', transform: openSection === 'customization' ? 'rotate(180deg)' : 'rotate(0deg)' }}
-                  />
                 </button>
 
-                {openSection === 'customization' && (
-                  <div className="px-4 pb-4">
-                    <p className="text-xs font-medium mb-2" style={{ color: '#7C5C3E' }}>{t('ot.colorPatterns')}</p>
-                    <div className="grid grid-cols-8 gap-2 mb-4">
-                      {PRESETS.map((preset) => (
-                        <button
-                          key={preset.value}
-                          title={preset.label}
-                          onClick={() => saveBackground(preset.value)}
-                          disabled={backgroundSaving}
-                          style={{
-                            width: '100%',
-                            aspectRatio: '1',
-                            borderRadius: 10,
-                            background: preset.value,
-                            border: bgChoice === preset.value ? '2px solid #630826' : '1.5px solid #DDD5C5',
-                            cursor: backgroundSaving ? 'wait' : 'pointer',
-                            position: 'relative',
-                          }}
-                        >
-                          {bgChoice === preset.value && (
-                            <span className="absolute inset-0 flex items-center justify-center">
-                              <Check className="w-4 h-4" style={{ color: isDark ? '#FFFFFF' : '#630826' }} />
-                            </span>
-                          )}
-                        </button>
-                      ))}
-                    </div>
-
-                    <p className="text-xs font-medium mb-2" style={{ color: '#7C5C3E' }}>{t('ot.stockPhotos')}</p>
-                    <div className="grid grid-cols-5 gap-2 mb-3">
-                      {FEATURED_STOCK_BACKGROUNDS.map((preset) => (
-                        <button
-                          key={preset.value}
-                          title={preset.label}
-                          onClick={() => chooseBackground(preset.value)}
-                          disabled={backgroundSaving}
-                          className="relative overflow-hidden"
-                          style={{
-                            width: '100%',
-                            aspectRatio: '1',
-                            borderRadius: 10,
-                            backgroundImage: `url(${preset.src})`,
-                            backgroundPosition: 'center',
-                            backgroundSize: 'cover',
-                            border: (bgChoice === preset.value || bgChoice === preset.legacyValue || bgChoice === preset.imageValue) ? '2px solid #630826' : '1.5px solid #DDD5C5',
-                            cursor: backgroundSaving ? 'wait' : 'pointer',
-                          }}
-                        >
-                          {(bgChoice === preset.value || bgChoice === preset.legacyValue || bgChoice === preset.imageValue) && (
-                            <span className="absolute inset-0 flex items-center justify-center" style={{ background: 'rgba(99,8,38,0.25)' }}>
-                              <Check className="w-4 h-4" style={{ color: '#FFFFFF' }} />
-                            </span>
-                          )}
-                        </button>
-                      ))}
-                    </div>
-
-                    <input
-                      ref={backgroundInputRef}
-                      type="file"
-                      accept="image/jpeg,image/png,image/webp,image/avif"
-                      className="hidden"
-                      onChange={(e) => {
-                        const file = e.target.files?.[0]
-                        if (file) void uploadBackgroundImage(file)
-                      }}
-                    />
-
-                    <div className="grid grid-cols-2 gap-2 mb-3">
-                      <button
-                        className="hush-press flex w-full items-center justify-center gap-2 rounded-lg py-2 text-xs font-semibold transition hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed"
-                        style={{ background: '#630826', border: '1px solid #630826', color: '#FDFAF5', cursor: backgroundSaving ? 'wait' : 'pointer' }}
-                        onClick={() => backgroundInputRef.current?.click()}
-                        disabled={backgroundSaving}
-                      >
-                        <Images className="h-4 w-4" />
-                        {backgroundSaving ? t('ot.saving') : t('ot.addPicture')}
-                      </button>
-                      <button
-                        className="hush-press flex w-full items-center justify-center gap-2 rounded-lg py-2 text-xs font-semibold transition hover:opacity-90"
-                        style={{ background: '#F5F0E8', border: '1px solid #DDD5C5', color: '#630826', cursor: 'pointer' }}
-                        onClick={() => setShowBackgroundLibrary(true)}
-                      >
-                        <Images className="h-4 w-4" />
-                        {t('ot.seeAll')}
-                      </button>
-                    </div>
-
-                    <div className="flex items-center gap-2">
-                      <label className="text-xs font-medium" style={{ color: '#7C5C3E' }}>{t('ot.customColor')}</label>
-                      <input
-                        type="color"
-                        value={currentColor}
-                        onChange={(e) => void saveBackground(e.target.value)}
-                        style={{ width: 36, height: 28, borderRadius: 8, border: '1.5px solid #DDD5C5', cursor: 'pointer', padding: 2 }}
-                      />
-                      <span className="text-xs font-mono" style={{ color: '#A89880' }}>{currentColor}</span>
-                      <button
-                        className="ml-auto text-xs"
-                        style={{ color: '#A89880', cursor: 'pointer' }}
-                        onClick={() => void saveBackground(null)}
-                      >
-                        {t('ot.reset')}
-                      </button>
-                    </div>
-                    {backgroundError && <p className="text-xs mt-2" style={{ color: '#C0392B' }}>{backgroundError}</p>}
-
-                    {/* Album accent color — tints the album's buttons & controls */}
-                    <div className="mt-4 pt-3" style={{ borderTop: '1px solid #ECE4D4' }}>
-                      <p className="text-xs font-medium mb-2" style={{ color: '#7C5C3E' }}>{t('ot.albumColor')}</p>
-                      <div className="grid grid-cols-9 gap-2 mb-3">
-                        {ACCENT_PALETTE.map((color) => {
-                          const selected = currentAccent.toLowerCase() === color.toLowerCase()
-                          return (
-                            <button
-                              key={color}
-                              title={color}
-                              onClick={() => saveAccent(color)}
-                              style={{
-                                width: '100%', aspectRatio: '1', borderRadius: 999,
-                                background: color,
-                                border: selected ? '2px solid #2A211C' : '1.5px solid #DDD5C5',
-                                cursor: 'pointer', position: 'relative',
-                              }}
-                            >
-                              {selected && (
-                                <span className="absolute inset-0 flex items-center justify-center">
-                                  <Check className="w-3.5 h-3.5" style={{ color: contrastText(color) }} />
-                                </span>
-                              )}
-                            </button>
-                          )
-                        })}
-                      </div>
-                      <div className="flex items-center gap-2">
-                        {canCustomize ? (
-                          <>
-                            <label className="text-xs font-medium" style={{ color: '#7C5C3E' }}>{t('ot.customColor')}</label>
-                            <input
-                              type="color"
-                              value={currentAccent}
-                              onChange={(e) => void saveAccent(e.target.value)}
-                              style={{ width: 36, height: 28, borderRadius: 8, border: '1.5px solid #DDD5C5', cursor: 'pointer', padding: 2 }}
-                            />
-                            <span className="text-xs font-mono" style={{ color: '#A89880' }}>{currentAccent}</span>
-                          </>
-                        ) : (
-                          <span className="text-xs" style={{ color: '#A89880' }}>{t('ot.customColorPro')}</span>
-                        )}
-                        <button
-                          className="ml-auto text-xs"
-                          style={{ color: '#A89880', cursor: 'pointer' }}
-                          onClick={() => void saveAccent(null)}
-                        >
-                          {t('ot.reset')}
-                        </button>
-                      </div>
-                      {accentError && <p className="text-xs mt-2" style={{ color: '#C0392B' }}>{accentError}</p>}
-                    </div>
-
-                    {/* Welcome message + cover-photo hint */}
-                    <div className="mt-4 pt-3" style={{ borderTop: '1px solid #ECE4D4' }}>
-                      <p className="text-xs font-medium mb-2" style={{ color: '#7C5C3E' }}>{t('ot.welcomeMessage')}</p>
-                      <input
-                        value={welcomeInput}
-                        maxLength={200}
-                        onChange={(e) => setWelcomeInput(e.target.value)}
-                        onBlur={() => void saveWelcome()}
-                        onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur() }}
-                        placeholder={t('ot.welcomePlaceholder')}
-                        className="w-full rounded-lg px-3 py-2 text-sm focus:outline-none"
-                        style={{ background: '#FDFAF5', border: '1px solid #DDD5C5', color: '#2A211C' }}
-                      />
-                      <p className="text-xs mt-2" style={{ color: '#A89880' }}>{t('ot.coverHint')}</p>
-                      {welcomeError && <p className="text-xs mt-1" style={{ color: '#C0392B' }}>{welcomeError}</p>}
-                    </div>
-                  </div>
-                )}
               </section>
 
               {/* Media display */}
@@ -1721,15 +1389,6 @@ export default function OwnerToolbar({ album, photos, ownerToken, userTier, medi
           )}
         </div>
       </div>
-
-      {showBackgroundLibrary && (
-        <BackgroundLibraryModal
-          backgroundSaving={backgroundSaving}
-          bgChoice={bgChoice}
-          onChoose={chooseBackground}
-          onClose={() => setShowBackgroundLibrary(false)}
-        />
-      )}
     </div>
     </>
   )

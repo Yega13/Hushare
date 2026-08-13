@@ -3,20 +3,22 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { verifyOwnerViaCookieWithRateLimit } from '@/lib/album-owner-access'
 import { forbidCrossSiteRequest } from '@/lib/request-security'
 import { queueAlbumSettingsBroadcast } from '@/lib/broadcast'
-import { getActiveSubscription } from '@/lib/subscriptions'
-import { isValidHex, isPaletteColor } from '@/lib/album-design'
+import { hasPaidAccess } from '@/lib/subscriptions'
+import { isValidHex, isPaletteColor, isValidFont, getTemplate, isValidPhotoStyle, isValidHeaderVideoMode } from '@/lib/album-design'
 
 export const runtime = 'nodejs'
 
 const NO_STORE = { 'Cache-Control': 'no-store' }
 
-// Album design settings. Mirrors the auth/broadcast pattern of /api/album/media-settings.
-// Step 2 handles accent_color only; later steps (welcome, logo, template) extend the same route.
+// Album design settings — text/enum fields only (accent_color, welcome_message, title_font,
+// template, photo_style). Fields backed by an R2-hosted image get their own dedicated route
+// instead (see /api/album/background, /api/album/header-image, /api/album/logo) since those need
+// upload presigning and old-object cleanup that a shared text-field route has no business doing.
 export async function POST(req: Request) {
   const csrfError = forbidCrossSiteRequest(req)
   if (csrfError) return csrfError
 
-  const body = await req.json().catch(() => null) as { slug?: unknown; accent_color?: unknown; welcome_message?: unknown } | null
+  const body = await req.json().catch(() => null) as { slug?: unknown; accent_color?: unknown; welcome_message?: unknown; title_font?: unknown; template?: unknown; photo_style?: unknown; header_focal?: unknown; header_video_mode?: unknown } | null
   if (!body || typeof body.slug !== 'string') {
     return NextResponse.json({ error: 'Missing slug' }, { status: 400, headers: NO_STORE })
   }
@@ -46,6 +48,70 @@ export async function POST(req: Request) {
     updates.welcome_message = wm || null
   }
 
+  // title_font: null clears to the default classic serif; a string must be a known font key.
+  if (body.title_font !== undefined) {
+    if (body.title_font === null) {
+      updates.title_font = null
+    } else if (typeof body.title_font === 'string' && isValidFont(body.title_font)) {
+      updates.title_font = body.title_font
+    } else {
+      return NextResponse.json({ error: 'title_font must be a known font or null' }, { status: 400, headers: NO_STORE })
+    }
+  }
+
+  // photo_style: null / 'default' clears to the default look; else a known style key.
+  if (body.photo_style !== undefined) {
+    if (body.photo_style === null || body.photo_style === 'default') {
+      updates.photo_style = null
+    } else if (typeof body.photo_style === 'string' && isValidPhotoStyle(body.photo_style)) {
+      updates.photo_style = body.photo_style
+    } else {
+      return NextResponse.json({ error: 'photo_style must be a known style or null' }, { status: 400, headers: NO_STORE })
+    }
+  }
+
+  // template: apply a one-tap "look" — sets accent, title font, and layout together in one write.
+  // All preset accents are palette colours, so this is always free (no paid-colour check needed).
+  if (body.template !== undefined) {
+    if (body.template === null) {
+      updates.template = null
+    } else if (typeof body.template === 'string') {
+      const preset = getTemplate(body.template)
+      if (!preset) {
+        return NextResponse.json({ error: 'Unknown template' }, { status: 400, headers: NO_STORE })
+      }
+      updates.template = preset.key
+      updates.accent_color = preset.accent
+      updates.title_font = preset.font
+      updates.photo_layout = preset.layout
+    } else {
+      return NextResponse.json({ error: 'template must be a preset key or null' }, { status: 400, headers: NO_STORE })
+    }
+  }
+
+  // header_focal: where the header photo/video is anchored in the hero crop, "X% Y%" (0-100 each).
+  // null clears to the default center crop.
+  if (body.header_focal !== undefined) {
+    if (body.header_focal === null) {
+      updates.header_focal = null
+    } else if (typeof body.header_focal === 'string' && /^(?:100|[1-9]?\d)% (?:100|[1-9]?\d)%$/.test(body.header_focal)) {
+      updates.header_focal = body.header_focal
+    } else {
+      return NextResponse.json({ error: 'header_focal must be an "X% Y%" position or null' }, { status: 400, headers: NO_STORE })
+    }
+  }
+
+  // header_video_mode: how a video used as the header plays. null clears to the default ('loop').
+  if (body.header_video_mode !== undefined) {
+    if (body.header_video_mode === null) {
+      updates.header_video_mode = null
+    } else if (typeof body.header_video_mode === 'string' && isValidHeaderVideoMode(body.header_video_mode)) {
+      updates.header_video_mode = body.header_video_mode
+    } else {
+      return NextResponse.json({ error: 'header_video_mode must be a known mode or null' }, { status: 400, headers: NO_STORE })
+    }
+  }
+
   if (Object.keys(updates).length === 0) {
     return NextResponse.json({ error: 'No fields to update' }, { status: 400, headers: NO_STORE })
   }
@@ -56,7 +122,7 @@ export async function POST(req: Request) {
   // A custom (non-palette) color is a paid feature. No darkness restriction — the header text/logo
   // auto-contrast. Gating is enforced HERE on the server — never trust the client to have hidden it.
   if (accentNeedsPaidCheck) {
-    const isPaid = access.userId ? (await getActiveSubscription(access.userId)) !== null : false
+    const isPaid = await hasPaidAccess(access.userId)
     if (!isPaid) {
       return NextResponse.json({ error: 'Custom colors are a paid feature — pick a palette color or upgrade.' }, { status: 403, headers: NO_STORE })
     }

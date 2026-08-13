@@ -2,7 +2,7 @@ import { getCloudflareContext } from '@opennextjs/cloudflare'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { verifyAccessToken } from '@/lib/album-password'
 import { timingSafeEqual } from '@/lib/timing-safe'
-import type { Album, Photo } from '@/types'
+import type { Album, Photo, SponsorLogo } from '@/types'
 
 // Shared album access/gating logic — the SINGLE source of truth used by both the API routes
 // (/api/album/resolve, /api/album/photos) and the server-rendered album page. Keeping the
@@ -22,9 +22,9 @@ const ALBUM_SELECT_COLS = [
   'id', 'slug', 'custom_slug', 'title', 'background_theme',
   'media_radius', 'media_filter', 'media_hover', 'mobile_grid_columns', 'photo_layout',
   'slideshow_interval_ms', 'slideshow_animation', 'video_autoplay',
-  'cover_photo_id', 'reveal_at', 'guest_uploads_enabled', 'allow_guest_downloads',
+  'cover_photo_id', 'header_image', 'header_focal', 'header_touched', 'header_video_mode', 'reveal_at', 'guest_uploads_enabled', 'allow_guest_downloads',
   'require_approval', 'face_finder_enabled',
-  'accent_color', 'logo_url', 'template', 'welcome_message', 'hide_branding',
+  'accent_color', 'logo_url', 'sponsor_logos', 'template', 'title_font', 'photo_style', 'welcome_message', 'hide_branding',
   'last_activity_at', 'created_at',
   'password_hash', 'retired_at',
 ].join(', ')
@@ -43,10 +43,11 @@ type AlbumRow = {
   background_theme: string | null; media_radius: number; media_filter: string
   media_hover: string; mobile_grid_columns: number; photo_layout: string
   slideshow_interval_ms: number; slideshow_animation: string; video_autoplay: boolean
-  cover_photo_id: string | null; reveal_at: string | null; guest_uploads_enabled: boolean
+  cover_photo_id: string | null; header_image: string | null; header_focal: string | null; header_touched: boolean
+  header_video_mode: string | null; reveal_at: string | null; guest_uploads_enabled: boolean
   allow_guest_downloads: boolean; require_approval: boolean; face_finder_enabled: boolean
-  accent_color: string | null; logo_url: string | null; template: string | null
-  welcome_message: string | null; hide_branding: boolean
+  accent_color: string | null; logo_url: string | null; sponsor_logos: SponsorLogo[]; template: string | null
+  title_font: string | null; photo_style: string | null; welcome_message: string | null; hide_branding: boolean
   last_activity_at: string; created_at: string
   password_hash: string | null; retired_at: string | null
 }
@@ -62,6 +63,36 @@ function touchActivity(admin: ReturnType<typeof createAdminClient>, albumId: str
     .eq('id', albumId)
     .then(({ error }) => { if (error) console.error('[album-access] activity touch failed:', error.message) })
   try { getCloudflareContext().ctx.waitUntil(p as unknown as Promise<unknown>) } catch { void p }
+}
+
+// Fire-and-forget: for an album the owner has never explicitly set a header photo for (see
+// header_touched), once it has at least one image, pick a decent-looking default — a landscape
+// photo where possible — instead of leaving every untouched album on a bare accent band forever
+// (most owners never open the Designer). Guarded by a conditional UPDATE so it can never clobber a
+// header an owner set (or explicitly cleared) between the read above and this write, and never
+// marks header_touched — a later manual "None" still permanently opts the album out.
+function maybeAutoSuggestHeader(admin: ReturnType<typeof createAdminClient>, album: AlbumRow): void {
+  if (album.header_touched || album.cover_photo_id || album.header_image) return
+  const p = (async () => {
+    const { data: candidates } = await admin
+      .from('photos')
+      .select('id, width, height')
+      .eq('album_id', album.id)
+      .eq('media_type', 'image')
+      .order('created_at', { ascending: true })
+      .limit(20)
+      .returns<{ id: string; width: number | null; height: number | null }[]>()
+    if (!candidates || candidates.length === 0) return
+    const best = candidates.find((c) => c.width && c.height && c.width > c.height) ?? candidates[0]
+    const { error } = await admin.from('albums')
+      .update({ cover_photo_id: best.id })
+      .eq('id', album.id)
+      .eq('header_touched', false)
+      .is('cover_photo_id', null)
+      .is('header_image', null)
+    if (error) console.error('[album-access] auto-suggest header failed:', error.message)
+  })().catch((e: unknown) => console.error('[album-access] auto-suggest header failed:', e instanceof Error ? e.message : String(e)))
+  try { getCloudflareContext().ctx.waitUntil(p) } catch { void p }
 }
 
 export type ResolveResult =
@@ -121,9 +152,10 @@ export async function resolveAlbum(
   }
 
   touchActivity(admin, albumId, album.last_activity_at)
+  maybeAutoSuggestHeader(admin, album)
 
-  const { password_hash: _pw, retired_at: _ra, ...publicAlbum } = album
-  void _ra
+  const { password_hash: _pw, retired_at: _ra, header_touched: _ht, ...publicAlbum } = album
+  void _ra; void _ht
   return { kind: 'album', album: { ...publicAlbum, password_protected: !!_pw } as unknown as Album }
 }
 

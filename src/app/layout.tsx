@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono, Playfair_Display, Playwrite_GB_J, Noto_Serif_Armenian, Noto_Sans_Armenian } from "next/font/google";
 import Script from "next/script";
 import AppToastViewport from "@/components/AppToast";
+import PresenceBeacon from "@/components/PresenceBeacon";
 import SiteFooter from "@/components/SiteFooter";
 import { getServerLocale } from "@/i18n/server";
 import { getDictionary } from "@/i18n/get-dictionary";
@@ -176,11 +177,17 @@ const jsonLd = {
       "@id": `${SITE_URL}#organization`,
       name: SITE_NAME,
       url: SITE_URL,
-      logo: `${SITE_URL}/logo/logo-favicon.png`,
+      logo: `${SITE_URL}/logo/logo-1-primary.png`,
       foundingLocation: {
         "@type": "Place",
         name: "Yerevan, Armenia",
       },
+      // Social profiles — tells Google these accounts are the SAME entity as the site, which is what
+      // lets "Hushare" rank as our brand (not the surname) and builds toward a knowledge panel.
+      sameAs: [
+        "https://www.tiktok.com/@hushare_space",
+        "https://www.instagram.com/hushare_space",
+      ],
     },
     {
       "@type": "WebSite",
@@ -405,6 +412,7 @@ export default async function RootLayout({
         <BackToTop />
         <SupportChat />
         <AppToastViewport />
+        <PresenceBeacon />
       </body>
     </html>
   );
