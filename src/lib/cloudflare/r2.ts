@@ -1,5 +1,6 @@
 import { S3Client, PutObjectCommand, GetObjectCommand } from '@aws-sdk/client-s3'
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner'
+import { getCloudflareContext } from '@opennextjs/cloudflare'
 
 export const ALLOWED_IMAGE_TYPES = new Set([
   'image/jpeg',
@@ -126,4 +127,29 @@ export function r2PublicUrl(key: string): string {
   // Strip any accidental scheme prefix from the env var (e.g. "https://cdn.host" → "cdn.host")
   const host = rawHost.replace(/^https?:\/\//, '').replace(/\/+$/, '')
   return `https://${host}/${key}`
+}
+
+// Deletes the R2 object a public URL (as returned by r2PublicUrl, or a caller-stripped variant of
+// one — e.g. background's "image:" values with the prefix already removed) points at. Best-effort,
+// non-fatal, and fire-and-forget: scheduled via waitUntil so the caller never waits on object
+// storage before replying, and any failure is logged, never thrown. Silently no-ops if the URL
+// isn't ours or R2_PUBLIC_HOST/the bucket binding isn't available — callers don't pre-check any of
+// that themselves. Shared by every route that replaces or clears a previously R2-hosted image
+// (album cover/header photo, album background) so the cleanup logic can't drift between them.
+export function deleteR2ObjectByPublicUrl(url: string): void {
+  const rawHost = process.env.R2_PUBLIC_HOST
+  if (!rawHost) return
+  const host = rawHost.replace(/^https?:\/\//, '').replace(/\/+$/, '')
+  const prefix = `https://${host}/`
+  if (!url.startsWith(prefix)) return
+  const key = url.slice(prefix.length).split('?')[0]
+  if (!key) return
+
+  const ctx = getCloudflareContext()
+  const bucket = (ctx?.env as { R2_BUCKET?: { delete(k: string | string[]): Promise<void> } } | undefined)?.R2_BUCKET
+  if (!bucket) return
+  const p = bucket.delete(key).catch((e: unknown) => {
+    console.error('[r2] failed to delete object:', key, e instanceof Error ? e.message : String(e))
+  })
+  try { ctx.ctx.waitUntil(p) } catch { void p }
 }

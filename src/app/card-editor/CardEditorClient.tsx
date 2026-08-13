@@ -7,6 +7,7 @@ import type Konva from 'konva'
 import type { KonvaEventObject } from 'konva/lib/Node'
 import { ArrowLeft, Circle, Download, ImagePlus, Layers, Minus, MousePointer, Redo2, Square, Type, Undo2 } from 'lucide-react'
 import QRCode from 'qrcode'
+import { qrForegroundColor } from '@/lib/album-design'
 import type { Base, TextEl, RectEl, EllipseEl, LineEl, ImgEl, El, HistState, ElPatch } from './types'
 import { ColorSwatch, NumInput, SliderRow } from './ui-atoms'
 import PropsPanel from './PropsPanel'
@@ -30,21 +31,21 @@ function makeQrEl(src: string): ImgEl {
   return { ...base('QR Code'), kind: 'image', x: CX - 85, y: 300, src, width: 170, height: 170 }
 }
 
-function template(title: string, qr: string, style: 'branded'|'bw'|'clean'): { els: El[]; bg: string } {
+function template(title: string, qr: string, style: 'branded'|'bw'|'clean', accentColor?: string | null): { els: El[]; bg: string } {
   const SERIF = "'Playfair Display', Georgia, serif"
   const footer: TextEl = { ...base('Footer'), kind: 'text', x: CX - 90, y: LH - 36, text: 'hushare.space', fontSize: 11, fontFamily: SERIF, fontStyle: 'italic', textDecoration: '', fill: '#AAAAAA', align: 'center', width: 180, letterSpacing: 0.5, lineHeight: 1.2 }
   const qrEl = makeQrEl(qr)
 
   if (style === 'branded') {
-    // Red header band — matches the actual Hushare branded design (z-order: first = bottom)
-    const headerRect: RectEl = { ...base('Header'), locked: true, kind: 'rect', x: 0, y: 0, width: LW, height: 100, fill: '#630826', stroke: '#630826', strokeWidth: 0, cornerRadius: 0 }
-    const shadowRect: RectEl = { ...base('Header shadow'), locked: true, kind: 'rect', x: 0, y: 100, width: LW, height: 4, fill: '#9B1727', stroke: '#9B1727', strokeWidth: 0, cornerRadius: 0 }
+    const brand = qrForegroundColor(accentColor)
+    // Accent-colored header band — matches the album's chosen colour (z-order: first = bottom)
+    const headerRect: RectEl = { ...base('Header'), locked: true, kind: 'rect', x: 0, y: 0, width: LW, height: 104, fill: brand, stroke: brand, strokeWidth: 0, cornerRadius: 0 }
     // Logo: 618×146 native → scale to fit 228×54 in header (locked, not editable by accident)
-    const logoImg: ImgEl = { ...base('Logo'), locked: true, kind: 'image', x: (LW - 228) / 2, y: 23, src: '/logo/logo-light-transparent.png', width: 228, height: 54 }
+    const logoImg: ImgEl = { ...base('Logo'), locked: true, kind: 'image', x: (LW - 228) / 2, y: 25, src: '/logo/logo-light-transparent.png', width: 228, height: 54 }
     const heading: TextEl = { ...base('Heading'), kind: 'text', x: CX - 200, y: 120, text: title || 'CAPTURE THE MOMENT', fontSize: 28, fontFamily: SERIF, fontStyle: 'bold', textDecoration: '', fill: '#1A1A1A', align: 'center', width: 400, letterSpacing: 1, lineHeight: 1.3 }
-    const sep: LineEl = { ...base('Divider'), kind: 'line', x: CX - 70, y: 200, length: 140, stroke: '#630826', strokeWidth: 2, lineCap: 'round', dashed: false }
+    const sep: LineEl = { ...base('Divider'), kind: 'line', x: CX - 70, y: 200, length: 140, stroke: brand, strokeWidth: 2, lineCap: 'round', dashed: false }
     const body: TextEl = { ...base('Body'), kind: 'text', x: CX - 155, y: 215, text: 'Scan the QR code with your camera to upload your photos and videos.', fontSize: 13, fontFamily: SERIF, fontStyle: 'normal', textDecoration: '', fill: '#555555', align: 'center', width: 310, letterSpacing: 0, lineHeight: 1.5 }
-    return { els: [headerRect, shadowRect, logoImg, footer, qrEl, body, sep, heading], bg: '#FAFAFA' }
+    return { els: [headerRect, logoImg, footer, qrEl, body, sep, heading], bg: '#FAFAFA' }
   }
 
   if (style === 'clean') {
@@ -102,6 +103,7 @@ export default function CardEditorClient() {
   const router = useRouter()
   const shareUrl    = params.get('url') ?? ''
   const initialTitle = params.get('title') ?? ''
+  const accentColor  = params.get('accent')
 
   const [qrDataUrl, setQrDataUrl] = useState('')
   const [savedAt, setSavedAt] = useState<number | null>(null)
@@ -204,12 +206,12 @@ export default function CardEditorClient() {
   // QR + init
   useEffect(() => {
     if (!shareUrl) return
-    QRCode.toDataURL(shareUrl, { width: 400, margin: 1, color: { dark: '#111111', light: '#FFFFFF' } }).then(url => {
+    QRCode.toDataURL(shareUrl, { width: 400, margin: 1, color: { dark: qrForegroundColor(accentColor), light: '#FFFFFF' } }).then(url => {
       setQrDataUrl(url)
-      const t = template(initialTitle, url, 'branded')
+      const t = template(initialTitle, url, 'branded', accentColor)
       replace({ els: t.els, bg: t.bg })  // replace so undo can't go past this
     })
-  }, [shareUrl, initialTitle])  // eslint-disable-line
+  }, [shareUrl, initialTitle, accentColor])  // eslint-disable-line
 
   // Load from localStorage when opened without a shareUrl
   useEffect(() => {
@@ -395,7 +397,7 @@ export default function CardEditorClient() {
 
   function applyTemplate(style: 'branded'|'bw'|'clean') {
     if (!qrDataUrl) return
-    const t = template(initialTitle, qrDataUrl, style)
+    const t = template(initialTitle, qrDataUrl, style, accentColor)
     push({ els: t.els, bg: t.bg })
     setSelectedId(null)
   }

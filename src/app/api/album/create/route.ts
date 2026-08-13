@@ -41,6 +41,18 @@ function generateOwnerToken(): string {
 // 7 days — matches the PBKDF2 token bucket window
 const OWNER_COOKIE_MAX_AGE = 60 * 60 * 24 * 7
 
+const ANON_ALBUM_COOKIE = 'hushare_anon_albums'
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
+// The anon per-device cap stores the album IDs created on this device (not a bare count), so it can
+// SELF-HEAL: on each create we drop IDs whose albums no longer exist, freeing their slot. A legacy
+// value was a plain count ("2"), which isn't a UUID and so prunes to nothing here — a one-time reset
+// that unsticks any creator the old ever-growing counter had permanently wedged.
+function parseAnonAlbumIds(raw: string | undefined): string[] {
+  if (!raw) return []
+  return raw.split(',').map((s) => s.trim()).filter((s) => UUID_RE.test(s)).slice(0, 50)
+}
+
 export async function POST(req: Request) {
   const csrfError = forbidCrossSiteRequest(req)
   if (csrfError) return csrfError
@@ -78,10 +90,11 @@ export async function POST(req: Request) {
 
   const admin = createAdminClient()
 
-  // Album-count cap. Registered users get a hard cap by tier (counting their live albums). Anon
-  // users have no stable identity, so their cap is a soft per-device cookie — bypassable, but a
-  // reasonable nudge to sign in; the per-IP rate limit above stays as the real abuse backstop.
-  const anonCount = user ? 0 : Math.max(0, Number((await cookies()).get('hushare_anon_albums')?.value ?? '0') || 0)
+  // Album-count cap. Registered users get a hard cap by tier (counting their live albums). Anon users
+  // have no stable identity, so their cap is a soft per-device cookie that lists the album IDs they've
+  // created; we prune deleted ones so the cap self-heals. The per-IP rate limit above is the real
+  // abuse backstop — this is just a nudge to sign in.
+  let anonLiveIds: string[] = []
   if (user) {
     const tier = await getUserTier(user)
     const cap = albumCountLimitForTier(tier)
@@ -94,11 +107,20 @@ export async function POST(req: Request) {
         { status: 403, headers: NO_STORE },
       )
     }
-  } else if (anonCount >= ANON_ALBUM_LIMIT) {
-    return NextResponse.json(
-      { error: "You've reached your album limit. Register on Hushare — it's free — to create more." },
-      { status: 403, headers: NO_STORE },
-    )
+  } else {
+    const priorIds = parseAnonAlbumIds((await cookies()).get(ANON_ALBUM_COOKIE)?.value)
+    if (priorIds.length > 0) {
+      // Keep only albums that STILL exist as LIVE anonymous albums — deleted or retired ones free
+      // their slot (mirrors the registered path, which also ignores retired albums).
+      const { data: alive } = await admin.from('albums').select('id').in('id', priorIds).is('user_id', null).is('retired_at', null)
+      anonLiveIds = (alive ?? []).map((r) => r.id as string)
+    }
+    if (anonLiveIds.length >= ANON_ALBUM_LIMIT) {
+      return NextResponse.json(
+        { error: "You've reached your album limit. Register on Hushare — it's free — to create more." },
+        { status: 403, headers: NO_STORE },
+      )
+    }
   }
 
   const ownerToken = generateOwnerToken()
@@ -126,9 +148,10 @@ export async function POST(req: Request) {
         path: '/',
         maxAge: OWNER_COOKIE_MAX_AGE,
       })
-      // Track anon album count for the soft guest cap (registered users are capped by DB count).
+      // Append this album's ID to the per-device anon list so the soft cap self-heals when it (or any
+      // sibling) is later deleted. Registered users are capped by a live DB count instead.
       if (!user) {
-        res.cookies.set('hushare_anon_albums', String(anonCount + 1), {
+        res.cookies.set(ANON_ALBUM_COOKIE, [...anonLiveIds, data.id].join(','), {
           httpOnly: true, secure: true, sameSite: 'lax', path: '/', maxAge: 60 * 60 * 24 * 365,
         })
       }

@@ -7,6 +7,7 @@ import { useRouter } from 'next/navigation'
 import { ArrowLeft, Check, Copy, Download, MonitorPlay, QrCode, Share2, SquareMenu, X } from 'lucide-react'
 import { useIsNarrow } from '@/lib/useIsNarrow'
 import { useT } from '@/i18n/LocaleProvider'
+import { qrForegroundColor } from '@/lib/album-design'
 import { renderBrandedCard, renderBWCard } from './TableCardModal'
 
 type CardStyle = 'branded' | 'bw'
@@ -16,18 +17,20 @@ type Props = {
   ownerUrl: string | null
   shareUrl: string
   albumTitle: string
+  accentColor: string | null
   onClose: () => void
   onCopy: (type: 'share' | 'owner') => void
 }
 
-async function downloadQr(shareUrl: string, albumTitle: string, format: 'png' | 'svg') {
+async function downloadQr(shareUrl: string, albumTitle: string, format: 'png' | 'svg', accentColor: string | null) {
   const QRCode = (await import('qrcode')).default
   const slug = (albumTitle || 'album').replace(/[^a-z0-9]/gi, '-').toLowerCase()
+  const dark = qrForegroundColor(accentColor)
 
   if (format === 'svg') {
     const svgString = await QRCode.toString(shareUrl, {
       type: 'svg', width: 600, margin: 2,
-      color: { dark: '#630826', light: '#FFFFFF' },
+      color: { dark, light: '#FFFFFF' },
     })
     const blob = new Blob([svgString], { type: 'image/svg+xml' })
     const url = URL.createObjectURL(blob)
@@ -42,7 +45,7 @@ async function downloadQr(shareUrl: string, albumTitle: string, format: 'png' | 
   }
 
   const canvas = document.createElement('canvas')
-  await QRCode.toCanvas(canvas, shareUrl, { width: 600, margin: 2, color: { dark: '#630826', light: '#FFFFFF' } })
+  await QRCode.toCanvas(canvas, shareUrl, { width: 600, margin: 2, color: { dark, light: '#FFFFFF' } })
   const link = document.createElement('a')
   link.download = `${slug}-qr.png`
   link.href = canvas.toDataURL('image/png')
@@ -51,7 +54,7 @@ async function downloadQr(shareUrl: string, albumTitle: string, format: 'png' | 
 
 // ─── Inline table card selector (no modal overlay) ────────────────────────────
 
-function TableCardView({ shareUrl, albumTitle, onBack }: { shareUrl: string; albumTitle: string; onBack: () => void }) {
+function TableCardView({ shareUrl, albumTitle, accentColor, onBack }: { shareUrl: string; albumTitle: string; accentColor: string | null; onBack: () => void }) {
   const { t } = useT()
   const router = useRouter()
   const [style, setStyle] = useState<CardStyle>('branded')
@@ -63,14 +66,14 @@ function TableCardView({ shareUrl, albumTitle, onBack }: { shareUrl: string; alb
   useEffect(() => {
     const c = canvasRef.current
     if (!c) return
-    void (style === 'branded' ? renderBrandedCard : renderBWCard)(c, heading, shareUrl, 240)
-  }, [style, heading, shareUrl])
+    void (style === 'branded' ? renderBrandedCard(c, heading, shareUrl, 240, accentColor) : renderBWCard(c, heading, shareUrl, 240))
+  }, [style, heading, shareUrl, accentColor])
 
   async function handleDownload() {
     setDownloading(true)
     try {
       const off = document.createElement('canvas')
-      await (style === 'branded' ? renderBrandedCard : renderBWCard)(off, heading, shareUrl, 1200)
+      await (style === 'branded' ? renderBrandedCard(off, heading, shareUrl, 1200, accentColor) : renderBWCard(off, heading, shareUrl, 1200))
       const slug = (albumTitle || 'album').replace(/[^a-z0-9]/gi, '-').toLowerCase()
 
       if (dlFormat === 'pdf') {
@@ -88,7 +91,7 @@ function TableCardView({ shareUrl, albumTitle, onBack }: { shareUrl: string; alb
   }
 
   function openEditor() {
-    const p = new URLSearchParams({ url: shareUrl, title: albumTitle || '' })
+    const p = new URLSearchParams({ url: shareUrl, title: albumTitle || '', accent: qrForegroundColor(accentColor) })
     router.push(`/card-editor?${p}`)
   }
 
@@ -149,7 +152,7 @@ function TableCardView({ shareUrl, albumTitle, onBack }: { shareUrl: string; alb
 
 // ─── Main share menu ──────────────────────────────────────────────────────────
 
-export default function ShareMenu({ copied, ownerUrl, shareUrl, albumTitle, onClose, onCopy }: Props) {
+export default function ShareMenu({ copied, ownerUrl, shareUrl, albumTitle, accentColor, onClose, onCopy }: Props) {
   const { t } = useT()
   const [view, setView] = useState<'main' | 'tablecard'>('main')
   const [qrDataUrl, setQrDataUrl] = useState('')
@@ -158,11 +161,11 @@ export default function ShareMenu({ copied, ownerUrl, shareUrl, albumTitle, onCl
   useEffect(() => {
     let cancelled = false
     import('qrcode').then(({ default: QRCode }) => {
-      QRCode.toDataURL(shareUrl, { width: 300, margin: 2, color: { dark: '#630826', light: '#FFFFFF' } })
+      QRCode.toDataURL(shareUrl, { width: 300, margin: 2, color: { dark: qrForegroundColor(accentColor), light: '#FFFFFF' } })
         .then((url) => { if (!cancelled) setQrDataUrl(url) })
     })
     return () => { cancelled = true }
-  }, [shareUrl])
+  }, [shareUrl, accentColor])
 
   async function handleShare() {
     if (typeof navigator !== 'undefined' && navigator.share) {
@@ -176,7 +179,7 @@ export default function ShareMenu({ copied, ownerUrl, shareUrl, albumTitle, onCl
   const menuInner = (
     <>
       {view === 'tablecard' ? (
-        <TableCardView shareUrl={shareUrl} albumTitle={albumTitle} onBack={() => setView('main')} />
+        <TableCardView shareUrl={shareUrl} albumTitle={albumTitle} accentColor={accentColor} onBack={() => setView('main')} />
       ) : (
         <>
           <div className="flex items-center justify-between mb-3">
@@ -258,7 +261,7 @@ export default function ShareMenu({ copied, ownerUrl, shareUrl, albumTitle, onCl
                   <button
                     className="flex items-center gap-1.5 text-xs font-semibold rounded-lg px-2.5 py-1.5 transition hover:opacity-80"
                     style={{ background: '#630826', color: '#FDFAF5' }}
-                    onClick={() => downloadQr(shareUrl, albumTitle, qrFormat)}
+                    onClick={() => downloadQr(shareUrl, albumTitle, qrFormat, accentColor)}
                   >
                     <Download className="w-3 h-3" />
                     {t('sm.download', { format: qrFormat.toUpperCase() })}

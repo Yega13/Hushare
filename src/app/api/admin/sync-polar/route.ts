@@ -53,6 +53,13 @@ export async function POST(req: Request) {
 
     // Resolve the account: in-app userId metadata first, else provision/find by customer email.
     let userId = sub.metadata?.userId
+    // A metadata userId can be STALE — e.g. it points at a user from the old (deleted) Supabase
+    // project, so writing it violates the user_id foreign key. Only trust it if that user still
+    // exists; otherwise fall through to email-based provisioning below.
+    if (userId && UUID_RE.test(userId)) {
+      const { data: existsUser } = await admin.auth.admin.getUserById(userId)
+      if (!existsUser?.user) userId = undefined
+    }
     if (!userId || !UUID_RE.test(userId)) {
       const email = sub.customer?.email ?? (customerId ? await getCustomerEmail(customerId) : null)
       userId = email ? (await findOrCreateUserByEmail(email)) ?? undefined : undefined

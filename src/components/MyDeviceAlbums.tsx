@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import { getMyAlbums, forgetAlbum, type MyAlbum } from '@/lib/my-albums'
 import { createClient } from '@/lib/supabase/client'
+import { showAppToast } from '@/components/AppToast'
 import { useT } from '@/i18n/LocaleProvider'
 
 // "Your albums on this device" — recovery for ANONYMOUS creators only. Reads localStorage
@@ -14,11 +15,53 @@ export default function MyDeviceAlbums() {
   const [albums, setAlbums] = useState<MyAlbum[] | null>(null)
   // null = still checking; false = signed out (show); true = signed in (hide).
   const [loggedIn, setLoggedIn] = useState<boolean | null>(null)
+  const [busy, setBusy] = useState<string | null>(null)
 
   useEffect(() => {
     setAlbums(getMyAlbums())
     createClient().auth.getSession().then(({ data }) => setLoggedIn(!!data.session)).catch(() => setLoggedIn(false))
   }, [])
+
+  // Deleting for real (not just forgetting): for an anonymous album, dropping it from this device
+  // means losing its management token anyway, so we delete the album — which also frees a slot in the
+  // per-device album cap. We authenticate with the remembered owner_token first (sets the owner
+  // cookie the delete route checks), then delete, then drop it from the local list.
+  async function deleteAlbum(a: MyAlbum) {
+    if (busy) return
+    if (!window.confirm(t('myAlbums.removeConfirm'))) return
+    setBusy(a.slug)
+    try {
+      const login = await fetch('/api/album/owner-login', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ slug: a.slug, owner_token: a.token }),
+      })
+      // "Deleted" = the album is confirmed gone. 404 anywhere means it's already gone (also success).
+      // We only drop it from this device once that's true, so a transient auth/network failure never
+      // silently orphans the album (forgetting the token without deleting the album).
+      let deleted = login.status === 404
+      if (login.ok) {
+        const del = await fetch('/api/album/delete', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ slug: a.slug }),
+        })
+        deleted = del.ok || del.status === 404
+        if (!deleted) {
+          const body = await del.json().catch(() => ({})) as { error?: string }
+          showAppToast(body.error ?? t('common.errorGeneric'), 'error')
+        }
+      } else if (!deleted) {
+        showAppToast(t('common.errorGeneric'), 'error')
+      }
+      if (deleted) {
+        forgetAlbum(a.slug)
+        setAlbums(getMyAlbums())
+      }
+    } catch {
+      showAppToast(t('common.networkError'), 'error')
+    } finally {
+      setBusy(null)
+    }
+  }
 
   // Only show once we've confirmed the visitor is signed OUT — never flash it to a signed-in user.
   if (loggedIn !== false) return null
@@ -55,12 +98,13 @@ export default function MyDeviceAlbums() {
                 </a>
                 <button
                   type="button"
-                  onClick={() => { forgetAlbum(a.slug); setAlbums(getMyAlbums()) }}
-                  className="text-xs"
-                  style={{ color: '#8A7A66' }}
+                  onClick={() => void deleteAlbum(a)}
+                  disabled={!!busy}
+                  className="text-xs disabled:opacity-50"
+                  style={{ color: '#B23A48' }}
                   aria-label={`${t('myAlbums.remove')} ${a.title}`}
                 >
-                  {t('myAlbums.remove')}
+                  {busy === a.slug ? t('myAlbums.removing') : t('myAlbums.remove')}
                 </button>
               </div>
             </li>

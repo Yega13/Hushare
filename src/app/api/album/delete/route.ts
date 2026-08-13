@@ -43,6 +43,8 @@ export async function POST(req: Request) {
 
   const cookieStore = await cookies()
   cookieStore.delete(`hushare_owner_${access.album.id}`)
+  // No anon-cap bookkeeping needed here: the create route lists anon album IDs and prunes any that no
+  // longer exist, so deleting this album automatically frees its slot on the next create.
 
   return NextResponse.json({ ok: true }, { headers: NO_STORE })
 }

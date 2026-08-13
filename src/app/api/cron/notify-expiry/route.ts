@@ -7,9 +7,9 @@ import { timingSafeEqual } from '@/lib/timing-safe'
 export const runtime = 'nodejs'
 
 const NO_STORE = { 'Cache-Control': 'no-store' }
-// Must mirror retire-albums: FREE albums expire after 90 days of inactivity. Owners are warned
-// 30 days before (i.e. once the album has been inactive 60–90 days) so they can download first.
-const RETIRE_AFTER_DAYS = 90
+// Must mirror retire-albums: FREE albums expire after 365 days (1 year) of inactivity. Owners are
+// warned 30 days before (i.e. once the album has been inactive 335–365 days) so they can download first.
+const RETIRE_AFTER_DAYS = 365
 const WARN_BEFORE_DAYS = 30
 const WARN_AFTER_DAYS = RETIRE_AFTER_DAYS - WARN_BEFORE_DAYS  // 60
 const BATCH_SIZE = 50

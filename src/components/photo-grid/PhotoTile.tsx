@@ -1,5 +1,5 @@
 import React from 'react'
-import { Play, Check, Move } from 'lucide-react'
+import { Play, Check, Move, Image as ImageIcon } from 'lucide-react'
 import { formatDuration } from '@/lib/media'
 import type { Photo } from '@/types'
 import { useT } from '@/i18n/LocaleProvider'
@@ -30,6 +30,8 @@ type Props = {
   photo: Photo
   index: number
   mediaRadius: number
+  // Album "framed" photo style — wraps each tile in a white matte (a light print look).
+  framed?: boolean
   filter: string
   arrangeMode: boolean
   isReorderMode: boolean
@@ -39,6 +41,8 @@ type Props = {
   isBroken: boolean
   isPosterBroken: boolean
   isOwner: boolean
+  // Whether this photo is the album's chosen header/hero image (album.cover_photo_id === photo.id).
+  isHeaderPhoto: boolean
   selectMode: boolean
   isSelected: boolean
   handlers: React.MutableRefObject<TileHandlers>
@@ -56,6 +60,7 @@ const PhotoTile = React.memo(function PhotoTile({
   photo,
   index,
   mediaRadius,
+  framed,
   filter,
   arrangeMode,
   isReorderMode,
@@ -65,6 +70,7 @@ const PhotoTile = React.memo(function PhotoTile({
   isBroken,
   isPosterBroken,
   isOwner,
+  isHeaderPhoto,
   selectMode,
   isSelected,
   handlers,
@@ -111,6 +117,7 @@ const PhotoTile = React.memo(function PhotoTile({
         style={{
           background: '#EDE7DB',
           borderRadius: mediaRadius,
+          border: framed ? '7px solid #FFFFFF' : undefined,
           opacity: isDragging ? 0.58 : 1,
           // Block touch-based scrolling ONLY while a drag is in flight.
           // Keeping 'none' for the whole arrange session blocked page scroll on mobile,
@@ -234,7 +241,7 @@ const PhotoTile = React.memo(function PhotoTile({
 
         {isGridFlipped && (
           <div className="hush-grid-photo-back" style={{ borderRadius: mediaRadius }}>
-            <strong className="hush-photo-back-title">{mediaName}</strong>
+            <strong className="hush-photo-back-title" style={{ fontFamily: 'var(--album-font, inherit)' }}>{mediaName}</strong>
           </div>
         )}
 
@@ -261,6 +268,16 @@ const PhotoTile = React.memo(function PhotoTile({
             style={{ background: 'rgba(99,8,38,0.92)', color: '#FDFAF5' }}
           >
             {t('pg.hiddenBadge')}
+          </span>
+        )}
+
+        {isOwner && isHeaderPhoto && !selectMode && !arrangeMode && (
+          <span
+            className="absolute bottom-2 left-2 z-20 flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide pointer-events-none"
+            style={{ background: 'rgba(99,8,38,0.92)', color: '#FDFAF5' }}
+          >
+            <ImageIcon className="w-2.5 h-2.5" aria-hidden="true" />
+            {t('ad.headerPhoto')}
           </span>
         )}
 

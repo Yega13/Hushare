@@ -1,20 +1,12 @@
-'use client'
-
-import { useEffect, useRef, useState } from 'react'
-import { useRouter } from 'next/navigation'
-import { Download, X } from 'lucide-react'
 import QRCode from 'qrcode'
+import { qrForegroundColor } from '@/lib/album-design'
 
-type CardStyle = 'branded' | 'bw'
-
-type Props = {
-  shareUrl: string
-  albumTitle: string
-  onClose: () => void
-}
+// Canvas renderers for the printable table card — the only two exports actually used (by
+// ShareMenu.tsx's inline TableCardView). This file used to also export a standalone modal
+// component wrapping these, but it was superseded by that inline view and never deleted; it had
+// no remaining importers anywhere in the app.
 
 const BODY_TEXT = 'Scan the QR code with your camera to upload your photos and videos.'
-const RED = '#630826'
 
 async function ensureFonts() {
   if (typeof document === 'undefined' || !document.fonts) return
@@ -63,7 +55,8 @@ function pf(size: number, bold = false, italic = false) {
   return `${bold ? 'bold ' : ''}${italic ? 'italic ' : ''}${size}px 'Playfair Display', Georgia, serif`
 }
 
-export async function renderBrandedCard(canvas: HTMLCanvasElement, title: string, shareUrl: string, W: number) {
+export async function renderBrandedCard(canvas: HTMLCanvasElement, title: string, shareUrl: string, W: number, accentColor?: string | null) {
+  const brand = qrForegroundColor(accentColor)
   const H = Math.round(W * (1700 / 1200))
   canvas.width = W; canvas.height = H
   const ctx = canvas.getContext('2d')
@@ -75,8 +68,8 @@ export async function renderBrandedCard(canvas: HTMLCanvasElement, title: string
   ctx.fillStyle = '#FAFAFA'
   ctx.fillRect(0, 0, W, H)
 
-  const hdrH = Math.round(250 * s)
-  ctx.fillStyle = RED
+  const hdrH = Math.round(255 * s)
+  ctx.fillStyle = brand
   ctx.fillRect(0, 0, W, hdrH)
 
   try {
@@ -92,9 +85,6 @@ export async function renderBrandedCard(canvas: HTMLCanvasElement, title: string
     ctx.fillText('HUSHARE', W / 2, hdrH / 2)
   }
 
-  ctx.fillStyle = '#9B1727'
-  ctx.fillRect(0, hdrH, W, Math.round(5 * s))
-
   let y = hdrH + Math.round(76 * s)
   ctx.textAlign = 'center'; ctx.textBaseline = 'top'
 
@@ -106,7 +96,7 @@ export async function renderBrandedCard(canvas: HTMLCanvasElement, title: string
   }
   y += Math.round(32 * s)
 
-  ctx.strokeStyle = RED; ctx.lineWidth = Math.round(3 * s)
+  ctx.strokeStyle = brand; ctx.lineWidth = Math.round(3 * s)
   const rw = Math.round(260 * s)
   ctx.beginPath(); ctx.moveTo((W - rw) / 2, y); ctx.lineTo((W + rw) / 2, y); ctx.stroke()
   y += Math.round(42 * s)
@@ -119,7 +109,7 @@ export async function renderBrandedCard(canvas: HTMLCanvasElement, title: string
 
   const qrSz = Math.min(Math.round(430 * s), H - y - Math.round(100 * s))
   if (qrSz > 30) {
-    const du = await QRCode.toDataURL(shareUrl, { width: qrSz, margin: 1, color: { dark: RED, light: '#FAFAFA' } })
+    const du = await QRCode.toDataURL(shareUrl, { width: qrSz, margin: 1, color: { dark: brand, light: '#FAFAFA' } })
     ctx.drawImage(await loadImg(du), (W - qrSz) / 2, y, qrSz, qrSz)
   }
 
@@ -189,134 +179,4 @@ export async function renderBWCard(canvas: HTMLCanvasElement, title: string, sha
   ctx.font = pf(Math.round(30 * s), false, true)
   ctx.fillStyle = '#AAAAAA'; ctx.textBaseline = 'alphabetic'
   ctx.fillText('hushare.space', W / 2, H - p2 - Math.round(36 * s))
-}
-
-export default function TableCardModal({ shareUrl, albumTitle, onClose }: Props) {
-  const router = useRouter()
-  const [style, setStyle] = useState<CardStyle>('branded')
-  const [downloading, setDownloading] = useState(false)
-  const [dlFormat, setDlFormat] = useState<'png' | 'pdf'>('png')
-  const canvasRef = useRef<HTMLCanvasElement>(null)
-
-  const heading = albumTitle || 'Capture the Moment'
-
-  useEffect(() => {
-    const c = canvasRef.current
-    if (!c) return
-    void (style === 'branded' ? renderBrandedCard : renderBWCard)(c, heading, shareUrl, 260)
-  }, [style, heading, shareUrl])
-
-  async function handleDownload() {
-    setDownloading(true)
-    try {
-      const off = document.createElement('canvas')
-      await (style === 'branded' ? renderBrandedCard : renderBWCard)(off, heading, shareUrl, 1200)
-      const slug = (albumTitle || 'album').replace(/[^a-z0-9]/gi, '-').toLowerCase()
-
-      if (dlFormat === 'pdf') {
-        const { jsPDF } = await import('jspdf')
-        const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a5' })
-        pdf.addImage(off.toDataURL('image/jpeg', 0.95), 'JPEG', 0, 0, 148, 210)
-        pdf.save(`${slug}-table-card.pdf`)
-      } else {
-        const link = document.createElement('a')
-        link.download = `${slug}-table-card.png`
-        link.href = off.toDataURL('image/png')
-        link.click()
-      }
-    } finally {
-      setDownloading(false)
-    }
-  }
-
-  function openEditor() {
-    const p = new URLSearchParams({ url: shareUrl, title: albumTitle || '' })
-    router.push(`/card-editor?${p}`)
-  }
-
-  return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center"
-      style={{ background: 'rgba(0,0,0,0.5)' }}
-      onClick={(e) => { if (e.target === e.currentTarget) onClose() }}
-    >
-      <div
-        className="relative rounded-2xl shadow-2xl overflow-y-auto"
-        style={{ background: '#FFFFFF', width: '100%', maxWidth: 520, maxHeight: '95dvh', padding: 20 }}
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="flex items-center justify-between mb-4">
-          <span className="font-semibold text-sm" style={{ color: '#630826' }}>Table card</span>
-          <button onClick={onClose} style={{ color: '#A89880' }}><X className="w-4 h-4" /></button>
-        </div>
-
-        <div className="flex gap-2 mb-5">
-          {(['branded', 'bw'] as CardStyle[]).map((s) => (
-            <button
-              key={s}
-              onClick={() => setStyle(s)}
-              className="flex-1 py-2.5 text-xs font-semibold rounded-xl transition"
-              style={{
-                background: style === s ? '#630826' : '#F5F0E8',
-                color: style === s ? '#FDFAF5' : '#5C3D2E',
-                border: '1px solid ' + (style === s ? '#630826' : '#DDD5C5'),
-              }}
-            >
-              {s === 'branded' ? 'Hushare Branded' : 'B&W'}
-            </button>
-          ))}
-          <button
-            onClick={openEditor}
-            className="flex-1 py-2.5 text-xs font-semibold rounded-xl transition hover:opacity-80"
-            style={{ background: '#F5F0E8', color: '#5C3D2E', border: '1px solid #DDD5C5' }}
-          >
-            Custom
-          </button>
-        </div>
-
-        <div className="flex gap-5 items-start">
-          <canvas
-            ref={canvasRef}
-            style={{
-              width: 152,
-              height: Math.round(152 * 1700 / 1200),
-              flexShrink: 0,
-              borderRadius: 10,
-              border: '1px solid #E5E5E5',
-              boxShadow: '0 2px 14px rgba(0,0,0,0.10)',
-            }}
-          />
-          <div className="flex-1 space-y-3 pt-1">
-            <p className="text-xs leading-relaxed" style={{ color: '#7C5C3E' }}>
-              {style === 'branded'
-                ? 'Hushare red & white with logo — Playfair Display.'
-                : 'Elegant B&W, double border, corner brackets — Playfair Display.'}
-              {' '}1200×1700 px, print-ready.
-            </p>
-            <div className="flex rounded-lg overflow-hidden" style={{ border: '1px solid #DDD5C5' }}>
-              {(['png', 'pdf'] as const).map(f => (
-                <button key={f} onClick={() => setDlFormat(f)}
-                  className="flex-1 py-1.5 text-xs font-semibold transition"
-                  style={{ background: dlFormat === f ? '#630826' : '#F5F0E8', color: dlFormat === f ? '#FDFAF5' : '#5C3D2E' }}>
-                  {f.toUpperCase()}
-                </button>
-              ))}
-            </div>
-            <button
-              onClick={handleDownload}
-              disabled={downloading}
-              className="w-full flex items-center justify-center gap-2 font-semibold rounded-xl py-3 transition hover:opacity-90 disabled:opacity-50 text-sm"
-              style={{ background: '#630826', color: '#FDFAF5' }}
-            >
-              <Download className="w-4 h-4" />
-              {downloading ? 'Generating…' : `Download ${dlFormat.toUpperCase()}`}
-            </button>
-            <p className="text-xs" style={{ color: '#A89880' }}>
-              A5 / 5×7&quot; — table cards, tent cards, signage
-            </p>
-          </div>
-        </div>
-      </div>
-    </div>
-  )
 }

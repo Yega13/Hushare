@@ -1,9 +1,9 @@
 import { NextResponse } from 'next/server'
-import { getCloudflareContext } from '@opennextjs/cloudflare'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { verifyOwnerViaCookieWithRateLimit } from '@/lib/album-owner-access'
 import { forbidCrossSiteRequest } from '@/lib/request-security'
 import { queueAlbumSettingsBroadcast } from '@/lib/broadcast'
+import { deleteR2ObjectByPublicUrl } from '@/lib/cloudflare/r2'
 
 export const runtime = 'nodejs'
 
@@ -81,24 +81,11 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: 'Could not update background' }, { status: 500, headers: NO_STORE })
   }
 
-  // Clean up the previous custom background from R2 — best-effort, non-fatal.
+  // Clean up the previous custom background from R2 — best-effort, non-fatal, fire-and-forget.
   // Skip when theme is unchanged: deleting here would orphan the still-active R2 object.
   const oldTheme = access.album.background_theme
-  if (oldTheme?.startsWith('image:') && r2Host && oldTheme !== theme) {
-    const oldUrl = oldTheme.slice(6)
-    const prefix = `https://${r2Host}/`
-    if (oldUrl.startsWith(prefix)) {
-      const oldKey = oldUrl.slice(prefix.length).split('?')[0]
-      if (oldKey) {
-        try {
-          const ctx = getCloudflareContext()
-          const bucket = (ctx?.env as { R2_BUCKET?: { delete(k: string | string[]): Promise<void> } } | undefined)?.R2_BUCKET
-          if (bucket) await bucket.delete(oldKey)
-        } catch (e) {
-          console.error('[album/background] failed to delete old background from R2:', e instanceof Error ? e.message : String(e))
-        }
-      }
-    }
+  if (oldTheme?.startsWith('image:') && oldTheme !== theme) {
+    deleteR2ObjectByPublicUrl(oldTheme.slice(6))
   }
 
   queueAlbumSettingsBroadcast(access.album.id, { background_theme: theme })

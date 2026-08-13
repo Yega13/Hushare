@@ -7,6 +7,10 @@ export type PhotoLayout = "grid" | "justified";
 export type SlideshowAnimation = "none" | "fade" | "rise" | "zoom";
 export type Tier = "free" | "pro" | "studio";
 export type UploadCaps = { image: number; video: number };
+export type SponsorLogo = { id: string; url: string; name: string | null };
+// How a video used as the album header plays. 'hoverPlay'/'hoverLoop' fall back to a static
+// poster on touch devices, which have no hover.
+export type HeaderVideoMode = "once" | "loop" | "hoverPlay" | "hoverLoop";
 
 // Shape returned by GET /api/album/resolve — internal columns (owner_token, password_hash,
 // user_id, retired_at) are stripped server-side and never appear on the client.
@@ -17,12 +21,27 @@ export type Album = {
   title: string;
   background_theme: string | null;
   cover_photo_id: string | null;
+  // Custom header photo — an arbitrary uploaded image (R2 URL), not one of the album's own photos.
+  // Mutually exclusive with cover_photo_id: at most one is ever set.
+  header_image: string | null;
+  // Where the header photo/video is anchored within the hero band's crop, as a CSS
+  // background-position value ("X% Y%"). Null = center.
+  header_focal: string | null;
+  // Playback mode when the chosen header photo is a video. Null = 'loop'.
+  header_video_mode: HeaderVideoMode | null;
   // Album design (Part A). accent_color: curated palette (all) or custom hex (paid). logo_url:
   // owner-uploaded logo (paid). template: one-click preset key. welcome_message: welcome-header line.
   // hide_branding: paid — hides "Powered by Hushare". All default empty → legacy albums look unchanged.
   accent_color: string | null;
   logo_url: string | null;
+  // Sponsor-branding strip (race/festival albums), owner-ordered. Paid, same gate as logo_url.
+  // Empty array (the default) shows no strip.
+  sponsor_logos: SponsorLogo[];
   template: string | null;
+  // Owner-selectable title font (key into ALBUM_FONTS); null = the default classic serif.
+  title_font: string | null;
+  // How the photo tiles present (edge / rounded / framed); null = default (per-album media_radius).
+  photo_style: string | null;
   welcome_message: string | null;
   hide_branding: boolean;
   reveal_at: string | null;

@@ -9,6 +9,39 @@
   font-display: swap;
 }
 
+/* Album title fonts (owner-selectable "looks"). Self-hosted latin-subset woff2 so they pass the
+   strict font-src 'self' CSP; only downloaded when an album actually uses one. Armenian titles fall
+   back to the Noto Armenian faces (these display fonts have no Armenian glyphs). */
+@font-face {
+  font-family: 'Fraunces';
+  src: url('/fonts/fraunces.woff2') format('woff2');
+  font-weight: 400 600;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Space Grotesk';
+  src: url('/fonts/space-grotesk.woff2') format('woff2');
+  font-weight: 600;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Caveat';
+  src: url('/fonts/caveat.woff2') format('woff2');
+  font-weight: 600;
+  font-style: normal;
+  font-display: swap;
+}
+/* Anton — compressed poster display (used on the /homepage-new-design-test experiment). */
+@font-face {
+  font-family: 'Anton';
+  src: url('/fonts/anton.woff2') format('woff2');
+  font-weight: 400 900;
+  font-style: normal;
+  font-display: swap;
+}
+
 :root {
   --background: #FDFAF5;
   --foreground: #630826;

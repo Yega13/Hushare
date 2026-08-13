@@ -9,6 +9,9 @@ import { useT } from '@/i18n/LocaleProvider'
 import { useIsNarrow } from '@/lib/useIsNarrow'
 import { useZipDownload } from '@/components/photo-grid/useZipDownload'
 import type { Album, Photo } from '@/types'
+import SignInPrompt from '@/components/SignInPrompt'
+import { createClient } from '@/lib/supabase/client'
+import { qrForegroundColor } from '@/lib/album-design'
 
 type Props = {
   album: Album
@@ -45,16 +48,40 @@ export default function GuestActionsBar({ album, photos, shareUrl, onOpenSlidesh
   const [qrDataUrl, setQrDataUrl] = useState('')
   const shareRef = useRef<HTMLDivElement>(null)
   const isNarrow = useIsNarrow()
+  const [supabaseClient] = useState(() => createClient())
+  const [downloadPromptOpen, setDownloadPromptOpen] = useState(false)
+
+  async function handleDownloadAll() {
+    downloadZip()
+    // Offer sign-in so the guest can keep these photos — fires AFTER kicking off the download, so
+    // it never blocks it. Skips silently for already-signed-in or already-dismissed guests.
+    try {
+      if (sessionStorage.getItem(`hushare.dlPrompt.${album.id}`)) return
+      const { data: { session } } = await supabaseClient.auth.getSession()
+      if (!session) setDownloadPromptOpen(true)
+    } catch { /* ignore */ }
+  }
+
+  // Lock background scroll while the download sign-in prompt is open.
+  useEffect(() => {
+    if (!downloadPromptOpen) return
+    document.documentElement.classList.add('hush-scroll-locked')
+    document.body.classList.add('hush-scroll-locked')
+    return () => {
+      document.documentElement.classList.remove('hush-scroll-locked')
+      document.body.classList.remove('hush-scroll-locked')
+    }
+  }, [downloadPromptOpen])
 
   // Pre-generate QR once
   useEffect(() => {
     let cancelled = false
     import('qrcode').then(({ default: QRCode }) => {
-      QRCode.toDataURL(shareUrl, { width: 300, margin: 2, color: { dark: '#630826', light: '#FFFFFF' } })
+      QRCode.toDataURL(shareUrl, { width: 300, margin: 2, color: { dark: qrForegroundColor(album.accent_color), light: '#FFFFFF' } })
         .then((url) => { if (!cancelled) setQrDataUrl(url) })
     })
     return () => { cancelled = true }
-  }, [shareUrl])
+  }, [shareUrl, album.accent_color])
 
   // Desktop dropdown closes on outside-click (it lives inside shareRef). The mobile panel is
   // portaled to <body> and closes via its backdrop, so the shareRef listener is desktop-only.
@@ -133,7 +160,7 @@ export default function GuestActionsBar({ album, photos, shareUrl, onOpenSlidesh
             className="hush-press"
             style={btnBase}
             disabled={zipping || downloadableCount === 0}
-            onClick={downloadZip}
+            onClick={handleDownloadAll}
           >
             {zipping ? (
               <>
@@ -229,6 +256,22 @@ export default function GuestActionsBar({ album, photos, shareUrl, onOpenSlidesh
         </div>
 
       </div>
+
+      {downloadPromptOpen && createPortal(
+        <>
+          <div className="hush-share-backdrop" onClick={() => setDownloadPromptOpen(false)} />
+          <div style={{ position: 'fixed', left: '50%', top: '50%', transform: 'translate(-50%, -50%)', zIndex: 210, width: 'min(92vw, 420px)' }}>
+            <SignInPrompt
+              title="Keep these photos"
+              subtitle="Sign in so you can find them again anytime."
+              next={`/${album.custom_slug ?? album.slug}`}
+              storageKey={`hushare.dlPrompt.${album.id}`}
+              onDismiss={() => setDownloadPromptOpen(false)}
+            />
+          </div>
+        </>,
+        document.body,
+      )}
     </div>
   )
 }

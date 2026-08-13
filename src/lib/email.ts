@@ -98,6 +98,46 @@ export async function sendPhotoNotificationEmail(
   await sendEmail(ownerEmail, subject, html, text)
 }
 
+// Re-send an album's private owner/management link to its owner (admin support action). The link
+// carries the #owner= token, so it grants management access — only ever sent to the owner's own email.
+export async function sendOwnerLinkEmail(ownerEmail: string, albumTitle: string, ownerUrl: string) {
+  requireSafeUrl(ownerUrl, 'ownerUrl')
+  const MAILING_ADDRESS = process.env.MAILING_ADDRESS ?? 'Hushare, Yerevan, Armenia'
+  const subject = `Your management link for "${safeSubjectField(albumTitle)}"`
+
+  const html = `
+<div style="font-family:-apple-system,system-ui,sans-serif;color:#630826;max-width:560px;margin:0 auto;padding:24px;">
+  <h2 style="margin:0 0 16px;font-size:18px;">Your album management link</h2>
+  <p style="margin:0 0 16px;color:#5C4A3C;">
+    Here is your private link to manage <strong>${escapeHtml(albumTitle)}</strong>. Keep it safe —
+    anyone with this link can manage the album.
+  </p>
+  <a href="${escapeHtml(ownerUrl)}"
+     style="display:inline-block;background:#630826;color:#FDFAF5;text-decoration:none;border-radius:10px;padding:10px 20px;font-size:14px;font-weight:600;">
+    Manage album
+  </a>
+  <hr style="border:none;border-top:1px solid #E8E0D0;margin:24px 0 12px;" />
+  <p style="margin:0;color:#B0A090;font-size:12px;">
+    Sent from <a href="${escapeHtml(SITE_URL)}" style="color:#B0A090;">Hushare</a> at your request. If you
+    didn't ask for this, you can ignore it — contact
+    <a href="mailto:${process.env.SUPPORT_EMAIL ?? 'support@hushare.space'}" style="color:#B0A090;">${process.env.SUPPORT_EMAIL ?? 'support@hushare.space'}</a>.
+  </p>
+  <p style="margin:6px 0 0;color:#B0A090;font-size:11px;">${escapeHtml(MAILING_ADDRESS)}</p>
+</div>`
+
+  const text = [
+    subject,
+    '',
+    `Here is your private link to manage "${albumTitle}". Keep it safe — anyone with it can manage the album.`,
+    ownerUrl,
+    '',
+    `Sent at your request. Questions? ${process.env.SUPPORT_EMAIL ?? 'support@hushare.space'}.`,
+    MAILING_ADDRESS,
+  ].join('\n')
+
+  await sendEmail(ownerEmail, subject, html, text)
+}
+
 export async function sendBillingReminderEmail(
   ownerEmail: string,
   tier: string,

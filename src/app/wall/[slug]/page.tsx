@@ -51,6 +51,6 @@ export default async function WallPage({ params }: Props) {
   const albumUrl = `${SITE_URL}/${album.custom_slug ?? album.slug}`
 
   return (
-    <PhotoWall albumId={album.id} title={album.title} albumUrl={albumUrl} initialPhotos={initialPhotos} initialTotal={initialTotal} />
+    <PhotoWall albumId={album.id} title={album.title} albumUrl={albumUrl} accentColor={album.accent_color} initialPhotos={initialPhotos} initialTotal={initialTotal} />
   )
 }

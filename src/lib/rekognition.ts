@@ -201,3 +201,44 @@ export async function deleteCollection(albumId: string) {
     if ((err as { name?: string }).name !== 'ResourceNotFoundException') throw err
   }
 }
+
+// ── Race bib numbers ──────────────────────────────────────────────────────────
+// DetectText is Rekognition's "text in the wild" OCR (signs, labels, jerseys) — the same class of
+// problem as a race bib, and a different operation on the SAME signed endpoint the face features
+// already use. Returns the distinct numeric strings found, with their confidence, so a caller can
+// decide how strict to be. Bib numbers are 1–6 digits; longer runs are timestamps/sponsor text.
+export type DetectedBib = { number: string; confidence: number }
+
+export async function detectBibNumbers(imageUrl: string, minConfidence = 80): Promise<DetectedBib[]> {
+  // Same SSRF guard as indexPhotoFaces — only our own R2 CDN is fetchable.
+  const rawR2Host = process.env.R2_PUBLIC_HOST
+  const r2Host = rawR2Host?.replace(/^https?:\/\//, '').replace(/\/+$/, '')
+  if (!r2Host || !imageUrl.startsWith(`https://${r2Host}/`)) {
+    throw new Error('[rekognition] imageUrl must be from the configured R2 CDN host')
+  }
+
+  const imgRes = await fetch(imageUrl)
+  if (!imgRes.ok) throw new Error(`Failed to fetch image: ${imgRes.status}`)
+  const base64Image = uint8ToBase64(new Uint8Array(await imgRes.arrayBuffer()))
+
+  type TextResult = {
+    TextDetections?: Array<{ DetectedText?: string; Type?: string; Confidence?: number }>
+  }
+  const result = await rekognitionPost('DetectText', {
+    Image: { Bytes: base64Image },
+  }) as TextResult
+
+  const seen = new Map<string, number>()
+  for (const d of result.TextDetections ?? []) {
+    if (d.Type !== 'WORD') continue                       // LINE entries duplicate their words
+    const raw = (d.DetectedText ?? '').trim()
+    const conf = d.Confidence ?? 0
+    if (conf < minConfidence) continue
+    // Keep pure-digit tokens only. Strip a leading '#'/'N' that bibs sometimes print.
+    const cleaned = raw.replace(/^[#nN°]/, '')
+    if (!/^\d{1,6}$/.test(cleaned)) continue
+    const prev = seen.get(cleaned)
+    if (prev === undefined || conf > prev) seen.set(cleaned, conf)
+  }
+  return [...seen.entries()].map(([number, confidence]) => ({ number, confidence }))
+}

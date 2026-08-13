@@ -48,6 +48,22 @@
   to { opacity: 1; transform: scale(1) translateY(0); }
 }
 
+/* Sign-in prompt card — gentle fade + rise + scale on entrance, so it eases in instead of snapping. */
+.hush-signin-card {
+  animation: hush-signin-in 360ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+@keyframes hush-signin-in {
+  from { opacity: 0; transform: translateY(14px) scale(0.955); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+.hush-signin-google {
+  transition: box-shadow 160ms ease, border-color 160ms ease;
+}
+.hush-signin-google:hover {
+  border-color: #C9A2AE;
+  box-shadow: 0 6px 16px rgba(99, 8, 38, 0.12);
+}
+
 /* Arrange button used to be mobile-only. Now visible everywhere; mobile rules
    below keep the wider button styling intact. */
 .hush-owner-arrange-action {

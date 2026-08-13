@@ -8,10 +8,13 @@ import { track } from '@/lib/analytics'
 export const runtime = 'nodejs'
 
 const NO_STORE = { 'Cache-Control': 'no-store' }
-// Retention policy: FREE albums are deleted after 90 days (3 months) of INACTIVITY. Paid albums
-// are kept while the subscription is active (tier check below) and for 1 year after it lapses
-// (paid-grace check below). See getPaidRetentionUntil.
-const RETIRE_AFTER_DAYS = 90
+// Retention policy: FREE albums auto-retire after 1 YEAR (365 days) of INACTIVITY — changed
+// 2026-08-11 from 3 months, which was too aggressive and scared off new users. Truly abandoned
+// albums still get cleaned up, just a full year out. Paid albums are kept while the subscription
+// is active (tier check below) and for 1 year after it lapses (paid-grace check). See
+// getPaidRetentionUntil. NOTE: the marketing copy (pricing + home strings that say "3 months of
+// inactivity") must be updated to "1 year" to match this.
+const RETIRE_AFTER_DAYS = 365
 const BATCH_SIZE = 25
 
 type RetirementCandidate = {

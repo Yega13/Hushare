@@ -1,6 +1,7 @@
 'use client'
 
-import { useCallback, useEffect, useRef, useState, type CSSProperties } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from 'react'
+import { createPortal } from 'react-dom'
 import { useParams, notFound } from 'next/navigation'
 import dynamic from 'next/dynamic'
 import type { RealtimeChannel } from '@supabase/supabase-js'
@@ -12,16 +13,19 @@ import RevealCountdown from '@/components/RevealCountdown'
 import PhotoGrid from '@/components/PhotoGrid'
 import AlbumHeader from '@/components/AlbumHeader'
 import GuestActionsBar from '@/components/GuestActionsBar'
-import { resolveAlbumBackgroundImage } from '@/lib/album-backgrounds'
-import { rememberOwnedAlbum } from '@/lib/my-albums'
+import { rememberOwnedAlbum, getMyAlbums } from '@/lib/my-albums'
+import SignInPrompt from '@/components/SignInPrompt'
+import { fontStack, isImageBackground, getBackgroundImageUrl, getBackgroundColorStyle, resolveHeaderImageUrl, resolveHeaderVideo } from '@/lib/album-design'
 
-// Code-split out of the shared album bundle: OwnerToolbar (+ tus/JSZip-adjacent upload code) and
-// FaceFinder are only ever needed by the owner or by guests who opt in, never by an ordinary
-// guest viewing photos. UploadZone pulls in tus-js-client, which guests on view-only albums never
-// need either. This keeps the JS a first-time guest downloads to just what renders.
+// Code-split out of the shared album bundle: OwnerToolbar (+ tus/JSZip-adjacent upload code),
+// FaceFinder, and AlbumDesigner are only ever needed by the owner or by guests who opt in, never
+// by an ordinary guest viewing photos. UploadZone pulls in tus-js-client, which guests on
+// view-only albums never need either. This keeps the JS a first-time guest downloads to just what
+// renders — a guest should never pay for the owner's design-panel bundle.
 const UploadZone = dynamic(() => import('@/components/UploadZone'))
 const OwnerToolbar = dynamic(() => import('@/components/OwnerToolbar'))
 const FaceFinder = dynamic(() => import('@/components/FaceFinder'))
+const AlbumDesigner = dynamic(() => import('@/components/AlbumDesigner'))
 
 const SITE_ORIGIN = (process.env.NEXT_PUBLIC_SITE_URL ?? 'https://hushare.space').replace(/\/+$/, '')
 
@@ -70,32 +74,6 @@ function sanitizeRealtimePhoto(row: Record<string, unknown>, expectedAlbumId: st
       ? (row.face_ids as unknown[]).filter((x): x is string => typeof x === 'string')
       : null,
   }
-}
-
-// ─── Background helpers ────────────────────────────────────────────────────────
-
-function isImageBackground(theme: string | null): theme is string {
-  return !!theme && (theme.startsWith('image:') || theme.startsWith('stock:'))
-}
-
-const HEX_COLOR_RE = /^#[0-9a-fA-F]{3}([0-9a-fA-F]{3})?$/
-
-function getBackgroundImageUrl(theme: string): string {
-  // stock: → resolve to Pexels CDN URL via the shared helper
-  if (theme.startsWith('stock:')) return resolveAlbumBackgroundImage(theme)
-  // image: → custom uploaded image stored as "image:https://..."
-  if (theme.startsWith('image:')) {
-    const url = theme.slice('image:'.length)
-    return url.startsWith('https://') ? url : ''  // reject non-https from DB
-  }
-  return ''
-}
-
-function getBackgroundColorStyle(theme: string | null): CSSProperties {
-  if (!theme) return { backgroundColor: '#FDFAF5' }
-  if (isImageBackground(theme)) return {}  // transparent — fixed image layer shows through
-  if (HEX_COLOR_RE.test(theme)) return { background: theme }
-  return { backgroundColor: '#FDFAF5' }  // unrecognised value → safe fallback
 }
 
 // ─── Component ────────────────────────────────────────────────────────────────
@@ -165,6 +143,19 @@ export default function AlbumPageClient({ initialAlbum = null, initialPhotos, in
   // reads inside async callbacks (resolve/owner-login/realtime); both are set together in Effect 1.
   const [ownerTokenInUrl, setOwnerTokenInUrl] = useState(false)
   const [showFaceFinder, setShowFaceFinder] = useState(false)
+  // Owner "save your album" prompt — a one-time MODAL shown to a signed-OUT owner a few seconds
+  // after they've finished adding photos, offering the one-tap Google save.
+  const [ownerSavePromptOpen, setOwnerSavePromptOpen] = useState(false)
+  const ownerPromptShownRef = useRef(false)
+  // Album Designer (full-screen customization editor). The ref lets Effect 4 skip the owner's OWN
+  // settings-refetch while designing, so rapid edits don't flicker (the reported glitch).
+  const [designerOpen, setDesignerOpen] = useState(false)
+  const designerOpenRef = useRef(false)
+  useEffect(() => { designerOpenRef.current = designerOpen }, [designerOpen])
+  // When the prompt is triggered by a click on an in-app link that LEAVES the album (e.g. the
+  // Hushare logo → home), we hold that destination here so dismissing the prompt still takes them
+  // where they were going. Null when the prompt was triggered by back/tab-hidden/mouse-exit.
+  const pendingLeaveHrefRef = useRef<string | null>(null)
 
   // Display state — consumed by Phase 7–9 components
   const [userTier, setUserTier] = useState<Tier>('free')
@@ -198,6 +189,21 @@ export default function AlbumPageClient({ initialAlbum = null, initialPhotos, in
   // management link (ownerTokenInUrl). A leftover owner cookie on the plain guest URL sets isOwner
   // but NOT ownerTokenInUrl, so the public URL stays a guest experience for everyone incl. the creator.
   const effectiveIsOwner = isOwner && ownerTokenInUrl
+
+  // Owner view can only be known CLIENT-side (it requires the #owner= fragment, which a server
+  // never receives), so a naive render shows the guest bar first and swaps to the owner toolbar a
+  // moment later — a visible "guest view flash" every time an owner opens their own album.
+  // Detecting the fragment in a LAYOUT effect (runs after DOM mutation but BEFORE paint) means the
+  // guest bar is never actually painted for an owner; we hold a same-height placeholder until the
+  // owner check resolves. Guests have no fragment, so this stays false and their bar still comes
+  // straight from the server HTML with no delay and no layout shift.
+  const [ownerHashPresent, setOwnerHashPresent] = useState(false)
+  const useIsomorphicLayoutEffect = typeof window !== 'undefined' ? useLayoutEffect : useEffect
+  useIsomorphicLayoutEffect(() => {
+    const raw = window.location.hash.startsWith('#') ? window.location.hash.slice(1) : window.location.hash
+    if (new URLSearchParams(raw).get('owner')) setOwnerHashPresent(true)
+  }, [])
+  const ownerUpgradePending = ownerHashPresent && !ownerTokenReady
 
   // Tombstone recently-deleted photo IDs so a realtime reconnect/refetch (common on mobile)
   // cannot reinstate a photo the user just deleted. Auto-expires after 60s.
@@ -532,6 +538,25 @@ export default function AlbumPageClient({ initialAlbum = null, initialPhotos, in
     return () => { cancelled = true }
   }, [slug])
 
+  // ─── Effect 1b: Restore owner view after the "save your album" Google sign-in ─
+  // The Google round-trip drops the #owner= fragment (fragments never reach the server), so the
+  // owner would otherwise land back in GUEST view of their own album. We flagged the return URL
+  // with ?owner_saved=1; here we rebuild the owner link from the token remembered in localStorage
+  // and reload into it — which restores owner view AND auto-claims the album to their new account
+  // (verifyOwnerViaCookie → claimAlbumIfNeeded fires on the /api/album/auth load).
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    if (params.get('owner_saved') !== '1') return
+    const token = getMyAlbums().find((a) => a.slug === slug)?.token
+    if (token) {
+      window.location.replace(`/${slug}#owner=${encodeURIComponent(token)}`)
+    } else {
+      // No remembered token (rare) — just strip the flag; they're signed in and the album will
+      // claim itself the next time they open their owner link.
+      window.history.replaceState(null, '', `/${slug}`)
+    }
+  }, [slug])
+
   // ─── Effect 2: Trigger fetchAlbum ───────────────────────────────────────────
   // fetchAlbum guards on ownerTokenReady internally, so this fires twice when
   // ownerTokenReady goes false → true, but only the second call does real work.
@@ -635,6 +660,9 @@ export default function AlbumPageClient({ initialAlbum = null, initialPhotos, in
     const ch = supabase
       .channel(`album-settings-${albumId}`)
       .on('broadcast', { event: 'album_settings' }, () => {
+        // While the owner is in the Album Designer, their own edits broadcast here too — skip the
+        // self-refetch so it can't clobber the live optimistic preview (the fast-change glitch).
+        if (designerOpenRef.current) return
         // Treat the broadcast as a trigger to re-fetch from the server rather than
         // trusting the payload directly. Supabase Realtime broadcast channels are
         // unauthenticated — any tab that knows the channel name can publish to it,
@@ -692,7 +720,110 @@ export default function AlbumPageClient({ initialAlbum = null, initialPhotos, in
     }
   }, [])
 
+  // ─── Effect 7: Owner "save your album" prompt — fires when they try to LEAVE ──
+  // A signed-OUT owner who has added photos is one tap from losing management access, so when they
+  // try to leave we offer a one-tap Google save. We use ONLY the two UNAMBIGUOUS "leaving" signals,
+  // so the one-time prompt is never wasted by an accidental window-switch or the mouse brushing the
+  // top edge (earlier versions fired on those and burned the prompt before the user clicked away):
+  //   1. BACK button / swipe-back — we push a history entry; the first back press pops the modal
+  //      instead of navigating. (A back-press that only closes the photo lightbox is ignored.)
+  //   2. Clicking an in-app link that LEAVES the album (the Hushare logo → home, or any nav to
+  //      another path) — caught in the CAPTURE phase before Next's <Link> runs; the destination is
+  //      remembered so dismissing the prompt still takes them there.
+  // Fires at most ONCE, is dismissible, and never shows to a signed-in owner (their album is
+  // already claimed to their account, so there's nothing to save).
+  const hasPhotos = photos.length > 0
+  useEffect(() => {
+    if (ownerPromptShownRef.current) return
+    if (!effectiveIsOwner || !hasPhotos || !album?.id) return
+    try {
+      if (sessionStorage.getItem(`hushare.savePrompt.${album.id}`)) { ownerPromptShownRef.current = true; return }
+    } catch { /* private mode — ignore */ }
+
+    let cancelled = false
+    let onPop: ((e: PopStateEvent) => void) | null = null
+    let onClickCapture: ((e: MouseEvent) => void) | null = null
+
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (cancelled || session) return
+      // Push a history entry so the first back press lands here (popstate) rather than leaving.
+      try { window.history.pushState({ hushSave: true }, '') } catch { /* ignore */ }
+      const trigger = () => {
+        if (cancelled || ownerPromptShownRef.current) return
+        // Never stack on top of another sign-in card already showing (e.g. a download prompt). We do
+        // NOT consume the one-shot here, so the save prompt can still fire on a later, clean leave.
+        if (document.querySelector('.hush-signin-card')) return
+        ownerPromptShownRef.current = true
+        setOwnerSavePromptOpen(true)
+      }
+      // Ignore a back-press that merely closes the photo lightbox: PhotoGrid pushes its own entry
+      // ON TOP of ours, so closing it lands us back ON our entry (state.hushSave === true). A REAL
+      // leave pops OUR entry and lands on the album entry below (no hushSave) — only then do we fire.
+      // Ignore back-presses that only close the photo lightbox: whether OUR entry or the lightbox's
+      // entry is the one landed on, it's not a real leave. Only a pop onto the album's base entry
+      // (neither flag) fires the prompt.
+      onPop = (e: PopStateEvent) => {
+        const s = e.state as { hushSave?: boolean; hushLightbox?: boolean } | null
+        if (s?.hushSave || s?.hushLightbox) return
+        trigger()
+      }
+      // Clicking an in-app link that LEAVES the album (the logo → home, or any nav to another path).
+      // Caught in the CAPTURE phase and stopImmediatePropagation'd so Next's <Link> never navigates;
+      // the destination is remembered so dismissing still takes them there. Once the modal has shown
+      // (ownerPromptShownRef), we stop interfering so every link works normally again.
+      onClickCapture = (e: MouseEvent) => {
+        if (ownerPromptShownRef.current) return
+        if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return
+        const anchor = (e.target as HTMLElement | null)?.closest?.('a')
+        const href = anchor?.getAttribute('href')
+        if (!anchor || !href) return
+        // A download trigger (downloadPhoto / QR / zip create a hidden <a download> and .click() it —
+        // that synthetic click bubbles here). It points at /api/... or a blob:, NOT a page the user is
+        // leaving to, so never intercept it or we'd cancel the download and pop the modal instead.
+        if (anchor.hasAttribute('download')) return
+        if (anchor.target && anchor.target !== '_self') return  // opens a new tab/window — not a leave
+        let dest: URL
+        try { dest = new URL(href, window.location.href) } catch { return }
+        // Only a real navigation to ANOTHER same-origin path counts (skip #hash, same-page, mailto/tel,
+        // and external sites we can't pop over anyway).
+        if (dest.origin !== window.location.origin || dest.pathname === window.location.pathname) return
+        e.preventDefault()
+        e.stopImmediatePropagation()
+        pendingLeaveHrefRef.current = dest.href
+        trigger()
+      }
+      window.addEventListener('popstate', onPop)
+      document.addEventListener('click', onClickCapture, true)
+    }).catch(() => { /* can't tell — don't arm */ })
+
+    return () => {
+      cancelled = true
+      if (onPop) window.removeEventListener('popstate', onPop)
+      if (onClickCapture) document.removeEventListener('click', onClickCapture, true)
+    }
+  }, [effectiveIsOwner, hasPhotos, album?.id, supabase])
+
+  // Lock background scroll while the save-prompt modal is open (matches the lightbox / face finder).
+  useEffect(() => {
+    if (!ownerSavePromptOpen) return
+    document.documentElement.classList.add('hush-scroll-locked')
+    document.body.classList.add('hush-scroll-locked')
+    return () => {
+      document.documentElement.classList.remove('hush-scroll-locked')
+      document.body.classList.remove('hush-scroll-locked')
+    }
+  }, [ownerSavePromptOpen])
+
   // ─── Callbacks ──────────────────────────────────────────────────────────────
+
+  // Close the owner save-prompt. If it was opened by a click on a leave-link, honour that original
+  // navigation now — they chose not to sign in, so let them go where they were headed.
+  const dismissOwnerPrompt = useCallback(() => {
+    setOwnerSavePromptOpen(false)
+    const href = pendingLeaveHrefRef.current
+    pendingLeaveHrefRef.current = null
+    if (href) window.location.href = href
+  }, [])
 
   const handlePhotosUploaded = useCallback(() => {
     if (!album?.id) return
@@ -826,14 +957,10 @@ export default function AlbumPageClient({ initialAlbum = null, initialPhotos, in
   const bgIsImage = isImageBackground(album.background_theme)
   const bgStyle = getBackgroundColorStyle(album.background_theme)
 
-  // Resolve the cover photo's image URL (if one is set + loaded) → AlbumHeader shows it as a hero
-  // banner. Videos use their poster/thumbnail. Falls back to the accent band when unset/not loaded.
-  const coverPhoto = album.cover_photo_id ? photos.find((p) => p.id === album.cover_photo_id) : undefined
-  const coverUrl = coverPhoto
-    ? (coverPhoto.media_type === 'video'
-        ? (coverPhoto.poster_url || coverPhoto.stream_thumbnail_url || coverPhoto.thumb_url || null)
-        : (coverPhoto.url || coverPhoto.thumb_url || null))
-    : null
+  // Resolve the header image (custom upload or a chosen album photo) → AlbumHeader shows it as a
+  // hero banner. Falls back to the accent band when neither is set.
+  const coverUrl = resolveHeaderImageUrl(album, photos)
+  const headerVideo = resolveHeaderVideo(album, photos)
 
   return (
     <>
@@ -854,7 +981,7 @@ export default function AlbumPageClient({ initialAlbum = null, initialPhotos, in
 
       <main
         className="hush-album-page min-h-dvh relative"
-        style={bgStyle}
+        style={{ ...bgStyle, '--album-font': fontStack(album.title_font) } as CSSProperties}
         aria-label={album.title}
       >
         <AlbumHeader
@@ -863,6 +990,7 @@ export default function AlbumPageClient({ initialAlbum = null, initialPhotos, in
           isOwner={effectiveIsOwner}
           onAlbumUpdated={handleAlbumUpdated}
           coverUrl={coverUrl}
+          headerVideo={headerVideo}
         />
 
         {effectiveIsOwner ? (
@@ -876,7 +1004,12 @@ export default function AlbumPageClient({ initialAlbum = null, initialPhotos, in
             onOpenSlideshow={() => setSlideshowRequestId(id => id + 1)}
             arrangeMode={arrangeMode}
             onToggleArrangeMode={() => setArrangeMode(m => !m)}
+            onOpenDesigner={() => setDesignerOpen(true)}
           />
+        ) : ownerUpgradePending ? (
+          // Same-height neutral placeholder while the owner check resolves — no guest-bar flash,
+          // no layout shift when the real toolbar lands.
+          <div aria-hidden="true" style={{ background: '#F5F0E8', borderBottom: '1px solid #DDD5C5', height: 54 }} />
         ) : (
           <GuestActionsBar
             album={album}
@@ -929,6 +1062,25 @@ export default function AlbumPageClient({ initialAlbum = null, initialPhotos, in
               {loadingMore ? 'Loading…' : `Load more · ${photos.length.toLocaleString()} of ${total.toLocaleString()}`}
             </button>
           </div>
+        )}
+        {ownerSavePromptOpen && album && createPortal(
+          <>
+            <div className="hush-share-backdrop" onClick={dismissOwnerPrompt} />
+            <div style={{ position: 'fixed', left: '50%', top: '50%', transform: 'translate(-50%, -50%)', zIndex: 210, width: 'min(92vw, 440px)' }}>
+              <SignInPrompt
+                title="Save this album to your account"
+                subtitle="One tap with Google, so you never lose it."
+                next={`/${slug}?owner_saved=1`}
+                storageKey={`hushare.savePrompt.${album.id}`}
+                onDismiss={dismissOwnerPrompt}
+              />
+            </div>
+          </>,
+          document.body,
+        )}
+
+        {effectiveIsOwner && designerOpen && (
+          <AlbumDesigner album={album} photos={photos} userTier={userTier} onAlbumUpdated={handleAlbumUpdated} onClose={() => setDesignerOpen(false)} />
         )}
       </main>
     </>
