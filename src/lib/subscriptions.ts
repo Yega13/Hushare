@@ -2,8 +2,21 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { isAccountAdmin } from '@/lib/auth'
 import type { Tier, Subscription } from '@/types'
 
+// Renewal webhooks normally land within seconds, but a delayed or dropped one must never cut off
+// someone who is genuinely paying. A week of slack makes a false negative (locking out a paying
+// customer) essentially impossible, while still closing the hole below.
+const ACTIVE_PERIOD_GRACE_MS = 7 * 24 * 60 * 60 * 1000
+
 function isSubActive(sub: { status: string; current_period_end: string | null }): boolean {
-  if (sub.status === 'active') return true
+  if (sub.status === 'active') {
+    // 'active' used to be trusted unconditionally, which meant a single missed
+    // subscription.canceled webhook granted that account paid features forever: the row simply
+    // stayed 'active' with a period end far in the past and nothing ever re-checked it. Webhook
+    // delivery is not guaranteed, so status alone cannot be the whole answer.
+    // A null period end is treated as valid — that's how comped/manual grants are recorded.
+    if (!sub.current_period_end) return true
+    return new Date(sub.current_period_end).getTime() + ACTIVE_PERIOD_GRACE_MS > Date.now()
+  }
   // Trialing and canceled both require a future period_end — a trialing sub with no
   // payment method may never receive a canceled event and would stay 'trialing' forever.
   // past_due means a payment failed but Polar hasn't canceled yet — grant access through
