@@ -50,27 +50,29 @@ export async function POST(req: Request) {
     // album silently stops indexing for EVERY album. Errors are collected and returned instead.
     try {
 
-    // Bib numbers first: on a race album the number is what a runner actually types, and it is the
-    // cheaper of the two to read.
+    // Bib and faces are INTERLEAVED, not run one after the other. Running bib to completion first
+    // starved faces completely — measured on a 600-photo album, bib consumed every tick's budget
+    // and faces sat at 0 indexed after 5 minutes. On a 3000-photo race album that ordering would
+    // have left Face Finder empty for hours after the photos were up.
+    //
+    // Both also run CONCURRENTLY within a round: they are waiting on AWS, not competing for CPU,
+    // so overlapping them roughly halves the wall-clock time for an album that uses both.
+    // ONE batch of each per invocation, alternating ticks — not a loop, and not both at once.
+    // Cloudflare's free plan allows 50 subrequests per Worker invocation and each photo costs
+    // roughly three (fetch the image, call Rekognition, write the row). Looping until the time
+    // budget ran out therefore never finished a tick's work: it blew the subrequest ceiling and
+    // every remaining photo in that invocation failed. Running bib and face together doubled it.
+    // Throughput is now bounded by that ceiling (~15 photos/invocation) rather than by time, which
+    // is the honest limit until the account moves to the paid plan (50 -> 1000 subrequests).
     if (album.bib_search_enabled) {
-      let remaining = 1
-      while (remaining > 0 && Date.now() - started < TIME_BUDGET_MS) {
-        remaining = await indexAlbumBibsBatch(album.id)
-        bibBatches++
-        touched = true
-      }
+      const left = await indexAlbumBibsBatch(album.id)
+      bibBatches++; touched = true
+      void left
     }
-
-    // Faces used to be indexed one photo per HTTP request, driven by whichever guest happened to
-    // open Face Finder first — unusable on an album of a couple of thousand photos. Sweeping it
-    // here means photos are searchable within minutes of upload instead of on first demand.
-    if (album.face_finder_enabled) {
-      let remaining = 1
-      while (remaining > 0 && Date.now() - started < TIME_BUDGET_MS) {
-        remaining = await indexAlbumFacesBatch(album.id)
-        faceBatches++
-        touched = true
-      }
+    if (album.face_finder_enabled && Date.now() - started < TIME_BUDGET_MS) {
+      const left = await indexAlbumFacesBatch(album.id)
+      faceBatches++; touched = true
+      void left
     }
 
     } catch (e) {

@@ -14,9 +14,9 @@ import { detectBibNumbers } from '@/lib/rekognition'
 // practice — an interrupted sweep resumed at exactly the photo it stopped on.
 
 // Sized to complete comfortably inside one post-response budget. Measured ~11-12 before termination.
-const BATCH = 8
+const BATCH = 10
 // Parallelism within a batch. These are network-bound calls sharing a Worker with real traffic.
-const CONCURRENCY = 4
+const CONCURRENCY = 5
 // Absolute ceiling on chain length. Without it, photos that fail every attempt (left NULL so they
 // can be retried) would chain forever. 400 links x 8 = 3200 photos, far past any real race.
 const MAX_CHAIN = 400
@@ -70,13 +70,10 @@ export async function indexAlbumBibsBatch(albumId: string): Promise<number> {
     }),
   )
 
-  const { count } = await admin
-    .from('photos')
-    .select('id', { count: 'exact', head: true })
-    .eq('album_id', albumId)
-    .eq('media_type', 'image')
-    .is('bib_numbers', null)
-  return count ?? 0
+  // Previously a COUNT(*) over the album on EVERY batch — a scan per batch, which on a 600-photo
+  // album cost more than the OCR it was measuring. A full batch means there is very likely more
+  // work; a short one means the queue just drained. The caller only needs "keep going or stop".
+  return pending.length === BATCH ? BATCH : 0
 }
 
 // Asks a FRESH Worker invocation to run the next batch, so the chain isn't bounded by one Worker's
