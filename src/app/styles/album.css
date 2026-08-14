@@ -559,3 +559,40 @@
   max-width: 100%;
   min-width: 0;
 }
+
+/* ── Owner panels on mobile ───────────────────────────────────────────────────
+   Settings and Share are dropdowns anchored to their button (absolute, top-full,
+   pinned to one edge). That is right on desktop and wrong on a phone: the button
+   sits in a narrow column, so a min(94vw, 480px) panel anchored to that column's
+   edge hangs off the screen — which is why Settings opened as a narrow strip with
+   the album still visible beside it.
+
+   Below 900px they become a bottom sheet instead: full width, off the anchor, and
+   tall enough to actually use. Defined ONCE here so every owner panel behaves the
+   same — each component reinventing its own positioning is how they drifted apart. */
+@media (max-width: 899px) {
+  .hush-owner-sheet {
+    position: fixed !important;
+    inset: auto 0 0 0 !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    margin: 0 !important;
+    max-height: 86vh;
+    overflow-y: auto;
+    border-radius: 20px 20px 0 0;
+    /* Clears the phone's home indicator so the last control isn't under it. */
+    padding-bottom: max(16px, env(safe-area-inset-bottom));
+    box-shadow: 0 -12px 40px rgba(43, 26, 20, 0.22);
+    animation: hush-sheet-up 260ms cubic-bezier(0.16, 1, 0.3, 1) both;
+    overscroll-behavior: contain;
+  }
+
+  @keyframes hush-sheet-up {
+    from { transform: translateY(14px); opacity: 0; }
+    to   { transform: translateY(0); opacity: 1; }
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hush-owner-sheet { animation: none; }
+}

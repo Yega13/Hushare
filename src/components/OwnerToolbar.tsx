@@ -644,7 +644,7 @@ export default function OwnerToolbar({ album, photos, ownerToken, userTier, medi
 
           {showSettings && (
             <div
-              className="hush-menu-pop absolute right-0 top-full mt-2 z-50 rounded-2xl shadow-xl max-h-[78vh] overflow-y-auto"
+              className="hush-menu-pop hush-owner-sheet absolute right-0 top-full mt-2 z-50 rounded-2xl shadow-xl max-h-[78vh] overflow-y-auto"
               style={{ background: '#FDFAF5', border: '1px solid #DDD5C5', width: 'min(94vw, 480px)', padding: 12 }}
             >
               <div className="flex items-start justify-between gap-4 rounded-xl px-3 py-3 mb-3" style={{ background: '#FFFFFF', border: '1px solid #E8E0D2' }}>
