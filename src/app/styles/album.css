@@ -500,3 +500,36 @@
     transform: translateX(0) scale(1);
   }
 }
+
+/* ── Album designer: independent scroll panes ───────────────────────────────── */
+/* Side by side (desktop), the preview and the settings rail scroll SEPARATELY, so moving through
+   the settings never drags the album preview out of view — you keep your place in both at once.
+   Stacked (mobile) they can't scroll independently in any way that makes sense, so the whole body
+   scrolls as one. Overscroll is contained so reaching the end of a pane doesn't start scrolling
+   the other one behind it. */
+.hush-designer-body {
+  overflow-y: auto;
+}
+
+@media (min-width: 900px) {
+  .hush-designer-body {
+    overflow: hidden;
+  }
+
+  .hush-designer-preview,
+  .hush-designer-rail {
+    height: 100%;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+}
+
+/* Header video: fade in over its own poster so the player's initial black frame never flickers. */
+.hush-header-video {
+  animation: hush-header-video-in 520ms ease-out both;
+}
+
+@keyframes hush-header-video-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}

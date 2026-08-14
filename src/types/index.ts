@@ -27,6 +27,8 @@ export type Album = {
   // Where the header photo/video is anchored within the hero band's crop, as a CSS
   // background-position value ("X% Y%"). Null = center.
   header_focal: string | null;
+  // Header photo zoom as a percentage of cover size (100 = no zoom). Null = 100.
+  header_zoom: number | null;
   // Playback mode when the chosen header photo is a video. Null = 'loop'.
   header_video_mode: HeaderVideoMode | null;
   // Album design (Part A). accent_color: curated palette (all) or custom hex (paid). logo_url:
@@ -59,6 +61,12 @@ export type Album = {
   require_approval: boolean;
   // Owner opt-in (Studio tier) for AI Face Finder — lets guests find photos of themselves.
   face_finder_enabled: boolean;
+  // Owner switch: 'this is a race' — enables bib-number OCR + guest search on this album.
+  bib_search_enabled: boolean;
+  // Race numbering bounds. Detections outside them are ignored at SEARCH time (never at indexing
+  // time), so correcting a wrong range is instant and costs no re-OCR. NULL = unbounded that end.
+  bib_min: number | null;
+  bib_max: number | null;
   // Derived server-side from password_hash presence — the hash itself is never sent
   password_protected: boolean;
   last_activity_at: string;
@@ -91,6 +99,8 @@ export type Photo = {
   width: number | null;
   height: number | null;
   face_ids?: string[] | null;
+  // Race bib numbers read from this photo by OCR. Null = not indexed yet; [] = indexed, none found.
+  bib_numbers?: string[] | null;
   // Moderation: a hidden photo is shown to the OWNER only (pending approval, or hidden by the owner);
   // guests never receive it. Absent on legacy rows → treated as visible.
   hidden?: boolean;

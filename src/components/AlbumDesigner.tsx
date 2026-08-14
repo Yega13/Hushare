@@ -2,8 +2,9 @@
 
 import { useCallback, useRef, useState, type CSSProperties } from 'react'
 import { Loader2, Plus, X, Play, ChevronUp, ChevronDown } from 'lucide-react'
-import type { Album, Photo, Tier, SponsorLogo, HeaderVideoMode } from '@/types'
+import type { Album, Photo, SponsorLogo, HeaderVideoMode } from '@/types'
 import AlbumHeader from '@/components/AlbumHeader'
+import HushColorPicker from '@/components/HushColorPicker'
 import { showAppToast } from '@/components/AppToast'
 import { useT } from '@/i18n/LocaleProvider'
 import {
@@ -31,7 +32,6 @@ type SaveResult = { ok: boolean; error?: string }
 type Props = {
   album: Album
   photos: Photo[]
-  userTier: Tier
   onAlbumUpdated: (patch: Partial<Album>) => void
   onClose: () => void
 }
@@ -39,9 +39,8 @@ type Props = {
 const label: React.CSSProperties = { fontSize: 12, fontWeight: 700, color: '#7C5C3E', textTransform: 'uppercase', letterSpacing: '0.06em', margin: '0 0 8px' }
 const section: React.CSSProperties = { padding: '16px 0', borderBottom: `1px solid #EFE7D8` }
 
-export default function AlbumDesigner({ album, photos, userTier, onAlbumUpdated, onClose }: Props) {
+export default function AlbumDesigner({ album, photos, onAlbumUpdated, onClose }: Props) {
   const { t } = useT()
-  const canCustomize = userTier === 'pro' || userTier === 'studio'
   const [accentHex, setAccentHex] = useState(album.accent_color || DEFAULT_ACCENT)
   const accentTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   // Tracks whether a header-photo clear triggered by picking a colour has already been sent for
@@ -60,6 +59,9 @@ export default function AlbumDesigner({ album, photos, userTier, onAlbumUpdated,
   const [uploadingBg, setUploadingBg] = useState(false)
   const [bgUploadError, setBgUploadError] = useState('')
   const bgFileInputRef = useRef<HTMLInputElement>(null)
+  const [showAllAccents, setShowAllAccents] = useState(false)
+  const [showAccentPicker, setShowAccentPicker] = useState(false)
+  const [showBgPicker, setShowBgPicker] = useState(false)
   const [uploadingSponsor, setUploadingSponsor] = useState(false)
   const [sponsorError, setSponsorError] = useState('')
   const sponsorFileInputRef = useRef<HTMLInputElement>(null)
@@ -113,6 +115,16 @@ export default function AlbumDesigner({ album, photos, userTier, onAlbumUpdated,
   function onFocalPointerUp(e: React.PointerEvent<HTMLDivElement>) {
     focalDraggingRef.current = false
     try { e.currentTarget.releasePointerCapture(e.pointerId) } catch { /* already released */ }
+  }
+
+  // Zoom: same optimistic-now, save-debounced shape as the focal drag — a range input fires on
+  // every pixel of travel, and each save would otherwise be its own rate-limited request.
+  const zoomTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  function onHeaderZoom(pct: number) {
+    const z = Math.min(300, Math.max(100, Math.round(pct)))
+    onAlbumUpdated({ header_zoom: z })
+    if (zoomTimer.current) clearTimeout(zoomTimer.current)
+    zoomTimer.current = setTimeout(() => { void persist({ header_zoom: z }, () => saveDesignRequest(album.slug, { header_zoom: z })) }, 350)
   }
 
   // Debounced like the accent-colour picker (same native-input-fires-constantly issue) — the
@@ -195,9 +207,6 @@ export default function AlbumDesigner({ album, photos, userTier, onAlbumUpdated,
   const setLogo = (url: string | null) => persist({ logo_url: url }, () => saveLogoRequest(album.slug, url))
 
   async function handleAddLogo(file: File) {
-    // Client-side gate matches the custom-colour gate below (canCustomize) — the server enforces
-    // this too (see /api/album/logo), this just avoids a pointless upload attempt for free tiers.
-    if (!canCustomize) return
     setLogoUploadError('')
     if (!DESIGN_IMAGE_TYPES.has(file.type)) {
       const msg = t('ot.badImageFormat')
@@ -307,11 +316,15 @@ export default function AlbumDesigner({ album, photos, userTier, onAlbumUpdated,
         </button>
       </div>
 
-      {/* Body: preview + rail */}
-      <div style={{ flex: 1, minHeight: 0, display: 'flex', flexWrap: 'wrap', overflowY: 'auto' }}>
+      {/* Body: preview + rail. On desktop each pane scrolls INDEPENDENTLY (see album.css) so
+          scrolling the settings rail never moves your place in the album preview, and vice versa.
+          On narrow screens they stack and the whole body scrolls as one, which is the only thing
+          that makes sense when they're above/below each other rather than side by side. */}
+      <div className="hush-designer-body" style={{ flex: 1, minHeight: 0, display: 'flex', flexWrap: 'wrap' }}>
         {/* Live preview — the real header + a sample grid + the real page background, all driven
             by the (optimistic) album so every setting shows its effect immediately. */}
         <div
+          className="hush-designer-preview"
           style={{
             flex: '1 1 460px', minWidth: 300,
             ...bgColorStyle,
@@ -353,7 +366,7 @@ export default function AlbumDesigner({ album, photos, userTier, onAlbumUpdated,
         </div>
 
         {/* Controls rail */}
-        <div style={{ flex: '1 1 340px', minWidth: 300, maxWidth: 420, background: '#FFFFFF', borderLeft: `1px solid ${BORDER}`, padding: '4px 18px 40px' }}>
+        <div className="hush-designer-rail" style={{ flex: '1 1 340px', minWidth: 300, maxWidth: 420, background: '#FFFFFF', borderLeft: `1px solid ${BORDER}`, padding: '4px 18px 40px' }}>
 
           {/* Font */}
           <div style={section}>
@@ -393,8 +406,10 @@ export default function AlbumDesigner({ album, photos, userTier, onAlbumUpdated,
           {/* Colour */}
           <div style={section}>
             <p style={label}>{t('ot.albumColor')}</p>
+            {/* One row by default — the full 24-colour grid was the tallest thing in the panel and
+                pushed everything else below the fold. "More" reveals the rest. */}
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(8, 1fr)', gap: 6, marginBottom: 10 }}>
-              {ACCENT_PALETTE.map((c) => {
+              {(showAllAccents ? ACCENT_PALETTE : ACCENT_PALETTE.slice(0, 7)).map((c) => {
                 const on = currentAccent.toLowerCase() === c.toLowerCase()
                 return (
                   <button key={c} type="button" onClick={() => setAccent(c)} title={c} className="hush-press"
@@ -403,13 +418,29 @@ export default function AlbumDesigner({ album, photos, userTier, onAlbumUpdated,
                   </button>
                 )
               })}
-            </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              {canCustomize ? (
-                <input type="color" value={/^#[0-9a-f]{6}$/i.test(accentHex) ? accentHex : DEFAULT_ACCENT} onChange={(e) => onAccentHex(e.target.value)} style={{ width: 34, height: 30, padding: 0, border: `1px solid ${BORDER}`, borderRadius: 6, background: 'none', cursor: 'pointer' }} />
-              ) : (
-                <span style={{ fontSize: 11, color: MUTED }}>{t('ot.customColorPro')}</span>
+              {!showAllAccents && (
+                <button type="button" onClick={() => setShowAllAccents(true)} title={t('ad.more')} className="hush-press"
+                  style={{ aspectRatio: '1', borderRadius: 8, background: '#F5F0E8', border: `1.5px solid ${BORDER}`, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: BRAND, fontSize: 9, fontWeight: 700 }}>
+                  {t('ad.more')}
+                </button>
               )}
+            </div>
+            {/* Ungated while we get every design feature working end-to-end — pricing comes later. */}
+            {(
+              <>
+                <button type="button" onClick={() => setShowAccentPicker((v) => !v)}
+                  style={{ display: 'flex', alignItems: 'center', gap: 7, fontSize: 12, color: BRAND, background: 'none', border: 'none', padding: 0, cursor: 'pointer', fontWeight: 600 }}>
+                  <span style={{ width: 18, height: 18, borderRadius: 5, background: currentAccent, border: `1px solid ${BORDER}` }} />
+                  {t('ot.customColor')}
+                </button>
+                {showAccentPicker && (
+                  <div style={{ marginTop: 10 }}>
+                    <HushColorPicker value={/^#[0-9a-f]{6}$/i.test(accentHex) ? accentHex : DEFAULT_ACCENT} onChange={onAccentHex} />
+                  </div>
+                )}
+              </>
+            )}
+            <div style={{ display: 'flex', marginTop: 8 }}>
               <button type="button" onClick={() => setAccent(DEFAULT_ACCENT)} style={{ marginLeft: 'auto', fontSize: 12, color: MUTED, background: 'none', border: 'none', cursor: 'pointer' }}>{t('ot.reset')}</button>
             </div>
             {(album.cover_photo_id || album.header_image) && (
@@ -420,7 +451,8 @@ export default function AlbumDesigner({ album, photos, userTier, onAlbumUpdated,
           {/* Logo */}
           <div style={section}>
             <p style={label}>{t('ad.logo')}</p>
-            {canCustomize ? (
+            {/* Ungated while we get every design feature working end-to-end — pricing comes later. */}
+            {(
               <>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                   <button
@@ -429,16 +461,24 @@ export default function AlbumDesigner({ album, photos, userTier, onAlbumUpdated,
                     disabled={uploadingLogo}
                     title={album.logo_url ? t('ad.replaceLogo') : t('ad.addPhoto')}
                     style={{
-                      width: 64, height: 64, borderRadius: 10, flex: '0 0 auto',
+                      width: 64, height: 64, borderRadius: 10, flex: '0 0 auto', overflow: 'hidden',
                       background: album.logo_url ? '#FFFFFF' : '#F5F0E8',
                       border: album.logo_url ? `1.5px solid ${BORDER}` : `1.5px dashed ${BORDER}`,
                       cursor: uploadingLogo ? 'wait' : 'pointer',
-                      display: 'flex', alignItems: 'center', justifyContent: 'center',
-                      backgroundImage: album.logo_url ? `url("${album.logo_url}")` : undefined,
-                      backgroundSize: 'contain', backgroundRepeat: 'no-repeat', backgroundPosition: 'center',
+                      display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 6,
                     }}
                   >
-                    {uploadingLogo ? <Loader2 className="w-4 h-4 animate-spin" style={{ color: BRAND }} /> : !album.logo_url ? <Plus className="w-5 h-5" style={{ color: BRAND }} /> : null}
+                    {/* A real <img>, not a CSS backgroundImage. The button also sets the `background`
+                        shorthand, which RESETS background-image — so on any re-render the two fought
+                        each other and the thumbnail flickered. An element can't have that conflict. */}
+                    {uploadingLogo ? (
+                      <Loader2 className="w-4 h-4 animate-spin" style={{ color: BRAND }} />
+                    ) : album.logo_url ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img src={album.logo_url} alt="" style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain', display: 'block' }} />
+                    ) : (
+                      <Plus className="w-5 h-5" style={{ color: BRAND }} />
+                    )}
                   </button>
                   <input
                     ref={logoFileInputRef}
@@ -459,8 +499,6 @@ export default function AlbumDesigner({ album, photos, userTier, onAlbumUpdated,
                 </div>
                 {logoUploadError && <p style={{ fontSize: 11, color: '#C0392B', marginTop: 8 }}>{logoUploadError}</p>}
               </>
-            ) : (
-              <span style={{ fontSize: 11, color: MUTED }}>{t('ad.logoPro')}</span>
             )}
           </div>
 
@@ -540,7 +578,24 @@ export default function AlbumDesigner({ album, photos, userTier, onAlbumUpdated,
           {/* Header photo */}
           <div style={section}>
             <p style={label}>{t('ad.headerPhoto')}</p>
-            {cover && <p style={{ fontSize: 11, color: MUTED, marginTop: -4, marginBottom: 8 }}>{t('ad.dragToPosition')}</p>}
+            {cover && (
+              <>
+                <p style={{ fontSize: 11, color: MUTED, marginTop: -4, marginBottom: 8 }}>{t('ad.dragToPosition')}</p>
+                {/* Zoom + drag together are the whole crop control: zoom decides how much of the
+                    photo is shown, dragging the preview decides which part. Two inputs, no modal. */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
+                  <span style={{ fontSize: 11, color: MUTED, flex: '0 0 auto' }}>{t('ad.zoom')}</span>
+                  <input
+                    type="range" min={100} max={300} step={5} value={album.header_zoom ?? 100}
+                    onChange={(e) => onHeaderZoom(Number(e.target.value))}
+                    style={{ flex: 1, minWidth: 0, accentColor: BRAND, cursor: 'pointer' }}
+                  />
+                  <span style={{ fontSize: 11, color: MUTED, width: 34, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>
+                    {album.header_zoom ?? 100}%
+                  </span>
+                </div>
+              </>
+            )}
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 6, maxHeight: 264, overflowY: 'auto', paddingRight: 2 }}>
               <button type="button" onClick={() => setCover(null)} title={t('ad.none')}
                 style={{ aspectRatio: '1', borderRadius: 8, background: '#F5F0E8', border: (!album.cover_photo_id && !album.header_image) ? `2px solid ${BRAND}` : `1.5px solid ${BORDER}`, cursor: 'pointer', fontSize: 9, color: MUTED }}>{t('ad.none')}</button>
@@ -622,12 +677,19 @@ export default function AlbumDesigner({ album, photos, userTier, onAlbumUpdated,
               ))}
             </div>
 
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
-              <input type="color" value={/^#[0-9a-f]{6}$/i.test(bgColorHex) ? bgColorHex : DEFAULT_BG} onChange={(e) => onBackgroundHex(e.target.value)}
-                style={{ width: 34, height: 30, padding: 0, border: `1px solid ${BORDER}`, borderRadius: 6, background: 'none', cursor: 'pointer' }} />
-              <span style={{ fontSize: 11, color: MUTED }}>{t('ot.customColor')}</span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+              <button type="button" onClick={() => setShowBgPicker((v) => !v)}
+                style={{ display: 'flex', alignItems: 'center', gap: 7, fontSize: 12, color: BRAND, background: 'none', border: 'none', padding: 0, cursor: 'pointer', fontWeight: 600 }}>
+                <span style={{ width: 18, height: 18, borderRadius: 5, background: bgColorHex, border: `1px solid ${BORDER}` }} />
+                {t('ot.customColor')}
+              </button>
               <button type="button" onClick={() => setBackground(null)} style={{ marginLeft: 'auto', fontSize: 12, color: MUTED, background: 'none', border: 'none', cursor: 'pointer' }}>{t('ot.reset')}</button>
             </div>
+            {showBgPicker && (
+              <div style={{ marginBottom: 12 }}>
+                <HushColorPicker value={/^#[0-9a-f]{6}$/i.test(bgColorHex) ? bgColorHex : DEFAULT_BG} onChange={onBackgroundHex} />
+              </div>
+            )}
 
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 6, maxHeight: 264, overflowY: 'auto', paddingRight: 2 }}>
               <button

@@ -7,6 +7,7 @@ import SiteFooter from "@/components/SiteFooter";
 import { getServerLocale } from "@/i18n/server";
 import { getDictionary } from "@/i18n/get-dictionary";
 import { LocaleProvider } from "@/i18n/LocaleProvider";
+import ErrorReporter from "@/components/ErrorReporter";
 import InitialPreloader from "@/components/InitialPreloader";
 import BackToTop from "@/components/BackToTop";
 import SupportChat from "@/components/SupportChat";
@@ -405,6 +406,9 @@ export default async function RootLayout({
           </>
         )}
         <InitialPreloader />
+        {/* Renders nothing; installs the window-level error + unhandled-rejection reporters so
+            crashes reach /admin instead of dying silently in the user's browser. */}
+        <ErrorReporter />
         <LocaleProvider locale={locale} dict={dict}>
           {children}
           <SiteFooter />

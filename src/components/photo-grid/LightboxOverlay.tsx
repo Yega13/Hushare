@@ -302,7 +302,10 @@ export default function LightboxOverlay({
                  controls (pause/seek/sound/settings/fullscreen) work. Volume preset to 50%. */
               <iframe
                 src={streamFrameSrc(current, true)}
-                allow="accelerometer; gyroscope; autoplay; encrypted-media; picture-in-picture;"
+                /* `encrypted-media` (EME/DRM) deliberately omitted — it makes Windows treat the
+                   window as protected content, so screen recorders capture black or stop. Our
+                   Stream videos aren't DRM-protected, so it was pure downside. */
+                allow="accelerometer; gyroscope; autoplay; picture-in-picture;"
                 allowFullScreen
                 className="block w-full h-full max-w-full"
                 style={{ background: '#000', border: 0, borderRadius: previewRadiusFor(current) }}

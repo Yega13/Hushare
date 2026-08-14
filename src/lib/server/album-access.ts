@@ -22,8 +22,8 @@ const ALBUM_SELECT_COLS = [
   'id', 'slug', 'custom_slug', 'title', 'background_theme',
   'media_radius', 'media_filter', 'media_hover', 'mobile_grid_columns', 'photo_layout',
   'slideshow_interval_ms', 'slideshow_animation', 'video_autoplay',
-  'cover_photo_id', 'header_image', 'header_focal', 'header_touched', 'header_video_mode', 'reveal_at', 'guest_uploads_enabled', 'allow_guest_downloads',
-  'require_approval', 'face_finder_enabled',
+  'cover_photo_id', 'header_image', 'header_focal', 'header_zoom', 'header_touched', 'header_video_mode', 'reveal_at', 'guest_uploads_enabled', 'allow_guest_downloads',
+  'require_approval', 'face_finder_enabled', 'bib_search_enabled', 'bib_min', 'bib_max',
   'accent_color', 'logo_url', 'sponsor_logos', 'template', 'title_font', 'photo_style', 'welcome_message', 'hide_branding',
   'last_activity_at', 'created_at',
   'password_hash', 'retired_at',
@@ -35,7 +35,7 @@ const PHOTO_SELECT_COLS = [
   'url', 'thumb_url', 'caption', 'author_name', 'created_at',
   'media_type', 'poster_url', 'stream_uid', 'stream_iframe_url',
   'stream_thumbnail_url', 'duration_seconds', 'width', 'height',
-  'display_radius', 'display_filter', 'sort_order', 'face_ids', 'hidden',
+  'display_radius', 'display_filter', 'sort_order', 'face_ids', 'hidden', 'bib_numbers',
 ].join(', ')
 
 type AlbumRow = {
@@ -43,9 +43,10 @@ type AlbumRow = {
   background_theme: string | null; media_radius: number; media_filter: string
   media_hover: string; mobile_grid_columns: number; photo_layout: string
   slideshow_interval_ms: number; slideshow_animation: string; video_autoplay: boolean
-  cover_photo_id: string | null; header_image: string | null; header_focal: string | null; header_touched: boolean
+  cover_photo_id: string | null; header_image: string | null; header_focal: string | null; header_zoom: number | null; header_touched: boolean
   header_video_mode: string | null; reveal_at: string | null; guest_uploads_enabled: boolean
-  allow_guest_downloads: boolean; require_approval: boolean; face_finder_enabled: boolean
+  allow_guest_downloads: boolean; require_approval: boolean; face_finder_enabled: boolean; bib_search_enabled: boolean
+  bib_min: number | null; bib_max: number | null
   accent_color: string | null; logo_url: string | null; sponsor_logos: SponsorLogo[]; template: string | null
   title_font: string | null; photo_style: string | null; welcome_message: string | null; hide_branding: boolean
   last_activity_at: string; created_at: string

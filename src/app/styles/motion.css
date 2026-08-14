@@ -11,6 +11,31 @@
   .hush-media-img {
     filter: var(--hush-media-filter, none);
     transition: filter 180ms ease;
+    /* Reveal: photos settle in rather than popping. TWO animations with deliberately different
+       durations — the fade finishes (0.58s) while the scale is still easing (1.05s), so the eye
+       reads the image as "arrived" while motion continues underneath. That desync is what makes
+       it feel considered instead of animated. The scale is only 4%: bigger reads as cheap.
+       `both` holds the final frame so a lazy-loaded image can't flash back to its start state. */
+    animation:
+      hush-media-fade 0.58s cubic-bezier(0.16, 1, 0.3, 1) both,
+      hush-media-settle 1.05s cubic-bezier(0.16, 1, 0.3, 1) both;
+  }
+
+  @keyframes hush-media-fade {
+    from { opacity: 0; }
+    to   { opacity: 1; }
+  }
+
+  @keyframes hush-media-settle {
+    from { transform: scale(1.04); }
+    to   { transform: scale(1); }
+  }
+
+  /* Motion is decoration here — never make someone who asked for less of it sit through a reveal. */
+  @media (prefers-reduced-motion: reduce) {
+    .hush-media-img {
+      animation: none;
+    }
   }
 
   .hush-press {

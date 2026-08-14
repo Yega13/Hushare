@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useT } from '@/i18n/LocaleProvider'
 import { useZipDownload } from '@/components/photo-grid/useZipDownload'
-import { ChevronDown, Clock, Copy, Download, FolderPlus, Images, Link2, Loader2, Lock, LockOpen, MonitorPlay, Move, Play, ScanFace, Settings, ShieldCheck, Trash2, X } from 'lucide-react'
+import { Search, ChevronDown, Clock, Copy, Download, FolderPlus, Images, Link2, Loader2, Lock, LockOpen, MonitorPlay, Move, Play, ScanFace, Settings, ShieldCheck, Trash2, X } from 'lucide-react'
 import type { Album, Photo, Tier } from '@/types'
 import {
   DEFAULT_SLIDESHOW_INTERVAL_MS,
@@ -123,6 +123,7 @@ export default function OwnerToolbar({ album, photos, ownerToken, userTier, medi
   const [allowGuestDownloads, setAllowGuestDownloads] = useState(album.allow_guest_downloads !== false)
   const [requireApproval, setRequireApproval] = useState(!!album.require_approval)
   const [faceFinderEnabled, setFaceFinderEnabled] = useState(!!album.face_finder_enabled)
+  const [bibSearchEnabled, setBibSearchEnabled] = useState(!!album.bib_search_enabled)
 
   const shareRef = useRef<HTMLDivElement>(null)
   const settingsRef = useRef<HTMLDivElement>(null)
@@ -1039,6 +1040,48 @@ export default function OwnerToolbar({ album, photos, ownerToken, userTier, medi
                             showAppToast(message, 'error')
                             setFaceFinderEnabled(!next)
                             onAlbumUpdated({ face_finder_enabled: !next })
+                          }
+                        }}
+                        className="h-4 w-4"
+                      />
+                    </label>
+
+                    {/* Bib search — the "this is a race" switch. Turning it on is what makes photos
+                        get read for bib numbers; leaving it off means this album never sends a
+                        single photo out for OCR. Free for everyone. */}
+                    <label
+                      className="mt-3 flex items-start justify-between gap-3 rounded-xl px-3 py-3 cursor-pointer"
+                      style={{ background: '#FFFFFF', border: '1px solid #E8E0D2' }}
+                    >
+                      <span>
+                        <span className="flex items-center gap-2 text-sm font-semibold" style={{ color: '#630826' }}>
+                          <Search className="w-4 h-4" />
+                          {t('ot.bibSearch')}
+                        </span>
+                        <span className="block text-xs" style={{ color: '#7C5C3E' }}>{t('ot.bibSearchSub')}</span>
+                      </span>
+                      <input
+                        type="checkbox"
+                        checked={bibSearchEnabled}
+                        onChange={async (e) => {
+                          const next = e.target.checked
+                          setBibSearchEnabled(next)
+                          onAlbumUpdated({ bib_search_enabled: next })
+                          try {
+                            const res = await fetch('/api/album/bib-search', {
+                              method: 'POST',
+                              headers: { 'Content-Type': 'application/json' },
+                              body: JSON.stringify({ slug: album.slug, enabled: next }),
+                            })
+                            if (!res.ok) {
+                              const body = await res.json().catch(() => ({})) as { error?: string }
+                              throw new Error(body.error ?? `Save failed (${res.status})`)
+                            }
+                          } catch (err) {
+                            const message = err instanceof Error ? err.message : t('common.networkError')
+                            showAppToast(message, 'error')
+                            setBibSearchEnabled(!next)
+                            onAlbumUpdated({ bib_search_enabled: !next })
                           }
                         }}
                         className="h-4 w-4"

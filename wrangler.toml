@@ -13,7 +13,7 @@ pattern = "www.hushare.space/*"
 zone_name = "hushare.space"
 
 [triggers]
-crons = ["0 2 * * *"]
+crons = ["0 2 * * *", "* * * * *"]
 
 [assets]
 directory = ".open-next/assets"

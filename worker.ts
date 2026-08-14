@@ -20,6 +20,9 @@ type Env = {
   NEXT_PUBLIC_SITE_URL: string
 }
 
+// Must match the every-minute entry in wrangler.toml's crons list.
+const EVERY_MINUTE = '* * * * *'
+
 async function callCronRoute(baseUrl: string, path: string, secret: string): Promise<void> {
   try {
     const res = await fetch(`${baseUrl}${path}`, {
@@ -49,13 +52,24 @@ const worker = {
   fetch: (request: Request, env: Env, ctx: ExecutionContext): Promise<Response> =>
     (handler as { fetch: (r: Request, e: unknown, c: unknown) => Promise<Response> }).fetch(request, env, ctx),
 
-  async scheduled(_event: ScheduledEvent, env: Env, ctx: ExecutionContext): Promise<void> {
+  async scheduled(event: ScheduledEvent, env: Env, ctx: ExecutionContext): Promise<void> {
     const secret = env.ALBUM_RETIREMENT_SECRET
     if (!secret) {
       console.error('[cron] ALBUM_RETIREMENT_SECRET is not set — aborting scheduled run')
       return
     }
     const baseUrl = (env.NEXT_PUBLIC_SITE_URL ?? 'https://hushare.space').replace(/\/+$/, '')
+
+    // Two schedules share this handler, so branch on which one fired — otherwise adding the
+    // every-minute bib sweep would also send renewal emails and retire albums 1440x a day.
+    if (event.cron === EVERY_MINUTE) {
+      // Bib indexing for race albums. Cheap no-op (one indexed query) when no album has it on.
+      // This is the reliable path: the sweep kicked off by an upload gets cut short by the
+      // post-response budget, so this is what actually carries an album to completion.
+      ctx.waitUntil(callCronRoute(baseUrl, '/api/cron/bib-index', secret))
+      return
+    }
+
     ctx.waitUntil(Promise.all([
       callCronRoute(baseUrl, '/api/cron/retire-albums', secret),
       callCronRoute(baseUrl, '/api/cron/notify-expiry', secret),

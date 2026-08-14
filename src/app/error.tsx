@@ -2,6 +2,7 @@
 
 import { useEffect } from 'react'
 import Link from 'next/link'
+import { reportClientError } from '@/lib/report-error'
 
 export default function AppError({
   error,
@@ -10,10 +11,17 @@ export default function AppError({
   error: Error & { digest?: string }
   reset: () => void
 }) {
+  // Previously dev-only, which meant every crash a real user saw was invisible. The digest is the
+  // key that ties this back to the matching server-side log line.
   useEffect(() => {
     if (process.env.NODE_ENV !== 'production') {
       console.error('[app/error]', error.digest ?? error.message)
     }
+    reportClientError({
+      source: 'app/error',
+      message: error.message || 'unknown render error',
+      context: { digest: error.digest, stack: error.stack?.slice(0, 400) },
+    })
   }, [error])
 
   return (
