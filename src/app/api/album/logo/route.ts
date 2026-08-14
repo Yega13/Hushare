@@ -3,7 +3,6 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { verifyOwnerViaCookieWithRateLimit } from '@/lib/album-owner-access'
 import { forbidCrossSiteRequest } from '@/lib/request-security'
 import { queueAlbumSettingsBroadcast } from '@/lib/broadcast'
-import { hasPaidAccess } from '@/lib/subscriptions'
 import { deleteR2ObjectByPublicUrl } from '@/lib/cloudflare/r2'
 
 export const runtime = 'nodejs'
@@ -63,15 +62,9 @@ export async function POST(req: Request) {
   const access = await verifyOwnerViaCookieWithRateLimit<LogoAlbum>(req, slug.trim(), 'logo_url')
   if (!access.ok) return NextResponse.json({ error: access.error }, { status: access.status, headers: NO_STORE })
 
-  // A logo is a paid feature. Clearing one (value === null) is always allowed — a downgraded
-  // owner must still be able to remove a logo they can no longer add.
-  if (value !== null) {
-    const isPaid = await hasPaidAccess(access.userId)
-    if (!isPaid) {
-      return NextResponse.json({ error: 'A custom logo is a paid feature.' }, { status: 403, headers: NO_STORE })
-    }
-  }
-
+  // NOTE: the logo was gated to paid tiers. Gating is deliberately OFF while we get every design
+  // feature working end-to-end; revisit pricing once the feature set settles. Keeping this comment
+  // (and hasPaidAccess in lib) so re-adding the gate is a two-line change, not an archaeology dig.
   const admin = createAdminClient()
   const { error } = await admin.from('albums').update({ logo_url: value }).eq('id', access.album.id)
   if (error) {

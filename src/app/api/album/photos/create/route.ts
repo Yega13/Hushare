@@ -9,6 +9,7 @@ import { track } from '@/lib/analytics'
 import { timingSafeEqual } from '@/lib/timing-safe'
 import { getUserTierById } from '@/lib/subscriptions'
 import { albumMediaCapForTier, ANON_ALBUM_MEDIA } from '@/lib/media'
+import { queueBibIndex } from '@/lib/server/bib-index'
 import { cookies } from 'next/headers'
 
 export const runtime = 'nodejs'
@@ -456,6 +457,12 @@ export async function POST(req: Request) {
   // Live-update ping to everyone viewing this album (Broadcast — scales where postgres_changes
   // dropped events under burst). waitUntil keeps it alive past the response so it isn't cancelled.
   if (inserted > 0) queueAlbumChangedBroadcast(albumId)
+
+  // Race albums: read bib numbers off the new photos so guests can search by number. Runs AFTER
+  // the response (waitUntil) — OCR is ~1s/photo and nothing is waiting on it, so it must never
+  // slow an upload down. No-ops instantly unless the owner switched bib search on for this album,
+  // which is what keeps non-race albums from ever sending photos to a third party for OCR.
+  if (inserted > 0) queueBibIndex(albumId)
 
   // Notification email — same waitUntil guarantee (a bare fire-and-forget promise would be
   // cancelled when the Worker returns, silently never sending).

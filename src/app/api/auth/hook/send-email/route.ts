@@ -45,15 +45,25 @@ interface HookPayload {
   }
 }
 
+// Supabase's own verify endpoint takes two forms Hushare can't accept in an email:
+// a mail scanner's GET burns the one-time token before the human clicks, and the PKCE code it
+// hands back can only be exchanged by the browser that started the sign-in. So the link points at
+// our own /auth/confirm, which renders a button and consumes the token only on the POST behind it.
+// The full reasoning lives in src/app/auth/confirm/page.tsx — read it before changing this.
 function confirmUrl(tokenHash: string, type: ActionType, redirectTo: string): string {
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
-  if (!supabaseUrl) throw new Error('NEXT_PUBLIC_SUPABASE_URL not set')
-  return (
-    `${supabaseUrl}/auth/v1/verify` +
-    `?token=${encodeURIComponent(tokenHash)}` +
-    `&type=${type}` +
-    `&redirect_to=${encodeURIComponent(redirectTo || SITE_URL)}`
-  )
+  // /auth/confirm verifies the token itself, so the old callback URL is no longer a destination —
+  // only the `next` it was carrying still matters.
+  let next = ''
+  try {
+    next = new URL(redirectTo, SITE_URL).searchParams.get('next') ?? ''
+  } catch { /* malformed — no next */ }
+
+  const url = new URL('/auth/confirm', SITE_URL)
+  url.searchParams.set('token_hash', tokenHash)
+  // Supabase splits email changes into two messages, but verifyOtp knows only 'email_change'.
+  url.searchParams.set('type', type.startsWith('email_change') ? 'email_change' : type)
+  if (next) url.searchParams.set('next', next)
+  return url.toString()
 }
 
 function escapeHtml(str: string): string {

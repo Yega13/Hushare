@@ -8,8 +8,8 @@ export const runtime = 'nodejs'
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL ?? 'https://hushare.space'
 const PUBLISHED = '2026-04-25'
-const LAST_UPDATED = '2026-07-18'
-const LAST_UPDATED_HUMAN = 'July 18, 2026'
+const LAST_UPDATED = '2026-08-14'
+const LAST_UPDATED_HUMAN = 'August 14, 2026'
 
 const PAGE_TITLE = 'Privacy Policy'
 const PAGE_DESCRIPTION =
@@ -193,8 +193,12 @@ export default function PrivacyPage() {
             </li>
           </ul>
           <p className="mt-3">
-            We do <strong style={INK}>not</strong> ask for your name, email,
-            phone number, or any form of account. We do not run third-party
+            Creating and sharing an album needs{' '}
+            <strong style={INK}>no account at all</strong> - that path collects
+            nothing above. If you choose to sign in (by email link or Google) to
+            keep your albums together or to subscribe, we store your email
+            address and, where Google supplies it, your name and profile
+            picture. We never ask for a phone number, and we run no third-party
             advertising or identity-based analytics.
           </p>
         </Section>
@@ -225,7 +229,23 @@ export default function PrivacyPage() {
             </li>
             <li>
               <strong style={INK}>Cloudflare</strong> - hosting, content
-              delivery, and DDoS protection.
+              delivery, video streaming, and DDoS protection.
+            </li>
+            <li>
+              <strong style={INK}>Amazon Web Services</strong> - image analysis
+              for the optional Face Finder and race-number search features. A
+              photo is only ever sent to AWS if the album owner has switched one
+              of those features on. Albums without them never leave Supabase and
+              Cloudflare.
+            </li>
+            <li>
+              <strong style={INK}>Resend</strong> - delivery of account and
+              notification emails.
+            </li>
+            <li>
+              <strong style={INK}>Polar</strong> - subscription checkout and
+              billing. Card details go to Polar and its payment providers; we
+              never receive or store them.
             </li>
           </ul>
           <p className="mt-3">

@@ -75,7 +75,11 @@ export default function AlbumHeader({ album, photoCount, isOwner, onAlbumUpdated
 
   const accent = album.accent_color || DEFAULT_ACCENT
   const ink = contrastText(accent)
-  const hero = !!coverUrl
+  // A header VIDEO must force hero mode even when its poster is missing. Posters come from Stream
+  // and are absent while a freshly-uploaded video is still processing — keying hero purely off
+  // coverUrl (the poster) meant the album silently fell back to the plain colour band and the
+  // video never appeared at all. The accent colour backs the video until the poster exists.
+  const hero = !!coverUrl || !!headerVideo
   const useLightLogo = hero ? true : ink === '#FDFAF5'
   const fg = hero ? '#FDFAF5' : ink                                  // hero text is always light (over scrim)
   const shadow = hero ? '0 1px 16px rgba(0,0,0,0.55)' : undefined     // legibility over any photo
@@ -231,29 +235,57 @@ export default function AlbumHeader({ album, photoCount, isOwner, onAlbumUpdated
             position: 'relative', overflow: 'hidden',
             minHeight: 'clamp(210px, 38vh, 340px)',
             backgroundColor: accent,
-            backgroundImage: `url("${coverUrl}")`,
-            backgroundSize: 'cover', backgroundPosition: album.header_focal || 'center',
+            // No poster yet (video still processing) → no backgroundImage, accent shows through.
+            ...(coverUrl ? { backgroundImage: `url("${coverUrl}")` } : {}),
+            // "cover" is the 100% baseline; a zoom scales past it. background-position then decides
+            // which part of the enlarged image stays in frame, which is why the two work together.
+            backgroundSize: album.header_zoom && album.header_zoom > 100 ? `${album.header_zoom}% auto` : 'cover',
+            backgroundPosition: album.header_focal || 'center',
             display: 'flex', flexDirection: 'column', justifyContent: 'flex-end',
           }}
           onPointerEnter={isHoverMode ? () => setHoverPlaying(true) : undefined}
           onPointerLeave={isHoverMode ? () => setHoverPlaying(false) : undefined}
         >
           {showVideo && videoSrc && (
+            // Fades in rather than appearing instantly: a Stream iframe paints black for a beat
+            // before the first frame arrives, which read as a flicker over the poster. The poster
+            // stays visible underneath during the fade, so the transition is seamless.
+            // (objectFit was removed — it does nothing on an iframe.)
             <iframe
               key={`${headerVideo!.id}-${videoMode}-${hoverPlaying}`}
+              className="hush-header-video"
               src={videoSrc}
               title=""
               aria-hidden="true"
               tabIndex={-1}
-              allow="autoplay; encrypted-media"
+              // NO `encrypted-media`. It enables EME (DRM), which makes Windows treat the window as
+              // protected content — screen recorders (Snipping Tool, OBS) then stop or capture black,
+              // which made it impossible to record a demo of our own product. Hushare's Stream videos
+              // are not DRM-protected, so the permission bought nothing. Do not add it back.
+              allow="autoplay"
               style={{
                 position: 'absolute', inset: 0, width: '100%', height: '100%',
-                border: 'none', pointerEvents: 'none', objectFit: 'cover',
+                border: 'none', pointerEvents: 'none',
+                // Zoom + reposition for VIDEO headers. We can't crop inside the Stream player, but
+                // the iframe is an ordinary element, so scaling it and anchoring the scale at the
+                // focal point gives the same result — the shell's overflow:hidden does the cropping.
+                // transform-origin takes the same "X% Y%" that background-position takes for photos,
+                // so a header behaves identically whether it's a photo or a video.
+                // Bonus: zooming past 100% also crops away the letterbox bars the player adds when
+                // the video's aspect ratio doesn't match the banner.
+                ...(album.header_zoom && album.header_zoom > 100
+                  ? { transform: `scale(${album.header_zoom / 100})`, transformOrigin: album.header_focal || 'center' }
+                  : {}),
               }}
             />
           )}
-          <div aria-hidden="true" style={{ position: 'absolute', inset: 0, background: 'linear-gradient(180deg, rgba(12,7,10,0.22) 0%, rgba(12,7,10,0) 34%, rgba(12,7,10,0.68) 100%)' }} />
-          <Link href="/" aria-label="Hushare home" className="hush-album-logo-link transition hover:opacity-80" style={{ position: 'absolute', top: 16, left: 'clamp(14px, 4vw, 22px)', zIndex: 1, display: 'inline-flex' }}>
+          {/* pointerEvents:none — this scrim covers the whole header, so without it it would sit
+              between the cursor and anything beneath it. */}
+          <div aria-hidden="true" style={{ position: 'absolute', inset: 0, pointerEvents: 'none', background: 'linear-gradient(180deg, rgba(12,7,10,0.22) 0%, rgba(12,7,10,0) 34%, rgba(12,7,10,0.68) 100%)' }} />
+          {/* zIndex 2, above the title block's 1. The title block is a full-width flex child with
+              64px of top padding, and that padding lands right on top of this logo — at equal
+              z-index the later element won and ate every click, so the logo stopped being a link. */}
+          <Link href="/" aria-label="Hushare home" className="hush-album-logo-link transition hover:opacity-80" style={{ position: 'absolute', top: 16, left: 'clamp(14px, 4vw, 22px)', zIndex: 2, display: 'inline-flex' }}>
             {logo}
           </Link>
           <div className="hush-container" style={{ position: 'relative', zIndex: 1, textAlign: 'left', paddingInline: 'clamp(14px, 4vw, 22px)', paddingBottom: 'clamp(16px, 3vw, 26px)', paddingTop: 64 }}>

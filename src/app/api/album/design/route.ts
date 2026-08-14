@@ -3,8 +3,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { verifyOwnerViaCookieWithRateLimit } from '@/lib/album-owner-access'
 import { forbidCrossSiteRequest } from '@/lib/request-security'
 import { queueAlbumSettingsBroadcast } from '@/lib/broadcast'
-import { hasPaidAccess } from '@/lib/subscriptions'
-import { isValidHex, isPaletteColor, isValidFont, getTemplate, isValidPhotoStyle, isValidHeaderVideoMode } from '@/lib/album-design'
+import { isValidHex, isValidFont, getTemplate, isValidPhotoStyle, isValidHeaderVideoMode } from '@/lib/album-design'
 
 export const runtime = 'nodejs'
 
@@ -18,22 +17,21 @@ export async function POST(req: Request) {
   const csrfError = forbidCrossSiteRequest(req)
   if (csrfError) return csrfError
 
-  const body = await req.json().catch(() => null) as { slug?: unknown; accent_color?: unknown; welcome_message?: unknown; title_font?: unknown; template?: unknown; photo_style?: unknown; header_focal?: unknown; header_video_mode?: unknown } | null
+  const body = await req.json().catch(() => null) as { slug?: unknown; accent_color?: unknown; welcome_message?: unknown; title_font?: unknown; template?: unknown; photo_style?: unknown; header_focal?: unknown; header_zoom?: unknown; header_video_mode?: unknown } | null
   if (!body || typeof body.slug !== 'string') {
     return NextResponse.json({ error: 'Missing slug' }, { status: 400, headers: NO_STORE })
   }
 
   const updates: Record<string, unknown> = {}
-  let accentNeedsPaidCheck: string | null = null
 
   // accent_color: null clears to default; a string must be a valid #rrggbb hex.
+  // NOTE: custom (non-palette) colours were gated to paid tiers. Gating is deliberately OFF while
+  // we get every design feature working end-to-end; revisit pricing once the feature set settles.
   if (body.accent_color !== undefined) {
     if (body.accent_color === null) {
       updates.accent_color = null
     } else if (typeof body.accent_color === 'string' && isValidHex(body.accent_color)) {
-      const accent = body.accent_color.toLowerCase()
-      updates.accent_color = accent
-      if (!isPaletteColor(accent)) accentNeedsPaidCheck = accent
+      updates.accent_color = body.accent_color.toLowerCase()
     } else {
       return NextResponse.json({ error: 'accent_color must be a #rrggbb hex or null' }, { status: 400, headers: NO_STORE })
     }
@@ -101,6 +99,22 @@ export async function POST(req: Request) {
     }
   }
 
+  // header_zoom: how far the header photo is zoomed, as a % of cover size. 100 = no zoom.
+  // Clamped to a sane range so a bad value can't blow the banner up to an unusable scale.
+  if (body.header_zoom !== undefined) {
+    if (body.header_zoom === null) {
+      updates.header_zoom = null
+    } else if (typeof body.header_zoom === 'number' && Number.isFinite(body.header_zoom)) {
+      const z = Math.round(body.header_zoom)
+      if (z < 100 || z > 300) {
+        return NextResponse.json({ error: 'header_zoom must be between 100 and 300' }, { status: 400, headers: NO_STORE })
+      }
+      updates.header_zoom = z
+    } else {
+      return NextResponse.json({ error: 'header_zoom must be a number or null' }, { status: 400, headers: NO_STORE })
+    }
+  }
+
   // header_video_mode: how a video used as the header plays. null clears to the default ('loop').
   if (body.header_video_mode !== undefined) {
     if (body.header_video_mode === null) {
@@ -118,15 +132,6 @@ export async function POST(req: Request) {
 
   const access = await verifyOwnerViaCookieWithRateLimit(req, body.slug.trim())
   if (!access.ok) return NextResponse.json({ error: access.error }, { status: access.status, headers: NO_STORE })
-
-  // A custom (non-palette) color is a paid feature. No darkness restriction — the header text/logo
-  // auto-contrast. Gating is enforced HERE on the server — never trust the client to have hidden it.
-  if (accentNeedsPaidCheck) {
-    const isPaid = await hasPaidAccess(access.userId)
-    if (!isPaid) {
-      return NextResponse.json({ error: 'Custom colors are a paid feature — pick a palette color or upgrade.' }, { status: 403, headers: NO_STORE })
-    }
-  }
 
   const admin = createAdminClient()
   const { error } = await admin.from('albums').update(updates).eq('id', access.album.id)

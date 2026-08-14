@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect } from 'react'
+import { reportClientError } from '@/lib/report-error'
 
 export default function GlobalError({
   error,
@@ -9,10 +10,17 @@ export default function GlobalError({
   error: Error & { digest?: string }
   reset: () => void
 }) {
+  // A global-error means the root layout itself failed — the most severe crash there is, and the
+  // one users are least likely to report. It must not stay invisible.
   useEffect(() => {
     if (process.env.NODE_ENV !== 'production') {
       console.error('[app/global-error]', error.digest ?? error.message)
     }
+    reportClientError({
+      source: 'app/global-error',
+      message: error.message || 'unknown root error',
+      context: { digest: error.digest, stack: error.stack?.slice(0, 400) },
+    })
   }, [error])
 
   return (

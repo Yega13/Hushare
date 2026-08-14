@@ -15,6 +15,7 @@ import AlbumHeader from '@/components/AlbumHeader'
 import GuestActionsBar from '@/components/GuestActionsBar'
 import { rememberOwnedAlbum, getMyAlbums } from '@/lib/my-albums'
 import SignInPrompt from '@/components/SignInPrompt'
+import BibSearchBar, { bibMatches } from '@/components/BibSearchBar'
 import { fontStack, isImageBackground, getBackgroundImageUrl, getBackgroundColorStyle, resolveHeaderImageUrl, resolveHeaderVideo } from '@/lib/album-design'
 
 // Code-split out of the shared album bundle: OwnerToolbar (+ tus/JSZip-adjacent upload code),
@@ -22,7 +23,12 @@ import { fontStack, isImageBackground, getBackgroundImageUrl, getBackgroundColor
 // by an ordinary guest viewing photos. UploadZone pulls in tus-js-client, which guests on
 // view-only albums never need either. This keeps the JS a first-time guest downloads to just what
 // renders — a guest should never pay for the owner's design-panel bundle.
-const UploadZone = dynamic(() => import('@/components/UploadZone'))
+// ssr:false keeps this component's whole module graph OUT of the server bundle. It pulls in
+// heic2any (~1.3MB) to decode iPhone HEIC files, which is browser-only code that can never run
+// server-side — yet server-rendering the component still bundled it into the Worker, and that
+// alone pushed the Worker past Cloudflare's size limit and blocked deploys. Uploading is a
+// click-driven, browser-only flow with nothing to pre-render, so there is nothing to lose here.
+const UploadZone = dynamic(() => import('@/components/UploadZone'), { ssr: false })
 const OwnerToolbar = dynamic(() => import('@/components/OwnerToolbar'))
 const FaceFinder = dynamic(() => import('@/components/FaceFinder'))
 const AlbumDesigner = dynamic(() => import('@/components/AlbumDesigner'))
@@ -72,6 +78,9 @@ function sanitizeRealtimePhoto(row: Record<string, unknown>, expectedAlbumId: st
     height: _safeInt(row.height),
     face_ids: Array.isArray(row.face_ids)
       ? (row.face_ids as unknown[]).filter((x): x is string => typeof x === 'string')
+      : null,
+    bib_numbers: Array.isArray(row.bib_numbers)
+      ? (row.bib_numbers as unknown[]).filter((x): x is string => typeof x === 'string')
       : null,
   }
 }
@@ -143,6 +152,7 @@ export default function AlbumPageClient({ initialAlbum = null, initialPhotos, in
   // reads inside async callbacks (resolve/owner-login/realtime); both are set together in Effect 1.
   const [ownerTokenInUrl, setOwnerTokenInUrl] = useState(false)
   const [showFaceFinder, setShowFaceFinder] = useState(false)
+  const [bibQuery, setBibQuery] = useState('')
   // Owner "save your album" prompt — a one-time MODAL shown to a signed-OUT owner a few seconds
   // after they've finished adding photos, offering the one-tap Google save.
   const [ownerSavePromptOpen, setOwnerSavePromptOpen] = useState(false)
@@ -960,6 +970,18 @@ export default function AlbumPageClient({ initialAlbum = null, initialPhotos, in
   // Resolve the header image (custom upload or a chosen album photo) → AlbumHeader shows it as a
   // hero banner. Falls back to the accent band when neither is set.
   const coverUrl = resolveHeaderImageUrl(album, photos)
+
+  // Bib search narrows the SAME grid rather than opening a separate results view. Filtering is
+  // client-side over photos already loaded, so typing is instant and costs no requests. When the
+  // album isn't a race album (or the box is empty) this is the untouched photo list.
+  const bibRange = { min: album.bib_min ?? null, max: album.bib_max ?? null }
+  const visiblePhotos = album.bib_search_enabled && bibQuery.replace(/\D/g, '')
+    ? photos.filter((p) => bibMatches(p, bibQuery, bibRange))
+    : photos
+  // Progress figures for the "still reading photos" note — indexing happens in the background
+  // after upload, so a guest can arrive before every photo has been read.
+  const totalImageCount = photos.filter((p) => p.media_type !== 'video').length
+  const bibIndexedCount = photos.filter((p) => p.media_type !== 'video' && p.bib_numbers != null).length
   const headerVideo = resolveHeaderVideo(album, photos)
 
   return (
@@ -1028,6 +1050,22 @@ export default function AlbumPageClient({ initialAlbum = null, initialPhotos, in
           />
         )}
 
+        {/* Race albums: the bib box goes ABOVE the upload zone. On a race album most visitors are
+            runners looking for themselves, not people adding photos — burying the search below a
+            large "Add photos" panel made the main reason they came the second thing they saw. */}
+        {album.bib_search_enabled && (
+          <BibSearchBar
+            query={bibQuery}
+            onQueryChange={setBibQuery}
+            matchCount={visiblePhotos.length}
+            indexedCount={bibIndexedCount}
+            totalImages={totalImageCount}
+            // Only offered when the owner has Face Finder on — otherwise there's nothing to send
+            // a runner to and the button would be a lie.
+            onTryFaceFinder={album.face_finder_enabled ? () => setShowFaceFinder(true) : undefined}
+          />
+        )}
+
         {(album.guest_uploads_enabled || effectiveIsOwner) && (
           <UploadZone album={album} userTier={userTier} onPhotosUploaded={handlePhotosUploaded} />
         )}
@@ -1035,7 +1073,7 @@ export default function AlbumPageClient({ initialAlbum = null, initialPhotos, in
         <div className="hush-container pb-6">
           <PhotoGrid
             album={album}
-            photos={photos}
+            photos={visiblePhotos}
             isOwner={effectiveIsOwner}
             slug={album.slug}
             forceGlobalRadius={forceGlobalRadius}
@@ -1080,7 +1118,7 @@ export default function AlbumPageClient({ initialAlbum = null, initialPhotos, in
         )}
 
         {effectiveIsOwner && designerOpen && (
-          <AlbumDesigner album={album} photos={photos} userTier={userTier} onAlbumUpdated={handleAlbumUpdated} onClose={() => setDesignerOpen(false)} />
+          <AlbumDesigner album={album} photos={photos} onAlbumUpdated={handleAlbumUpdated} onClose={() => setDesignerOpen(false)} />
         )}
       </main>
     </>

@@ -315,6 +315,22 @@ export const en = {
   'ad.sponsorsPro': 'Sponsor branding · Pro',
   'ad.moveUp': 'Move up',
   'ad.moveDown': 'Move down',
+  'ad.more': 'More',
+  'ot.bibSearch': 'Bib search',
+  'ot.bibSearchSub': 'Race albums: runners find their photos by bib number.',
+  'bib.title': 'Find your race photos',
+  'bib.placeholder': 'Your bib number',
+  'bib.hint': 'Find your photos by bib number',
+  'bib.found': '{n} photos',
+  'bib.none': 'No photos with that number',
+  'bib.clear': 'Clear',
+  'bib.stillIndexing': 'Still reading photos ({done} of {total}) — check back shortly.',
+  // Deliberately explains WHY nothing was found. A runner who reads "no photos" assumes they aren't
+  // in any; the truth is usually that the number wasn't readable in the shot.
+  'bib.noneHelp': 'Numbers can be hidden by an arm, folded, or blurred as you run — so this doesn’t mean you’re not in the album. Try browsing the photos below.',
+  'bib.noneHelpFace': 'Numbers can be hidden by an arm, folded, or blurred as you run. Search by your face instead — it finds you in the photos where your number can’t be read.',
+  'bib.tryFaceFinder': 'Find me by face',
+  'ad.zoom': 'Zoom',
   'ad.videoPlayback': 'Video playback',
   'ad.videoMode.loop': 'Loop forever',
   'ad.videoMode.once': 'Play once',
@@ -627,7 +643,15 @@ export const en = {
   'login.sending': 'Sending link…',
   'login.sentTitle': 'Check your inbox',
   'login.sentTo': 'We sent a sign-in link to',
-  'login.sentExpiry': 'The link expires in 1 hour. Open it in this same browser — this tab will follow automatically. If you don’t see the email, check your spam folder.',
+  // No longer says "open it in this same browser": /auth/confirm verifies the token server-side, so
+  // the link now works from any device — including opening the mail on a phone.
+  'login.sentExpiry': 'The link expires in 1 hour and works on any device. If this tab stays open, it will sign you in automatically. If you don’t see the email, check your spam folder.',
+  'authConfirm.title': 'One last tap',
+  'authConfirm.body': 'Tap the button below to finish signing in to Hushare.',
+  'authConfirm.cta': 'Sign me in',
+  'authConfirm.invalidTitle': 'This link is incomplete',
+  'authConfirm.invalidBody': 'Something was missing from the link. Request a new one and it will work.',
+  'authConfirm.backToLogin': 'Back to sign in',
 
   // 404 / not found
   'notFound.title': 'Album not found',

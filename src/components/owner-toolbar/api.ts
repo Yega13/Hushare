@@ -59,7 +59,7 @@ export async function saveBackgroundRequest(
 
 export async function saveDesignRequest(
   slug: string,
-  fields: { accent_color?: string | null; welcome_message?: string | null; title_font?: string | null; template?: string | null; photo_style?: string | null; header_focal?: string | null; header_video_mode?: string | null },
+  fields: { accent_color?: string | null; welcome_message?: string | null; title_font?: string | null; template?: string | null; photo_style?: string | null; header_focal?: string | null; header_zoom?: number | null; header_video_mode?: string | null },
 ): Promise<{ ok: true } | { ok: false; error: string }> {
   const res = await fetch('/api/album/design', {
     method: 'POST',
