@@ -1295,7 +1295,7 @@ const SAVE_DEBOUNCE_MS = 2500
 function createRowSaver(
   albumId: string,
   onSaved: (entryIds: string[]) => void,
-  onFailed: (entryIds: string[], message: string, code?: string) => void,
+  onFailed: (entryIds: string[], message: string, code?: string, rows?: PhotoRow[]) => void,
   onWarning?: (message: string) => void,
 ) {
   let queue: { row: PhotoRow; entryId: string }[] = []
@@ -1317,7 +1317,7 @@ function createRowSaver(
         onSaved(batch.map(b => b.entryId))
         if (warning && !warned) { warned = true; onWarning?.(warning) }
       } catch (e) {
-        onFailed(batch.map(b => b.entryId), e instanceof Error ? e.message : 'Failed to save', (e as { code?: string })?.code)
+        onFailed(batch.map(b => b.entryId), e instanceof Error ? e.message : 'Failed to save', (e as { code?: string })?.code, batch.map(b => b.row))
       }
     })
   }
@@ -1355,6 +1355,11 @@ export default function UploadZone({ album, userTier, onPhotosUploaded }: Props)
   const [entries, setEntries] = useState<FileEntry[]>([])
   const [isDragging, setIsDragging] = useState(false)
   const [isUploading, setIsUploading] = useState(false)
+  // Rows the server refused because the album is full. Their bytes are already in R2, so finishing
+  // them after the owner registers costs a single request rather than a re-upload.
+  const blockedRowsRef = useRef<PhotoRow[]>([])
+  const [limitHit, setLimitHit] = useState(false)
+  const [retrying, setRetrying] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
   // Separate input for the in-app camera: `capture` opens the phone's native camera directly.
   const cameraInputRef = useRef<HTMLInputElement>(null)
@@ -1467,7 +1472,7 @@ export default function UploadZone({ album, userTier, onPhotosUploaded }: Props)
     const saver = createRowSaver(
       album.id,
       (ids) => { for (const id of ids) patchEntry(id, { status: 'done', progress: 100 }) },
-      (ids, msg, code) => {
+      (ids, msg, code, rows) => {
         // A full album is a REFUSAL, not a fault. It was reported at 'error' with the scary
         // "saving failed" prefix, which (a) told the guest their photos broke when the album was
         // simply full, and (b) flooded /admin -- 39 of ~60 events in one day were this, burying
@@ -1475,6 +1480,12 @@ export default function UploadZone({ album, userTier, onPhotosUploaded }: Props)
         const full = code === 'album_full'
         for (const id of ids) {
           patchEntry(id, { status: 'error', error: full ? msg : `Uploaded, but saving to the album failed: ${msg}` })
+        }
+        // Hold the refused rows so registering can finish the job. Their bytes are already in R2;
+        // only the insert was turned away, so "retry" is one request, not a re-upload.
+        if (full && rows?.length) {
+          blockedRowsRef.current = [...blockedRowsRef.current, ...rows]
+          setLimitHit(true)
         }
         reportClientEvent(full ? 'warn' : 'error', full ? 'album-full' : 'save', msg, album.id, { count: ids.length })
       },
@@ -1637,8 +1648,53 @@ export default function UploadZone({ album, userTier, onPhotosUploaded }: Props)
   const errorCount   = entries.filter(e => e.status === 'error').length
   const activeCount  = entries.filter(e => e.status === 'uploading' || e.status === 'pending').length
 
+  async function retryBlockedRows() {
+    const rows = blockedRowsRef.current
+    if (retrying || rows.length === 0) return
+    setRetrying(true)
+    try {
+      await saveUploadedRows(album.id, rows)
+      blockedRowsRef.current = []
+      setLimitHit(false)
+      setEntries(prev => prev.map(e => e.status === 'error' ? { ...e, status: 'done', error: undefined, progress: 100 } : e))
+      onPhotosUploaded?.()
+      showAppToast(t('uploadWall.saved', { n: rows.length }), 'success')
+    } catch (e) {
+      showAppToast(e instanceof Error ? e.message : t('common.errorGeneric'), 'error')
+    } finally {
+      setRetrying(false)
+    }
+  }
+
   return (
     <div className="hush-upload-zone px-3 sm:px-4 pt-2 pb-4">
+      {/* The wall, as an offer rather than an error. Hitting the cap is the moment of highest
+          intent — the visitor is actively trying to hand over their photos — and it used to be a
+          red failure that lost their place. One guest retried 39 times and never registered.
+          Sign-up opens in a NEW TAB so this page, its queue and the already-uploaded bytes all
+          survive; coming back and pressing Finish saving costs one request. */}
+      {limitHit && (
+        <div style={{ marginBottom: 12, padding: 14, borderRadius: 14, background: '#F6E9EE', border: '1px solid #E3C9D3' }}>
+          <p style={{ margin: '0 0 4px', fontSize: 15, fontWeight: 700, color: '#630826' }}>{t('uploadWall.title')}</p>
+          <p style={{ margin: '0 0 12px', fontSize: 13.5, lineHeight: 1.5, color: '#5C4A3C' }}>
+            {t('uploadWall.body', { n: blockedRowsRef.current.length })}
+          </p>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            <a
+              href="/login" target="_blank" rel="noopener noreferrer" className="hush-press"
+              style={{ padding: '10px 18px', fontSize: 14, fontWeight: 700, color: '#FDFAF5', background: '#630826', borderRadius: 10, textDecoration: 'none' }}
+            >
+              {t('uploadWall.cta')}
+            </a>
+            <button
+              type="button" onClick={() => void retryBlockedRows()} disabled={retrying} className="hush-press"
+              style={{ padding: '10px 18px', fontSize: 14, fontWeight: 700, color: '#630826', background: '#FFFFFF', border: '1.5px solid #E3C9D3', borderRadius: 10, cursor: retrying ? 'wait' : 'pointer' }}
+            >
+              {retrying ? t('uploadWall.saving') : t('uploadWall.retry')}
+            </button>
+          </div>
+        </div>
+      )}
       {/* Drop zone — compact on mobile, roomier on desktop */}
       <div
         role="button"

@@ -20,6 +20,30 @@ export type ReportInput = {
 
 // Never throws and never returns a rejected promise: reporting an error must not be able to cause
 // one. A failed report is simply lost.
+// A deploy replaces the hashed JS chunks. Anyone with the page already open is still asking for
+// the OLD filenames, which no longer exist, so the next lazy import fails and the app dies with a
+// white screen. Caught in the wild the first day error reporting went live.
+//
+// The page is simply stale, so reloading once fixes it completely. The sessionStorage flag means a
+// genuinely broken chunk can't put the browser in a reload loop: second time we let the error
+// surface normally instead.
+const CHUNK_RE = /Loading chunk|ChunkLoadError|Failed to load chunk|error loading dynamically imported module/i
+const RELOAD_FLAG = 'hush-chunk-reloaded'
+
+export function looksLikeStaleDeploy(message: string): boolean {
+  return CHUNK_RE.test(message)
+}
+
+function reloadOnceForStaleDeploy(message: string): boolean {
+  if (!looksLikeStaleDeploy(message)) return false
+  try {
+    if (sessionStorage.getItem(RELOAD_FLAG)) return false
+    sessionStorage.setItem(RELOAD_FLAG, '1')
+  } catch { return false }
+  window.location.reload()
+  return true
+}
+
 export function reportClientError(input: ReportInput): void {
   try {
     if (typeof window === 'undefined') return
@@ -29,6 +53,9 @@ export function reportClientError(input: ReportInput): void {
 
     // A render loop or a listener firing on every frame could otherwise hammer the endpoint with
     // thousands of identical rows. First occurrence is the informative one.
+    // Report it first (so the frequency is visible in /admin), then recover.
+    const stale = looksLikeStaleDeploy(message)
+
     const key = `${input.source}:${message}`
     if (seen.has(key)) return
     if (sent >= MAX_PER_PAGELOAD) return
@@ -52,6 +79,9 @@ export function reportClientError(input: ReportInput): void {
         },
       }),
     }).catch(() => { /* telemetry is best-effort by definition */ })
+
+    // Reload AFTER the report is in flight — keepalive keeps it alive across the navigation.
+    if (stale) reloadOnceForStaleDeploy(message)
   } catch { /* must never surface */ }
 }
 

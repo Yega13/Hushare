@@ -329,6 +329,12 @@ export const en = {
   // in any; the truth is usually that the number wasn't readable in the shot.
   'bib.noneHelp': 'Numbers can be hidden by an arm, folded, or blurred as you run — so this doesn’t mean you’re not in the album. Try browsing the photos below.',
   'bib.noneHelpFace': 'Numbers can be hidden by an arm, folded, or blurred as you run. Search by your face instead — it finds you in the photos where your number can’t be read.',
+  "uploadWall.title": "Your album is full — keep going for free",
+  "uploadWall.body": "{n} photos are uploaded but not saved yet. Create a free account and they'll finish saving — you won't lose them, and you won't need to upload again.",
+  "uploadWall.cta": "Create a free account",
+  "uploadWall.retry": "Finish saving",
+  "uploadWall.saving": "Saving…",
+  "uploadWall.saved": "Saved {n} photos.",
   'bib.tryFaceFinder': 'Find me by face',
   'ad.zoom': 'Zoom',
   'ad.videoPlayback': 'Video playback',
