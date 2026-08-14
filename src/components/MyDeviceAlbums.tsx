@@ -18,8 +18,33 @@ export default function MyDeviceAlbums() {
   const [busy, setBusy] = useState<string | null>(null)
 
   useEffect(() => {
-    setAlbums(getMyAlbums())
+    const local = getMyAlbums()
+    setAlbums(local)
     createClient().auth.getSession().then(({ data }) => setLoggedIn(!!data.session)).catch(() => setLoggedIn(false))
+
+    // localStorage has no idea an album was deleted elsewhere — from the owner toolbar, on another
+    // device, or by the retention job — so deleted albums sat in this list forever, and tapping
+    // Delete on one did nothing because it was already gone. Ask the server which are still real
+    // and drop the rest. On any failure the list is left exactly as it was: pruning on a network
+    // error would throw away the owner's only copy of a live album's management token.
+    if (local.length === 0) return
+    let cancelled = false
+    void fetch('/api/album/exists', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ slugs: local.map((a) => a.slug) }),
+    })
+      .then((r) => (r.ok ? r.json() as Promise<{ alive?: string[] }> : null))
+      .then((res) => {
+        if (cancelled || !res || !Array.isArray(res.alive)) return
+        const alive = new Set(res.alive)
+        const dead = local.filter((a) => !alive.has(a.slug))
+        if (dead.length === 0) return
+        for (const a of dead) forgetAlbum(a.slug)
+        setAlbums(getMyAlbums())
+      })
+      .catch(() => { /* leave the list untouched */ })
+    return () => { cancelled = true }
   }, [])
 
   // Deleting for real (not just forgetting): for an anonymous album, dropping it from this device

@@ -84,12 +84,20 @@ export function computeMasonryColumns(
   containerWidth: number,
   columnCount: number,
   gap: number,
+  // How many photos the album holds in total. Defaults to the number being laid out, which is only
+  // the same thing when nothing is filtering the view.
+  albumPhotoCount?: number,
 ): MasonryColumn[] {
   if (containerWidth <= 0 || photos.length === 0 || columnCount < 1) return []
 
   // Never create more columns than there are photos, otherwise a tiny album (e.g. 2 photos with a
   // 5-column setting) would leave empty flex columns and squeeze the tiles into a narrow strip.
-  const cols = Math.min(columnCount, photos.length)
+  //
+  // Keyed off the ALBUM's size, not the filtered list. Bib search narrowing 15 photos down to one
+  // match used to collapse the grid to a single column, so that runner's photo suddenly rendered
+  // full-bleed while every other view showed neat thumbnails. Tile size must not depend on how many
+  // results a search happened to return.
+  const cols = Math.min(columnCount, Math.max(photos.length, Math.min(albumPhotoCount ?? photos.length, columnCount)))
   const colWidth = (containerWidth - gap * (cols - 1)) / cols
   if (colWidth <= 0) return []
 

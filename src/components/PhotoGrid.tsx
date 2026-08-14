@@ -32,6 +32,9 @@ import { photoStyleTile } from '@/lib/album-design'
 const MASONRY_GAP = 8
 
 type Props = {
+  // Total photos in the album, before any filtering. Only used to decide how many masonry columns
+  // to draw, so a filtered view keeps the same tile size as the unfiltered album.
+  albumPhotoCount?: number
   album: Album
   photos: Photo[]
   isOwner: boolean
@@ -47,7 +50,7 @@ type Props = {
   onCoverSet?: (photoId: string | null) => void
 }
 
-export default function PhotoGrid({ album, photos, isOwner, slug, forceGlobalRadius, onRadiusMaxChange, onPhotoDeleted, onPhotoUpdated, onPhotosReordered, slideshowRequestId = 0, arrangeMode = false, coverPhotoId, onCoverSet }: Props) {
+export default function PhotoGrid({ album, photos, albumPhotoCount, isOwner, slug, forceGlobalRadius, onRadiusMaxChange, onPhotoDeleted, onPhotoUpdated, onPhotosReordered, slideshowRequestId = 0, arrangeMode = false, coverPhotoId, onCoverSet }: Props) {
   const { t } = useT()
   const gridRef = useRef<HTMLDivElement>(null)
   const lightboxHistoryRef = useRef(false)
@@ -117,9 +120,9 @@ export default function PhotoGrid({ album, photos, isOwner, slug, forceGlobalRad
   const masonryColumnCount = album.mobile_grid_columns ?? 3
   const masonryColumns = useMemo(
     () => (masonry
-      ? computeMasonryColumns(photos, aspects, containerWidth, masonryColumnCount, MASONRY_GAP)
+      ? computeMasonryColumns(photos, aspects, containerWidth, masonryColumnCount, MASONRY_GAP, albumPhotoCount)
       : []),
-    [masonry, photos, aspects, containerWidth, masonryColumnCount],
+    [masonry, photos, aspects, containerWidth, masonryColumnCount, albumPhotoCount],
   )
 
   const {
