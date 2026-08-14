@@ -254,7 +254,47 @@ export default function PrivacyPage() {
           </p>
         </Section>
 
-        <Section id="cookies" number={4} heading="Cookies and local storage">
+        <Section id="face-search" number={4} heading="Face search and race numbers">
+          <p>
+            Two optional features read the contents of photos. Both are{' '}
+            <strong style={INK}>off by default</strong> and only ever run if the
+            album owner deliberately switches them on for that album.
+          </p>
+          <ul className="list-disc pl-5 space-y-2 mt-3">
+            <li>
+              <strong style={INK}>Face Finder</strong> lets a guest find photos
+              of themselves. When it is enabled, photos in that album are sent
+              to Amazon Rekognition, which computes a mathematical
+              representation of each face - a{' '}
+              <strong style={INK}>biometric identifier</strong> - and stores it
+              in a face collection belonging to that album alone. A guest
+              searching takes a selfie, which is compared against that
+              collection and is <strong style={INK}>not stored</strong>. We
+              never receive names, and the stored representation cannot be
+              turned back into a photograph.
+            </li>
+            <li>
+              <strong style={INK}>Race number search</strong> reads printed
+              numbers (such as a runner&rsquo;s bib) so guests can find their
+              photos by number. This detects text, not people, and creates no
+              biometric data.
+            </li>
+          </ul>
+          <p className="mt-3">
+            The album&rsquo;s face collection is deleted when the album is
+            deleted, and switching Face Finder off stops any further photos
+            being analysed. If you are an event organiser, you are responsible
+            for telling your participants that face search is available on your
+            album - and you can simply leave it off.
+          </p>
+          <p className="mt-3">
+            To have face data for a specific person or album removed at any
+            time, contact us at the address in the final section and we will
+            delete it.
+          </p>
+        </Section>
+
+        <Section id="cookies" number={5} heading="Cookies and local storage">
           <p>
             Hushare uses your browser&apos;s local storage to remember small
             preferences, such as the album background colour you chose. We do
@@ -263,7 +303,7 @@ export default function PrivacyPage() {
           </p>
         </Section>
 
-        <Section id="sharing" number={5} heading="Who can see your album">
+        <Section id="sharing" number={6} heading="Who can see your album">
           <p>
             Albums are <strong style={INK}>unlisted</strong>. They are not
             indexed by search engines, cannot be browsed from the site, and
@@ -282,7 +322,7 @@ export default function PrivacyPage() {
           </p>
         </Section>
 
-        <Section id="retention" number={6} heading="How long we keep things">
+        <Section id="retention" number={7} heading="How long we keep things">
           <p>
             Free albums are retained for as long as they remain active. If an
             album sits untouched for <strong style={INK}>3 months</strong>,
@@ -292,7 +332,7 @@ export default function PrivacyPage() {
           </p>
         </Section>
 
-        <Section id="rights" number={7} heading="Your rights">
+        <Section id="rights" number={8} heading="Your rights">
           <p>
             Depending on where you live (GDPR in the EU/UK, CCPA in
             California, and equivalent regimes elsewhere), you have the
@@ -321,7 +361,7 @@ export default function PrivacyPage() {
           </p>
         </Section>
 
-        <Section id="children" number={8} heading="Children">
+        <Section id="children" number={9} heading="Children">
           <p>
             Hushare is not directed at children under 13 (or the equivalent
             minimum age in your jurisdiction). We do not knowingly collect
@@ -330,7 +370,7 @@ export default function PrivacyPage() {
           </p>
         </Section>
 
-        <Section id="transfers" number={9} heading="International data transfers">
+        <Section id="transfers" number={10} heading="International data transfers">
           <p>
             Our infrastructure providers operate globally, which means your
             data may be processed in a country other than where you live.
@@ -339,7 +379,7 @@ export default function PrivacyPage() {
           </p>
         </Section>
 
-        <Section id="security" number={10} heading="Security">
+        <Section id="security" number={11} heading="Security">
           <p>
             Media is stored on hardened cloud infrastructure with encryption
             in transit (HTTPS) and encryption at rest. Access to an album
@@ -350,7 +390,7 @@ export default function PrivacyPage() {
           </p>
         </Section>
 
-        <Section id="changes" number={11} heading="Changes to this policy">
+        <Section id="changes" number={12} heading="Changes to this policy">
           <p>
             We will post updates here. The &ldquo;Last updated&rdquo; date at
             the top reflects the most recent change. Material changes will be
@@ -358,7 +398,7 @@ export default function PrivacyPage() {
           </p>
         </Section>
 
-        <Section id="contact" number={12} heading="Contact">
+        <Section id="contact" number={13} heading="Contact">
           <p>
             Questions, requests, complaints - all of it comes to one
             address:{' '}
