@@ -17,8 +17,8 @@ import { ensureCollection, indexPhotoFaces } from '@/lib/rekognition'
 // billed per image: face_ids NULL means "never looked at", and [] means "looked at, found nobody".
 // A photo with a non-NULL value is never re-sent to AWS.
 
-const BATCH = 8
-const CONCURRENCY = 4
+const BATCH = 10
+const CONCURRENCY = 5
 
 type PendingPhoto = { id: string; url: string | null; thumb_url: string | null }
 
@@ -39,12 +39,13 @@ async function indexOne(admin: ReturnType<typeof createAdminClient>, albumId: st
     const faceIds = await indexPhotoFaces(albumId, photo.id, imageUrl)
     await admin.from('photos').update({ face_ids: faceIds }).eq('id', photo.id)
   } catch (e) {
-    // Written as [] rather than left NULL, matching the existing route's behaviour: a photo AWS
-    // cannot read (corrupt, unsupported, too small) would otherwise be retried on every sweep
-    // forever, billing each time. The trade-off is that a transient AWS outage marks a batch as
-    // "no faces" — the same trade-off the client-driven path already made.
+    // Left NULL so a later sweep retries, exactly like bib-index does. This previously wrote [],
+    // which is the sentinel for "looked at, found nobody" — so a TRANSIENT failure permanently
+    // marked a photo as face-free and it was never re-examined. That is silent data loss: hitting
+    // Cloudflare's subrequest ceiling mid-sweep quietly emptied Face Finder for those photos.
+    // A genuinely unreadable image still resolves, because indexPhotoFaces returns [] rather than
+    // throwing when AWS reads the image and finds no face.
     console.error('[face-sweep] indexPhotoFaces failed for', photo.id, e instanceof Error ? e.message : String(e))
-    await admin.from('photos').update({ face_ids: [] }).eq('id', photo.id)
   }
 }
 
@@ -82,11 +83,8 @@ export async function indexAlbumFacesBatch(albumId: string): Promise<number> {
     }),
   )
 
-  const { count } = await admin
-    .from('photos')
-    .select('id', { count: 'exact', head: true })
-    .eq('album_id', albumId)
-    .neq('media_type', 'video')
-    .is('face_ids', null)
-  return count ?? 0
+  // Previously a COUNT(*) over the album on EVERY batch — a scan per batch, which on a 600-photo
+  // album cost more than the OCR it was measuring. A full batch means there is very likely more
+  // work; a short one means the queue just drained. The caller only needs "keep going or stop".
+  return pending.length === BATCH ? BATCH : 0
 }
