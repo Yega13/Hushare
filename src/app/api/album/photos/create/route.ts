@@ -272,7 +272,7 @@ export async function POST(req: Request) {
   if (capOverride != null) {
     if (!countErr && photoCount != null && photoCount >= capOverride) {
       return NextResponse.json(
-        { error: "You've reached this album's upload limit." },
+        { code: 'album_full', error: "You've reached this album's upload limit." },
         { status: 429, headers: NO_STORE },
       )
     }
@@ -282,7 +282,7 @@ export async function POST(req: Request) {
       // Grandfathered: generous ceiling. Full → block; otherwise nudge to register every session.
       if (photoCount >= LEGACY_ALBUM_CAP) {
         return NextResponse.json(
-          { error: "You've reached this album's upload limit. Register on Hushare to get more space." },
+          { code: 'album_full', error: "You've reached this album's upload limit. Register on Hushare to get more space." },
           { status: 429, headers: NO_STORE },
         )
       }
@@ -291,7 +291,7 @@ export async function POST(req: Request) {
       // Guest album (no account).
       if (photoCount >= ANON_ALBUM_MEDIA) {
         return NextResponse.json(
-          { error: "You've reached this album's upload limit. Register on Hushare — it's free — for more space." },
+          { code: 'album_full', error: "You've reached this album's upload limit. Register on Hushare — it's free — for more space." },
           { status: 429, headers: NO_STORE },
         )
       }
