@@ -38,9 +38,16 @@ const REQUIRED_COLUMNS = {
 }
 const REQUIRED_FUNCTIONS = ['album_is_open', 'set_updated_at', 'batch_set_sort_order', 'prune_rate_limit_events']
 const REQUIRED_POLICIES = [
-  { table: 'photos', name: 'photos readable when album is open' },
+  // 'photos readable when album is open' was REMOVED on purpose, see
+  // supabase/migrations/20260814_close_photo_enumeration.sql. It let anyone holding the public anon
+  // key enumerate every photo on the platform without knowing an album link. Photos are served
+  // exclusively through the service-role client after server-side access checks. Do not re-add it.
   { table: 'subscriptions', name: 'users can read own subscription' },
 ]
+
+// Tables that must NOT be reachable with the public anon key. These are regression guards for real
+// leaks that shipped: photos (2951 rows enumerable), active_sessions (live album slugs).
+const MUST_DENY_ANON = ['photos', 'active_sessions', 'schema_migrations']
 
 const client = new pg.Client({ connectionString: connectionString(), ssl: { rejectUnauthorized: false } })
 await client.connect()
@@ -59,6 +66,12 @@ const pols = (await client.query(
   `select tablename, policyname from pg_policies where schemaname='public'`
 )).rows.map((r) => r.tablename + '::' + r.policyname)
 
+// Regression guard: these tables must not be selectable by the public anon key.
+const anonGrants = (await client.query(
+  `select table_name from information_schema.role_table_grants
+   where table_schema='public' and grantee='anon' and privilege_type='SELECT'`
+)).rows.map((r) => r.table_name)
+
 await client.end()
 
 const missing = []
@@ -68,6 +81,15 @@ for (const [table, columns] of Object.entries(REQUIRED_COLUMNS)) {
 }
 for (const f of REQUIRED_FUNCTIONS) if (!fns.has(f)) missing.push(`function ${f}()`)
 for (const p of REQUIRED_POLICIES) if (!pols.includes(p.table + '::' + p.name)) missing.push(`policy ${p.table} "${p.name}"`)
+
+// Exposure is drift too, and the more dangerous direction: a missing column breaks a page, but a
+// stray anon grant publishes customer data. Reported alongside the missing-things list.
+const exposed = MUST_DENY_ANON.filter((t) => anonGrants.includes(t))
+if (exposed.length) {
+  console.error('[check-db] SECURITY DRIFT - these tables are readable with the PUBLIC anon key:')
+  for (const t of exposed) console.error(`  !! ${t} - revoke select on ${t} from anon`)
+  process.exit(1)
+}
 
 if (missing.length) {
   console.error('[check-db] SCHEMA DRIFT — the live DB is missing:')

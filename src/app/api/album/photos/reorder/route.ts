@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { verifyOwnerViaCookieWithRateLimit } from '@/lib/album-owner-access'
 import { forbidCrossSiteRequest } from '@/lib/request-security'
+import { queueAlbumChangedBroadcast } from '@/lib/broadcast'
 
 export const runtime = 'nodejs'
 
@@ -62,6 +63,9 @@ export async function POST(req: Request) {
     console.error('[photos/reorder] RPC failed:', error.message)
     return NextResponse.json({ error: 'Could not reorder photos' }, { status: 500, headers: NO_STORE })
   }
+
+  // Reordering is an UPDATE; viewers pick it up via broadcast rather than postgres_changes.
+  queueAlbumChangedBroadcast(access.album.id)
 
   return NextResponse.json({ ok: true }, { headers: NO_STORE })
 }

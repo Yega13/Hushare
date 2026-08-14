@@ -6,6 +6,7 @@ import { r2KeyFromUrl } from '@/lib/album-delete'
 import { deleteStreamVideo } from '@/lib/cloudflare/stream'
 import { getCloudflareContext } from '@opennextjs/cloudflare'
 import { track } from '@/lib/analytics'
+import { queueAlbumChangedBroadcast } from '@/lib/broadcast'
 
 export const runtime = 'nodejs'
 
@@ -125,6 +126,12 @@ export async function POST(req: Request) {
   }
 
   track({ name: 'media_deleted', albumId: access.album.id, count: 1 })
+
+  // Tell open viewers to refetch. Deletions used to reach them via a postgres_changes listener,
+  // which required granting anon SELECT on `photos` — and that grant allowed anyone holding the
+  // public anon key to enumerate every photo on the platform. Broadcast carries no row data, so
+  // it needs no table access at all.
+  queueAlbumChangedBroadcast(access.album.id)
 
   return NextResponse.json({ ok: true }, { headers: NO_STORE })
 }
