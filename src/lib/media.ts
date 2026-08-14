@@ -35,7 +35,7 @@ export const ANON_ALBUM_MEDIA = 250   // album owned by a guest (no account)
 // rather than a rounding error. Photos are cheap in R2 (no egress); video is the cost driver and
 // shares this cap deliberately, so a video-heavy album still stops early.
 export const FREE_ALBUM_MEDIA = 1000  // registered free account
-export const PRO_ALBUM_MEDIA = 2500
+export const PRO_ALBUM_MEDIA = 3000
 export const STUDIO_ALBUM_MEDIA = 10_000
 
 // Cap for a REGISTERED owner by tier. Guest albums use ANON_ALBUM_MEDIA directly (see photos/create).

@@ -1009,6 +1009,9 @@ export default function AlbumPageClient({ initialAlbum = null, initialPhotos, in
 
         <div className="hush-container pb-6">
           <PhotoGrid
+            // The unfiltered count: bib search narrows `visiblePhotos`, and without this the grid
+            // would collapse to one wide column whenever a search matched a single photo.
+            albumPhotoCount={photos.length}
             album={album}
             photos={visiblePhotos}
             isOwner={effectiveIsOwner}
