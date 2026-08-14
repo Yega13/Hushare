@@ -326,7 +326,9 @@ export default function AlbumDesigner({ album, photos, onAlbumUpdated, onClose }
         <div
           className="hush-designer-preview"
           style={{
-            flex: '1 1 460px', minWidth: 300,
+            // minWidth 0, not 300: a hard px floor on a flex child stops it shrinking and pushes
+            // the whole designer wider than a small phone, which scrolls the page sideways.
+            flex: '1 1 460px', minWidth: 0,
             ...bgColorStyle,
             ...(bgImageUrl ? { backgroundImage: `url("${bgImageUrl}")`, backgroundSize: 'cover', backgroundPosition: 'center' } : {}),
             '--album-font': fontStack(album.title_font),
@@ -366,12 +368,14 @@ export default function AlbumDesigner({ album, photos, onAlbumUpdated, onClose }
         </div>
 
         {/* Controls rail */}
-        <div className="hush-designer-rail" style={{ flex: '1 1 340px', minWidth: 300, maxWidth: 420, background: '#FFFFFF', borderLeft: `1px solid ${BORDER}`, padding: '4px 18px 40px' }}>
+        {/* borderLeft and maxWidth live in album.css now: stacked on a phone this pane is full
+            width, where a left border is just a stray vertical line and a 420px cap does nothing. */}
+        <div className="hush-designer-rail" style={{ flex: '1 1 340px', minWidth: 0, background: '#FFFFFF' }}>
 
           {/* Font */}
           <div style={section}>
             <p style={label}>{t('ot.font')}</p>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 8 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(52px, 1fr))', gap: 8 }}>
               {ALBUM_FONTS.map((f) => {
                 const on = currentFont === f.key
                 return (
@@ -388,7 +392,7 @@ export default function AlbumDesigner({ album, photos, onAlbumUpdated, onClose }
           {/* Photo style */}
           <div style={section}>
             <p style={label}>{t('ad.photoStyle')}</p>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 8 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(64px, 1fr))', gap: 8 }}>
               {ALBUM_PHOTO_STYLES.map((s) => {
                 const on = currentStyle === s.key
                 const r = photoStyleTile(s.key === 'default' ? null : s.key, 10).radius
@@ -408,7 +412,7 @@ export default function AlbumDesigner({ album, photos, onAlbumUpdated, onClose }
             <p style={label}>{t('ot.albumColor')}</p>
             {/* One row by default — the full 24-colour grid was the tallest thing in the panel and
                 pushed everything else below the fold. "More" reveals the rest. */}
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(8, 1fr)', gap: 6, marginBottom: 10 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(38px, 1fr))', gap: 6, marginBottom: 10 }}>
               {(showAllAccents ? ACCENT_PALETTE : ACCENT_PALETTE.slice(0, 7)).map((c) => {
                 const on = currentAccent.toLowerCase() === c.toLowerCase()
                 return (
@@ -596,7 +600,7 @@ export default function AlbumDesigner({ album, photos, onAlbumUpdated, onClose }
                 </div>
               </>
             )}
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 6, maxHeight: 264, overflowY: 'auto', paddingRight: 2 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(52px, 1fr))', gap: 6, maxHeight: 264, overflowY: 'auto', paddingRight: 2 }}>
               <button type="button" onClick={() => setCover(null)} title={t('ad.none')}
                 style={{ aspectRatio: '1', borderRadius: 8, background: '#F5F0E8', border: (!album.cover_photo_id && !album.header_image) ? `2px solid ${BRAND}` : `1.5px solid ${BORDER}`, cursor: 'pointer', fontSize: 9, color: MUTED }}>{t('ad.none')}</button>
               <button
@@ -670,7 +674,7 @@ export default function AlbumDesigner({ album, photos, onAlbumUpdated, onClose }
           {/* Background */}
           <div style={{ ...section, borderBottom: 'none' }}>
             <p style={label}>{t('ad.background')}</p>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(8, 1fr)', gap: 6, marginBottom: 10 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(38px, 1fr))', gap: 6, marginBottom: 10 }}>
               {PRESETS.map((preset) => (
                 <button key={preset.value} type="button" title={preset.label} onClick={() => setBackground(preset.value)}
                   style={{ aspectRatio: '1', borderRadius: 8, background: preset.value, border: bgTheme === preset.value ? `2px solid ${BRAND}` : `1.5px solid ${BORDER}`, cursor: 'pointer' }} />
@@ -691,7 +695,7 @@ export default function AlbumDesigner({ album, photos, onAlbumUpdated, onClose }
               </div>
             )}
 
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 6, maxHeight: 264, overflowY: 'auto', paddingRight: 2 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(52px, 1fr))', gap: 6, maxHeight: 264, overflowY: 'auto', paddingRight: 2 }}>
               <button
                 type="button"
                 onClick={() => bgFileInputRef.current?.click()}

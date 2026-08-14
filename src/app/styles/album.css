@@ -533,3 +533,29 @@
   from { opacity: 0; }
   to   { opacity: 1; }
 }
+
+/* ── Album Designer: mobile ───────────────────────────────────────────────────
+   The settings rail and the preview stack on a phone. Everything that only makes
+   sense side by side (the dividing border, the 420px cap) is applied at the
+   breakpoint rather than inline, so the stacked layout isn't left wearing it. */
+.hush-designer-rail {
+  padding: 4px clamp(12px, 4vw, 18px) 40px;
+  border-top: 1px solid #DDD5C5;
+}
+
+@media (min-width: 900px) {
+  .hush-designer-rail {
+    max-width: 420px;
+    border-top: none;
+    border-left: 1px solid #DDD5C5;
+  }
+}
+
+/* Nothing inside the designer may push the page sideways. A single overflowing
+   swatch row is enough to make every screen feel broken on a phone. */
+.hush-designer-body,
+.hush-designer-rail,
+.hush-designer-preview {
+  max-width: 100%;
+  min-width: 0;
+}
