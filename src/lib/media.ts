@@ -28,8 +28,13 @@ export const DEFAULT_UPLOAD_CAPS: UploadCaps = uploadCapsForTier('free')
 
 // Max total media (photos + videos) in ONE album.
 // A guest album (no account) gets less than a registered free account — a nudge to sign up.
-export const ANON_ALBUM_MEDIA = 150   // album owned by a guest (no account)
-export const FREE_ALBUM_MEDIA = 250   // registered free account
+export const ANON_ALBUM_MEDIA = 250   // album owned by a guest (no account)
+// 1000, not 250. The free cap sat 100 above the anonymous one, so creating an account
+// bought a hundred more photos -- no reason to sign up, and a second wall the same afternoon.
+// A real holiday or small event now finishes inside the free tier, and registering is a 4x jump
+// rather than a rounding error. Photos are cheap in R2 (no egress); video is the cost driver and
+// shares this cap deliberately, so a video-heavy album still stops early.
+export const FREE_ALBUM_MEDIA = 1000  // registered free account
 export const PRO_ALBUM_MEDIA = 2500
 export const STUDIO_ALBUM_MEDIA = 10_000
 

@@ -1210,8 +1210,10 @@ async function saveUploadedRows(albumId: string, rows: PhotoRow[]): Promise<{ wa
     body: JSON.stringify({ albumId, photos: rows }),
   })
   if (!res.ok) {
-    const err = await res.json().catch(() => ({})) as { error?: string }
-    throw new Error(err.error ?? `Save failed (${res.status})`)
+    const err = await res.json().catch(() => ({})) as { error?: string; code?: string }
+    // Carry the server's code so callers can tell an expected refusal (album full) from a genuine
+    // failure, without string-matching an English message.
+    throw Object.assign(new Error(err.error ?? `Save failed (${res.status})`), { code: err.code })
   }
   const data = await res.json().catch(() => ({})) as { warning?: string }
   return { warning: data.warning }
@@ -1293,7 +1295,7 @@ const SAVE_DEBOUNCE_MS = 2500
 function createRowSaver(
   albumId: string,
   onSaved: (entryIds: string[]) => void,
-  onFailed: (entryIds: string[], message: string) => void,
+  onFailed: (entryIds: string[], message: string, code?: string) => void,
   onWarning?: (message: string) => void,
 ) {
   let queue: { row: PhotoRow; entryId: string }[] = []
@@ -1315,7 +1317,7 @@ function createRowSaver(
         onSaved(batch.map(b => b.entryId))
         if (warning && !warned) { warned = true; onWarning?.(warning) }
       } catch (e) {
-        onFailed(batch.map(b => b.entryId), e instanceof Error ? e.message : 'Failed to save')
+        onFailed(batch.map(b => b.entryId), e instanceof Error ? e.message : 'Failed to save', (e as { code?: string })?.code)
       }
     })
   }
@@ -1465,10 +1467,16 @@ export default function UploadZone({ album, userTier, onPhotosUploaded }: Props)
     const saver = createRowSaver(
       album.id,
       (ids) => { for (const id of ids) patchEntry(id, { status: 'done', progress: 100 }) },
-      (ids, msg) => {
-        for (const id of ids) patchEntry(id, { status: 'error', error: `Uploaded, but saving to the album failed: ${msg}` })
-        // Report — this is the worst kind of failure (bytes in storage, no album row = orphaned).
-        reportClientEvent('error', 'save', msg, album.id, { count: ids.length })
+      (ids, msg, code) => {
+        // A full album is a REFUSAL, not a fault. It was reported at 'error' with the scary
+        // "saving failed" prefix, which (a) told the guest their photos broke when the album was
+        // simply full, and (b) flooded /admin -- 39 of ~60 events in one day were this, burying
+        // the genuine failures. Real save errors still report as errors.
+        const full = code === 'album_full'
+        for (const id of ids) {
+          patchEntry(id, { status: 'error', error: full ? msg : `Uploaded, but saving to the album failed: ${msg}` })
+        }
+        reportClientEvent(full ? 'warn' : 'error', full ? 'album-full' : 'save', msg, album.id, { count: ids.length })
       },
       // Over-limit nag (once per upload session): the server flags albums past the free allowance.
       (msg) => showAppToast(msg, 'success'),
