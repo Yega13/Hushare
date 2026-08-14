@@ -142,6 +142,39 @@ export async function saveMediaSettingsRequest(
   }
 }
 
+// Last-resort byte recovery for Android gallery/camera files.
+//
+// readFileRobust() covers arrayBuffer(), FileReader and blob-URL fetch. On some Android devices a
+// picked file is "displayable but not byte-readable": every one of those paths fails, yet an <img>
+// element renders it perfectly. Drawing that <img> to a canvas produces fresh, valid bytes.
+// UploadZone already relies on this to fix the identical "Could not read this file" failure for
+// photo uploads; the logo and background pickers never got it, so choosing a logo on an Android
+// phone simply failed with no way forward.
+async function bytesViaCanvas(file: File): Promise<ArrayBuffer | null> {
+  const url = URL.createObjectURL(file)
+  try {
+    const img = await new Promise<HTMLImageElement | null>((resolve) => {
+      const el = new Image()
+      el.onload = () => resolve(el)
+      el.onerror = () => resolve(null)
+      el.src = url
+    })
+    if (!img || !img.naturalWidth) return null
+    const canvas = document.createElement('canvas')
+    canvas.width = img.naturalWidth
+    canvas.height = img.naturalHeight
+    const ctx = canvas.getContext('2d')
+    if (!ctx) return null
+    ctx.drawImage(img, 0, 0)
+    const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/png'))
+    return blob ? await blob.arrayBuffer() : null
+  } catch {
+    return null
+  } finally {
+    URL.revokeObjectURL(url)
+  }
+}
+
 export async function uploadBackgroundRequest(
   slug: string,
   file: File,
@@ -151,12 +184,23 @@ export async function uploadBackgroundRequest(
   // request body — surfacing as the "Failed to fetch" error. Reading into an in-memory Blob
   // (with retries + FileReader fallback) makes the upload immune to that.
   let bytes: ArrayBuffer
+  let recoveredType: string | null = null
   try {
     bytes = await readFileRobust(file)
   } catch {
-    return { ok: false, error: 'Could not read this image from your device. Please pick it again.' }
+    // Android "displayable but not byte-readable" file — recover the pixels via canvas rather than
+    // dead-ending the owner with an error they cannot act on.
+    const recovered = await bytesViaCanvas(file)
+    if (!recovered) {
+      return { ok: false, error: 'Could not read this image from your device. Please pick it again.' }
+    }
+    bytes = recovered
+    // The canvas re-encodes to PNG, so the blob must be labelled PNG. Keeping the original type
+    // (e.g. image/heic) would send PNG bytes under the wrong content type and the server's type
+    // check would reject them — swapping one failure for another.
+    recoveredType = 'image/png'
   }
-  const blob = new Blob([bytes], { type: file.type })
+  const blob = new Blob([bytes], { type: recoveredType ?? file.type })
 
   // Step 1: get a presigned PUT URL from the server
   const presignRes = await fetch('/api/album/background/upload', {
@@ -239,12 +283,23 @@ async function uploadImageViaPresign(
   file: File,
 ): Promise<{ ok: true; url: string } | { ok: false; error: string }> {
   let bytes: ArrayBuffer
+  let recoveredType: string | null = null
   try {
     bytes = await readFileRobust(file)
   } catch {
-    return { ok: false, error: 'Could not read this image from your device. Please pick it again.' }
+    // Android "displayable but not byte-readable" file — recover the pixels via canvas rather than
+    // dead-ending the owner with an error they cannot act on.
+    const recovered = await bytesViaCanvas(file)
+    if (!recovered) {
+      return { ok: false, error: 'Could not read this image from your device. Please pick it again.' }
+    }
+    bytes = recovered
+    // The canvas re-encodes to PNG, so the blob must be labelled PNG. Keeping the original type
+    // (e.g. image/heic) would send PNG bytes under the wrong content type and the server's type
+    // check would reject them — swapping one failure for another.
+    recoveredType = 'image/png'
   }
-  const blob = new Blob([bytes], { type: file.type })
+  const blob = new Blob([bytes], { type: recoveredType ?? file.type })
 
   const presignRes = await fetch(presignEndpoint, {
     method: 'POST',
