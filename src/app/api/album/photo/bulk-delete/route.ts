@@ -6,6 +6,7 @@ import { r2KeyFromUrl } from '@/lib/album-delete'
 import { deleteStreamVideo } from '@/lib/cloudflare/stream'
 import { getCloudflareContext } from '@opennextjs/cloudflare'
 import { track } from '@/lib/analytics'
+import { queueAlbumChangedBroadcast } from '@/lib/broadcast'
 
 export const runtime = 'nodejs'
 
@@ -147,6 +148,9 @@ export async function POST(req: Request) {
   ))
 
   track({ name: 'media_deleted', albumId: access.album.id, count: validPhotos.length })
+
+  // See the note in photo/delete: viewers refresh via broadcast so `photos` needs no anon grant.
+  queueAlbumChangedBroadcast(access.album.id)
 
   return NextResponse.json({ ok: true, deleted: validPhotos.length }, { headers: NO_STORE })
 }

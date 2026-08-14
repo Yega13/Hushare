@@ -35,56 +35,6 @@ const AlbumDesigner = dynamic(() => import('@/components/AlbumDesigner'))
 
 const SITE_ORIGIN = (process.env.NEXT_PUBLIC_SITE_URL ?? 'https://hushare.space').replace(/\/+$/, '')
 
-// ─── Realtime row sanitization ────────────────────────────────────────────────
-// Realtime delivers the raw Postgres row (all columns). We enumerate explicitly
-// to avoid leaking future columns to the client and to block javascript:/data: URLs.
-
-function _safeStr(v: unknown): string | null { return typeof v === 'string' ? v : null }
-function _safeInt(v: unknown): number | null { return typeof v === 'number' && Number.isFinite(v) ? Math.trunc(v) : null }
-function _safeHttpsUrl(v: unknown): string | null {
-  const s = _safeStr(v); return s && s.startsWith('https://') ? s : null
-}
-const VALID_FILTERS = new Set(['none', 'warm', 'cool', 'mono', 'vintage', 'soft'] as const)
-type MediaDisplayFilter = 'none' | 'warm' | 'cool' | 'mono' | 'vintage' | 'soft'
-function _safeFilter(v: unknown): MediaDisplayFilter | null {
-  const s = _safeStr(v)
-  return s && VALID_FILTERS.has(s as MediaDisplayFilter) ? (s as MediaDisplayFilter) : null
-}
-
-function sanitizeRealtimePhoto(row: Record<string, unknown>, expectedAlbumId: string): Photo | null {
-  if (_safeStr(row.album_id) !== expectedAlbumId) return null
-  const id = _safeStr(row.id)
-  if (!id) return null
-  return {
-    id,
-    album_id: expectedAlbumId,
-    media_type: row.media_type === 'video' ? 'video' : 'image',
-    storage_backend: row.storage_backend === 'stream' ? 'stream' : 'r2',
-    created_at: _safeStr(row.created_at) ?? '',
-    storage_path: _safeStr(row.storage_path),
-    url: _safeHttpsUrl(row.url),
-    thumb_url: _safeHttpsUrl(row.thumb_url),
-    stream_uid: _safeStr(row.stream_uid),
-    stream_iframe_url: _safeHttpsUrl(row.stream_iframe_url),
-    stream_thumbnail_url: _safeHttpsUrl(row.stream_thumbnail_url),
-    poster_url: _safeHttpsUrl(row.poster_url),
-    caption: _safeStr(row.caption),
-    author_name: _safeStr(row.author_name),
-    sort_order: _safeInt(row.sort_order),
-    display_radius: _safeInt(row.display_radius),
-    display_filter: _safeFilter(row.display_filter),
-    duration_seconds: _safeInt(row.duration_seconds),
-    width: _safeInt(row.width),
-    height: _safeInt(row.height),
-    face_ids: Array.isArray(row.face_ids)
-      ? (row.face_ids as unknown[]).filter((x): x is string => typeof x === 'string')
-      : null,
-    bib_numbers: Array.isArray(row.bib_numbers)
-      ? (row.bib_numbers as unknown[]).filter((x): x is string => typeof x === 'string')
-      : null,
-  }
-}
-
 // ─── Component ────────────────────────────────────────────────────────────────
 
 type InitialGate =
@@ -604,28 +554,15 @@ export default function AlbumPageClient({ initialAlbum = null, initialPhotos, in
             void fetchPhotos(albumId).then(r => { if (active) applyWindowRefresh(r) })
           }, 500)
         })
-        .on('postgres_changes', {
-          event: 'DELETE',
-          schema: 'public',
-          table: 'photos',
-          filter: `album_id=eq.${albumId}`,
-        }, ({ old: deleted }) => {
-          if (!active) return
-          const deletedId = (deleted as Record<string, unknown>)?.id
-          if (typeof deletedId !== 'string') return
-          setPhotos(prev => prev.filter(p => p.id !== deletedId))
-        })
-        .on('postgres_changes', {
-          event: 'UPDATE',
-          schema: 'public',
-          table: 'photos',
-          filter: `album_id=eq.${albumId}`,
-        }, ({ new: updated }) => {
-          if (!active) return
-          const photo = sanitizeRealtimePhoto(updated as Record<string, unknown>, albumId)
-          if (!photo || !photo.id) return
-          setPhotos(prev => prev.map(p => p.id === photo.id ? photo : p))
-        })
+        // DELETE and UPDATE used to arrive on postgres_changes for instant per-row feedback. They
+        // no longer do, and this is a SECURITY fix rather than a refactor: Supabase only delivers
+        // postgres_changes to a client that can SELECT the table under RLS, so supporting it meant
+        // granting anon SELECT on `photos`. The anon key ships in the page source, so that grant let
+        // anyone enumerate every photo on the platform — 2,951 rows with working URLs — without
+        // knowing a single album link. The grant is gone; delete/reorder/settings now emit the same
+        // contentless `changed` broadcast that uploads already used, and the debounced refetch above
+        // applies them. Costs a sub-second delay on the owner's own action. Do not reintroduce
+        // postgres_changes here without a way to scope table reads to one album.
         .subscribe(status => {
           if (!active) return
           if (status === 'SUBSCRIBED') {
