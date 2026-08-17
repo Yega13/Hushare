@@ -173,7 +173,48 @@ export default function PrivacyPage() {
           physically possible to run the service.
         </p>
 
-        <Section id="what-we-collect" number={1} heading="What we collect">
+        <Section id="who-we-are" number={1} heading="Who we are">
+          <p>
+            Hushare is not a company. It is an independent project built and run
+            by one person in <strong style={INK}>Yerevan, Armenia</strong>, and
+            under data-protection law that person is the data controller - the
+            one who is accountable for what happens to your data. We would
+            rather say that plainly than dress it up in corporate language,
+            because you should know exactly who you are dealing with.
+          </p>
+          <p className="mt-3">
+            What that means in practice: there is no legal department and no
+            ticket queue. Privacy questions, deletion requests, and complaints
+            all go to{' '}
+            <a
+              href="mailto:husharesupport@gmail.com"
+              style={{ color: '#630826', textDecoration: 'underline', textDecorationStyle: 'dotted' }}
+            >
+              husharesupport@gmail.com
+            </a>{' '}
+            and are read by the person who wrote the code. We reply within{' '}
+            <strong style={INK}>five working days</strong> and finish what you
+            asked for within <strong style={INK}>one month</strong>, which is the
+            deadline the GDPR sets. If something is genuinely complicated and
+            will take longer, we will tell you inside that first month and
+            explain why.
+          </p>
+          <p className="mt-3">
+            <strong style={INK}>Who decides what happens to an album.</strong>{' '}
+            If you create an album, you decide what it is for, who gets the
+            link, what is switched on, and how long it lasts - in the language
+            of the GDPR you are the controller of the photographs inside it, and
+            we handle them on your instructions. We decide things on our own
+            account for a narrower set: accounts, payments, security and abuse
+            records, aggregate counts of how the service is used, and support
+            correspondence. If you are running an event and your own legal team
+            needs that written down as an agreement, ask and we will put it in
+            writing - but we will not pretend to be a corporate entity we are
+            not.
+          </p>
+        </Section>
+
+        <Section id="what-we-collect" number={2} heading="What we collect">
           <ul className="list-disc pl-5 space-y-2">
             <li>
               <strong style={INK}>Album title</strong> - the name you give your album.
@@ -201,17 +242,21 @@ export default function PrivacyPage() {
           </ul>
           <p className="mt-3">
             Creating and sharing an album needs{' '}
-            <strong style={INK}>no account at all</strong> - that path collects
-            nothing above. If you choose to sign in (by email link or Google) to
+            <strong style={INK}>no account at all</strong> - and on that path
+            we hold nothing that identifies you personally: no name, no email,
+            no password. The technical records above (an address your requests
+            came from, which page is open) still exist, because a website
+            cannot run without them. If you choose to sign in (by email link or Google) to
             keep your albums together or to subscribe, we store your email
             address and, where Google supplies it, your name and profile
             picture. We never ask for a phone number, and we run no advertising
-            networks and no identity-based profiling. See section 5 for the one
-            third-party measurement tool we do use.
+            networks and no identity-based profiling. Section 4 lists every outside
+            company that touches any of it, and section 6 covers what is stored
+            in your own browser.
           </p>
         </Section>
 
-        <Section id="how-we-use" number={2} heading="How we use it">
+        <Section id="how-we-use" number={3} heading="How we use it">
           <ul className="list-disc pl-5 space-y-2">
             <li>To create, store, and display your albums.</li>
             <li>
@@ -225,7 +270,7 @@ export default function PrivacyPage() {
           </ul>
         </Section>
 
-        <Section id="third-parties" number={3} heading="Third-party processors">
+        <Section id="third-parties" number={4} heading="Third-party processors">
           <p>
             To run Hushare we use a small, vetted set of infrastructure
             providers:
@@ -264,7 +309,21 @@ export default function PrivacyPage() {
             <li>
               <strong style={INK}>Google Analytics</strong> - measures how
               people arrive at Hushare&apos;s public pages. It never receives
-              your photos or the contents of an album. See section 5.
+              your photos, the contents of an album, or an album&apos;s address.
+              See section 6.
+            </li>
+            <li>
+              <strong style={INK}>Cloudflare Workers AI</strong> - the assistant
+              in the help bubble. What you type into it is sent to a language
+              model running on Cloudflare&apos;s network to write a reply. It
+              never sees your photos. Please don&apos;t type anything into it
+              you would mind us reading, because if you ask to be put through to
+              a person, the conversation is emailed to us.
+            </li>
+            <li>
+              <strong style={INK}>Google (Gmail)</strong> - our support inbox. If
+              you email us, report something, or ask the assistant for a human,
+              that message is stored in a Google mailbox.
             </li>
           </ul>
           <p className="mt-3">
@@ -273,7 +332,7 @@ export default function PrivacyPage() {
           </p>
         </Section>
 
-        <Section id="face-search" number={4} heading="Face search and race numbers">
+        <Section id="face-search" number={5} heading="Face search and race numbers">
           <p>
             Two optional features read the contents of photos. Both are{' '}
             <strong style={INK}>off by default</strong> and only ever run if the
@@ -313,7 +372,7 @@ export default function PrivacyPage() {
           </p>
         </Section>
 
-        <Section id="cookies" number={5} heading="Cookies and local storage">
+        <Section id="cookies" number={6} heading="Cookies and local storage">
           <p>
             Hushare stores a small amount of data in your own browser, and one
             item of it is genuinely sensitive:
@@ -355,7 +414,7 @@ export default function PrivacyPage() {
           </p>
         </Section>
 
-        <Section id="sharing" number={6} heading="Who can see your album">
+        <Section id="sharing" number={7} heading="Who can see your album">
           <p>
             Albums are <strong style={INK}>unlisted</strong>. They are not
             indexed by search engines, cannot be browsed from the site, and
@@ -374,20 +433,24 @@ export default function PrivacyPage() {
           </p>
         </Section>
 
-        <Section id="retention" number={7} heading="How long we keep things">
+        <Section id="retention" number={8} heading="How long we keep things">
           <p>
             Free albums are retained for as long as they remain active. If an
             album sits untouched by everyone for <strong style={INK}>1 year</strong>,
             it is automatically retired and its media is permanently deleted.
-            We email a warning first, so you can download everything before that
-            happens. Paid plans are not subject to the inactivity rule: those
+            If the album is attached to a Hushare account we email that
+            account a warning first, so there is time to download everything.
+            If it was created without an account - the default, and the way most
+            albums are made - we have no address to write to, and no warning is
+            possible. That is the trade for not asking you to sign up, and it is
+            the reason we suggest attaching an album you want to keep. Paid plans are not subject to the inactivity rule: those
             albums are kept while the subscription is active and for a further
             year after it ends. You may request deletion of your album at any
-            time by emailing us - see section 12.
+            time by emailing us - see section 14.
           </p>
         </Section>
 
-        <Section id="rights" number={8} heading="Your rights">
+        <Section id="rights" number={9} heading="Your rights">
           <p>
             Depending on where you live (GDPR in the EU/UK, CCPA in
             California, and equivalent regimes elsewhere), you have the
@@ -416,7 +479,7 @@ export default function PrivacyPage() {
           </p>
         </Section>
 
-        <Section id="children" number={9} heading="Children">
+        <Section id="children" number={10} heading="Children">
           <p>
             Hushare is not aimed at children under 13 (or the equivalent
             minimum age where you live) as{' '}
@@ -445,12 +508,15 @@ export default function PrivacyPage() {
           <p className="mt-3">
             We ask one thing specifically:{' '}
             <strong style={INK}>
-              do not switch on face search for an album that is mainly of
-              children
-            </strong>
-            . It is biometric processing, it is off unless someone deliberately
-            enables it, and doing so for minors needs a better reason than
-            convenience.
+              do not switch on face search for any album in which children
+              appear
+            </strong>{' '}
+            - a school event, a family album, or a race with a junior category.
+            If children are a small part of an event you are otherwise entitled
+            to run face search on, either leave it off or remove their photos
+            before enabling it. If you cannot separate them, leave it off.
+            Race-number search reads junior bibs perfectly well and creates no
+            biometric data at all.
           </p>
           <p className="mt-3">
             A parent or guardian can ask us to take down a photograph of their
@@ -468,7 +534,7 @@ export default function PrivacyPage() {
           </p>
         </Section>
 
-        <Section id="transfers" number={10} heading="International data transfers">
+        <Section id="transfers" number={11} heading="International data transfers">
           <p>
             Hushare is built in Armenia and runs on infrastructure in several
             countries, so your data is processed outside the country you live
@@ -488,7 +554,7 @@ export default function PrivacyPage() {
           </p>
         </Section>
 
-        <Section id="security" number={11} heading="Security">
+        <Section id="security" number={12} heading="Security">
           <p>
             Your photos are encrypted on the way to us and while they sit on
             our providers&apos; servers. An album can only be opened by someone
@@ -501,7 +567,7 @@ export default function PrivacyPage() {
           </p>
         </Section>
 
-        <Section id="changes" number={12} heading="Changes to this policy">
+        <Section id="changes" number={13} heading="Changes to this policy">
           <p>
             We will post updates here. The &ldquo;Last updated&rdquo; date at
             the top reflects the most recent change. Material changes will be
@@ -509,7 +575,7 @@ export default function PrivacyPage() {
           </p>
         </Section>
 
-        <Section id="contact" number={13} heading="Contact">
+        <Section id="contact" number={14} heading="Contact">
           <p>
             Questions, requests, complaints - all of it comes to one
             address:{' '}
