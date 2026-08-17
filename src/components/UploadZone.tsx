@@ -706,25 +706,56 @@ async function fetchWithRetry(
 
 // The old policy threw on ANY HTTP error — including R2's transient 500/502/503s, which are
 // exactly the errors a retry fixes. Only 4xx (bad/expired signature, too large) is deterministic.
+// The byte transfer gets MORE patience than the control plane, not less.
+//
+// Measured on 2026-08-17: a guest on Android lost 25 photos in 61 seconds. The presign calls had
+// already been given a wall-clock deadline, but this function had not — it was still a fixed 5
+// attempts, about 7.5 seconds of tolerance, so a minute-long drop killed every transfer in flight
+// while the deadline logic sat one layer above doing nothing for them.
+//
+// Being generous here is close to free: the bytes are already in memory and the R2 key is fixed
+// and immutable, so re-PUTting is idempotent — the only cost of waiting is time, while the cost of
+// giving up is a photo the guest believed they had handed over.
+const PUT_DEADLINE_MS = 120_000
+
 async function putWithRetry(
   url: string,
   body: Blob,
   contentType: string,
   onProgress: (pct: number) => void,
   signal?: AbortSignal,
-  attempts = 5,
+  deadlineMs = PUT_DEADLINE_MS,
 ): Promise<void> {
+  const deadline = Date.now() + deadlineMs
   let lastErr: Error | null = null
-  for (let attempt = 0; attempt < attempts; attempt++) {
+  let attempt = 0
+  for (;;) {
     if (signal?.aborted) throw new DOMException('Upload aborted', 'AbortError')
-    if (attempt > 0) await new Promise(r => setTimeout(r, backoffDelay(attempt)))
+    if (attempt > 0) {
+      const wait = backoffDelay(attempt) * (0.5 + Math.random() * 0.5)
+      if (Date.now() + wait >= deadline) break
+      await new Promise(r => setTimeout(r, wait))
+    }
+    attempt++
     try {
       await xhrPut('PUT', url, body, contentType, onProgress, signal)
       return
     } catch (e) {
       if (e instanceof DOMException && e.name === 'AbortError') throw e
+      // R2 answered and refused — a signature or size problem no amount of waiting fixes.
       if (e instanceof HttpError && e.status < 500) throw e
       lastErr = e instanceof Error ? e : new Error(String(e))
+      if (Date.now() >= deadline) break
+      // No response at all: wait for the connection rather than spending attempts on a dead one.
+      if (!(e instanceof HttpError)) {
+        let probe = 0
+        while (Date.now() < deadline && !signal?.aborted && !(await originReachable())) {
+          probe++
+          const wait = Math.min(5000, 1000 * probe) * (0.5 + Math.random() * 0.5)
+          if (Date.now() + wait >= deadline) break
+          await new Promise(r => setTimeout(r, wait))
+        }
+      }
     }
   }
   throw lastErr ?? new Error('Upload failed')
@@ -744,7 +775,6 @@ let imageNetworkNeedsRelay = false
 // Every relay attempt re-runs the FULL server-side authorization chain (both rate-limit checks +
 // album/tier lookups) — unlike a direct PUT retry, which just re-sends bytes to an already-signed
 // URL. Capped lower than putWithRetry's 5 attempts to avoid multiplying DB load across retries.
-const IMAGE_RELAY_ATTEMPTS = 2
 
 async function relayUploadImage(
   albumId: string,
@@ -756,10 +786,20 @@ async function relayUploadImage(
   signal?: AbortSignal,
 ): Promise<{ key: string; publicUrl: string }> {
   const url = `/api/upload/image-relay?albumId=${encodeURIComponent(albumId)}&fileName=${encodeURIComponent(fileName)}&contentType=${encodeURIComponent(contentType)}&isThumb=${isThumb ? '1' : '0'}`
+  // Deadline-driven for the same reason as the direct path: this is the LAST route the bytes have,
+  // so two quick attempts meant a connection blip discarded a photo that was already in memory and
+  // already authorized. Same key derivation server-side on every attempt, so retrying is safe.
+  const deadline = Date.now() + PUT_DEADLINE_MS
   let lastErr: Error | null = null
-  for (let attempt = 0; attempt < IMAGE_RELAY_ATTEMPTS; attempt++) {
+  let attempt = 0
+  for (;;) {
     if (signal?.aborted) throw new DOMException('Upload aborted', 'AbortError')
-    if (attempt > 0) await new Promise(r => setTimeout(r, backoffDelay(attempt)))
+    if (attempt > 0) {
+      const wait = backoffDelay(attempt) * (0.5 + Math.random() * 0.5)
+      if (Date.now() + wait >= deadline) break
+      await new Promise(r => setTimeout(r, wait))
+    }
+    attempt++
     try {
       const text = await xhrPut('POST', url, body, contentType, onProgress, signal)
       return JSON.parse(text) as { key: string; publicUrl: string }
@@ -769,6 +809,16 @@ async function relayUploadImage(
       // mirroring putWithRetry's policy for the direct path.
       if (e instanceof HttpError && e.status < 500) throw e
       lastErr = e instanceof Error ? e : new Error(String(e))
+      if (Date.now() >= deadline) break
+      if (!(e instanceof HttpError)) {
+        let probe = 0
+        while (Date.now() < deadline && !signal?.aborted && !(await originReachable())) {
+          probe++
+          const wait = Math.min(5000, 1000 * probe) * (0.5 + Math.random() * 0.5)
+          if (Date.now() + wait >= deadline) break
+          await new Promise(r => setTimeout(r, wait))
+        }
+      }
     }
   }
   throw lastErr ?? new Error('Relay upload failed')
