@@ -501,12 +501,16 @@ export default function AlbumDesigner({ album, photos, onAlbumUpdated, onClose }
                         style={{ position: 'absolute', top: -6, right: -6, width: 20, height: 20, borderRadius: '50%', background: BRAND, color: '#FDFAF5', border: '2px solid #FFFFFF', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
                         <X className="w-3 h-3" />
                       </button>
-                      {/* LEFT/RIGHT, not up/down: the strip is a horizontal row, so up-and-down
-                          chevrons described a movement that does not exist and nobody could tell
-                          what they were for. The first logo cannot move left and the last cannot
-                          move right, so with two sponsors one arrow in each pair is always
-                          disabled -- correct, but it reads as broken unless the target is big
-                          enough to feel deliberate. 28px is a real tap target; 14px was not. */}
+                      {/* Only rendered with two or more logos, because with ONE there is nothing to
+                          reorder and both arrows are necessarily disabled — which is exactly what
+                          "the arrows don't work" turned out to mean. A control that can never do
+                          anything should not be on screen.
+                          LEFT/RIGHT, not up/down: the strip is a horizontal row, so up-and-down
+                          chevrons described a movement that does not exist. The first logo still
+                          cannot move left and the last cannot move right, so one arrow of each pair
+                          is inert — at 28px with a visible surface that reads as deliberate, which
+                          a 14px bare icon did not. */}
+                      {album.sponsor_logos.length > 1 && (
                       <div style={{ display: 'flex', justifyContent: 'center', gap: 4, marginTop: 4 }}>
                         <button type="button" onClick={() => moveSponsor(s.id, -1)} disabled={i === 0}
                           title={t('ad.moveLeft')} aria-label={t('ad.moveLeft')}
@@ -519,6 +523,7 @@ export default function AlbumDesigner({ album, photos, onAlbumUpdated, onClose }
                           <ChevronRight className="w-4 h-4" />
                         </button>
                       </div>
+                      )}
                     </div>
                   ))}
                   {album.sponsor_logos.length < MAX_SPONSORS && (
