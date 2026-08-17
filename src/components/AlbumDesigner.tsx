@@ -1,7 +1,7 @@
 'use client'
 
 import { useCallback, useRef, useState, type CSSProperties } from 'react'
-import { Loader2, Plus, X, Play, ChevronUp, ChevronDown } from 'lucide-react'
+import { Loader2, Plus, X, Play, ChevronLeft, ChevronRight } from 'lucide-react'
 import type { Album, Photo, SponsorLogo, HeaderVideoMode } from '@/types'
 import AlbumHeader from '@/components/AlbumHeader'
 import HushColorPicker from '@/components/HushColorPicker'
@@ -501,14 +501,22 @@ export default function AlbumDesigner({ album, photos, onAlbumUpdated, onClose }
                         style={{ position: 'absolute', top: -6, right: -6, width: 20, height: 20, borderRadius: '50%', background: BRAND, color: '#FDFAF5', border: '2px solid #FFFFFF', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
                         <X className="w-3 h-3" />
                       </button>
-                      <div style={{ display: 'flex', justifyContent: 'center', gap: 2, marginTop: 3 }}>
-                        <button type="button" onClick={() => moveSponsor(s.id, -1)} disabled={i === 0} title={t('ad.moveUp')}
-                          style={{ background: 'none', border: 'none', cursor: i === 0 ? 'default' : 'pointer', color: i === 0 ? '#DDD5C5' : MUTED, padding: 0 }}>
-                          <ChevronUp className="w-3.5 h-3.5" />
+                      {/* LEFT/RIGHT, not up/down: the strip is a horizontal row, so up-and-down
+                          chevrons described a movement that does not exist and nobody could tell
+                          what they were for. The first logo cannot move left and the last cannot
+                          move right, so with two sponsors one arrow in each pair is always
+                          disabled -- correct, but it reads as broken unless the target is big
+                          enough to feel deliberate. 28px is a real tap target; 14px was not. */}
+                      <div style={{ display: 'flex', justifyContent: 'center', gap: 4, marginTop: 4 }}>
+                        <button type="button" onClick={() => moveSponsor(s.id, -1)} disabled={i === 0}
+                          title={t('ad.moveLeft')} aria-label={t('ad.moveLeft')}
+                          style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 28, height: 28, borderRadius: 7, background: i === 0 ? 'transparent' : '#F5F0E8', border: 'none', cursor: i === 0 ? 'default' : 'pointer', color: i === 0 ? '#E4DCCC' : BRAND, padding: 0, touchAction: 'manipulation' }}>
+                          <ChevronLeft className="w-4 h-4" />
                         </button>
-                        <button type="button" onClick={() => moveSponsor(s.id, 1)} disabled={i === album.sponsor_logos.length - 1} title={t('ad.moveDown')}
-                          style={{ background: 'none', border: 'none', cursor: i === album.sponsor_logos.length - 1 ? 'default' : 'pointer', color: i === album.sponsor_logos.length - 1 ? '#DDD5C5' : MUTED, padding: 0 }}>
-                          <ChevronDown className="w-3.5 h-3.5" />
+                        <button type="button" onClick={() => moveSponsor(s.id, 1)} disabled={i === album.sponsor_logos.length - 1}
+                          title={t('ad.moveRight')} aria-label={t('ad.moveRight')}
+                          style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 28, height: 28, borderRadius: 7, background: i === album.sponsor_logos.length - 1 ? 'transparent' : '#F5F0E8', border: 'none', cursor: i === album.sponsor_logos.length - 1 ? 'default' : 'pointer', color: i === album.sponsor_logos.length - 1 ? '#E4DCCC' : BRAND, padding: 0, touchAction: 'manipulation' }}>
+                          <ChevronRight className="w-4 h-4" />
                         </button>
                       </div>
                     </div>
