@@ -322,6 +322,8 @@ export const hy: Partial<Record<DictKey, string>> = {
   "uploadWall.retry": "Պահպանել",
   "uploadWall.saving": "Պահպանվում է…",
   "uploadWall.saved": "Պահպանվեց {n} լուսանկար։",
+  "uploadWall.failedTitle": "{n} լուսանկար վերբեռնվել է, բայց դեռ չի պահպանվել",
+  "uploadWall.failedBody": "Ֆայլերը հասել են մեզ — չի անցել միայն վերջին քայլը, սովորաբար կապի կարճ ընդհատման պատճառով։ Սեղմեք «Ավարտել պահպանումը», և դրանք կհայտնվեն։ Կրկին վերբեռնելու կարիք չկա։",
   'bib.tryFaceFinder': 'Գտնել ինձ դեմքով',
   'ad.zoom': 'Խոշորացում',
   'ad.videoPlayback': 'Տեսանյութի նվագարկում',

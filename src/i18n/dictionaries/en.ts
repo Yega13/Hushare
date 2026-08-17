@@ -335,6 +335,8 @@ export const en = {
   "uploadWall.retry": "Finish saving",
   "uploadWall.saving": "Saving…",
   "uploadWall.saved": "Saved {n} photos.",
+  "uploadWall.failedTitle": "{n} photos uploaded, not saved yet",
+  "uploadWall.failedBody": "Their files reached us safely — only the last step didn't go through, usually a brief connection drop. Tap Finish saving and they'll appear. Nothing needs uploading again.",
   'bib.tryFaceFinder': 'Find me by face',
   'ad.zoom': 'Zoom',
   'ad.videoPlayback': 'Video playback',

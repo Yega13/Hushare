@@ -1461,8 +1461,16 @@ export default function UploadZone({ album, userTier, onPhotosUploaded }: Props)
   const [isUploading, setIsUploading] = useState(false)
   // Rows the server refused because the album is full. Their bytes are already in R2, so finishing
   // them after the owner registers costs a single request rather than a re-upload.
-  const blockedRowsRef = useRef<PhotoRow[]>([])
-  const [limitHit, setLimitHit] = useState(false)
+  // Photos whose BYTES ARE ALREADY IN R2 but whose database row was refused. Kept as
+  // entry↔row pairs, not a bare row list: retrying must be able to mark exactly the entries it
+  // re-saved and no others.
+  const pendingSaveRef = useRef<{ entryId: string; row: PhotoRow }[]>([])
+  // Why they are pending. 'full' is a refusal the guest can clear by registering; 'failed' is a
+  // genuine save failure they can simply retry. Null means nothing is waiting.
+  const [pendingSaveReason, setPendingSaveReason] = useState<'full' | 'failed' | null>(null)
+  // Mirrored into state purely so the banner re-renders when it changes. Reading the ref during
+  // render would show whatever count happened to be there at the last unrelated render.
+  const [pendingSaveCount, setPendingSaveCount] = useState(0)
   const [retrying, setRetrying] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
   // Separate input for the in-app camera: `capture` opens the phone's native camera directly.
@@ -1585,11 +1593,21 @@ export default function UploadZone({ album, userTier, onPhotosUploaded }: Props)
         for (const id of ids) {
           patchEntry(id, { status: 'error', error: full ? msg : `Uploaded, but saving to the album failed: ${msg}` })
         }
-        // Hold the refused rows so registering can finish the job. Their bytes are already in R2;
-        // only the insert was turned away, so "retry" is one request, not a re-upload.
-        if (full && rows?.length) {
-          blockedRowsRef.current = [...blockedRowsRef.current, ...rows]
-          setLimitHit(true)
+        // Hold the rows so the job can be finished. Their bytes are already in R2; only the insert
+        // was turned away, so "retry" is one request, not a re-upload.
+        //
+        // This used to be kept ONLY for a full album. On any other save failure the rows were
+        // dropped on the floor, which meant the photo was gone: the bytes sat in R2 with no
+        // database row, nothing reconciles orphans server-side, and the guest's only option was a
+        // full re-upload under a fresh key. A network blip during the save silently cost people
+        // photos they had already successfully uploaded.
+        if (rows?.length) {
+          const pairs = ids.map((entryId, i) => ({ entryId, row: rows[i] })).filter(p => p.row)
+          pendingSaveRef.current = [...pendingSaveRef.current, ...pairs]
+          setPendingSaveCount(pendingSaveRef.current.length)
+          // A cap refusal outranks a transient failure: registering clears both, so if either is
+          // outstanding the banner should offer the account.
+          setPendingSaveReason(prev => (prev === 'full' || full ? 'full' : 'failed'))
         }
         reportClientEvent(full ? 'warn' : 'error', full ? 'album-full' : 'save', msg, album.id, { count: ids.length })
       },
@@ -1753,16 +1771,24 @@ export default function UploadZone({ album, userTier, onPhotosUploaded }: Props)
   const activeCount  = entries.filter(e => e.status === 'uploading' || e.status === 'pending').length
 
   async function retryBlockedRows() {
-    const rows = blockedRowsRef.current
-    if (retrying || rows.length === 0) return
+    const pending = pendingSaveRef.current
+    if (retrying || pending.length === 0) return
     setRetrying(true)
     try {
-      await saveUploadedRows(album.id, rows)
-      blockedRowsRef.current = []
-      setLimitHit(false)
-      setEntries(prev => prev.map(e => e.status === 'error' ? { ...e, status: 'done', error: undefined, progress: 100 } : e))
+      await saveUploadedRows(album.id, pending.map(p => p.row))
+      pendingSaveRef.current = []
+      setPendingSaveCount(0)
+      setPendingSaveReason(null)
+      // Mark ONLY the entries whose rows were actually in this request. This used to flip every
+      // entry with status 'error' to 'done', so in a mixed batch a photo that genuinely failed to
+      // upload was given a green tick alongside the ones that really were saved — telling the
+      // guest their photos were safe when those photos did not exist.
+      const saved = new Set(pending.map(p => p.entryId))
+      setEntries(prev => prev.map(e => (
+        saved.has(e.id) ? { ...e, status: 'done', error: undefined, progress: 100 } : e
+      )))
       onPhotosUploaded?.()
-      showAppToast(t('uploadWall.saved', { n: rows.length }), 'success')
+      showAppToast(t('uploadWall.saved', { n: pending.length }), 'success')
     } catch (e) {
       showAppToast(e instanceof Error ? e.message : t('common.errorGeneric'), 'error')
     } finally {
@@ -1777,19 +1803,27 @@ export default function UploadZone({ album, userTier, onPhotosUploaded }: Props)
           red failure that lost their place. One guest retried 39 times and never registered.
           Sign-up opens in a NEW TAB so this page, its queue and the already-uploaded bytes all
           survive; coming back and pressing Finish saving costs one request. */}
-      {limitHit && (
+      {pendingSaveReason && (
         <div style={{ marginBottom: 12, padding: 14, borderRadius: 14, background: '#F6E9EE', border: '1px solid #E3C9D3' }}>
-          <p style={{ margin: '0 0 4px', fontSize: 15, fontWeight: 700, color: '#630826' }}>{t('uploadWall.title')}</p>
+          <p style={{ margin: '0 0 4px', fontSize: 15, fontWeight: 700, color: '#630826' }}>
+            {pendingSaveReason === 'full' ? t('uploadWall.title') : t('uploadWall.failedTitle', { n: pendingSaveCount })}
+          </p>
           <p style={{ margin: '0 0 12px', fontSize: 13.5, lineHeight: 1.5, color: '#5C4A3C' }}>
-            {t('uploadWall.body', { n: blockedRowsRef.current.length })}
+            {pendingSaveReason === 'full'
+              ? t('uploadWall.body', { n: pendingSaveCount })
+              : t('uploadWall.failedBody', { n: pendingSaveCount })}
           </p>
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            {/* Registering only helps when the album is FULL. Offering an account to someone whose
+                save merely hit a network blip would be noise in front of the button they need. */}
+            {pendingSaveReason === 'full' && (
             <a
               href="/login" target="_blank" rel="noopener noreferrer" className="hush-press"
               style={{ padding: '10px 18px', fontSize: 14, fontWeight: 700, color: '#FDFAF5', background: '#630826', borderRadius: 10, textDecoration: 'none' }}
             >
               {t('uploadWall.cta')}
             </a>
+            )}
             <button
               type="button" onClick={() => void retryBlockedRows()} disabled={retrying} className="hush-press"
               style={{ padding: '10px 18px', fontSize: 14, fontWeight: 700, color: '#630826', background: '#FFFFFF', border: '1.5px solid #E3C9D3', borderRadius: 10, cursor: retrying ? 'wait' : 'pointer' }}

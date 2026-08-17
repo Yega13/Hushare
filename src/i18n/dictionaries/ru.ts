@@ -322,6 +322,8 @@ export const ru: Partial<Record<DictKey, string>> = {
   "uploadWall.retry": "Сохранить",
   "uploadWall.saving": "Сохранение…",
   "uploadWall.saved": "Сохранено {n} фото.",
+  "uploadWall.failedTitle": "{n} фото загружены, но ещё не сохранены",
+  "uploadWall.failedBody": "Файлы дошли до нас — не прошёл только последний шаг, обычно из-за короткого обрыва связи. Нажмите «Завершить сохранение», и они появятся. Загружать заново ничего не нужно.",
   'bib.tryFaceFinder': 'Найти меня по лицу',
   'ad.zoom': 'Масштаб',
   'ad.videoPlayback': 'Воспроизведение видео',
