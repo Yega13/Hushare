@@ -1,10 +1,12 @@
 import { NextResponse } from 'next/server'
+import { cookies } from 'next/headers'
 import { v4 as uuid } from 'uuid'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { isAllowedImage, safeExtForMime } from '@/lib/cloudflare/r2'
 import { checkRateLimit, clientIpKey } from '@/lib/rate-limit'
 import { uploadCapsForTier } from '@/lib/media'
 import { getUserTierById } from '@/lib/subscriptions'
+import { gateAllowsContribution, ALBUM_GATE_COLS } from '@/lib/server/album-access'
 import type { Tier } from '@/types'
 
 // Shared authorization logic for the image upload path — the SINGLE source of truth used by both
@@ -46,10 +48,13 @@ export async function authorizeImageUpload(
     checkRateLimit(clientIpKey(req, 'presign_ip'), 3600, 12000, { failOpen: false }),
     admin
       .from('albums')
-      .select('id, user_id, guest_uploads_enabled')
+      .select(`id, user_id, guest_uploads_enabled, ${ALBUM_GATE_COLS}`)
       .eq('id', params.albumId)
       .is('retired_at', null)
-      .maybeSingle<{ id: string; user_id: string | null; guest_uploads_enabled: boolean }>(),
+      .maybeSingle<{
+        id: string; user_id: string | null; guest_uploads_enabled: boolean
+        owner_token: string; password_hash: string | null; reveal_at: string | null
+      }>(),
   ])
   if (!ipRl.ok) {
     return {
@@ -66,6 +71,13 @@ export async function authorizeImageUpload(
   }
   if (!album.guest_uploads_enabled) {
     return { ok: false, response: NextResponse.json({ error: 'Uploads disabled for this album' }, { status: 403, headers: NO_STORE }) }
+  }
+
+  // A password or reveal gate applies to contributing, not just to viewing — see
+  // gateAllowsContribution, which the photo listing's own gate sits beside.
+  const gate = await gateAllowsContribution(album, await cookies())
+  if (!gate.ok) {
+    return { ok: false, response: NextResponse.json({ error: gate.error }, { status: 403, headers: NO_STORE }) }
   }
 
   const [albumRl, tierRes] = await Promise.all([

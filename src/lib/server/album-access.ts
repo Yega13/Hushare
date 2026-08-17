@@ -160,6 +160,47 @@ export async function resolveAlbum(
   return { kind: 'album', album: { ...publicAlbum, password_protected: !!_pw } as unknown as Album }
 }
 
+// The gate applied to CONTRIBUTING to an album, as opposed to reading it.
+//
+// Viewing a password-protected album requires the password; uploading to it did not. The only
+// thing an upload proved was knowledge of the album's internal id — which is visible to anyone who
+// has ever loaded the page — so the id, not the password, was the real upload credential. Anyone
+// who obtained it, including someone whose access was deliberately revoked by changing the
+// password, could keep adding photos to a "protected" album indefinitely. A reveal date is the
+// same argument: an album that has not opened yet should not be accepting contributions either.
+//
+// This lives beside fetchAuthorizedPhotos on purpose. The read gate and the write gate must make
+// the same decision, and the surest way to guarantee that is for them to share a file and a shape.
+export type AlbumGateRow = {
+  id: string
+  owner_token: string
+  password_hash: string | null
+  reveal_at: string | null
+}
+
+// Columns a caller must select for gateAllowsContribution to work. Keeps the two in step.
+export const ALBUM_GATE_COLS = 'owner_token, password_hash, reveal_at'
+
+export async function gateAllowsContribution(
+  album: AlbumGateRow,
+  cookieStore: CookieStore,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const ownerCookie = (cookieStore.get(`hushare_owner_${album.id}`)?.value ?? '').trim()
+  if (ownerCookie.length > 0 && timingSafeEqual(ownerCookie, album.owner_token)) return { ok: true }
+
+  if (album.reveal_at && new Date(album.reveal_at) > new Date()) {
+    return { ok: false, error: 'This album has not been revealed yet' }
+  }
+  if (album.password_hash) {
+    const pwCookie = cookieStore.get(`hushare_pw_${album.id}`)?.value ?? ''
+    const unlocked = pwCookie.length > 0
+      ? await verifyAccessToken(pwCookie, album.password_hash, album.id)
+      : false
+    if (!unlocked) return { ok: false, error: 'Enter the album password before adding photos' }
+  }
+  return { ok: true }
+}
+
 export type PhotosResult =
   | { kind: 'invalid' }
   | { kind: 'notfound' }

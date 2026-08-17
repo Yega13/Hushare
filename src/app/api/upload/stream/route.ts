@@ -6,6 +6,8 @@ import { checkRateLimit, clientIpKey } from '@/lib/rate-limit'
 import { uploadCapsForTier, STUDIO_VIDEO_BYTES } from '@/lib/media'
 import { getUserTierById } from '@/lib/subscriptions'
 import { forbidCrossSiteRequest } from '@/lib/request-security'
+import { gateAllowsContribution, ALBUM_GATE_COLS } from '@/lib/server/album-access'
+import { cookies } from 'next/headers'
 
 export const runtime = 'nodejs'
 
@@ -78,16 +80,26 @@ export async function POST(req: Request) {
   const admin = createAdminClient()
   const { data: album, error: albumError } = await admin
     .from('albums')
-    .select('id, user_id, guest_uploads_enabled')
+    .select(`id, user_id, guest_uploads_enabled, ${ALBUM_GATE_COLS}`)
     .eq('id', albumId)
     .is('retired_at', null)
-    .maybeSingle<{ id: string; user_id: string | null; guest_uploads_enabled: boolean }>()
+    .maybeSingle<{
+      id: string; user_id: string | null; guest_uploads_enabled: boolean
+      owner_token: string; password_hash: string | null; reveal_at: string | null
+    }>()
 
   if (albumError || !album) {
     return NextResponse.json({ error: 'Album not found' }, { status: 404, headers: NO_STORE })
   }
   if (!album.guest_uploads_enabled) {
     return NextResponse.json({ error: 'Uploads disabled for this album' }, { status: 403, headers: NO_STORE })
+  }
+
+  // A password or reveal gate applies to contributing, not just to viewing — same check the image
+  // path and the photo listing use, so all three can never disagree about who may add to an album.
+  const gate = await gateAllowsContribution(album, await cookies())
+  if (!gate.ok) {
+    return NextResponse.json({ error: gate.error }, { status: 403, headers: NO_STORE })
   }
 
   // Rate-limit BEFORE subscription lookup — reject hammered albums without paying the tier cost
