@@ -173,44 +173,35 @@ export default function PrivacyPage() {
           physically possible to run the service.
         </p>
 
-        <Section id="who-we-are" number={1} heading="Who we are">
+        <Section id="who-we-are" number={1} heading="Who is responsible">
           <p>
-            Hushare is not a company. It is an independent project built and run
-            by one person in <strong style={INK}>Yerevan, Armenia</strong>, and
-            under data-protection law that person is the data controller - the
-            one who is accountable for what happens to your data. We would
-            rather say that plainly than dress it up in corporate language,
-            because you should know exactly who you are dealing with.
+            Hushare is operated from <strong style={INK}>Yerevan, Armenia</strong>.
+            Under data-protection law we are the data controller for the
+            information described in this policy, and we are accountable for it.
           </p>
           <p className="mt-3">
-            What that means in practice: there is no legal department and no
-            ticket queue. Privacy questions, deletion requests, and complaints
-            all go to{' '}
+            Privacy questions, deletion requests and complaints go to{' '}
             <a
               href="mailto:husharesupport@gmail.com"
               style={{ color: '#630826', textDecoration: 'underline', textDecorationStyle: 'dotted' }}
             >
               husharesupport@gmail.com
-            </a>{' '}
-            and are read by the person who wrote the code. We reply within{' '}
-            <strong style={INK}>five working days</strong> and finish what you
-            asked for within <strong style={INK}>one month</strong>, which is the
-            deadline the GDPR sets. If something is genuinely complicated and
-            will take longer, we will tell you inside that first month and
-            explain why.
+            </a>
+            . We reply within <strong style={INK}>one working day</strong> and
+            complete requests within <strong style={INK}>one month</strong>, the
+            deadline the GDPR sets. If a request is genuinely complex and will
+            take longer than that, we tell you inside the first month and explain
+            why.
           </p>
           <p className="mt-3">
             <strong style={INK}>Who decides what happens to an album.</strong>{' '}
-            If you create an album, you decide what it is for, who gets the
-            link, what is switched on, and how long it lasts - in the language
-            of the GDPR you are the controller of the photographs inside it, and
-            we handle them on your instructions. We decide things on our own
-            account for a narrower set: accounts, payments, security and abuse
-            records, aggregate counts of how the service is used, and support
-            correspondence. If you are running an event and your own legal team
-            needs that written down as an agreement, ask and we will put it in
-            writing - but we will not pretend to be a corporate entity we are
-            not.
+            If you create an album, you decide what it is for, who receives the
+            link, which features are switched on, and how long it lasts - in the
+            language of the GDPR you are the controller of the photographs inside
+            it, and we process them on your instructions. We are the controller in
+            our own right for a narrower set: accounts, payments, security and
+            abuse records, aggregate counts of how the service is used, and
+            support correspondence.
           </p>
         </Section>
 
@@ -229,15 +220,16 @@ export default function PrivacyPage() {
               you as the album creator.
             </li>
             <li>
-              <strong style={INK}>Request metadata</strong> - IP address (kept
-              briefly, for abuse prevention), user-agent string, timestamps.
+              <strong style={INK}>Request metadata</strong> - IP address, browser
+              string and timestamps, used to stop abuse and spam. Deleted after
+              30 days.
             </li>
             <li>
               <strong style={INK}>Live presence</strong> - while a page is open
               we record which page it is, with a short-lived random session id,
               so we can see how many people are using Hushare right now. It is
               not tied to your identity or your account, and each record is
-              deleted shortly after you close the page.
+              deleted within 10 minutes of you closing the page.
             </li>
           </ul>
           <p className="mt-3">
@@ -359,9 +351,13 @@ export default function PrivacyPage() {
             </li>
           </ul>
           <p className="mt-3">
-            The album&rsquo;s face collection is deleted when the album is
-            deleted, and switching Face Finder off stops any further photos
-            being analysed. If you are an event organiser, you are responsible
+            Face data is deleted when any one of these happens, whichever comes
+            first: the photo it came from is deleted, the album is deleted, the
+            owner switches Face Finder off, or{' '}
+            <strong style={INK}>90 days pass with no new photo added</strong> to
+            the album. That last one runs on its own - nobody has to remember it,
+            so an album that has finished its event stops holding face data three
+            months later either way. If you are an event organiser, you are responsible
             for telling your participants that face search is available on your
             album - and you can simply leave it off.
           </p>
@@ -446,7 +442,7 @@ export default function PrivacyPage() {
             the reason we suggest attaching an album you want to keep. Paid plans are not subject to the inactivity rule: those
             albums are kept while the subscription is active and for a further
             year after it ends. You may request deletion of your album at any
-            time by emailing us - see section 14.
+            time by emailing us - see section 15.
           </p>
         </Section>
 
@@ -567,7 +563,23 @@ export default function PrivacyPage() {
           </p>
         </Section>
 
-        <Section id="changes" number={13} heading="Changes to this policy">
+        <Section id="breach" number={13} heading="If something goes wrong">
+          <p>
+            If data we hold is exposed, lost, or reached by someone who should
+            not have it, we will find out what happened, stop it, and{' '}
+            <strong style={INK}>tell the people affected</strong> - in plain
+            language, without waiting until we have every detail. You will hear
+            what was involved, what we have done about it, and what you should
+            do.
+          </p>
+          <p className="mt-3">
+            We are not going to promise you a regulator filing we cannot
+            currently carry out. What we do promise is that you hear it from us,
+            quickly, rather than us quietly hoping you never notice.
+          </p>
+        </Section>
+
+        <Section id="changes" number={14} heading="Changes to this policy">
           <p>
             We will post updates here. The &ldquo;Last updated&rdquo; date at
             the top reflects the most recent change. Material changes will be
@@ -575,7 +587,7 @@ export default function PrivacyPage() {
           </p>
         </Section>
 
-        <Section id="contact" number={14} heading="Contact">
+        <Section id="contact" number={15} heading="Contact">
           <p>
             Questions, requests, complaints - all of it comes to one
             address:{' '}

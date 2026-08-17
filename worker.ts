@@ -77,6 +77,10 @@ const worker = {
       // Reclaims storage quota held by abandoned Stream uploads (Cloudflare doesn't reliably
       // reclaim them itself — a pile-up triggered the "capacity running low" warning).
       callCronRoute(baseUrl, '/api/cron/cleanup-stream', secret),
+      // Enforces the retention periods the privacy policy publishes: abuse logs and error reports
+      // aged out at 30 days, and face collections deleted 90 days after an album's last upload.
+      // Without this the policy's retention numbers are aspirations.
+      callCronRoute(baseUrl, '/api/cron/prune-data', secret),
     ]))
   },
 }
