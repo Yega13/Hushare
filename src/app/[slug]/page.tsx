@@ -35,6 +35,22 @@ type PhotoMeta = {
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL ?? 'https://hushare.space'
 const BRAND_OG_IMAGE = `${SITE_URL}/logo/logo-1-primary.png`
 
+// URL fragments never reach a server, so an owner opening their #owner= management link is always
+// served the GUEST render first: the guest actions bar, or — on a gated album — the password/reveal
+// gate. React can only correct that after it has hydrated and re-checked ownership, by which point
+// the wrong thing has been on screen for a visible moment ("guest view → management view", and the
+// "this album is protected" flash). This runs while the parser is still above that markup, marks
+// the document, and lets album.css keep the guest-only chrome from painting at all. AlbumPageClient
+// clears the mark as soon as it knows what this visitor actually is, so a stale or wrong token
+// still ends up with a normal guest page. Inline is intentional and CSP-safe (script-src keeps
+// 'unsafe-inline'; see next.config.ts) — an external file would load too late to be worth anything.
+const OWNER_HASH_FLAG_SCRIPT =
+  "try{if(new URLSearchParams(location.hash.slice(1)).get('owner')){document.documentElement.dataset.hushOwner='1'}}catch(e){}"
+
+function OwnerHashFlag() {
+  return <script dangerouslySetInnerHTML={{ __html: OWNER_HASH_FLAG_SCRIPT }} />
+}
+
 function photoOgUrl(photo: PhotoMeta): string | null {
   const candidates = photo.media_type === 'video'
     ? [photo.stream_thumbnail_url, photo.poster_url]
@@ -129,10 +145,20 @@ export default async function AlbumPage({ params }: Props) {
   if (resolved.kind === 'invalid' || resolved.kind === 'notfound') notFound()
 
   if (resolved.kind === 'reveal') {
-    return <AlbumPageClient initialGate={{ type: 'reveal', revealAt: resolved.reveal_at, slug: resolved.slug, title: resolved.title }} />
+    return (
+      <>
+        <OwnerHashFlag />
+        <AlbumPageClient initialGate={{ type: 'reveal', revealAt: resolved.reveal_at, slug: resolved.slug, title: resolved.title }} />
+      </>
+    )
   }
   if (resolved.kind === 'password') {
-    return <AlbumPageClient initialGate={{ type: 'password', slug: resolved.slug, title: resolved.title }} />
+    return (
+      <>
+        <OwnerHashFlag />
+        <AlbumPageClient initialGate={{ type: 'password', slug: resolved.slug, title: resolved.title }} />
+      </>
+    )
   }
 
   // Count an album view — one per server-rendered page load. Fire-and-forget (writeDataPoint is
@@ -155,5 +181,10 @@ export default async function AlbumPage({ params }: Props) {
     initialPhotos = []
   }
 
-  return <AlbumPageClient initialAlbum={resolved.album} initialPhotos={initialPhotos} initialTotal={initialTotal} />
+  return (
+    <>
+      <OwnerHashFlag />
+      <AlbumPageClient initialAlbum={resolved.album} initialPhotos={initialPhotos} initialTotal={initialTotal} />
+    </>
+  )
 }

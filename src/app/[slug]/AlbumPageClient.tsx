@@ -55,6 +55,16 @@ type Props = {
 const ALBUM_FIRST_WINDOW = 2000 // must match ALBUM_PAGE_SIZE in lib/server/album-access.ts
 const LOAD_MORE_PAGE = 500
 
+// How long after one of THIS tab's own album edits a settings-broadcast refetch is treated as an
+// echo of that edit rather than news from somewhere else. Every owner mutation broadcasts, and the
+// owner's own tab is subscribed to that broadcast — so each edit made the owner refetch and
+// blind-merge the whole album row over their own optimistic state. Two edits inside one round trip
+// (or one debounced slider firing twice) and the first refetch lands AFTER the second edit,
+// overwriting it with the pre-edit row, until the second broadcast puts it back. That is the
+// "control moves to the new value, snaps back to the old one, then settles" glitch, and it is why
+// it only showed up on a phone: the race window is one network round trip wide.
+const SELF_EDIT_QUIET_MS = 2500
+
 // Refresh the FIRST window in place while preserving any already-loaded tail (pages fetched via
 // "Load more"). Small album → windowPhotos IS everything, extras is empty, so this is a plain
 // replace (identical to the old behaviour). Big album → the tail survives a realtime refetch.
@@ -112,6 +122,9 @@ export default function AlbumPageClient({ initialAlbum = null, initialPhotos, in
   const [designerOpen, setDesignerOpen] = useState(false)
   const designerOpenRef = useRef(false)
   useEffect(() => { designerOpenRef.current = designerOpen }, [designerOpen])
+  // When this tab last applied an album edit of its own (see handleAlbumUpdated). Effect 4 uses it
+  // to tell its own echo apart from a real external change — see SELF_EDIT_QUIET_MS.
+  const lastLocalAlbumPatchRef = useRef(0)
   // When the prompt is triggered by a click on an in-app link that LEAVES the album (e.g. the
   // Hushare logo → home), we hold that destination here so dismissing the prompt still takes them
   // where they were going. Null when the prompt was triggered by back/tab-hidden/mouse-exit.
@@ -162,8 +175,22 @@ export default function AlbumPageClient({ initialAlbum = null, initialPhotos, in
   useIsomorphicLayoutEffect(() => {
     const raw = window.location.hash.startsWith('#') ? window.location.hash.slice(1) : window.location.hash
     if (new URLSearchParams(raw).get('owner')) setOwnerHashPresent(true)
+    // NOTE: an earlier attempt at killing the "album is protected" flash held `loading` true here
+    // for a gated album opened on an owner link, so the skeleton showed instead of the gate until
+    // the owner check resolved. On production that never resolved and the album never opened at
+    // all — a far worse failure than the flash it was fixing. Reverted; do not reintroduce without
+    // a reproduction of the gated-owner path (see /wog0op5z#owner=…).
   }, [])
   const ownerUpgradePending = ownerHashPresent && !ownerTokenReady
+
+  // The inline script in page.tsx flags <html> when the URL carries an #owner= fragment, so CSS can
+  // stop the server's guest render (guest bar / gate) painting before React ever runs. Clear the
+  // flag the moment we know this visitor is NOT in owner view, so their guest chrome appears; and
+  // on unmount, since a client-side navigation to another album never re-runs that script.
+  useEffect(() => {
+    if (ownerTokenReady && !effectiveIsOwner) delete document.documentElement.dataset.hushOwner
+  }, [ownerTokenReady, effectiveIsOwner])
+  useEffect(() => () => { delete document.documentElement.dataset.hushOwner }, [])
 
   // Tombstone recently-deleted photo IDs so a realtime reconnect/refetch (common on mobile)
   // cannot reinstate a photo the user just deleted. Auto-expires after 60s.
@@ -604,27 +631,48 @@ export default function AlbumPageClient({ initialAlbum = null, initialPhotos, in
     // Use slug (not UUID) for the resolve endpoint — the route resolves by slug, not by id.
     const albumSlug = album.custom_slug ?? album.slug
 
+    let disposed = false
+    let settleTimer: ReturnType<typeof setTimeout> | null = null
+
+    // Treat the broadcast as a trigger to re-fetch from the server rather than trusting the
+    // payload directly. Supabase Realtime broadcast channels are unauthenticated — any tab that
+    // knows the channel name can publish to it, so accepting payload values directly creates a
+    // spoofing vector (UI-only impact, but misleads users about the album's current state).
+    // Pass owner mode so a gated album (reveal/password) the owner is viewing comes back as the
+    // full album, not the guest gate response.
+    const refetchSettings = () => {
+      const startedAt = Date.now()
+      void fetch(`/api/album/resolve?slug=${encodeURIComponent(albumSlug)}&owner=${ownerTokenFromUrlRef.current ? '1' : '0'}`, { cache: 'no-store' })
+        .then(r => r.ok ? r.json() : null)
+        .then((data: Album | null) => {
+          if (disposed || !data || typeof data.id !== 'string') return
+          // An edit made in this tab AFTER this request went out is newer than anything the
+          // response can contain, so committing it would overwrite the owner's own change with
+          // the pre-change row. Dropping the response is always safe: whatever that edit was, it
+          // has already been applied optimistically and its own broadcast is still to come.
+          if (lastLocalAlbumPatchRef.current > startedAt) return
+          setAlbum(prev => prev ? { ...prev, ...data } : prev)
+        })
+        .catch(() => {})
+    }
+
     const ch = supabase
       .channel(`album-settings-${albumId}`)
       .on('broadcast', { event: 'album_settings' }, () => {
         // While the owner is in the Album Designer, their own edits broadcast here too — skip the
         // self-refetch so it can't clobber the live optimistic preview (the fast-change glitch).
         if (designerOpenRef.current) return
-        // Treat the broadcast as a trigger to re-fetch from the server rather than
-        // trusting the payload directly. Supabase Realtime broadcast channels are
-        // unauthenticated — any tab that knows the channel name can publish to it,
-        // so accepting payload values directly creates a spoofing vector (UI-only
-        // impact, but misleads users about the album's current state).
-        // Pass owner mode so a gated album (reveal/password) the owner is viewing comes back
-        // as the full album, not the guest gate response.
-        void fetch(`/api/album/resolve?slug=${encodeURIComponent(albumSlug)}&owner=${ownerTokenFromUrlRef.current ? '1' : '0'}`, { cache: 'no-store' })
-          .then(r => r.ok ? r.json() : null)
-          .then((data: Album | null) => {
-            if (data && typeof data.id === 'string') {
-              setAlbum(prev => prev ? { ...prev, ...data } : prev)
-            }
-          })
-          .catch(() => {})
+        // Same idea outside the Designer: a broadcast arriving on the heels of this tab's own edit
+        // is that edit echoing back, and the local state is already ahead of it. Refetching would
+        // only risk racing the next edit, so defer to one trailing refresh once the owner stops —
+        // which still picks up a genuine change made from another device during the quiet window.
+        const sinceLocalEdit = Date.now() - lastLocalAlbumPatchRef.current
+        if (sinceLocalEdit < SELF_EDIT_QUIET_MS) {
+          if (settleTimer) clearTimeout(settleTimer)
+          settleTimer = setTimeout(refetchSettings, SELF_EDIT_QUIET_MS - sinceLocalEdit)
+          return
+        }
+        refetchSettings()
       })
       .subscribe(status => {
         if (status === 'SUBSCRIBED') settingsChannelRef.current = ch
@@ -632,10 +680,12 @@ export default function AlbumPageClient({ initialAlbum = null, initialPhotos, in
       })
 
     return () => {
+      disposed = true
+      if (settleTimer) clearTimeout(settleTimer)
       settingsChannelRef.current = null
       supabase.removeChannel(ch)
     }
-  }, [album?.id, supabase])
+  }, [album?.id, album?.custom_slug, album?.slug, supabase])
 
   // ─── Effect 5: Broadcast guest downloads toggle (owner only) ────────────────
   // When the owner changes allow_guest_downloads, broadcasts to all guest tabs.
@@ -802,6 +852,9 @@ export default function AlbumPageClient({ initialAlbum = null, initialPhotos, in
       resetFilterOverrides?: boolean
     },
   ) => {
+    // Every call here is an edit made in THIS tab (owner toolbar, designer, header, cover picker),
+    // so it is always newer than anything a settings refetch can be carrying. Effect 4 reads this.
+    lastLocalAlbumPatchRef.current = Date.now()
     setAlbum(prev => prev ? { ...prev, ...patch } : prev)
     if ('media_radius' in patch) {
       setForceGlobalRadius(!!options?.forceGlobalRadius)

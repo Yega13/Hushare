@@ -62,7 +62,7 @@ export default function PasswordGate({ slug, title, onUnlocked }: Props) {
 
   return (
     <div
-      className="min-h-dvh flex flex-col items-center justify-center px-6 text-center"
+      className="hush-gate-screen min-h-dvh flex flex-col items-center justify-center px-6 text-center"
       style={{ background: '#630826', color: '#FDFAF5' }}
     >
       <div className="w-full max-w-sm">

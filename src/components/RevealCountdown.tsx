@@ -147,7 +147,7 @@ export default function RevealCountdown({ revealAt, title, onUnlocked }: Props) 
 
   return (
     <div
-      className="min-h-dvh flex flex-col items-center justify-center px-6"
+      className="hush-gate-screen min-h-dvh flex flex-col items-center justify-center px-6"
       style={{ background: '#2B0A15' }}
       aria-label={`${title} — ${t('reveal.ariaReveals')} ${formattedDate}`}
     >

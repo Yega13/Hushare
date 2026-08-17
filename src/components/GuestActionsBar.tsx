@@ -123,7 +123,7 @@ export default function GuestActionsBar({ album, photos, shareUrl, onOpenSlidesh
   )
 
   return (
-    <div style={{ background: '#F5F0E8', borderBottom: '1px solid #DDD5C5' }}>
+    <div className="hush-guest-actions" style={{ background: '#F5F0E8', borderBottom: '1px solid #DDD5C5' }}>
       <div className="hush-container py-3 flex flex-wrap items-center justify-center sm:justify-start gap-2" style={{ paddingInline: 'clamp(14px, 4vw, 20px)' }}>
 
         {/* Slideshow */}
