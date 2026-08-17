@@ -232,19 +232,25 @@ export default function PrivacyPage() {
           </p>
           <ul className="list-disc pl-5 space-y-2 mt-3">
             <li>
-              <strong style={INK}>Supabase</strong> - stores album metadata
-              and uploaded media.
+              <strong style={INK}>Supabase</strong> - the database. It holds
+              album records, captions, and account details. It does{' '}
+              <strong style={INK}>not</strong> hold your photos or videos.
+              Hosted in Sydney, Australia.
             </li>
             <li>
-              <strong style={INK}>Cloudflare</strong> - hosting, content
-              delivery, video streaming, and DDoS protection.
+              <strong style={INK}>Cloudflare</strong> - this is where your
+              photos and videos actually live: photos in R2 storage, videos in
+              Stream. Cloudflare also provides the hosting, the content
+              delivery network, DDoS protection, and Turnstile, the check that
+              tells a person from a bot on our support and report forms.
+              Distributed across Cloudflare&apos;s global network.
             </li>
             <li>
               <strong style={INK}>Amazon Web Services</strong> - image analysis
-              for the optional Face Finder and race-number search features. A
-              photo is only ever sent to AWS if the album owner has switched one
-              of those features on. Albums without them never leave Supabase and
-              Cloudflare.
+              (Rekognition, in Ireland) for the optional Face Finder and
+              race-number search features. A photo is only ever sent to AWS if
+              the album owner has switched one of those features on. Albums
+              without them are never sent to AWS at all.
             </li>
             <li>
               <strong style={INK}>Resend</strong> - delivery of account and
@@ -309,13 +315,30 @@ export default function PrivacyPage() {
 
         <Section id="cookies" number={5} heading="Cookies and local storage">
           <p>
-            Hushare uses your browser&apos;s local storage to remember small
-            preferences, such as the album background colour you chose, and
-            cookies that are strictly necessary to run the service - the one
-            that keeps you signed in, the one that remembers you unlocked a
-            password-protected album, and the one that identifies you as an
-            album&apos;s owner.
+            Hushare stores a small amount of data in your own browser, and one
+            item of it is genuinely sensitive:
           </p>
+          <ul className="list-disc pl-5 space-y-2 mt-3">
+            <li>
+              <strong style={INK}>Your album management links</strong>, kept in
+              local storage so you can get back to albums you created without
+              an account. These act as passwords: anyone with access to your
+              browser can administer those albums. They never leave your device
+              except when you open one.
+            </li>
+            <li>
+              <strong style={INK}>Cookies needed to run the service</strong> -
+              the one that keeps you signed in, the one that remembers you
+              unlocked a password-protected album, the one that identifies you
+              as an album&apos;s owner, and one that counts how many albums
+              you have created without an account, so the free limit works.
+            </li>
+            <li>
+              <strong style={INK}>A random id</strong> for the page you are
+              reading now and for voting on polls, so a vote is counted once.
+              It is not linked to you or to any account.
+            </li>
+          </ul>
           <p className="mt-3">
             We also run <strong style={INK}>Google Analytics</strong> to
             understand how people find Hushare - which sites and campaigns send
@@ -404,10 +427,21 @@ export default function PrivacyPage() {
 
         <Section id="transfers" number={10} heading="International data transfers">
           <p>
-            Our infrastructure providers operate globally, which means your
-            data may be processed in a country other than where you live.
+            Hushare is built in Armenia and runs on infrastructure in several
+            countries, so your data is processed outside the country you live
+            in. Specifically:
+          </p>
+          <ul className="list-disc pl-5 space-y-2 mt-3">
+            <li>Photos and videos: Cloudflare&apos;s global network, served from
+              wherever is nearest to the viewer.</li>
+            <li>The database (album records, captions, accounts):{' '}
+              <strong style={INK}>Sydney, Australia</strong>.</li>
+            <li>Face and race-number analysis, when an owner turns it on:{' '}
+              <strong style={INK}>Ireland</strong>.</li>
+          </ul>
+          <p className="mt-3">
             Where such transfers require a legal basis, we rely on standard
-            contractual clauses or equivalent safeguards.
+            contractual clauses or equivalent safeguards with each provider.
           </p>
         </Section>
 
