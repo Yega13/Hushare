@@ -1,6 +1,5 @@
 import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono, Playfair_Display, Playwrite_GB_J, Noto_Serif_Armenian, Noto_Sans_Armenian } from "next/font/google";
-import Script from "next/script";
 import AppToastViewport from "@/components/AppToast";
 import PresenceBeacon from "@/components/PresenceBeacon";
 import SiteFooter from "@/components/SiteFooter";
@@ -354,31 +353,20 @@ const jsonLd = {
   ],
 };
 
-// Exact text content of the two inline (non-JSON-LD) <script> tags below. Kept as named
-// constants — rather than inline template strings — so PRELOADER_INIT_SCRIPT_SHA256 /
-// GA_INIT_SCRIPT_SHA256 in next.config.ts can be computed from and verified against the exact
-// same string that gets rendered. If either script's content changes, its CSP hash must be
-// recomputed too, or the script will be silently blocked (see next.config.ts's comment).
+// Exact text of the one inline (non-JSON-LD) <script> tag below, kept as a named constant so its
+// content is greppable and reviewable rather than buried in JSX.
 const PRELOADER_INIT_SCRIPT =
   "try{if(window.localStorage.getItem('hushare.initialPreloaderSeen')!=='1'){document.body.classList.add('hush-page-preloading','hush-scroll-locked')}}catch(e){document.body.classList.add('hush-page-preloading','hush-scroll-locked')}"
-// Google Analytics, with the URL deliberately withheld on anything that is not a public page.
+// Google Analytics was removed on 2026-08-17.
 //
-// GA4 defaults page_location to document.location.href — the WHOLE href, fragment included. On an
-// album that means Google received the unlisted slug (which is the album's only access control) and,
-// on an owner's own view, the #owner= token, which is the album's administrative credential. The
-// reasoning for keeping that token in the URL considered the Referer header and the server, and was
-// right about both; it did not consider first-party script in the same document reading
-// location.href, which is precisely what gtag does.
-//
-// So the path is only reported for pages that are genuinely public. Everything else is collapsed to
-// a single placeholder: we still get the visit count, Google gets no slug and no token. This is also
-// what makes the privacy policy's "we do not run Google Analytics inside albums" true.
-const GA_INIT_SCRIPT =
-  "window.dataLayer=window.dataLayer||[];function gtag(){dataLayer.push(arguments);}gtag('js',new Date());" +
-  "var _p=location.pathname;" +
-  "var _pub=/^\\/(?:$|about|pricing|terms|privacy|collabs|support|report|login|account|shared-photo-album|wedding-photo-sharing|event-photo-sharing|qr-code-photo-album|homepage-new-design-test)(?:\\/|$)/.test(_p);" +
-  "var _safe=_pub?_p:'/(private)';" +
-  "gtag('config','G-5JMF0RM5Q6',{page_path:_safe,page_location:location.origin+_safe,page_referrer:document.referrer&&document.referrer.indexOf(location.origin)===0?location.origin:document.referrer});"
+// The privacy policy used to say "no third-party analytics script runs on this site". That claim
+// was the better one, and the honest options were to delete the sentence or delete the script. The
+// script lost: Cloudflare Web Analytics already runs on this domain and reports visitors, page
+// views, referrers, countries and devices without a cookie, without an identifier, and without ever
+// needing a consent banner. GA was costing a truthful claim, an undisclosed processor, an
+// unresolved EU consent obligation, and — until it was patched hours before removal — a leak of
+// unlisted album links and owner tokens to Google via page_location, which defaults to the whole
+// href including the #owner= fragment.
 
 export default async function RootLayout({
   children,
@@ -410,17 +398,6 @@ export default async function RootLayout({
           type="application/ld+json"
           dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd).replace(/</g, '\\u003c') }}
         />
-        {process.env.NODE_ENV === 'production' && (
-          <>
-            <Script
-              src="https://www.googletagmanager.com/gtag/js?id=G-5JMF0RM5Q6"
-              strategy="afterInteractive"
-            />
-            <Script id="google-analytics" strategy="afterInteractive"
-              dangerouslySetInnerHTML={{ __html: GA_INIT_SCRIPT }}
-            />
-          </>
-        )}
         <InitialPreloader />
         {/* Renders nothing; installs the window-level error + unhandled-rejection reporters so
             crashes reach /admin instead of dying silently in the user's browser. */}

@@ -299,12 +299,6 @@ export default function PrivacyPage() {
               never receive or store them.
             </li>
             <li>
-              <strong style={INK}>Google Analytics</strong> - measures how
-              people arrive at Hushare&apos;s public pages. It never receives
-              your photos, the contents of an album, or an album&apos;s address.
-              See section 6.
-            </li>
-            <li>
               <strong style={INK}>Cloudflare Workers AI</strong> - the assistant
               in the help bubble. What you type into it is sent to a language
               model running on Cloudflare&apos;s network to write a reply. It
@@ -395,18 +389,13 @@ export default function PrivacyPage() {
             </li>
           </ul>
           <p className="mt-3">
-            We also run <strong style={INK}>Google Analytics</strong> to
-            understand how people find Hushare - which sites and campaigns send
-            visitors, and roughly where in the world they are. It sets its own
-            cookies and assigns a random identifier to your browser. We do not
-            use advertising cookies, we do not run ad networks, and we never
-            sell or share your data with advertisers.
-          </p>
-          <p className="mt-3">
-            Google Analytics is not used inside albums to profile anyone, and
-            it never receives your photos. If you would rather not be counted,
-            any browser-level tracking protection or ad blocker will stop it,
-            and the rest of Hushare works exactly the same.
+            We run <strong style={INK}>no third-party analytics script</strong>,
+            no advertising cookies, and no cross-site identifiers. We count
+            visits using Cloudflare Web Analytics, which works without a cookie
+            and without giving your browser an identifier - there is nothing for
+            you to consent to and nothing for you to switch off, because there
+            is nothing following you. We used Google Analytics until 17 August
+            2026 and removed it.
           </p>
         </Section>
 

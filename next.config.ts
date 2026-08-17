@@ -12,7 +12,7 @@ const R2_ACCOUNT   = "cd64a4cdd390c827e46bff2ff1ab30ed";
 // setup with dynamic rendering accepted.
 const CSP = [
   "default-src 'self'",
-  "script-src 'self' 'unsafe-inline' https://www.googletagmanager.com https://challenges.cloudflare.com https://static.cloudflareinsights.com https://embed.videodelivery.net",
+  "script-src 'self' 'unsafe-inline' https://challenges.cloudflare.com https://static.cloudflareinsights.com https://embed.videodelivery.net",
   "style-src 'self' 'unsafe-inline'",
   [
     "img-src 'self' data: blob:",
@@ -35,9 +35,6 @@ const CSP = [
     "https://challenges.cloudflare.com",
     "https://static.cloudflareinsights.com",
     "https://cloudflareinsights.com",
-    "https://www.google-analytics.com",
-    "https://analytics.google.com",
-    "https://stats.g.doubleclick.net",
   ].join(" "),
   "media-src 'self' blob: https://videos.hushare.space https://videodelivery.net https://iframe.videodelivery.net",
   "frame-src 'self' https://challenges.cloudflare.com https://iframe.videodelivery.net",
