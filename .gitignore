@@ -20,6 +20,11 @@
 # OpenNext build output (contains baked-in env vars — never commit)
 /.open-next/
 
+# Wrangler local state and deploy temp files. The miniflare sqlite files are local dev
+# emulator state; .wrangler/tmp holds the bundled worker, which is ~185k lines of build
+# output and was committed by accident on 2026-08-17 by a `git add -A` during a failed deploy.
+/.wrangler/
+
 # production
 /build
 
