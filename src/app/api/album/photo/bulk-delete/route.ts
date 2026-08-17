@@ -4,6 +4,7 @@ import { verifyOwnerViaCookieWithRateLimit } from '@/lib/album-owner-access'
 import { forbidCrossSiteRequest } from '@/lib/request-security'
 import { r2KeyFromUrl } from '@/lib/album-delete'
 import { deleteStreamVideo } from '@/lib/cloudflare/stream'
+import { deleteFaces } from '@/lib/rekognition'
 import { getCloudflareContext } from '@opennextjs/cloudflare'
 import { track } from '@/lib/analytics'
 import { queueAlbumChangedBroadcast } from '@/lib/broadcast'
@@ -80,7 +81,7 @@ export async function POST(req: Request) {
   // Fetch only photos that belong to this album — prevents cross-album deletion
   const { data: photos, error: fetchError } = await admin
     .from('photos')
-    .select('id, storage_backend, storage_path, thumb_url, poster_url, stream_uid')
+    .select('id, storage_backend, storage_path, thumb_url, poster_url, stream_uid, face_ids')
     .eq('album_id', access.album.id)
     .in('id', photo_ids as string[])
     .returns<PhotoForDelete[]>()
@@ -146,6 +147,17 @@ export async function POST(req: Request) {
       console.error('[photo/bulk-delete] Stream remove failed:', e instanceof Error ? e.message : String(e))
     )
   ))
+
+  // Same as photo/delete: the biometric templates these photos produced have to go with them,
+  // or a bulk delete quietly leaves every face still enrolled and searchable.
+  const allFaceIds = validPhotos.flatMap(
+    (p) => ((p as { face_ids?: string[] | null }).face_ids ?? []),
+  )
+  if (allFaceIds.length) {
+    deleteFaces(access.album.id, allFaceIds).catch(e =>
+      console.error('[photo/bulk-delete] Rekognition deleteFaces failed:', e instanceof Error ? e.message : String(e))
+    )
+  }
 
   track({ name: 'media_deleted', albumId: access.album.id, count: validPhotos.length })
 

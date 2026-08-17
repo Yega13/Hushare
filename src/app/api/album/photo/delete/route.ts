@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { deleteFaces } from '@/lib/rekognition'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { verifyOwnerViaCookieWithRateLimit } from '@/lib/album-owner-access'
 import { forbidCrossSiteRequest } from '@/lib/request-security'
@@ -71,7 +72,7 @@ export async function POST(req: Request) {
   // Verify the photo belongs to THIS album — prevents cross-album deletion
   const { data: photo } = await admin
     .from('photos')
-    .select('id, storage_backend, storage_path, thumb_url, poster_url, stream_uid')
+    .select('id, storage_backend, storage_path, thumb_url, poster_url, stream_uid, face_ids')
     .eq('id', photo_id)
     .eq('album_id', access.album.id)
     .maybeSingle<PhotoForDelete>()
@@ -122,6 +123,18 @@ export async function POST(req: Request) {
   if (photo.storage_backend === 'stream' && photo.stream_uid) {
     deleteStreamVideo(photo.stream_uid).catch(e =>
       console.error('[photo/delete] Stream remove failed:', e instanceof Error ? e.message : String(e))
+    )
+  }
+
+  // Delete the face templates this photo produced. Without this the photo disappears from the
+  // album while its biometric records stay in the Rekognition collection, still matchable by any
+  // later selfie search -- so "delete this photo" did not delete the most sensitive thing derived
+  // from it. The privacy policy promises the opposite in as many words, and deleteFaces() existed
+  // for exactly this and had never been called from anywhere.
+  const faceIds = (photo as { face_ids?: string[] | null }).face_ids
+  if (faceIds?.length) {
+    deleteFaces(access.album.id, faceIds).catch(e =>
+      console.error('[photo/delete] Rekognition deleteFaces failed:', e instanceof Error ? e.message : String(e))
     )
   }
 

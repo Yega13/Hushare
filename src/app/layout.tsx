@@ -361,8 +361,24 @@ const jsonLd = {
 // recomputed too, or the script will be silently blocked (see next.config.ts's comment).
 const PRELOADER_INIT_SCRIPT =
   "try{if(window.localStorage.getItem('hushare.initialPreloaderSeen')!=='1'){document.body.classList.add('hush-page-preloading','hush-scroll-locked')}}catch(e){document.body.classList.add('hush-page-preloading','hush-scroll-locked')}"
+// Google Analytics, with the URL deliberately withheld on anything that is not a public page.
+//
+// GA4 defaults page_location to document.location.href — the WHOLE href, fragment included. On an
+// album that means Google received the unlisted slug (which is the album's only access control) and,
+// on an owner's own view, the #owner= token, which is the album's administrative credential. The
+// reasoning for keeping that token in the URL considered the Referer header and the server, and was
+// right about both; it did not consider first-party script in the same document reading
+// location.href, which is precisely what gtag does.
+//
+// So the path is only reported for pages that are genuinely public. Everything else is collapsed to
+// a single placeholder: we still get the visit count, Google gets no slug and no token. This is also
+// what makes the privacy policy's "we do not run Google Analytics inside albums" true.
 const GA_INIT_SCRIPT =
-  "window.dataLayer=window.dataLayer||[];function gtag(){dataLayer.push(arguments);}gtag('js',new Date());gtag('config','G-5JMF0RM5Q6');"
+  "window.dataLayer=window.dataLayer||[];function gtag(){dataLayer.push(arguments);}gtag('js',new Date());" +
+  "var _p=location.pathname;" +
+  "var _pub=/^\\/(?:$|about|pricing|terms|privacy|collabs|support|report|login|account|shared-photo-album|wedding-photo-sharing|event-photo-sharing|qr-code-photo-album|homepage-new-design-test)(?:\\/|$)/.test(_p);" +
+  "var _safe=_pub?_p:'/(private)';" +
+  "gtag('config','G-5JMF0RM5Q6',{page_path:_safe,page_location:location.origin+_safe,page_referrer:document.referrer&&document.referrer.indexOf(location.origin)===0?location.origin:document.referrer});"
 
 export default async function RootLayout({
   children,
