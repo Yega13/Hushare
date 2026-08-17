@@ -16,9 +16,8 @@ import {
   saveDesignRequest, saveBackgroundRequest, uploadBackgroundRequest, saveHeaderImageRequest, uploadHeaderImageFile,
   saveLogoRequest, uploadLogoFile, saveSponsorsRequest, uploadSponsorLogoFile,
 } from '@/components/owner-toolbar/api'
-import { PRESETS, DEFAULT_BG, DESIGN_IMAGE_TYPES, MAX_DESIGN_IMAGE_BYTES, MAX_LOGO_BYTES } from '@/components/owner-toolbar/constants'
+import { PRESETS, DEFAULT_BG, isPickableImage } from '@/components/owner-toolbar/constants'
 import { STOCK_ALBUM_BACKGROUNDS } from '@/lib/album-backgrounds'
-import { formatFileSize } from '@/lib/utils'
 
 const INK = '#2A211C', MUTED = '#8A7A66', BORDER = '#DDD5C5', BRAND = '#630826'
 // Hard safety cap on the header-photo picker so an extreme-sized album can't render thousands of
@@ -138,14 +137,8 @@ export default function AlbumDesigner({ album, photos, onAlbumUpdated, onClose }
 
   async function handleAddBackground(file: File) {
     setBgUploadError('')
-    if (!DESIGN_IMAGE_TYPES.has(file.type)) {
+    if (!isPickableImage(file)) {
       const msg = t('ot.badImageFormat')
-      setBgUploadError(msg)
-      showAppToast(msg, 'error')
-      return
-    }
-    if (file.size > MAX_DESIGN_IMAGE_BYTES) {
-      const msg = t('ad.backgroundTooLarge', { size: formatFileSize(MAX_DESIGN_IMAGE_BYTES) })
       setBgUploadError(msg)
       showAppToast(msg, 'error')
       return
@@ -179,14 +172,8 @@ export default function AlbumDesigner({ album, photos, onAlbumUpdated, onClose }
 
   async function handleAddHeaderPhoto(file: File) {
     setHeaderUploadError('')
-    if (!DESIGN_IMAGE_TYPES.has(file.type)) {
+    if (!isPickableImage(file)) {
       const msg = t('ot.badImageFormat')
-      setHeaderUploadError(msg)
-      showAppToast(msg, 'error')
-      return
-    }
-    if (file.size > MAX_DESIGN_IMAGE_BYTES) {
-      const msg = t('ad.headerPhotoTooLarge', { size: formatFileSize(MAX_DESIGN_IMAGE_BYTES) })
       setHeaderUploadError(msg)
       showAppToast(msg, 'error')
       return
@@ -208,14 +195,8 @@ export default function AlbumDesigner({ album, photos, onAlbumUpdated, onClose }
 
   async function handleAddLogo(file: File) {
     setLogoUploadError('')
-    if (!DESIGN_IMAGE_TYPES.has(file.type)) {
+    if (!isPickableImage(file)) {
       const msg = t('ot.badImageFormat')
-      setLogoUploadError(msg)
-      showAppToast(msg, 'error')
-      return
-    }
-    if (file.size > MAX_LOGO_BYTES) {
-      const msg = t('ad.logoTooLarge', { size: formatFileSize(MAX_LOGO_BYTES) })
       setLogoUploadError(msg)
       showAppToast(msg, 'error')
       return
@@ -238,14 +219,8 @@ export default function AlbumDesigner({ album, photos, onAlbumUpdated, onClose }
   async function handleAddSponsor(file: File) {
     if (album.sponsor_logos.length >= MAX_SPONSORS) return
     setSponsorError('')
-    if (!DESIGN_IMAGE_TYPES.has(file.type)) {
+    if (!isPickableImage(file)) {
       const msg = t('ot.badImageFormat')
-      setSponsorError(msg)
-      showAppToast(msg, 'error')
-      return
-    }
-    if (file.size > MAX_LOGO_BYTES) {
-      const msg = t('ad.logoTooLarge', { size: formatFileSize(MAX_LOGO_BYTES) })
       setSponsorError(msg)
       showAppToast(msg, 'error')
       return
@@ -487,7 +462,7 @@ export default function AlbumDesigner({ album, photos, onAlbumUpdated, onClose }
                   <input
                     ref={logoFileInputRef}
                     type="file"
-                    accept="image/jpeg,image/png,image/webp,image/avif"
+                    accept="image/*"
                     className="hidden"
                     onChange={(e) => {
                       const file = e.target.files?.[0]
@@ -557,7 +532,7 @@ export default function AlbumDesigner({ album, photos, onAlbumUpdated, onClose }
                   <input
                     ref={sponsorFileInputRef}
                     type="file"
-                    accept="image/jpeg,image/png,image/webp,image/avif"
+                    accept="image/*"
                     className="hidden"
                     onChange={(e) => {
                       const file = e.target.files?.[0]
@@ -600,15 +575,16 @@ export default function AlbumDesigner({ album, photos, onAlbumUpdated, onClose }
                 </div>
               </>
             )}
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(52px, 1fr))', gap: 6, maxHeight: 264, overflowY: 'auto', paddingRight: 2 }}>
-              <button type="button" onClick={() => setCover(null)} title={t('ad.none')}
-                style={{ aspectRatio: '1', borderRadius: 8, background: '#F5F0E8', border: (!album.cover_photo_id && !album.header_image) ? `2px solid ${BRAND}` : `1.5px solid ${BORDER}`, cursor: 'pointer', fontSize: 9, color: MUTED }}>{t('ad.none')}</button>
+            <div className="hush-picker-grid">
+              <button type="button" onClick={() => { void setCover(null) }} title={t('ad.none')} className="hush-press"
+                style={{ aspectRatio: '1', borderRadius: 8, background: '#F5F0E8', border: (!album.cover_photo_id && !album.header_image) ? `2px solid ${BRAND}` : `1.5px solid ${BORDER}`, cursor: 'pointer', fontSize: 9, color: MUTED, touchAction: 'manipulation' }}>{t('ad.none')}</button>
               <button
                 type="button"
                 onClick={() => headerFileInputRef.current?.click()}
                 disabled={uploadingHeader}
                 title={t('ad.addPhoto')}
-                style={{ aspectRatio: '1', borderRadius: 8, background: '#F5F0E8', border: album.header_image ? `2px solid ${BRAND}` : `1.5px dashed ${BORDER}`, cursor: uploadingHeader ? 'wait' : 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 2, color: BRAND, backgroundImage: album.header_image ? `url("${album.header_image}")` : undefined, backgroundSize: 'cover', backgroundPosition: 'center' }}
+                className="hush-press"
+                style={{ touchAction: 'manipulation', aspectRatio: '1', borderRadius: 8, background: '#F5F0E8', border: album.header_image ? `2px solid ${BRAND}` : `1.5px dashed ${BORDER}`, cursor: uploadingHeader ? 'wait' : 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 2, color: BRAND, backgroundImage: album.header_image ? `url("${album.header_image}")` : undefined, backgroundSize: 'cover', backgroundPosition: 'center' }}
               >
                 {uploadingHeader ? (
                   <Loader2 className="w-4 h-4 animate-spin" />
@@ -622,7 +598,7 @@ export default function AlbumDesigner({ album, photos, onAlbumUpdated, onClose }
               <input
                 ref={headerFileInputRef}
                 type="file"
-                accept="image/jpeg,image/png,image/webp,image/avif"
+                accept="image/*"
                 className="hidden"
                 onChange={(e) => {
                   const file = e.target.files?.[0]
@@ -637,8 +613,11 @@ export default function AlbumDesigner({ album, photos, onAlbumUpdated, onClose }
                 const thumb = p.media_type === 'video' ? (p.poster_url || p.stream_thumbnail_url || p.thumb_url || '') : (p.thumb_url || p.url || '')
                 const on = album.cover_photo_id === p.id
                 return (
-                  <button key={p.id} type="button" onClick={() => setCover(p.id)} title={p.media_type === 'video' ? t('ad.video') : undefined}
-                    style={{ aspectRatio: '1', borderRadius: 8, border: on ? `2px solid ${BRAND}` : `1.5px solid ${BORDER}`, cursor: 'pointer', background: thumb ? `center/cover no-repeat url("${thumb}")` : '#EDE7DB', position: 'relative' }}>
+                  <button type="button" key={p.id} onClick={() => { void setCover(p.id) }} title={p.media_type === 'video' ? t('ad.video') : undefined} className="hush-press"
+                    style={{ touchAction: 'manipulation', aspectRatio: '1', borderRadius: 8, border: on ? `2px solid ${BRAND}` : `1.5px solid ${BORDER}`, cursor: 'pointer', background: thumb ? `center/cover no-repeat url("${thumb}")` : '#EDE7DB', position: 'relative', boxShadow: on ? '0 0 0 3px rgba(99,8,38,0.20)' : undefined }}>
+                    {on && (
+                      <span aria-hidden="true" style={{ position: 'absolute', inset: 0, borderRadius: 6, background: 'rgba(99,8,38,0.36)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#FDFAF5', fontSize: 15, fontWeight: 700 }}>&#10003;</span>
+                    )}
                     {p.media_type === 'video' && (
                       <Play className="w-3.5 h-3.5" style={{ position: 'absolute', top: 4, right: 4, color: '#FDFAF5', filter: 'drop-shadow(0 1px 2px rgba(0,0,0,0.6))' }} fill="#FDFAF5" />
                     )}
@@ -676,8 +655,10 @@ export default function AlbumDesigner({ album, photos, onAlbumUpdated, onClose }
             <p style={label}>{t('ad.background')}</p>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(38px, 1fr))', gap: 6, marginBottom: 10 }}>
               {PRESETS.map((preset) => (
-                <button key={preset.value} type="button" title={preset.label} onClick={() => setBackground(preset.value)}
-                  style={{ aspectRatio: '1', borderRadius: 8, background: preset.value, border: bgTheme === preset.value ? `2px solid ${BRAND}` : `1.5px solid ${BORDER}`, cursor: 'pointer' }} />
+                <button type="button" key={preset.value} title={preset.label} onClick={() => { void setBackground(preset.value) }} className="hush-press"
+                  style={{ touchAction: 'manipulation', aspectRatio: '1', borderRadius: 8, background: preset.value, border: bgTheme === preset.value ? `2px solid ${BRAND}` : `1.5px solid ${BORDER}`, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  {bgTheme === preset.value && <span style={{ fontSize: 12, color: contrastText(preset.value) }}>&#10003;</span>}
+                </button>
               ))}
             </div>
 
@@ -695,13 +676,14 @@ export default function AlbumDesigner({ album, photos, onAlbumUpdated, onClose }
               </div>
             )}
 
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(52px, 1fr))', gap: 6, maxHeight: 264, overflowY: 'auto', paddingRight: 2 }}>
+            <div className="hush-picker-grid">
               <button
                 type="button"
                 onClick={() => bgFileInputRef.current?.click()}
                 disabled={uploadingBg}
                 title={t('ad.addPhoto')}
-                style={{ aspectRatio: '1', borderRadius: 8, background: '#F5F0E8', border: `1.5px dashed ${BORDER}`, cursor: uploadingBg ? 'wait' : 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 2, color: BRAND }}
+                className="hush-press"
+                style={{ touchAction: 'manipulation', aspectRatio: '1', borderRadius: 8, background: '#F5F0E8', border: `1.5px dashed ${BORDER}`, cursor: uploadingBg ? 'wait' : 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 2, color: BRAND }}
               >
                 {uploadingBg ? <Loader2 className="w-4 h-4 animate-spin" /> : (
                   <>
@@ -713,7 +695,7 @@ export default function AlbumDesigner({ album, photos, onAlbumUpdated, onClose }
               <input
                 ref={bgFileInputRef}
                 type="file"
-                accept="image/jpeg,image/png,image/webp,image/avif"
+                accept="image/*"
                 className="hidden"
                 onChange={(e) => {
                   const file = e.target.files?.[0]
@@ -724,8 +706,10 @@ export default function AlbumDesigner({ album, photos, onAlbumUpdated, onClose }
               {STOCK_ALBUM_BACKGROUNDS.map((preset) => {
                 const on = bgTheme === preset.value || bgTheme === preset.legacyValue || bgTheme === preset.imageValue
                 return (
-                  <button key={preset.value} type="button" title={preset.label} onClick={() => setBackground(preset.value)}
-                    style={{ aspectRatio: '1', borderRadius: 8, border: on ? `2px solid ${BRAND}` : `1.5px solid ${BORDER}`, cursor: 'pointer', background: `center/cover no-repeat url("${preset.src}")` }} />
+                  <button type="button" key={preset.value} title={preset.label} onClick={() => { void setBackground(preset.value) }} className="hush-press"
+                    style={{ touchAction: 'manipulation', position: 'relative', aspectRatio: '1', borderRadius: 8, border: on ? `2px solid ${BRAND}` : `1.5px solid ${BORDER}`, cursor: 'pointer', background: `center/cover no-repeat url("${preset.src}")`, boxShadow: on ? '0 0 0 3px rgba(99,8,38,0.20)' : undefined }}>
+                    {on && <span aria-hidden="true" style={{ position: 'absolute', inset: 0, borderRadius: 6, background: 'rgba(99,8,38,0.36)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#FDFAF5', fontSize: 15, fontWeight: 700 }}>&#10003;</span>}
+                  </button>
                 )
               })}
             </div>

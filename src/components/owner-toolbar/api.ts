@@ -1,6 +1,6 @@
 import type { CollectionSummary } from '@/components/owner-toolbar/types'
 import type { MediaDisplayFilter, MediaHoverEffect, MobileGridColumns, SlideshowAnimation } from '@/lib/media-display'
-import type { SponsorLogo } from '@/types'
+import type { SponsorLogo, SlideshowMotion } from '@/types'
 import { readFileRobust } from '@/lib/file-read'
 
 async function jsonBody<T>(res: Response): Promise<T> {
@@ -142,7 +142,23 @@ export async function saveMediaSettingsRequest(
   }
 }
 
-// Last-resort byte recovery for Android gallery/camera files.
+// Storable image types for a design asset. Deliberately narrower than the main photo pipeline's
+// server-side set: a header/logo/background is drawn by an <img> in every browser, so HEIC has no
+// place here even though R2 would accept it.
+const STORABLE_DESIGN_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/avif'])
+
+// How large a re-encoded design asset is allowed to be. A logo renders at ~64px and a header band
+// at a page width, so these are generous; they exist to stop a phone's 12 MP original becoming a
+// multi-megabyte re-encode.
+export const LOGO_MAX_EDGE = 1024
+export const DESIGN_IMAGE_MAX_EDGE = 2560
+// Mirror the server caps: /api/album/logo/upload and /api/album/sponsor-logo/upload allow 5 MB,
+// header-image and background allow 10 MB. Exceeding these is a resize, not an error — see
+// prepareDesignImage.
+export const LOGO_MAX_BYTES = 5 * 1024 * 1024
+export const DESIGN_IMAGE_MAX_BYTES = 10 * 1024 * 1024
+
+// Last-resort recovery + normalisation for pictures picked on a phone.
 //
 // readFileRobust() covers arrayBuffer(), FileReader and blob-URL fetch. On some Android devices a
 // picked file is "displayable but not byte-readable": every one of those paths fails, yet an <img>
@@ -150,7 +166,18 @@ export async function saveMediaSettingsRequest(
 // UploadZone already relies on this to fix the identical "Could not read this file" failure for
 // photo uploads; the logo and background pickers never got it, so choosing a logo on an Android
 // phone simply failed with no way forward.
-async function bytesViaCanvas(file: File): Promise<ArrayBuffer | null> {
+// A design asset is drawn at a few hundred pixels at most, so there is no reason to carry a 12 MP
+// original through the re-encode — and every reason not to: a lossless PNG of one is easily 20 MB,
+// which would blow straight past the logo route's 5 MB cap and turn a recovered upload into a
+// different error. Cap the long edge, prefer WebP, and fall back down the format list for older
+// canvas implementations.
+const CANVAS_ENCODE_ORDER: Array<[type: string, quality: number]> = [
+  ['image/webp', 0.9],
+  ['image/jpeg', 0.92],
+  ['image/png', 1],
+]
+
+async function reencodeViaCanvas(file: File, maxEdge: number): Promise<{ blob: Blob; type: string } | null> {
   const url = URL.createObjectURL(file)
   try {
     const img = await new Promise<HTMLImageElement | null>((resolve) => {
@@ -159,20 +186,68 @@ async function bytesViaCanvas(file: File): Promise<ArrayBuffer | null> {
       el.onerror = () => resolve(null)
       el.src = url
     })
-    if (!img || !img.naturalWidth) return null
+    if (!img || !img.naturalWidth || !img.naturalHeight) return null
+    const scale = Math.min(1, maxEdge / Math.max(img.naturalWidth, img.naturalHeight))
     const canvas = document.createElement('canvas')
-    canvas.width = img.naturalWidth
-    canvas.height = img.naturalHeight
+    canvas.width = Math.max(1, Math.round(img.naturalWidth * scale))
+    canvas.height = Math.max(1, Math.round(img.naturalHeight * scale))
     const ctx = canvas.getContext('2d')
     if (!ctx) return null
-    ctx.drawImage(img, 0, 0)
-    const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/png'))
-    return blob ? await blob.arrayBuffer() : null
+    ctx.drawImage(img, 0, 0, canvas.width, canvas.height)
+    for (const [type, quality] of CANVAS_ENCODE_ORDER) {
+      const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, type, quality))
+      // A canvas that can't produce the requested type silently falls back to PNG, so trust the
+      // blob's own type rather than the one we asked for — that mismatch is what the presigned
+      // signature would reject.
+      if (blob && blob.size > 0 && STORABLE_DESIGN_TYPES.has(blob.type)) {
+        return { blob, type: blob.type }
+      }
+    }
+    return null
   } catch {
     return null
   } finally {
     URL.revokeObjectURL(url)
   }
+}
+
+// Turn whatever the device's picker handed us into bytes we can actually sign for and store.
+//
+// Two things go wrong on a phone and neither is the owner's fault:
+//   - The picker reports no type at all, or image/heic from an iPhone. Presigning under that type
+//     is either rejected outright (415) or produces a stored file no browser can draw.
+//   - The File is "displayable but not byte-readable" — every read path fails, yet an <img> renders
+//     it perfectly (a stale Android content-provider reference).
+// Both are fixed the same way: redraw it through a canvas. The returned `type` is what the bytes
+// REALLY are, and it is the only type used from here on — presign, PUT header and Blob label all
+// agree. They used to disagree (the presign got file.type while the blob was PNG), which silently
+// broke every recovery: "logo — error", with nothing the owner could do about it.
+async function prepareDesignImage(
+  file: File,
+  maxEdge: number,
+  maxBytes: number,
+): Promise<{ ok: true; blob: Blob; type: string } | { ok: false; error: string }> {
+  if (STORABLE_DESIGN_TYPES.has(file.type)) {
+    try {
+      const bytes = await readFileRobust(file)
+      if (bytes.byteLength <= maxBytes) {
+        return { ok: true, blob: new Blob([bytes], { type: file.type }), type: file.type }
+      }
+      // Storable, but bigger than the endpoint will take. Falling through re-encodes it down
+      // instead of telling the owner their picture is too big — a phone camera shot is always over
+      // the logo cap, and "pick a smaller one" is not an instruction anybody can act on.
+    } catch {
+      // Unreadable bytes — fall through to the canvas path rather than giving up.
+    }
+  }
+  const recovered = await reencodeViaCanvas(file, maxEdge)
+  if (!recovered) {
+    return { ok: false, error: 'Could not read this image from your device. Please pick a different one.' }
+  }
+  if (recovered.blob.size > maxBytes) {
+    return { ok: false, error: `That image is too detailed to use here (over ${Math.round(maxBytes / 1024 / 1024)} MB even after resizing).` }
+  }
+  return { ok: true, blob: recovered.blob, type: recovered.type }
 }
 
 export async function uploadBackgroundRequest(
@@ -183,24 +258,9 @@ export async function uploadBackgroundRequest(
   // have a stale content-provider reference; PUTting it directly made fetch() fail to read the
   // request body — surfacing as the "Failed to fetch" error. Reading into an in-memory Blob
   // (with retries + FileReader fallback) makes the upload immune to that.
-  let bytes: ArrayBuffer
-  let recoveredType: string | null = null
-  try {
-    bytes = await readFileRobust(file)
-  } catch {
-    // Android "displayable but not byte-readable" file — recover the pixels via canvas rather than
-    // dead-ending the owner with an error they cannot act on.
-    const recovered = await bytesViaCanvas(file)
-    if (!recovered) {
-      return { ok: false, error: 'Could not read this image from your device. Please pick it again.' }
-    }
-    bytes = recovered
-    // The canvas re-encodes to PNG, so the blob must be labelled PNG. Keeping the original type
-    // (e.g. image/heic) would send PNG bytes under the wrong content type and the server's type
-    // check would reject them — swapping one failure for another.
-    recoveredType = 'image/png'
-  }
-  const blob = new Blob([bytes], { type: recoveredType ?? file.type })
+  const prepared = await prepareDesignImage(file, DESIGN_IMAGE_MAX_EDGE, DESIGN_IMAGE_MAX_BYTES)
+  if (!prepared.ok) return prepared
+  const { blob, type: uploadType } = prepared
 
   // Step 1: get a presigned PUT URL from the server
   const presignRes = await fetch('/api/album/background/upload', {
@@ -208,7 +268,7 @@ export async function uploadBackgroundRequest(
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       slug,
-      contentType: file.type,
+      contentType: uploadType,
       fileName: file.name,
       fileSize: blob.size,
     }),
@@ -234,7 +294,7 @@ export async function uploadBackgroundRequest(
       method: 'PUT',
       body: blob,
       headers: {
-        'Content-Type': file.type,
+        'Content-Type': uploadType,
         'Cache-Control': 'public, max-age=31536000, immutable',
       },
     })
@@ -281,32 +341,19 @@ async function uploadImageViaPresign(
   presignEndpoint: string,
   slug: string,
   file: File,
+  maxEdge: number,
+  maxBytes: number,
 ): Promise<{ ok: true; url: string } | { ok: false; error: string }> {
-  let bytes: ArrayBuffer
-  let recoveredType: string | null = null
-  try {
-    bytes = await readFileRobust(file)
-  } catch {
-    // Android "displayable but not byte-readable" file — recover the pixels via canvas rather than
-    // dead-ending the owner with an error they cannot act on.
-    const recovered = await bytesViaCanvas(file)
-    if (!recovered) {
-      return { ok: false, error: 'Could not read this image from your device. Please pick it again.' }
-    }
-    bytes = recovered
-    // The canvas re-encodes to PNG, so the blob must be labelled PNG. Keeping the original type
-    // (e.g. image/heic) would send PNG bytes under the wrong content type and the server's type
-    // check would reject them — swapping one failure for another.
-    recoveredType = 'image/png'
-  }
-  const blob = new Blob([bytes], { type: recoveredType ?? file.type })
+  const prepared = await prepareDesignImage(file, maxEdge, maxBytes)
+  if (!prepared.ok) return prepared
+  const { blob, type: uploadType } = prepared
 
   const presignRes = await fetch(presignEndpoint, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       slug,
-      contentType: file.type,
+      contentType: uploadType,
       fileName: file.name,
       fileSize: blob.size,
     }),
@@ -326,7 +373,7 @@ async function uploadImageViaPresign(
       method: 'PUT',
       body: blob,
       headers: {
-        'Content-Type': file.type,
+        'Content-Type': uploadType,
         'Cache-Control': 'public, max-age=31536000, immutable',
       },
     })
@@ -341,11 +388,11 @@ async function uploadImageViaPresign(
 }
 
 export function uploadHeaderImageFile(slug: string, file: File) {
-  return uploadImageViaPresign('/api/album/header-image/upload', slug, file)
+  return uploadImageViaPresign('/api/album/header-image/upload', slug, file, DESIGN_IMAGE_MAX_EDGE, DESIGN_IMAGE_MAX_BYTES)
 }
 
 export function uploadLogoFile(slug: string, file: File) {
-  return uploadImageViaPresign('/api/album/logo/upload', slug, file)
+  return uploadImageViaPresign('/api/album/logo/upload', slug, file, LOGO_MAX_EDGE, LOGO_MAX_BYTES)
 }
 
 export async function saveLogoRequest(
@@ -363,7 +410,7 @@ export async function saveLogoRequest(
 }
 
 export function uploadSponsorLogoFile(slug: string, file: File) {
-  return uploadImageViaPresign('/api/album/sponsor-logo/upload', slug, file)
+  return uploadImageViaPresign('/api/album/sponsor-logo/upload', slug, file, LOGO_MAX_EDGE, LOGO_MAX_BYTES)
 }
 
 // Replace-whole-array: always send the complete desired list (see /api/album/sponsors).
@@ -423,6 +470,24 @@ export async function saveGuestDownloadsRequest(
   const body = await jsonBody<{ error?: string; allow_guest_downloads?: boolean }>(res)
   if (!res.ok) return { ok: false, error: body.error ?? `Save failed (${res.status})` }
   return { ok: true, allow_guest_downloads: body.allow_guest_downloads ?? allowGuestDownloads }
+}
+
+// The composed slideshow transition saves on its own rather than riding along with the seven-field
+// media-settings call: it is dragged continuously across six axes, and it must not be able to
+// resend (or clobber) an unrelated setting on every tick. Same endpoint, partial body — the route
+// only writes the fields it is given.
+export async function saveSlideshowMotionRequest(
+  slug: string,
+  motion: SlideshowMotion | null,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const res = await fetch('/api/album/media-settings', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ slug, slideshow_motion: motion }),
+  })
+  const body = await jsonBody<{ error?: string }>(res)
+  if (!res.ok) return { ok: false, error: body.error ?? `Save failed (${res.status})` }
+  return { ok: true }
 }
 
 export async function saveRequireApprovalRequest(

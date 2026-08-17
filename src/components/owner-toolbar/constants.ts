@@ -16,6 +16,16 @@ export const DEFAULT_BG = '#FDFAF5'
 // Different name on purpose: these two sets are NOT interchangeable, don't merge them.
 export const MAX_DESIGN_IMAGE_BYTES = 10 * 1024 * 1024
 export const DESIGN_IMAGE_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/avif'])
+
+// Whether a picked file is worth ATTEMPTING to upload. Deliberately looser than the set above,
+// which is what we can store directly: a phone's picker regularly reports image/heic or no type at
+// all for a picture the owner can see perfectly well in their gallery, and rejecting those up front
+// meant "unsupported format" for a valid photo with no way forward. Anything that gets past this
+// is normalised by prepareDesignImage() in owner-toolbar/api.ts, which re-encodes it through a
+// canvas and only fails if the browser genuinely cannot draw it.
+export function isPickableImage(file: File): boolean {
+  return DESIGN_IMAGE_TYPES.has(file.type) || file.type === '' || file.type.startsWith('image/')
+}
 // A logo is a small mark, not a photo — tighter client pre-check matching the server's 5 MB cap
 // (see /api/album/logo/upload) rather than reusing the general design-asset cap above.
 export const MAX_LOGO_BYTES = 5 * 1024 * 1024

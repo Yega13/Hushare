@@ -501,6 +501,26 @@
   }
 }
 
+/* ── Owner-link first paint ──────────────────────────────────────────────────
+   The #owner= token lives in the URL fragment, which no server ever receives, so the album page is
+   always rendered for a GUEST first — guest actions bar, or the password/reveal gate on a gated
+   album. React can only put that right after it hydrates and re-verifies ownership, and until then
+   the owner is looking at the wrong page ("guest view → management view", and the "this album is
+   protected, enter a password" flash on their own album).
+
+   An inline script in [slug]/page.tsx sets data-hush-owner before this markup is parsed. Hiding
+   rather than removing keeps the guest bar's exact height, so the real owner toolbar drops into the
+   same box with no layout shift. AlbumPageClient removes the attribute the instant it knows the
+   visitor isn't in owner view, so a stale or wrong token still lands on a normal guest page.
+
+   This deliberately does NOT hide the password/reveal gate. Hiding it left an owner whose check
+   hadn't resolved staring at a blank page, and together with a loading hold in AlbumPageClient it
+   stopped gated albums opening at all. The gate flash on an owner link is still worth fixing, but
+   not by hiding the one element the visitor may legitimately need. */
+html[data-hush-owner='1'] .hush-guest-actions {
+  visibility: hidden;
+}
+
 /* ── Album designer: independent scroll panes ───────────────────────────────── */
 /* Side by side (desktop), the preview and the settings rail scroll SEPARATELY, so moving through
    the settings never drags the album preview out of view — you keep your place in both at once.
@@ -548,6 +568,50 @@
     max-width: 420px;
     border-top: none;
     border-left: 1px solid #DDD5C5;
+  }
+}
+
+/* Stacked on a phone, the live preview sat at the TOP of one long scroll — so by the time you had
+   scrolled down to the header-photo or background pickers it was off screen, and every change you
+   made appeared to do nothing at all. Worse, some of them RESIZE the preview (picking a colour
+   clears the header photo, collapsing the hero band), which yanked the control you were touching
+   several hundred pixels up mid-gesture. Pinning it fixes both: you always see what you're
+   changing, and the controls under your finger stay where you put them. */
+@media (max-width: 899px) {
+  .hush-designer-preview {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    max-height: 42vh;
+    overflow: hidden;
+    box-shadow: 0 8px 20px rgba(43, 26, 20, 0.12);
+  }
+}
+
+/* The header-photo and background pickers cap their height and scroll inside the rail — on DESKTOP
+   only.
+   These two grids were the only controls in the Designer that did not respond to a tap on Android,
+   and they were also the only ones inside their own scroll container. Every other control in the
+   same rail on the same phone — fonts, photo styles, accent swatches, sponsors — is a plain button
+   and always worked. A scroller nested inside the phone's single body scroller is the well-known
+   configuration where the browser claims a tap as a pan and never dispatches the click.
+   It was briefly "fixed" by reimplementing tap detection in JS, which traded one class of lost taps
+   for another (a press longer than 800ms did nothing; a small flick changed the album's cover). The
+   real fix is to stop nesting scrollers: on a phone the grid simply grows and the rail scrolls, so
+   the tiles behave exactly like every other button in the panel. The cap earns its place on desktop,
+   where a mouse has no gesture ambiguity. */
+.hush-picker-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(52px, 1fr));
+  gap: 6px;
+}
+
+@media (min-width: 900px) {
+  .hush-picker-grid {
+    max-height: 264px;
+    overflow-y: auto;
+    padding-right: 2px;
+    overscroll-behavior: contain;
   }
 }
 

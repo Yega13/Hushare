@@ -45,26 +45,71 @@ export function hsvToHex({ h, s, v }: HSV): string {
   return `#${to255(r)}${to255(g)}${to255(b)}`
 }
 
-// Shared pointer-drag behaviour for both the SV area and the hue slider: capture the pointer so a
-// drag keeps tracking even when it leaves the element, and report position as 0-1 fractions.
+// Shared pointer-drag behaviour for both the SV area and the hue slider.
+//
+// This used to rely on setPointerCapture + React's own onPointerMove on the element. It worked with
+// a mouse and not with a finger, for two reasons that only exist on a phone:
+//   1. The picker sits inside the Designer's scrolling body. A touch that the browser decides is a
+//      scroll fires pointercancel, which implicitly drops the capture mid-drag.
+//   2. Picking a colour clears the header photo, and on a phone the preview is stacked ABOVE the
+//      controls — so the hero band collapsing moves the picker itself several hundred pixels up,
+//      out from under the finger, on the very first touch.
+// Listening on the window instead survives (1), and re-reading the element's box on every move
+// survives (2): the drag keeps tracking the control wherever the page has moved it to.
 function useDragArea(onMove: (fx: number, fy: number) => void) {
-  const draggingRef = useRef(false)
-  const apply = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
-    const r = e.currentTarget.getBoundingClientRect()
-    onMove(clamp01((e.clientX - r.left) / r.width), clamp01((e.clientY - r.top) / r.height))
-  }, [onMove])
-  return {
-    onPointerDown: (e: React.PointerEvent<HTMLDivElement>) => {
-      draggingRef.current = true
-      e.currentTarget.setPointerCapture(e.pointerId)
-      apply(e)
-    },
-    onPointerMove: (e: React.PointerEvent<HTMLDivElement>) => { if (draggingRef.current) apply(e) },
-    onPointerUp: (e: React.PointerEvent<HTMLDivElement>) => {
-      draggingRef.current = false
-      try { e.currentTarget.releasePointerCapture(e.pointerId) } catch { /* already released */ }
-    },
-  }
+  // Read through a ref so the listeners installed on pointerdown always call the CURRENT onMove,
+  // without needing to be torn down and reinstalled on every re-render mid-drag.
+  const onMoveRef = useRef(onMove)
+  useEffect(() => { onMoveRef.current = onMove })
+
+  // Teardowns for every drag currently holding window listeners. A Set, not a single function,
+  // because multi-touch can open several at once. Cleared on unmount so closing the Designer
+  // mid-drag cannot leave a listener behind.
+  const teardowns = useRef(new Set<() => void>())
+  useEffect(() => () => {
+    for (const t of teardowns.current) t()
+    teardowns.current.clear()
+  }, [])
+
+  const onPointerDown = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+    const el = e.currentTarget
+    const pointerId = e.pointerId
+    const track = (clientX: number, clientY: number) => {
+      const r = el.getBoundingClientRect()
+      if (r.width <= 0 || r.height <= 0) return
+      onMoveRef.current(clamp01((clientX - r.left) / r.width), clamp01((clientY - r.top) / r.height))
+    }
+    track(e.clientX, e.clientY)
+
+    const teardown = () => {
+      window.removeEventListener('pointermove', move)
+      window.removeEventListener('pointerup', end)
+      window.removeEventListener('pointercancel', end)
+      window.removeEventListener('blur', teardown)
+      teardowns.current.delete(teardown)
+    }
+    const move = (ev: PointerEvent) => {
+      if (ev.pointerId !== pointerId) return
+      // Deliberately no setPointerCapture (it dies to pointercancel when the Designer's own
+      // scroll claims the gesture). The price is that a mouse released OUTSIDE the window never
+      // sends us a pointerup, so the drag would stick: the colour would then follow the bare
+      // cursor and every movement would schedule a real save to the album. `buttons === 0` is
+      // proof the button is already up, and ends the drag the moment the pointer comes back.
+      if (ev.pointerType === 'mouse' && ev.buttons === 0) { teardown(); return }
+      track(ev.clientX, ev.clientY)
+    }
+    const end = (ev: PointerEvent) => {
+      if (ev.pointerId === pointerId) teardown()
+    }
+    window.addEventListener('pointermove', move, { passive: true })
+    window.addEventListener('pointerup', end)
+    window.addEventListener('pointercancel', end)
+    // Alt-tab or an OS overlay mid-drag never delivers a pointerup either.
+    window.addEventListener('blur', teardown)
+    teardowns.current.add(teardown)
+  }, [])
+
+  return { onPointerDown }
 }
 
 export default function HushColorPicker({ value, onChange }: Props) {
@@ -114,7 +159,6 @@ export default function HushColorPicker({ value, onChange }: Props) {
       {/* Saturation (x) × brightness (y) */}
       <div
         {...svDrag}
-        onPointerCancel={svDrag.onPointerUp}
         style={{
           position: 'relative', width: '100%', height: 132, borderRadius: 10, cursor: 'crosshair',
           touchAction: 'none', border: `1px solid ${BORDER}`,
@@ -134,7 +178,6 @@ export default function HushColorPicker({ value, onChange }: Props) {
       {/* Hue */}
       <div
         {...hueDrag}
-        onPointerCancel={hueDrag.onPointerUp}
         style={{
           position: 'relative', width: '100%', height: 14, borderRadius: 999, marginTop: 10,
           cursor: 'pointer', touchAction: 'none', border: `1px solid ${BORDER}`,
