@@ -14,9 +14,19 @@ import { detectBibNumbers } from '@/lib/rekognition'
 // practice — an interrupted sweep resumed at exactly the photo it stopped on.
 
 // Sized to complete comfortably inside one post-response budget. Measured ~11-12 before termination.
-const BATCH = 10
+// Sized against the WORKERS PAID subrequest budget of 1000 per invocation (2026-08-17; it was 50
+// on the free plan, which is why this used to be 10). Each photo costs 3 subrequests: fetch the
+// image, call Rekognition, write the result back. Both indexers run in the same invocation, so the
+// arithmetic that matters is 2 x BATCH x 3, and 100 leaves ~40% headroom. Do not raise this past
+// ~150 without re-checking that number -- exceeding the budget does not slow indexing down, it
+// makes the whole invocation fail.
+//
+// CONCURRENCY is capped by AWS, not by us: 10 here plus 10 in the sibling indexer is 20 concurrent
+// Rekognition calls, comfortably inside DetectText/IndexFaces default rates. Throttling would
+// surface as failed photos, not slow ones.
+const BATCH = 100
 // Parallelism within a batch. These are network-bound calls sharing a Worker with real traffic.
-const CONCURRENCY = 5
+const CONCURRENCY = 10
 // Absolute ceiling on chain length. Without it, photos that fail every attempt (left NULL so they
 // can be retried) would chain forever. 400 links x 8 = 3200 photos, far past any real race.
 const MAX_CHAIN = 400
