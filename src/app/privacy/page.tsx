@@ -260,7 +260,38 @@ export default function PrivacyPage() {
               improve it.
             </li>
           </ul>
-        </Section>
+        
+          <p className="mt-5">
+            <strong style={INK}>Why we are allowed to.</strong> European law
+            says we need a specific reason for each of these, not just a good
+            intention. Ours:
+          </p>
+          <ul className="list-disc pl-5 space-y-2 mt-3">
+            <li>
+              Storing and showing your album, running your account, taking
+              payment - because it is the service you asked us for.
+            </li>
+            <li>
+              Blocking spam and abuse, and keeping security records - because we
+              have a legitimate interest in the service not being wrecked for
+              everyone else. Those records are kept 30 days and never used to
+              build a profile of you.
+            </li>
+            <li>
+              Counting how the service is used - the same legitimate interest,
+              measured without identifying anyone.
+            </li>
+            <li>
+              Keeping billing records for seven years - because tax law requires
+              it.
+            </li>
+            <li>
+              <strong style={INK}>Face search - only with consent</strong> from
+              the people whose faces they are. See section 5: this one works
+              differently from everything else on the list.
+            </li>
+          </ul>
+</Section>
 
         <Section id="third-parties" number={4} heading="Third-party processors">
           <p>
@@ -351,9 +382,32 @@ export default function PrivacyPage() {
             <strong style={INK}>90 days pass with no new photo added</strong> to
             the album. That last one runs on its own - nobody has to remember it,
             so an album that has finished its event stops holding face data three
-            months later either way. If you are an event organiser, you are responsible
-            for telling your participants that face search is available on your
-            album - and you can simply leave it off.
+            months later either way. <strong style={INK}>If you are an event organiser,
+            telling people is not enough.</strong> A face template is biometric
+            data, which European law protects more strictly than almost anything
+            else: it is prohibited by default, and the exception we rely on is
+            the <strong style={INK}>explicit consent</strong> of the person whose
+            face it is. Consent means an active choice they made and that you can
+            evidence - not a sign at the venue they may have walked past, and not
+            a sentence in an email they may never have opened.
+          </p>
+          <p className="mt-3">
+            In practice that is one unticked box on your entry or invitation
+            form. You are welcome to use our wording:{' '}
+            <em>
+              &ldquo;I agree that photographs of me from this event may be made
+              searchable by face, so that I can find my own pictures. I can
+              withdraw this at any time.&rdquo;
+            </em>{' '}
+            Keep a record of who ticked it. If someone leaves it unticked, that
+            is a complete answer - they simply do not get face search.
+          </p>
+          <p className="mt-3">
+            If collecting that is impractical,{' '}
+            <strong style={INK}>leave Face Finder off and use race-number search
+            instead</strong>. It reads the digits printed on a bib, identifies
+            nobody, creates no biometric data, and needs consent from no one. At
+            a race it finds most of the same photographs.
           </p>
           <p className="mt-3">
             To have face data for a specific person or album removed at any

@@ -211,12 +211,16 @@ export default function TermsPage() {
             of themselves by taking a selfie.
           </p>
           <p className="mt-3">
-            This is biometric processing, and in many countries it carries
-            specific legal obligations. By switching it on you confirm that you
-            have the right to do so for the people in your photos, and that you
-            have told them - a line on a race entry form, a sign at the venue,
-            a note in the invitation. Do not switch it on for photos of people
-            who have not been told.
+            This is biometric processing, and in Europe and several US states it
+            is prohibited unless the people involved have given{' '}
+            <strong style={INK}>explicit consent</strong>. Telling them is not
+            the same thing: consent is an active choice you can evidence, which
+            in practice means an unticked box on your entry or invitation form
+            and a record of who ticked it. A sign at the venue is not enough. By
+            switching Face Finder on you confirm you have that consent for the
+            people in your photographs. If you cannot get it, leave it off -
+            race-number search finds most of the same pictures and creates no
+            biometric data at all.
           </p>
           <p className="mt-3">
             A visitor&apos;s selfie is used to run the search and is not added to
