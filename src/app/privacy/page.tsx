@@ -325,10 +325,13 @@ export default function PrivacyPage() {
         <Section id="retention" number={7} heading="How long we keep things">
           <p>
             Free albums are retained for as long as they remain active. If an
-            album sits untouched for <strong style={INK}>3 months</strong>,
+            album sits untouched by everyone for <strong style={INK}>1 year</strong>,
             it is automatically retired and its media is permanently deleted.
-            You may request deletion of your album at any time by emailing us
-            - see section 12.
+            We email a warning first, so you can download everything before that
+            happens. Paid plans are not subject to the inactivity rule: those
+            albums are kept while the subscription is active and for a further
+            year after it ends. You may request deletion of your album at any
+            time by emailing us - see section 12.
           </p>
         </Section>
 

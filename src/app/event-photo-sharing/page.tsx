@@ -132,7 +132,7 @@ export default function EventPhotoSharingPage() {
         },
         {
           q: 'How long does the event album last?',
-          a: 'Free albums are active as long as they receive uploads, and retire after 3 months of inactivity (we email a warning first). Pro and Max albums never expire.',
+          a: 'Free albums are active as long as they receive uploads, and retire after 1 year of inactivity (we email a warning first). Pro and Max albums never expire.',
         },
       ]}
       jsonLd={jsonLd}

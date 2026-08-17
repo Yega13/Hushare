@@ -12,8 +12,13 @@ const NO_STORE = { 'Cache-Control': 'no-store' }
 // 2026-08-11 from 3 months, which was too aggressive and scared off new users. Truly abandoned
 // albums still get cleaned up, just a full year out. Paid albums are kept while the subscription
 // is active (tier check below) and for 1 year after it lapses (paid-grace check). See
-// getPaidRetentionUntil. NOTE: the marketing copy (pricing + home strings that say "3 months of
-// inactivity") must be updated to "1 year" to match this.
+// getPaidRetentionUntil.
+//
+// The published copy now matches: privacy policy, the site-wide JSON-LD FAQ in layout.tsx, the
+// pricing and landing pages, and the support bot's system prompt all say 1 year (2026-08-16). They
+// said 3 months for five days after this constant changed, which meant the privacy policy stated a
+// retention period four times shorter than the one actually enforced. If this number ever changes
+// again, grep for "1 year of inactivity" and change all of them in the same commit.
 const RETIRE_AFTER_DAYS = 365
 const BATCH_SIZE = 25
 

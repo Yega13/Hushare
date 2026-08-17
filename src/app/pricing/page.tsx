@@ -83,7 +83,7 @@ const tiers: Tier[] = [
       'Anyone can view & add via the link',
       'Download full album as ZIP',
       'Photos up to 25 MB · videos up to 50 MB',
-      'Album auto-retires after 3 months of inactivity',
+      'Album auto-retires after 1 year of inactivity',
       'Create up to 3 albums (2 as a guest)',
     ],
   },
