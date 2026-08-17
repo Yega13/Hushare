@@ -70,6 +70,27 @@ const jsonLd = {
   ],
 }
 
+
+// Rendered as the contents list AND used nowhere else, so a section added without a line here is
+// simply missing from the list rather than silently mis-numbered.
+const TOC: { id: string; n: number; label: string }[] = [
+  { id: 'who-we-are', n: 1, label: 'Who is responsible' },
+  { id: 'what-we-collect', n: 2, label: 'What we collect' },
+  { id: 'how-we-use', n: 3, label: 'How we use it' },
+  { id: 'third-parties', n: 4, label: 'Third-party processors' },
+  { id: 'face-search', n: 5, label: 'Face search and race numbers' },
+  { id: 'cookies', n: 6, label: 'Cookies and local storage' },
+  { id: 'sharing', n: 7, label: 'Who can see your album' },
+  { id: 'retention', n: 8, label: 'How long we keep things' },
+  { id: 'rights', n: 9, label: 'Your rights' },
+  { id: 'children', n: 10, label: 'Children' },
+  { id: 'transfers', n: 11, label: 'International data transfers' },
+  { id: 'security', n: 12, label: 'Security' },
+  { id: 'breach', n: 13, label: 'If something goes wrong' },
+  { id: 'changes', n: 14, label: 'Changes to this policy' },
+  { id: 'contact', n: 15, label: 'Contact' },
+]
+
 const SERIF = { fontFamily: 'var(--font-serif)' } as const
 const INK   = { color: '#630826' } as const
 const BODY  = { color: '#5C4A3C' } as const
@@ -165,12 +186,30 @@ export default function PrivacyPage() {
 
         <div className="mt-6 h-px" style={RULE} />
 
+        {/* The anchors have always been there; nothing ever linked to them, so on a phone the
+            face-search section was six scrolls down with no way to jump. */}
+        <nav aria-label="Contents" className="mt-8 rounded-2xl p-4" style={{ background: '#F6F1E8', border: '1px solid #E8E0D0' }}>
+          <p className="text-xs font-semibold uppercase mb-3" style={{ color: '#8B6F4E', letterSpacing: '0.12em' }}>
+            Contents
+          </p>
+          <ol className="grid gap-x-6 gap-y-1.5 sm:grid-cols-2 text-sm" style={{ listStyle: 'none', padding: 0, margin: 0 }}>
+            {TOC.map((t) => (
+              <li key={t.id}>
+                <a href={`#${t.id}`} style={{ color: '#630826', textDecoration: 'none' }}>
+                  <span style={{ color: '#A89880', marginRight: 6 }}>{t.n}.</span>{t.label}
+                </a>
+              </li>
+            ))}
+          </ol>
+        </nav>
+
+
         <p className="mt-8 text-lg leading-relaxed" style={BODY}>
           Hushare (&ldquo;we&rdquo;, &ldquo;us&rdquo;) helps anyone create a
           shared photo album from a single link - no sign-up, no app. This
           policy explains exactly what we store, why we store it, and the
-          rights you have over it. We designed Hushare to collect as little as
-          physically possible to run the service.
+          rights you have over it. Where something here is a promise, we have
+          tried to make sure the code actually keeps it.
         </p>
 
         <Section id="who-we-are" number={1} heading="Who is responsible">
@@ -182,10 +221,10 @@ export default function PrivacyPage() {
           <p className="mt-3">
             Privacy questions, deletion requests and complaints go to{' '}
             <a
-              href="mailto:husharesupport@gmail.com"
+              href="mailto:privacy@hushare.space"
               style={{ color: '#630826', textDecoration: 'underline', textDecorationStyle: 'dotted' }}
             >
-              husharesupport@gmail.com
+              privacy@hushare.space
             </a>
             . We reply within <strong style={INK}>one working day</strong> and
             complete requests within <strong style={INK}>one month</strong>, the
@@ -212,7 +251,11 @@ export default function PrivacyPage() {
             </li>
             <li>
               <strong style={INK}>Photos and videos</strong> uploaded by you
-              or anyone you share the album link with.
+              or anyone you share the album link with. Photos have their hidden
+              camera data - including GPS location, if the phone recorded any -
+              removed in your browser before they ever reach us.{' '}
+              <strong style={INK}>Videos do not:</strong> they upload as they
+              are, so a video may still carry the location it was filmed at.
             </li>
             <li>
               <strong style={INK}>Owner token</strong> - a random string
@@ -336,6 +379,12 @@ export default function PrivacyPage() {
               never sees your photos. Please don&apos;t type anything into it
               you would mind us reading, because if you ask to be put through to
               a person, the conversation is emailed to us.
+            </li>
+            <li>
+              <strong style={INK}>Cloudflare Analytics Engine</strong> - counts
+              of things that happen (albums created, photos uploaded, searches
+              run) so we can see what the service is doing. No names, and kept
+              for 90 days.
             </li>
             <li>
               <strong style={INK}>Google (Gmail)</strong> - our support inbox. If
@@ -462,6 +511,13 @@ export default function PrivacyPage() {
             advertisers - ever.
           </p>
           <p className="mt-3">
+            <strong style={INK}>What we never do with your photos.</strong> We do
+            not sell or rent them. We do not show adverts against them. We do not
+            use them to train AI models - not ours, not anyone else&apos;s. We do
+            not let search engines index albums. We never switch face search on
+            ourselves for an album; only its owner can do that.
+          </p>
+          <p className="mt-3">
             In limited circumstances, authorised Hushare staff may access album
             content - including photos and videos - where it is necessary to run
             the service: to respond to a report or legal request, to investigate
@@ -508,10 +564,10 @@ export default function PrivacyPage() {
           <p className="mt-3">
             To exercise any of these rights, email{' '}
             <a
-              href="mailto:husharesupport@gmail.com"
+              href="mailto:privacy@hushare.space"
               style={{ color: '#630826', textDecoration: 'underline', textDecorationStyle: 'dotted' }}
             >
-              husharesupport@gmail.com
+              privacy@hushare.space
             </a>{' '}
             from the address you used to contact us - or, if you never gave
             us one, include your album name and approximate creation date.
@@ -562,10 +618,10 @@ export default function PrivacyPage() {
             child at any time, whether or not they hold the album link, by
             emailing{' '}
             <a
-              href="mailto:husharesupport@gmail.com"
+              href="mailto:privacy@hushare.space"
               style={{ color: '#630826', textDecoration: 'underline', textDecorationStyle: 'dotted' }}
             >
-              husharesupport@gmail.com
+              privacy@hushare.space
             </a>{' '}
             with enough detail to identify it. We will remove the photograph and
             any face data derived from it. We will not ask them to prove they
@@ -635,10 +691,10 @@ export default function PrivacyPage() {
             Questions, requests, complaints - all of it comes to one
             address:{' '}
             <a
-              href="mailto:husharesupport@gmail.com"
+              href="mailto:privacy@hushare.space"
               style={{ color: '#630826', textDecoration: 'underline', textDecorationStyle: 'dotted' }}
             >
-              husharesupport@gmail.com
+              privacy@hushare.space
             </a>
             . A human replies.
           </p>
