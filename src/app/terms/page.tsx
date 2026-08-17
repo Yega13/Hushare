@@ -7,12 +7,12 @@ import HamburgerMenu from '@/components/HamburgerMenu'
 export const runtime = 'nodejs'
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL ?? 'https://hushare.space'
-const LAST_UPDATED = '2026-04-25'
-const LAST_UPDATED_HUMAN = 'April 25, 2026'
+const LAST_UPDATED = '2026-08-17'
+const LAST_UPDATED_HUMAN = 'August 17, 2026'
 
 const PAGE_TITLE = 'Terms of Service'
 const PAGE_DESCRIPTION =
-  'The rules for using Hushare - what you can upload, what we do with it, and how we handle takedowns and account issues.'
+  'The rules for using Hushare - what you can upload, who is responsible for an album, how face search and race-number search work, and how we handle takedowns and account issues.'
 
 export const metadata: Metadata = {
   title: PAGE_TITLE,
@@ -184,7 +184,125 @@ export default function TermsPage() {
           </p>
         </Section>
 
-        <Section number={4} heading="Our rights to remove content">
+        <Section number={4} heading="Who is responsible for an album">
+          <p>
+            Whoever creates an album decides what it is for, who gets the link,
+            which features are switched on, and what happens to the photos in
+            it. That makes them responsible for it. Hushare provides the tools
+            and the storage; we do not decide what an album collects or who may
+            see it.
+          </p>
+          <p className="mt-3">
+            If you are running an album for an event - a race, a wedding, a
+            festival - you are responsible for telling the people being
+            photographed what is happening, for having a lawful basis to
+            collect and share those photos where your local law requires one,
+            and for honouring requests from people who want their photo taken
+            down. We will help you act on such a request; we cannot make that
+            judgement for you.
+          </p>
+        </Section>
+
+        <Section number={5} heading="Face search">
+          <p>
+            Face search is <strong style={INK}>off by default</strong>. An
+            album owner has to switch it on. When it is on, faces in that
+            album&apos;s photos are analysed so that a visitor can find pictures
+            of themselves by taking a selfie.
+          </p>
+          <p className="mt-3">
+            This is biometric processing, and in many countries it carries
+            specific legal obligations. By switching it on you confirm that you
+            have the right to do so for the people in your photos, and that you
+            have told them - a line on a race entry form, a sign at the venue,
+            a note in the invitation. Do not switch it on for photos of people
+            who have not been told.
+          </p>
+          <p className="mt-3">
+            A visitor&apos;s selfie is used to run the search and is not added to
+            the album, not shown to anyone, and not kept afterwards. Face data
+            derived from an album is deleted when the album is deleted. Details
+            of how this works, and which processor performs the analysis, are
+            in our{' '}
+            <Link href="/privacy" style={{ color: '#630826', textDecoration: 'underline', textDecorationStyle: 'dotted' }}>
+              Privacy Policy
+            </Link>
+            .
+          </p>
+        </Section>
+
+        <Section number={6} heading="Race numbers">
+          <p>
+            On albums where the owner has switched it on, we read the race
+            numbers printed on bibs so a runner can find their photos by typing
+            their number. This looks for digits on a bib; it does not identify
+            anyone, and it is independent of face search - you can use either,
+            both, or neither.
+          </p>
+          <p className="mt-3">
+            Numbers are read from the photo alone. We do not receive, request,
+            or hold a start list, so a number is only ever a number to us: what
+            it corresponds to is known to the organiser, not to Hushare.
+          </p>
+        </Section>
+
+        <Section number={7} heading="Guests and moderation">
+          <p>
+            Anyone with the album link can view it, and - unless the owner has
+            turned uploads off - add to it. If the album has a password, they
+            need the password to view it or add to it.
+          </p>
+          <p className="mt-3">
+            Owners can require new uploads to be approved before anyone else
+            sees them, hide individual items, and delete anything in their
+            album. If you add a photo to someone else&apos;s album, you are
+            giving them the ability to keep, hide, or delete it. Deletion is
+            permanent: we cannot recover a deleted album or photo for you.
+          </p>
+        </Section>
+
+        <Section number={8} heading="Logos and sponsor branding">
+          <p>
+            You can add your own logo and sponsor marks to an album. By
+            uploading them you confirm you are allowed to use those marks in
+            that way. We do not check trade mark rights, and we will remove
+            branding on a valid complaint from the rights holder.
+          </p>
+        </Section>
+
+        <Section number={9} heading="Album links and passwords">
+          <p>
+            An album has two links: a public one you share, and a private
+            management link that identifies you as the owner. Anyone holding
+            the management link can administer the album, so treat it like a
+            password. If you lose it and the album is not attached to an
+            account, contact us with the album name and roughly when you
+            created it and we will try to verify you manually - we cannot
+            promise we will be able to.
+          </p>
+          <p className="mt-3">
+            Attaching an album to a Hushare account is the reliable way to keep
+            access to it.
+          </p>
+        </Section>
+
+        <Section number={10} heading="Paid plans">
+          <p>
+            Paid plans are billed in advance through our payment provider,
+            which handles your card details - we never see or store them.
+            Plans renew automatically until you cancel, and you can cancel at
+            any time from your account; you keep the paid features until the
+            end of the period you have already paid for.
+          </p>
+          <p className="mt-3">
+            If something is genuinely wrong - you were charged twice, or the
+            service did not work - email us and we will sort it out. Prices
+            and plan limits can change; if a change affects a plan you are
+            already paying for, we will tell you before it applies to you.
+          </p>
+        </Section>
+
+        <Section number={11} heading="Our rights to remove content">
           <p>
             We reserve the right to remove any content and/or terminate access
             to any album that violates these terms, without notice. We are not
@@ -193,7 +311,7 @@ export default function TermsPage() {
           </p>
         </Section>
 
-        <Section number={5} heading="DMCA and intellectual property">
+        <Section number={12} heading="DMCA and intellectual property">
           <p>
             To submit a DMCA takedown notice, email{' '}
             <a
@@ -211,7 +329,7 @@ export default function TermsPage() {
           </p>
         </Section>
 
-        <Section number={6} heading="Limitation of liability">
+        <Section number={13} heading="Limitation of liability">
           <p>
             Hushare is provided &ldquo;as is&rdquo; and &ldquo;as
             available&rdquo;. To the maximum extent permitted by law, we
@@ -225,7 +343,7 @@ export default function TermsPage() {
           </p>
         </Section>
 
-        <Section number={7} heading="Changes and termination">
+        <Section number={14} heading="Changes and termination">
           <p>
             We may update these terms at any time. The &ldquo;Last
             updated&rdquo; date at the top of this page will reflect any

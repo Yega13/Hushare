@@ -8,12 +8,12 @@ export const runtime = 'nodejs'
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL ?? 'https://hushare.space'
 const PUBLISHED = '2026-04-25'
-const LAST_UPDATED = '2026-08-14'
-const LAST_UPDATED_HUMAN = 'August 14, 2026'
+const LAST_UPDATED = '2026-08-17'
+const LAST_UPDATED_HUMAN = 'August 17, 2026'
 
 const PAGE_TITLE = 'Privacy Policy'
 const PAGE_DESCRIPTION =
-  'How Hushare handles your shared photo albums, uploaded media, and metadata. No tracking cookies, no ads, no selling of data - ever.'
+  'How Hushare handles your shared photo albums, uploaded media, and metadata. No ads, no profiling, no selling of data - ever.'
 
 export const metadata: Metadata = {
   title: PAGE_TITLE,
@@ -191,6 +191,13 @@ export default function PrivacyPage() {
               <strong style={INK}>Request metadata</strong> - IP address (kept
               briefly, for abuse prevention), user-agent string, timestamps.
             </li>
+            <li>
+              <strong style={INK}>Live presence</strong> - while a page is open
+              we record which page it is, with a short-lived random session id,
+              so we can see how many people are using Hushare right now. It is
+              not tied to your identity or your account, and each record is
+              deleted shortly after you close the page.
+            </li>
           </ul>
           <p className="mt-3">
             Creating and sharing an album needs{' '}
@@ -198,8 +205,9 @@ export default function PrivacyPage() {
             nothing above. If you choose to sign in (by email link or Google) to
             keep your albums together or to subscribe, we store your email
             address and, where Google supplies it, your name and profile
-            picture. We never ask for a phone number, and we run no third-party
-            advertising or identity-based analytics.
+            picture. We never ask for a phone number, and we run no advertising
+            networks and no identity-based profiling. See section 5 for the one
+            third-party measurement tool we do use.
           </p>
         </Section>
 
@@ -246,6 +254,11 @@ export default function PrivacyPage() {
               <strong style={INK}>Polar</strong> - subscription checkout and
               billing. Card details go to Polar and its payment providers; we
               never receive or store them.
+            </li>
+            <li>
+              <strong style={INK}>Google Analytics</strong> - measures how
+              people arrive at Hushare&apos;s public pages. It never receives
+              your photos or the contents of an album. See section 5.
             </li>
           </ul>
           <p className="mt-3">
@@ -297,9 +310,25 @@ export default function PrivacyPage() {
         <Section id="cookies" number={5} heading="Cookies and local storage">
           <p>
             Hushare uses your browser&apos;s local storage to remember small
-            preferences, such as the album background colour you chose. We do
-            not use tracking cookies, advertising cookies, or cross-site
-            identifiers. No third-party analytics script runs on this site.
+            preferences, such as the album background colour you chose, and
+            cookies that are strictly necessary to run the service - the one
+            that keeps you signed in, the one that remembers you unlocked a
+            password-protected album, and the one that identifies you as an
+            album&apos;s owner.
+          </p>
+          <p className="mt-3">
+            We also run <strong style={INK}>Google Analytics</strong> to
+            understand how people find Hushare - which sites and campaigns send
+            visitors, and roughly where in the world they are. It sets its own
+            cookies and assigns a random identifier to your browser. We do not
+            use advertising cookies, we do not run ad networks, and we never
+            sell or share your data with advertisers.
+          </p>
+          <p className="mt-3">
+            Google Analytics is not used inside albums to profile anyone, and
+            it never receives your photos. If you would rather not be counted,
+            any browser-level tracking protection or ad blocker will stop it,
+            and the rest of Hushare works exactly the same.
           </p>
         </Section>
 
