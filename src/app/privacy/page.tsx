@@ -418,10 +418,53 @@ export default function PrivacyPage() {
 
         <Section id="children" number={9} heading="Children">
           <p>
-            Hushare is not directed at children under 13 (or the equivalent
-            minimum age in your jurisdiction). We do not knowingly collect
-            personal information from children. If you believe a child has
-            uploaded content to Hushare, contact us and we will delete it.
+            Hushare is not aimed at children under 13 (or the equivalent
+            minimum age where you live) as{' '}
+            <strong style={INK}>account holders</strong>. That is a legal line,
+            not a judgement about the service: collecting personal data from a
+            younger child requires verifiable parental consent, and we are not
+            set up to obtain it, so we do not knowingly create accounts for
+            them. If you believe a child has created an account or an album,
+            contact us and we will remove it.
+          </p>
+          <p className="mt-3">
+            A child <em>looking at</em> a family album, or appearing in one, is
+            an ordinary use of Hushare and always has been. Opening a shared
+            link needs no account and collects essentially nothing.
+          </p>
+          <p className="mt-3">
+            Photos <em>of</em> children are a different question, and a far more
+            common one - a school trip, a family wedding, a race with a junior
+            category. Hushare has no way to know who is in a photograph, so this
+            sits with whoever runs the album: they choose who is photographed,
+            who receives the link, and which features are switched on. If you
+            are running an album where children will appear, that is yours to
+            get right, including any consent a parent or guardian must give
+            under your local law.
+          </p>
+          <p className="mt-3">
+            We ask one thing specifically:{' '}
+            <strong style={INK}>
+              do not switch on face search for an album that is mainly of
+              children
+            </strong>
+            . It is biometric processing, it is off unless someone deliberately
+            enables it, and doing so for minors needs a better reason than
+            convenience.
+          </p>
+          <p className="mt-3">
+            A parent or guardian can ask us to take down a photograph of their
+            child at any time, whether or not they hold the album link, by
+            emailing{' '}
+            <a
+              href="mailto:husharesupport@gmail.com"
+              style={{ color: '#630826', textDecoration: 'underline', textDecorationStyle: 'dotted' }}
+            >
+              husharesupport@gmail.com
+            </a>{' '}
+            with enough detail to identify it. We will remove the photograph and
+            any face data derived from it. We will not ask them to prove they
+            own the album first.
           </p>
         </Section>
 
@@ -447,12 +490,14 @@ export default function PrivacyPage() {
 
         <Section id="security" number={11} heading="Security">
           <p>
-            Media is stored on hardened cloud infrastructure with encryption
-            in transit (HTTPS) and encryption at rest. Access to an album
-            requires knowledge of its unlisted link; management actions
-            additionally require the owner token. No system is perfectly
-            secure, so please share your owner link only with people you
-            trust.
+            Your photos are encrypted on the way to us and while they sit on
+            our providers&apos; servers. An album can only be opened by someone
+            who has its link; if you set a password, that password is needed
+            both to see the album and to add to it; and only the management
+            link can change anything. We never store your album password
+            itself - only a scrambled version of it that cannot be turned back
+            into the password. No system is perfectly secure, so share your
+            management link only with people you trust.
           </p>
         </Section>
 
