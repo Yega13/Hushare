@@ -770,7 +770,30 @@ async function putWithRetry(
 // Session-scoped flag, SEPARATE from video's networkNeedsRelay: the two direct-upload domains
 // (Stream's upload.cloudflarestream.com vs R2's private <account>.r2.cloudflarestorage.com) are
 // genuinely distinct, so one confirmed block shouldn't be assumed to cover the other.
+// Has this network proven that it BLOCKS R2's upload domain? Only a relay that actually succeeded
+// after a direct failure proves that; a direct failure on its own proves nothing, because plain
+// loss of connectivity looks identical.
+//
+// Getting this wrong is expensive, not cosmetic. The flag routes every remaining photo in the
+// session through our own Worker, which streams each body through it — and on 2026-08-17 that is
+// what Cloudflare killed 328 requests for exceeding resources, 100% of the day's worker errors,
+// clustered in exactly the two hours that had relay switches. A single connectivity blip used to
+// set this permanently, so one bad moment turned the whole rest of the upload into the expensive,
+// failure-prone path. It also tripled the server authorization work per photo.
 let imageNetworkNeedsRelay = false
+let imageRelayProvenAt = 0
+// Re-probe the direct path periodically. Networks change (a phone moves between wifi and cellular
+// mid-event), and being wrong in this direction costs the Worker budget rather than the upload.
+const RELAY_REPROBE_MS = 60_000
+
+function shouldUseRelayFirst(): boolean {
+  if (!imageNetworkNeedsRelay) return false
+  if (Date.now() - imageRelayProvenAt > RELAY_REPROBE_MS) {
+    imageNetworkNeedsRelay = false
+    return false
+  }
+  return true
+}
 
 // Every relay attempt re-runs the FULL server-side authorization chain (both rate-limit checks +
 // album/tier lookups) — unlike a direct PUT retry, which just re-sends bytes to an already-signed
@@ -843,19 +866,27 @@ async function putImageWithRelay(
   onProgress: (pct: number) => void,
   signal?: AbortSignal,
 ): Promise<{ key: string; publicUrl: string }> {
-  if (!imageNetworkNeedsRelay) {
+  let directFailed = false
+  if (!shouldUseRelayFirst()) {
     try {
       await putWithRetry(presignedUrl, body, relay.contentType, onProgress, signal)
       return { key: originalKey, publicUrl: originalPublicUrl }
     } catch (e) {
       if (e instanceof DOMException && e.name === 'AbortError') throw e
       if (e instanceof HttpError) throw e
-      imageNetworkNeedsRelay = true
-      reportClientEvent('warn', 'upload:image-relay', 'Switched to relay after direct upload was network-blocked', relay.albumId, { fileName: relay.fileName })
+      directFailed = true
     }
   }
   try {
-    return await relayUploadImage(relay.albumId, relay.fileName, relay.contentType, relay.isThumb, body, onProgress, signal)
+    const result = await relayUploadImage(relay.albumId, relay.fileName, relay.contentType, relay.isThumb, body, onProgress, signal)
+    // The relay working where the direct path did not is the ONLY evidence that this network
+    // blocks R2 specifically. Recorded here, after the fact, rather than guessed at above.
+    if (directFailed && !imageNetworkNeedsRelay) {
+      imageNetworkNeedsRelay = true
+      imageRelayProvenAt = Date.now()
+      reportClientEvent('warn', 'upload:image-relay', 'Switched to relay after direct upload was network-blocked', relay.albumId, { fileName: relay.fileName })
+    }
+    return result
   } catch (e) {
     if (e instanceof DOMException && e.name === 'AbortError') throw e
     if (e instanceof HttpError) throw e

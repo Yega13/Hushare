@@ -571,22 +571,12 @@ html[data-hush-owner='1'] .hush-guest-actions {
   }
 }
 
-/* Stacked on a phone, the live preview sat at the TOP of one long scroll — so by the time you had
-   scrolled down to the header-photo or background pickers it was off screen, and every change you
-   made appeared to do nothing at all. Worse, some of them RESIZE the preview (picking a colour
-   clears the header photo, collapsing the hero band), which yanked the control you were touching
-   several hundred pixels up mid-gesture. Pinning it fixes both: you always see what you're
-   changing, and the controls under your finger stay where you put them. */
-@media (max-width: 899px) {
-  .hush-designer-preview {
-    position: sticky;
-    top: 0;
-    z-index: 1;
-    max-height: 42vh;
-    overflow: hidden;
-    box-shadow: 0 8px 20px rgba(43, 26, 20, 0.12);
-  }
-}
+/* NOTE: the preview deliberately has NO mobile-specific positioning.
+   It was briefly made sticky and capped at 42vh so it would stay visible while you scrolled the
+   controls. That cut the album in half — everything below the cap was hidden, and the Designer
+   read as broken. The problem it was meant to solve (taps in the picker grids doing nothing) had a
+   real cause and a real fix: those grids were nested scroll containers, which is handled above by
+   .hush-picker-grid. A speculative layout change is not worth a preview nobody can see. */
 
 /* The header-photo and background pickers cap their height and scroll inside the rail — on DESKTOP
    only.
