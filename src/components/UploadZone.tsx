@@ -582,23 +582,125 @@ function backoffDelay(attempt: number): number {
   return Math.min(8000, 500 * 2 ** (attempt - 1)) + Math.random() * 300
 }
 
-async function fetchWithRetry(url: string, init: RequestInit, attempts = 3): Promise<Response> {
+// A network-class failure means NO HTTP RESPONSE ARRIVED AT ALL: a TypeError from fetch (DNS, TCP,
+// TLS, connection reset) or a TimeoutError from the per-attempt signal. An HTTP response — even a
+// 500 — is not network-class, because the server was reached and answered. The distinction decides
+// whether waiting can possibly help.
+function isNetworkClass(e: unknown): boolean {
+  if (e instanceof DOMException && e.name === 'TimeoutError') return true
+  return e instanceof TypeError
+}
+
+// Is our origin actually reachable right now?
+//
+// navigator.onLine cannot answer this, and relying on it is the trap. It reports whether the device
+// is ASSOCIATED with a network, not whether anything gets through — so a phone sitting on a
+// saturated venue access point reports onLine === true while every request dies. That is precisely
+// the situation at a race, so a gate keyed on onLine would never engage when it matters, and the
+// 'online' event it waits for would never fire either. A cheap HEAD to our own origin answers the
+// only question worth asking. onLine === false is still honoured as a fast "definitely down".
+// HEAD, not GET: /api/health answers HEAD from the edge without touching the database (see the
+// note on its route). Treating ANY response as "reachable" was wrong — a 503 from a failing
+// Supabase, or a Cloudflare 52x when the edge is up but the origin is dead, would both have read
+// as healthy and sent us back to hammer a service that cannot serve us. Only a sub-500 answer
+// means there is any point trying again.
+async function originReachable(): Promise<boolean> {
+  if (typeof navigator !== 'undefined' && navigator.onLine === false) return false
+  try {
+    const res = await fetch('/api/health', { method: 'HEAD', cache: 'no-store', signal: AbortSignal.timeout(5000) })
+    return res.status < 500
+  } catch {
+    return false
+  }
+}
+
+// Presign, stream-init and save are the control plane: small JSON calls that decide whether a
+// photo's bytes are allowed up and whether they are recorded once they are. They used to get 3
+// attempts with 0.5s + 1s of backoff — about 1.5 SECONDS of total tolerance, against byte
+// transfers that tolerate 7.5s (image PUT) to minutes (tus video). A WiFi drop of a few seconds
+// therefore killed the control plane while the transfers would have ridden it out, and that
+// asymmetry is what turned one connectivity blip into four dead photos and two uploaded-but-lost
+// ones. Retrying is now bounded by a WALL-CLOCK DEADLINE instead of an attempt count, so the
+// budget is expressed in the unit that actually matters: how long a drop we can survive.
+// 30s, not 60s: the requirement is to ride out a WiFi drop of a few seconds, and every second of
+// patience is a second holding one of only 6 upload slots (1 for video) with an unexplained
+// spinner on screen. A presign costs nothing to redo — no bytes have moved — so failing sooner and
+// offering a tappable Retry beats a long silent hold.
+const FETCH_DEADLINE_DEFAULT_MS = 30_000
+// Save is the exception, and gets six times the patience: by this point the bytes are already in
+// R2, so giving up doesn't cost an attempt, it strands an uploaded photo with no database row.
+const FETCH_DEADLINE_SAVE_MS = 180_000
+// A 5xx proves the server is reachable and struggling. Wall-clock patience is the right answer to
+// lost connectivity and the wrong answer to an overloaded origin — without this cap the deadline
+// alone would send ~11 requests per call (26 on save), and with a whole venue behind one NAT that
+// is how a slow database becomes a tripped rate limit and a hard failure for every guest.
+const MAX_SERVER_ERROR_ATTEMPTS = 4
+
+async function fetchWithRetry(
+  url: string,
+  init: RequestInit,
+  opts: { deadlineMs?: number } = {},
+): Promise<Response> {
+  const deadline = Date.now() + (opts.deadlineMs ?? FETCH_DEADLINE_DEFAULT_MS)
   let lastErr: Error | null = null
-  for (let attempt = 0; attempt < attempts; attempt++) {
-    if (attempt > 0) await new Promise(r => setTimeout(r, backoffDelay(attempt)))
+  // The most recent 5xx, held so that running out of time still returns the server's own response
+  // rather than throwing a generic error. Callers read the real message — and the `code` that
+  // tells an expected refusal from a genuine failure — out of that body, so throwing instead would
+  // replace an accurate explanation with a useless one. At most one is ever retained.
+  let lastServerRes: Response | null = null
+  let attempt = 0
+  let serverErrors = 0
+  for (;;) {
+    if (attempt > 0) {
+      // FULL jitter, not the ±300ms the raw curve carries. Devices that lost the network together
+      // come back together, and at an event that means thousands of clients firing inside the same
+      // narrow window — recovery turning straight back into an outage. Spreading each wait across
+      // half its nominal value is what breaks the lockstep.
+      const wait = backoffDelay(attempt) * (0.5 + Math.random() * 0.5)
+      // Never sleep past the deadline just to fail on the far side of it.
+      if (Date.now() + wait >= deadline) break
+      await new Promise(r => setTimeout(r, wait))
+    }
+    attempt++
     try {
       // Per-attempt timeout: a hung request should burn 20s, not hang the file forever.
       const res = await fetch(url, { ...init, signal: AbortSignal.timeout(20_000) })
-      if (res.status >= 500 && attempt < attempts - 1) {
-        lastErr = new Error(`HTTP ${res.status}`)
-        continue
+      if (res.status >= 500) {
+        serverErrors++
+        if (serverErrors < MAX_SERVER_ERROR_ATTEMPTS && Date.now() < deadline) {
+          lastErr = new Error(`HTTP ${res.status}`)
+          // Keep only the newest; draining the one it replaces frees its connection instead of
+          // leaving it pinned until garbage collection.
+          void lastServerRes?.body?.cancel()
+          lastServerRes = res
+          continue
+        }
       }
+      void lastServerRes?.body?.cancel()
       return res
     } catch (e) {
-      // TimeoutError (per-attempt cap above) and network TypeErrors are both retryable.
       lastErr = e instanceof Error ? e : new Error(String(e))
+      if (Date.now() >= deadline) break
+      // Nothing came back. Before spending another attempt (and another 20s timeout) on a
+      // connection that may simply be gone, ask whether we can reach ourselves at all. While we
+      // can't, poll cheaply rather than hammering the real endpoint — this is the part that turns
+      // "the batch died" into "the batch paused".
+      if (isNetworkClass(e)) {
+        let probe = 0
+        while (Date.now() < deadline && !(await originReachable())) {
+          // Ramps 1s → 5s. This counter used to be the OUTER attempt number, which never changes
+          // inside this loop, so the interval was pinned at 1s for the whole outage.
+          probe++
+          const wait = Math.min(5000, 1000 * probe) * (0.5 + Math.random() * 0.5)
+          if (Date.now() + wait >= deadline) break
+          await new Promise(r => setTimeout(r, wait))
+        }
+      }
     }
   }
+  // Out of time. A server that answered badly still told us something useful — hand that back
+  // rather than a generic network error, exactly as the pre-deadline version did.
+  if (lastServerRes) return lastServerRes
   throw lastErr ?? new Error('Network request failed')
 }
 
@@ -1208,7 +1310,9 @@ async function saveUploadedRows(albumId: string, rows: PhotoRow[]): Promise<{ wa
     headers: { 'Content-Type': 'application/json' },
     // albumId (camelCase) — route destructures { albumId, photos }
     body: JSON.stringify({ albumId, photos: rows }),
-  })
+    // The bytes are already in R2 by the time we get here, so giving up costs a photo rather than
+    // an attempt — this call gets the longest patience in the pipeline.
+  }, { deadlineMs: FETCH_DEADLINE_SAVE_MS })
   if (!res.ok) {
     const err = await res.json().catch(() => ({})) as { error?: string; code?: string }
     // Carry the server's code so callers can tell an expected refusal (album full) from a genuine

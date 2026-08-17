@@ -3,6 +3,21 @@ import { createAdminClient } from '@/lib/supabase/admin'
 
 export const runtime = 'nodejs'
 
+// A liveness probe must not do work.
+//
+// Next auto-implements HEAD by running GET (node_modules/next/dist/server/route-modules/app-route/
+// helpers/auto-implement-methods.js: `methods.HEAD = handlers.GET`), so without this every HEAD
+// would execute the unfiltered `count: 'exact'` over `albums` below. The upload retry path polls
+// this endpoint to ask "can I reach the origin at all" while a network is down (see
+// originReachable in UploadZone.tsx) — and at an event, hundreds of devices behind one venue NAT
+// would then aim a continuous stream of full table counts at the very database whose slowness
+// caused the probing. A liveness probe that amplifies load on the resource it is probing turns a
+// recoverable slowdown into an outage, so this answers from the edge of the Worker and touches
+// nothing.
+export function HEAD() {
+  return new Response(null, { status: 204, headers: { 'Cache-Control': 'no-store' } })
+}
+
 export async function GET() {
   const checks = {
     supabase: false,
