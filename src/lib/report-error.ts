@@ -87,16 +87,34 @@ export async function isStaleDocument(): Promise<boolean> {
 //
 // Matching is deliberately explicit and narrow: anything unrecognised is kept. Silently dropping
 // one real report is far worse than keeping one junk row.
-const FOREIGN_GLOBAL_RE =
-  /\b(?:ethereum|solana|phantom|tronWeb|tronLink|__firefox__|__gCrWeb|evmAsk|Backpack|webkit\.messageHandlers)\b/
-const EXTENSION_ORIGIN_RE = /^(?:chrome|moz|safari-web|safari|ms-browser)-extension:\/\//
+// Identifiers that exist only in injected code. Safe to match anywhere in a message.
+const FOREIGN_INJECTED_RE =
+  /\b(?:__firefox__|__gCrWeb|tronWeb|tronLink|evmAsk|webkit\.messageHandlers)\b/
+
+// Wallet globals whose names are also ordinary words. "Backpack" and "phantom" are a plausible
+// album title and a plausible filename, and our messages routinely quote both — so matching these
+// on their own would let an album called Backpack silence its own errors. They count as foreign
+// only when the message ALSO shows the name being used as a property of the global object, which
+// is the only way a wallet shim ever throws. Two independent signals, so user data alone can never
+// trip it.
+const WALLET_NAME_RE = /\b(?:ethereum|solana|phantom|Backpack|coinbaseWalletExtension)\b/
+// Deliberately not a `window.` prefix: only WebKit echoes the full source expression. Chrome says
+// "Cannot redefine property: ethereum" and "Cannot set property ethereum of #<Window> which has
+// only a getter"; Firefox says "can't redefine non-configurable property". A prefix rule would
+// under-filter on two engines out of three and need patching for every new phrasing.
+const GLOBAL_PROP_RE =
+  /window\.|#<Window>|globalThis|\bredefine\b|non-?configurable|only a getter|read[ -]?only property/i
+
+const EXTENSION_ORIGIN_RE =
+  /^(?:chrome|moz|safari-web|safari|ms-browser)-extension:\/\/|^webkit-masked-url:/
 
 export function isForeignError(message: string, file?: string): boolean {
   if (file && EXTENSION_ORIGIN_RE.test(file)) return true
   // "Script error." is all a browser will say about an exception inside a cross-origin script it
   // refuses to describe. No file, no line, no stack — there is nothing to act on even in principle.
   if (/^script error\.?$/i.test(message.trim())) return true
-  return FOREIGN_GLOBAL_RE.test(message)
+  if (FOREIGN_INJECTED_RE.test(message)) return true
+  return WALLET_NAME_RE.test(message) && GLOBAL_PROP_RE.test(message)
 }
 
 export function reportClientError(input: ReportInput): void {
@@ -112,6 +130,10 @@ export function reportClientError(input: ReportInput): void {
     const stale = looksLikeStaleDeploy(message)
 
     const key = `${input.source}:${message}`
+    // Recovery is not telemetry, so it must not be suppressed by the dedupe key or the per-pageload
+    // cap. Ten junk errors ahead of a chunk error would otherwise leave the user staring at a dead
+    // page with the fix one line away.
+    if (stale && (seen.has(key) || sent >= MAX_PER_PAGELOAD)) { reloadOnceForStaleDeploy(); return }
     if (seen.has(key)) return
     if (sent >= MAX_PER_PAGELOAD) return
     seen.add(key)
@@ -147,7 +169,9 @@ export function installGlobalErrorReporting(): () => void {
 
   const onError = (e: ErrorEvent) => {
     const message = e.message || String(e.error ?? 'unknown error')
-    if (isForeignError(message, e.filename)) return
+    // looksLikeStaleDeploy first: filtering a chunk error would drop not just the log row but the
+    // one-shot reload that is the entire fix for it.
+    if (!looksLikeStaleDeploy(message) && isForeignError(message, e.filename)) return
     reportClientError({
       source: 'window.onerror',
       message,
@@ -161,7 +185,7 @@ export function installGlobalErrorReporting(): () => void {
   const onRejection = (e: PromiseRejectionEvent) => {
     const r = e.reason as unknown
     const message = r instanceof Error ? `${r.name}: ${r.message}` : String(r)
-    if (isForeignError(message)) return
+    if (!looksLikeStaleDeploy(message) && isForeignError(message)) return
     reportClientError({
       source: 'unhandledrejection',
       message,

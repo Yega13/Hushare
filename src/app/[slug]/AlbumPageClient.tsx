@@ -125,6 +125,13 @@ export default function AlbumPageClient({ initialAlbum = null, initialPhotos, in
   // When this tab last applied an album edit of its own (see handleAlbumUpdated). Effect 4 uses it
   // to tell its own echo apart from a real external change — see SELF_EDIT_QUIET_MS.
   const lastLocalAlbumPatchRef = useRef(0)
+  // A settings refetch that fell due while the Album Designer was open. Running it then would
+  // overwrite the Designer's live optimistic preview; simply dropping it would leave the album
+  // stale indefinitely, because the timer that scheduled it is one-shot and nothing re-arms it —
+  // if the owner's own edit was the last broadcast, no later one is coming. So we record the debt
+  // and pay it when the Designer closes.
+  const settingsRefetchOwedRef = useRef(false)
+  const refetchSettingsRef = useRef<(() => void) | null>(null)
   // When the prompt is triggered by a click on an in-app link that LEAVES the album (e.g. the
   // Hushare logo → home), we hold that destination here so dismissing the prompt still takes them
   // where they were going. Null when the prompt was triggered by back/tab-hidden/mouse-exit.
@@ -641,6 +648,9 @@ export default function AlbumPageClient({ initialAlbum = null, initialPhotos, in
     // Pass owner mode so a gated album (reveal/password) the owner is viewing comes back as the
     // full album, not the guest gate response.
     const refetchSettings = () => {
+      // Re-checked here, not only at broadcast time: this runs from settleTimer up to
+      // SELF_EDIT_QUIET_MS later, and the Designer may have been opened in between.
+      if (designerOpenRef.current) { settingsRefetchOwedRef.current = true; return }
       const startedAt = Date.now()
       void fetch(`/api/album/resolve?slug=${encodeURIComponent(albumSlug)}&owner=${ownerTokenFromUrlRef.current ? '1' : '0'}`, { cache: 'no-store' })
         .then(r => r.ok ? r.json() : null)
@@ -656,12 +666,14 @@ export default function AlbumPageClient({ initialAlbum = null, initialPhotos, in
         .catch(() => {})
     }
 
+    refetchSettingsRef.current = refetchSettings
+
     const ch = supabase
       .channel(`album-settings-${albumId}`)
       .on('broadcast', { event: 'album_settings' }, () => {
         // While the owner is in the Album Designer, their own edits broadcast here too — skip the
         // self-refetch so it can't clobber the live optimistic preview (the fast-change glitch).
-        if (designerOpenRef.current) return
+        if (designerOpenRef.current) { settingsRefetchOwedRef.current = true; return }
         // Same idea outside the Designer: a broadcast arriving on the heels of this tab's own edit
         // is that edit echoing back, and the local state is already ahead of it. Refetching would
         // only risk racing the next edit, so defer to one trailing refresh once the owner stops —
@@ -681,11 +693,21 @@ export default function AlbumPageClient({ initialAlbum = null, initialPhotos, in
 
     return () => {
       disposed = true
+      refetchSettingsRef.current = null
       if (settleTimer) clearTimeout(settleTimer)
       settingsChannelRef.current = null
       supabase.removeChannel(ch)
     }
   }, [album?.id, album?.custom_slug, album?.slug, supabase])
+
+  // ─── Effect 4b: pay off a settings refetch deferred by the Designer ─────────
+  // The owner's own edits are already persisted and already in state, so whatever comes back can
+  // only be equal or newer. Without this the album would silently keep pre-Designer values.
+  useEffect(() => {
+    if (designerOpen || !settingsRefetchOwedRef.current) return
+    settingsRefetchOwedRef.current = false
+    refetchSettingsRef.current?.()
+  }, [designerOpen])
 
   // ─── Effect 5: Broadcast guest downloads toggle (owner only) ────────────────
   // When the owner changes allow_guest_downloads, broadcasts to all guest tabs.
@@ -1016,7 +1038,7 @@ export default function AlbumPageClient({ initialAlbum = null, initialPhotos, in
             onOpenSlideshow={() => setSlideshowRequestId(id => id + 1)}
             arrangeMode={arrangeMode}
             onToggleArrangeMode={() => setArrangeMode(m => !m)}
-            onOpenDesigner={() => setDesignerOpen(true)}
+            onOpenDesigner={() => { designerOpenRef.current = true; setDesignerOpen(true) }}
           />
         ) : ownerUpgradePending ? (
           // Same-height neutral placeholder while the owner check resolves — no guest-bar flash,
@@ -1111,7 +1133,7 @@ export default function AlbumPageClient({ initialAlbum = null, initialPhotos, in
         )}
 
         {effectiveIsOwner && designerOpen && (
-          <AlbumDesigner album={album} photos={photos} onAlbumUpdated={handleAlbumUpdated} onClose={() => setDesignerOpen(false)} />
+          <AlbumDesigner album={album} photos={photos} onAlbumUpdated={handleAlbumUpdated} onClose={() => { designerOpenRef.current = false; setDesignerOpen(false) }} />
         )}
       </main>
     </>
