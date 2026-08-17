@@ -4,7 +4,24 @@ export type MediaDisplayFilter = "none" | "warm" | "cool" | "mono" | "vintage" |
 export type MediaHoverEffect = "none" | "mono" | "fade" | "zoom" | "lift";
 export type MobileGridColumns = 3 | 4 | 5 | 6;
 export type PhotoLayout = "grid" | "justified";
+// Retired as a user-facing choice — kept as the fallback for albums that have never touched the
+// composable controls below, so their slideshow keeps the look they already had.
 export type SlideshowAnimation = "none" | "fade" | "rise" | "zoom";
+export type SlideshowMove = "none" | "slide" | "zoomIn" | "zoomOut";
+// Where the incoming photo travels FROM.
+export type SlideshowDirection = "up" | "down" | "left" | "right";
+export type SlideshowEasing = "smooth" | "even" | "gentle" | "sharp" | "spring";
+// A composed slideshow transition. distance/fade/blur are neutral 0-100 axes; what they mean in
+// pixels lives in lib/slideshow-motion.ts so the feel can be retuned without a migration.
+export type SlideshowMotion = {
+  move: SlideshowMove;
+  direction: SlideshowDirection;
+  distance: number;
+  fade: number;
+  blur: number;
+  durationMs: number;
+  easing: SlideshowEasing;
+};
 export type Tier = "free" | "pro" | "studio";
 export type UploadCaps = { image: number; video: number };
 export type SponsorLogo = { id: string; url: string; name: string | null };
@@ -55,6 +72,9 @@ export type Album = {
   photo_layout: PhotoLayout;
   slideshow_interval_ms: number;
   slideshow_animation: SlideshowAnimation;
+  // Composed transition. NULL on any album whose owner has never opened the slideshow controls —
+  // resolveSlideshowMotion() then derives it from slideshow_animation above.
+  slideshow_motion: SlideshowMotion | null;
   allow_guest_downloads: boolean;
   guest_uploads_enabled: boolean;
   // When true, GUEST uploads are hidden (pending) until the owner approves them.

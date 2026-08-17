@@ -21,7 +21,7 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 const ALBUM_SELECT_COLS = [
   'id', 'slug', 'custom_slug', 'title', 'background_theme',
   'media_radius', 'media_filter', 'media_hover', 'mobile_grid_columns', 'photo_layout',
-  'slideshow_interval_ms', 'slideshow_animation', 'video_autoplay',
+  'slideshow_interval_ms', 'slideshow_animation', 'slideshow_motion', 'video_autoplay',
   'cover_photo_id', 'header_image', 'header_focal', 'header_zoom', 'header_touched', 'header_video_mode', 'reveal_at', 'guest_uploads_enabled', 'allow_guest_downloads',
   'require_approval', 'face_finder_enabled', 'bib_search_enabled', 'bib_min', 'bib_max',
   'accent_color', 'logo_url', 'sponsor_logos', 'template', 'title_font', 'photo_style', 'welcome_message', 'hide_branding',
@@ -42,7 +42,7 @@ type AlbumRow = {
   id: string; slug: string; custom_slug: string | null; title: string
   background_theme: string | null; media_radius: number; media_filter: string
   media_hover: string; mobile_grid_columns: number; photo_layout: string
-  slideshow_interval_ms: number; slideshow_animation: string; video_autoplay: boolean
+  slideshow_interval_ms: number; slideshow_animation: string; slideshow_motion: unknown; video_autoplay: boolean
   cover_photo_id: string | null; header_image: string | null; header_focal: string | null; header_zoom: number | null; header_touched: boolean
   header_video_mode: string | null; reveal_at: string | null; guest_uploads_enabled: boolean
   allow_guest_downloads: boolean; require_approval: boolean; face_finder_enabled: boolean; bib_search_enabled: boolean

@@ -2,7 +2,6 @@
 
 import React, { useState, useEffect, useLayoutEffect, useCallback, useMemo, useRef } from 'react'
 import type { Album, Photo } from '@/types'
-import type { SlideshowAnimation } from '@/types'
 import { DEFAULT_SLIDESHOW_INTERVAL_MS, cssMediaDisplayFilter } from '@/lib/media-display'
 import { MEDIA_AUTHOR_MAX, MEDIA_CAPTION_MAX, SUPPRESS_CLICK_AFTER_REORDER_MS, BTT_UPDATE_EVENT } from '@/lib/constants'
 import { showAppToast } from '@/components/AppToast'
@@ -28,6 +27,7 @@ import { createPortal } from 'react-dom'
 import SignInPrompt from '@/components/SignInPrompt'
 import { createClient } from '@/lib/supabase/client'
 import { photoStyleTile } from '@/lib/album-design'
+import { resolveSlideshowMotion, slideshowMotionVars, slideshowMotionIsStill } from '@/lib/slideshow-motion'
 
 const MASONRY_GAP = 8
 
@@ -208,8 +208,12 @@ export default function PhotoGrid({ album, photos, albumPhotoCount, isOwner, slu
 
   const overlayOpen = lightbox !== null || slideshowPickerOpen
   const slideshowIntervalMs = album.slideshow_interval_ms ?? DEFAULT_SLIDESHOW_INTERVAL_MS
-  const slideshowAnimation: SlideshowAnimation = album.slideshow_animation ?? 'fade'
-  const slideshowFrameClass = slideshowActive && slideshowAnimation !== 'none' ? ` hush-slideshow-frame hush-slideshow-${slideshowAnimation}` : ''
+  // The transition is data, not a class: the album's composed motion becomes CSS custom properties
+  // that drive the single hush-slideshow-in keyframe.
+  const slideshowMotion = resolveSlideshowMotion(album)
+  const slideshowAnimated = slideshowActive && !slideshowMotionIsStill(slideshowMotion)
+  const slideshowFrameClass = slideshowAnimated ? ' hush-slideshow-frame' : ''
+  const slideshowFrameStyle = slideshowAnimated ? slideshowMotionVars(slideshowMotion) : undefined
 
   async function setCoverPhoto(photo: Photo) {
     if (!isOwner) return
@@ -573,6 +577,7 @@ export default function PhotoGrid({ album, photos, albumPhotoCount, isOwner, slu
           slideshowPaused={slideshowPaused}
           slideshowIntervalMs={slideshowIntervalMs}
           slideshowFrameClass={slideshowFrameClass}
+          slideshowFrameStyle={slideshowFrameStyle}
           swipeOffset={swipeOffset}
           swipeAnimating={swipeAnimating}
           lightboxFlipped={lightboxFlipped}

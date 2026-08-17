@@ -3,6 +3,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { verifyOwnerViaCookieWithRateLimit } from '@/lib/album-owner-access'
 import { forbidCrossSiteRequest } from '@/lib/request-security'
 import { queueAlbumSettingsBroadcast } from '@/lib/broadcast'
+import { normalizeSlideshowMotion } from '@/lib/slideshow-motion'
 
 export const runtime = 'nodejs'
 
@@ -25,6 +26,7 @@ export async function POST(req: Request) {
     mobile_grid_columns?: unknown
     slideshow_interval_ms?: unknown
     slideshow_animation?: unknown
+    slideshow_motion?: unknown
     video_autoplay?: unknown
     require_approval?: unknown
     reset_radius_overrides?: unknown
@@ -73,6 +75,20 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: `slideshow_animation must be one of: ${[...VALID_SLIDESHOW_ANIMS].join(', ')}` }, { status: 400, headers: NO_STORE })
     }
     updates.slideshow_animation = body.slideshow_animation
+  }
+  if (body.slideshow_motion !== undefined) {
+    // null is a legitimate value: it resets the album to deriving its transition from the legacy
+    // preset. Anything else has to survive normalisation, which clamps every axis into range —
+    // so a malformed body can never store a motion the renderer would choke on.
+    if (body.slideshow_motion === null) {
+      updates.slideshow_motion = null
+    } else {
+      const motion = normalizeSlideshowMotion(body.slideshow_motion)
+      if (!motion) {
+        return NextResponse.json({ error: 'slideshow_motion must be an object or null' }, { status: 400, headers: NO_STORE })
+      }
+      updates.slideshow_motion = motion
+    }
   }
   if (body.video_autoplay !== undefined) {
     if (typeof body.video_autoplay !== 'boolean') {
@@ -125,6 +141,7 @@ export async function POST(req: Request) {
     mobile_grid_columns: updates.mobile_grid_columns,
     slideshow_interval_ms: updates.slideshow_interval_ms,
     slideshow_animation: updates.slideshow_animation,
+    slideshow_motion: updates.slideshow_motion,
     require_approval: updates.require_approval,
   }, { headers: NO_STORE })
 }

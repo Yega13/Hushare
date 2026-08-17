@@ -11,12 +11,23 @@ import {
   MIN_SLIDESHOW_INTERVAL_MS,
   MEDIA_DISPLAY_FILTER_OPTIONS,
   MOBILE_GRID_COLUMN_OPTIONS,
-  SLIDESHOW_ANIMATION_OPTIONS,
   type MediaDisplayFilter,
   type MediaHoverEffect,
   type MobileGridColumns,
   type SlideshowAnimation,
 } from '@/lib/media-display'
+import {
+  DEFAULT_SLIDESHOW_MOTION,
+  MAX_SLIDESHOW_DURATION_MS,
+  MIN_SLIDESHOW_DURATION_MS,
+  SLIDESHOW_DIRECTIONS,
+  SLIDESHOW_EASINGS,
+  SLIDESHOW_MOVES,
+  resolveSlideshowMotion,
+  slideshowMotionIsStill,
+  slideshowMotionVars,
+} from '@/lib/slideshow-motion'
+import type { SlideshowMotion } from '@/types'
 import { showAppToast, storeAppToast } from '@/components/AppToast'
 import RevealDatePicker from '@/components/RevealDatePicker'
 import ShareMenu from '@/components/owner-toolbar/ShareMenu'
@@ -30,6 +41,7 @@ import {
   savePhotoLayoutRequest,
   saveMediaSettingsRequest,
   savePasswordRequest,
+  saveSlideshowMotionRequest,
 } from '@/components/owner-toolbar/api'
 import { accordionButton, btnBase, inputStyle, sectionTitle, settingsSectionStyle } from '@/components/owner-toolbar/styles'
 import type { CollectionSummary, SettingsSection } from '@/components/owner-toolbar/types'
@@ -57,6 +69,27 @@ type Props = {
 // ownerToken is kept in props only to build the owner share URL (the #owner=… link
 // that recipients use to log in on a new device). It is NOT passed to any API call —
 // all owner mutations use the HttpOnly hushare_owner_* cookie set by /api/album/owner-login.
+
+// One labelled slider. Six of them make up the slideshow transition, and repeating the markup six
+// times is how they drift apart.
+function MotionSlider({ label, value, display, min, max, step, onChange }: {
+  label: string; value: number; display: string; min: number; max: number; step: number
+  onChange: (value: number) => void
+}) {
+  return (
+    <div>
+      <div className="mb-1.5 flex items-center justify-between gap-3">
+        <label className="text-xs font-medium" style={{ color: '#7C5C3E' }}>{label}</label>
+        <span className="text-xs font-mono" style={{ color: '#A89880' }}>{display}</span>
+      </div>
+      <input
+        type="range" min={min} max={max} step={step} value={value}
+        onChange={(e) => onChange(Number(e.target.value))}
+        className="w-full"
+      />
+    </div>
+  )
+}
 
 function toDatetimeLocal(iso: string | null): string {
   if (!iso) return ''
@@ -111,6 +144,11 @@ export default function OwnerToolbar({ album, photos, ownerToken, userTier, medi
   const [mobileGridColumns, setMobileGridColumns] = useState<MobileGridColumns>(album.mobile_grid_columns ?? 3)
   const [slideshowIntervalMs, setSlideshowIntervalMs] = useState(album.slideshow_interval_ms ?? DEFAULT_SLIDESHOW_INTERVAL_MS)
   const [slideshowAnimation, setSlideshowAnimation] = useState<SlideshowAnimation>(album.slideshow_animation ?? 'fade')
+  // The composed transition. Seeded from the album's own motion, or derived from the legacy preset
+  // for an album that has never been touched — either way there is one value to edit from here on.
+  const [slideshowMotion, setSlideshowMotion] = useState<SlideshowMotion>(() => resolveSlideshowMotion(album))
+  const [motionPreviewKey, setMotionPreviewKey] = useState(0)
+  const motionSaveTimerRef = useRef<number | null>(null)
   const [mediaError, setMediaError] = useState('')
 
   const [revealInput, setRevealInput] = useState(() => toDatetimeLocal(album.reveal_at ?? null))
@@ -156,6 +194,10 @@ export default function OwnerToolbar({ album, photos, ownerToken, userTier, medi
   // or was fetched for an account owner (fetchedOwnerToken).
   const effectiveOwnerToken = ownerToken ?? fetchedOwnerToken
   const ownerUrl = effectiveOwnerToken && origin ? `${origin}/${album.slug}#owner=${effectiveOwnerToken}` : null
+  // A real photo from the album in the transition preview, so the owner judges the motion against
+  // what they will actually be watching rather than a grey rectangle.
+  const motionPreviewThumb = photos.find((p) => p.media_type !== 'video')?.thumb_url
+    ?? photos[0]?.poster_url ?? photos[0]?.thumb_url ?? ''
   const canCustomize = userTier === 'pro' || userTier === 'studio'
   const canUseCollections = userTier === 'studio'
   const radiusMax = Math.max(1, Math.round(mediaRadiusMax))
@@ -227,6 +269,10 @@ export default function OwnerToolbar({ album, photos, ownerToken, userTier, medi
       setMobileGridColumns(album.mobile_grid_columns ?? 3)
       setSlideshowIntervalMs(album.slideshow_interval_ms ?? DEFAULT_SLIDESHOW_INTERVAL_MS)
       setSlideshowAnimation(album.slideshow_animation ?? 'fade')
+      setSlideshowMotion(resolveSlideshowMotion({
+        slideshow_motion: album.slideshow_motion,
+        slideshow_animation: album.slideshow_animation,
+      }))
       setMediaError('')
       setRevealInput(toDatetimeLocal(album.reveal_at ?? null))
       setRevealError('')
@@ -235,7 +281,7 @@ export default function OwnerToolbar({ album, photos, ownerToken, userTier, medi
       setDeleteConfirm(false)
       setDeleteError('')
     }
-  }, [album.allow_guest_downloads, album.custom_slug, album.media_filter, album.media_hover, album.media_radius, album.mobile_grid_columns, album.reveal_at, album.slideshow_animation, album.slideshow_interval_ms, album.video_autoplay, showSettings])
+  }, [album.allow_guest_downloads, album.custom_slug, album.media_filter, album.media_hover, album.media_radius, album.mobile_grid_columns, album.reveal_at, album.slideshow_animation, album.slideshow_motion, album.slideshow_interval_ms, album.video_autoplay, showSettings])
 
   useEffect(() => {
     if (showSettings && canUseCollections) void loadCollections()
@@ -445,6 +491,26 @@ export default function OwnerToolbar({ album, photos, ownerToken, userTier, medi
     const nextRadius = parseMediaRadiusDraft(digitsOnly)
     if (nextRadius != null) applyMediaRadius(nextRadius)
   }
+
+  // Change one axis of the transition. Applies instantly (and replays the preview so the change is
+  // felt, not just read), saves debounced — a slider drag is dozens of values a second and every
+  // one of them would otherwise be its own rate-limited write.
+  function applySlideshowMotion(patch: Partial<SlideshowMotion>) {
+    const next = { ...slideshowMotion, ...patch }
+    setSlideshowMotion(next)
+    setMotionPreviewKey((k) => k + 1)
+    onAlbumUpdated({ slideshow_motion: next })
+    if (motionSaveTimerRef.current !== null) window.clearTimeout(motionSaveTimerRef.current)
+    motionSaveTimerRef.current = window.setTimeout(() => {
+      motionSaveTimerRef.current = null
+      void saveSlideshowMotionRequest(album.slug, next).then((r) => {
+        if (!r.ok) showAppToast(r.error, 'error')
+      })
+    }, 500)
+  }
+  useEffect(() => () => {
+    if (motionSaveTimerRef.current !== null) window.clearTimeout(motionSaveTimerRef.current)
+  }, [])
 
   function applySlideshowInterval(value: number) {
     const nextInterval = Math.max(MIN_SLIDESHOW_INTERVAL_MS, Math.min(MAX_SLIDESHOW_INTERVAL_MS, Math.round(value)))
@@ -877,23 +943,145 @@ export default function OwnerToolbar({ album, photos, ownerToken, userTier, medi
                       </div>
                     </div>
 
-                    <div>
-                      <label className="mb-2 block text-xs font-medium" style={{ color: '#7C5C3E' }}>{t('ot.animation')}</label>
-                      <select
-                        value={slideshowAnimation}
-                        onChange={(e) => {
-                          const nextAnimation = e.target.value as SlideshowAnimation
-                          setSlideshowAnimation(nextAnimation)
-                          onAlbumUpdated({ slideshow_animation: nextAnimation })
-                          void saveMediaSettings(mediaRadius, videoAutoplay, mediaFilter, mediaHover, mobileGridColumns, slideshowIntervalMs, nextAnimation)
-                        }}
-                        className="w-full rounded-lg px-3 py-2 text-sm focus:outline-none"
-                        style={{ background: '#FDFAF5', border: '1px solid #DDD5C5', color: '#630826' }}
-                      >
-                        {SLIDESHOW_ANIMATION_OPTIONS.map((option) => (
-                          <option key={option.value} value={option.value}>{option.label}</option>
-                        ))}
-                      </select>
+                    {/* Transition — composed, not chosen. Six axes instead of a list of four
+                        presets, so an album's slideshow can look like this album's slideshow. */}
+                    <div className="space-y-3">
+                      <label className="block text-xs font-medium" style={{ color: '#7C5C3E' }}>{t('ot.animation')}</label>
+
+                      <div className="grid grid-cols-4 gap-2">
+                        {SLIDESHOW_MOVES.map((option) => {
+                          const selected = slideshowMotion.move === option.value
+                          return (
+                            <button
+                              key={option.value}
+                              type="button"
+                              onClick={() => applySlideshowMotion({ move: option.value })}
+                              className="hush-press rounded-lg py-2 text-xs font-semibold"
+                              style={{
+                                background: selected ? '#630826' : '#FDFAF5',
+                                border: '1px solid #DDD5C5',
+                                color: selected ? '#FDFAF5' : '#630826',
+                              }}
+                            >
+                              {option.label}
+                            </button>
+                          )
+                        })}
+                      </div>
+
+                      {slideshowMotion.move === 'slide' && (
+                        <div className="grid grid-cols-4 gap-2">
+                          {SLIDESHOW_DIRECTIONS.map((option) => {
+                            const selected = slideshowMotion.direction === option.value
+                            return (
+                              <button
+                                key={option.value}
+                                type="button"
+                                onClick={() => applySlideshowMotion({ direction: option.value })}
+                                title={option.label}
+                                className="hush-press rounded-lg py-2 text-xs font-semibold"
+                                style={{
+                                  background: selected ? '#630826' : '#FDFAF5',
+                                  border: '1px solid #DDD5C5',
+                                  color: selected ? '#FDFAF5' : '#630826',
+                                }}
+                              >
+                                {option.value === 'up' ? '↑' : option.value === 'down' ? '↓' : option.value === 'left' ? '←' : '→'}
+                              </button>
+                            )
+                          })}
+                        </div>
+                      )}
+
+                      {slideshowMotion.move !== 'none' && (
+                        <MotionSlider
+                          label={t('ot.motionDistance')}
+                          value={slideshowMotion.distance}
+                          display={`${slideshowMotion.distance}%`}
+                          min={0} max={100} step={1}
+                          onChange={(v) => applySlideshowMotion({ distance: v })}
+                        />
+                      )}
+
+                      <MotionSlider
+                        label={t('ot.motionFade')}
+                        value={slideshowMotion.fade}
+                        display={`${slideshowMotion.fade}%`}
+                        min={0} max={100} step={1}
+                        onChange={(v) => applySlideshowMotion({ fade: v })}
+                      />
+
+                      <MotionSlider
+                        label={t('ot.motionBlur')}
+                        value={slideshowMotion.blur}
+                        display={`${slideshowMotion.blur}%`}
+                        min={0} max={100} step={1}
+                        onChange={(v) => applySlideshowMotion({ blur: v })}
+                      />
+
+                      <MotionSlider
+                        label={t('ot.motionDuration')}
+                        value={slideshowMotion.durationMs}
+                        display={`${(slideshowMotion.durationMs / 1000).toFixed(2)}s`}
+                        min={MIN_SLIDESHOW_DURATION_MS} max={MAX_SLIDESHOW_DURATION_MS} step={10}
+                        onChange={(v) => applySlideshowMotion({ durationMs: v })}
+                      />
+
+                      <div>
+                        <label className="mb-2 block text-xs font-medium" style={{ color: '#7C5C3E' }}>{t('ot.motionCurve')}</label>
+                        <div className="grid grid-cols-5 gap-1.5">
+                          {SLIDESHOW_EASINGS.map((option) => {
+                            const selected = slideshowMotion.easing === option.value
+                            return (
+                              <button
+                                key={option.value}
+                                type="button"
+                                onClick={() => applySlideshowMotion({ easing: option.value })}
+                                className="hush-press rounded-lg py-2 text-[11px] font-semibold"
+                                style={{
+                                  background: selected ? '#630826' : '#FDFAF5',
+                                  border: '1px solid #DDD5C5',
+                                  color: selected ? '#FDFAF5' : '#630826',
+                                }}
+                              >
+                                {option.label}
+                              </button>
+                            )
+                          })}
+                        </div>
+                      </div>
+
+                      {/* Replays the composed transition on a small tile, so the owner can feel the
+                          difference without starting a slideshow to find out. */}
+                      <div className="flex items-center gap-3 rounded-xl px-3 py-3" style={{ background: '#FDFAF5', border: '1px solid #DDD5C5' }}>
+                        <div style={{ width: 68, height: 46, borderRadius: 8, overflow: 'hidden', flex: '0 0 auto', background: '#EDE7DB' }}>
+                          <div
+                            key={motionPreviewKey}
+                            className={slideshowMotionIsStill(slideshowMotion) ? '' : 'hush-slideshow-frame'}
+                            style={{
+                              width: '100%', height: '100%',
+                              background: motionPreviewThumb ? `center/cover no-repeat url("${motionPreviewThumb}")` : '#C9B79E',
+                              ...slideshowMotionVars(slideshowMotion),
+                            }}
+                          />
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setMotionPreviewKey((k) => k + 1)}
+                          className="hush-press rounded-lg px-3 py-2 text-xs font-semibold"
+                          style={{ background: '#F5F0E8', border: '1px solid #DDD5C5', color: '#630826' }}
+                        >
+                          {t('ot.motionReplay')}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => applySlideshowMotion(DEFAULT_SLIDESHOW_MOTION)}
+                          className="ml-auto text-xs"
+                          style={{ background: 'none', border: 'none', color: '#8B6F4E', cursor: 'pointer' }}
+                        >
+                          {t('ot.reset')}
+                        </button>
+                      </div>
                     </div>
 
                     {mediaError && <p className="text-xs" style={{ color: '#C0392B' }}>{mediaError}</p>}

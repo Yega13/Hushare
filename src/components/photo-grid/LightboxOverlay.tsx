@@ -1,6 +1,6 @@
 'use client'
 
-import React from 'react'
+import React, { type CSSProperties } from 'react'
 import { X, ChevronLeft, ChevronRight, Play, Pause, Download, Settings, Star, Trash2 } from 'lucide-react'
 import type { Photo } from '@/types'
 import { unmuteStreamVideo } from '@/lib/cloudflare/stream-player'
@@ -29,6 +29,9 @@ type Props = {
   slideshowPaused: boolean
   slideshowIntervalMs: number
   slideshowFrameClass: string
+  // Custom properties describing this album's composed transition. Undefined when the slideshow
+  // isn't animating, in which case slideshowFrameClass is empty too and nothing reads them.
+  slideshowFrameStyle?: CSSProperties
 
   // Interaction state
   swipeOffset: number
@@ -94,6 +97,7 @@ export default function LightboxOverlay({
   slideshowPaused,
   slideshowIntervalMs,
   slideshowFrameClass,
+  slideshowFrameStyle,
   swipeOffset,
   swipeAnimating,
   lightboxFlipped,
@@ -294,6 +298,7 @@ export default function LightboxOverlay({
               // no conflicting caps — so the Stream player fills it with zero black bars.
               aspectRatio: String(videoBoxAspect),
               width: `min(92vw, calc(82vh * ${videoBoxAspect}))`,
+              ...slideshowFrameStyle,
             }}
           >
             {videoStarted ? (
@@ -349,7 +354,7 @@ export default function LightboxOverlay({
           </div>
         ) : (
           // Image branch (Branch 4 in old code, now Branch 3 — no native <video> branch exists)
-          <div className={`hush-photo-flip relative w-[min(92vw,1100px)]${slideshowMode ? '' : ' hush-lightbox-media'}${slideshowFrameClass}`} key={current.id} onContextMenu={(e) => e.preventDefault()}>
+          <div className={`hush-photo-flip relative w-[min(92vw,1100px)]${slideshowMode ? '' : ' hush-lightbox-media'}${slideshowFrameClass}`} key={current.id} style={slideshowFrameStyle} onContextMenu={(e) => e.preventDefault()}>
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
               src={

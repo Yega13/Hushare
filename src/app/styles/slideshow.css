@@ -28,22 +28,36 @@
   letter-spacing: 0;
 }
 
+/* One keyframe for every possible transition. The album's composed motion arrives as custom
+   properties (see lib/slideshow-motion.ts), so "what the transition is" lives entirely in data —
+   there is no preset list here to pick from, and adding an axis never means adding an animation.
+   Only transform, opacity and filter are touched, so it stays on the compositor. */
 .hush-slideshow-frame {
-  animation-duration: 620ms;
-  animation-timing-function: cubic-bezier(0.2, 0.8, 0.2, 1);
+  animation-name: hush-slideshow-in;
+  animation-duration: var(--hush-ss-duration, 620ms);
+  animation-timing-function: var(--hush-ss-easing, cubic-bezier(0.2, 0.8, 0.2, 1));
   animation-fill-mode: both;
 }
 
-.hush-slideshow-fade {
-  animation-name: hush-slideshow-fade;
+@keyframes hush-slideshow-in {
+  from {
+    opacity: var(--hush-ss-opacity, 0);
+    transform: translate3d(var(--hush-ss-x, 0px), var(--hush-ss-y, 0px), 0) scale(var(--hush-ss-scale, 1));
+    filter: blur(var(--hush-ss-blur, 0px));
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale(1);
+    filter: blur(0px);
+  }
 }
 
-.hush-slideshow-rise {
-  animation-name: hush-slideshow-rise;
-}
-
-.hush-slideshow-zoom {
-  animation-name: hush-slideshow-zoom;
+/* Someone who asked for less motion gets the photo, not the journey. */
+@media (prefers-reduced-motion: reduce) {
+  .hush-slideshow-frame {
+    animation-name: hush-slideshow-fade;
+    animation-duration: 200ms;
+  }
 }
 
 .hush-slideshow-progress {
@@ -154,28 +168,6 @@
   }
   to {
     opacity: 1;
-  }
-}
-
-@keyframes hush-slideshow-rise {
-  from {
-    opacity: 0;
-    transform: translateY(8px) scale(0.992);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0) scale(1);
-  }
-}
-
-@keyframes hush-slideshow-zoom {
-  from {
-    opacity: 0;
-    transform: scale(0.982);
-  }
-  to {
-    opacity: 1;
-    transform: scale(1);
   }
 }
 
