@@ -1896,6 +1896,19 @@ export default function UploadZone({ album, userTier, onPhotosUploaded }: Props)
   // are still in memory, so one tap is enough. This matters most at exactly the moment it is
   // hardest: a venue full of people sharing one saturated access point.
   const failedCount = entries.reduce((n, e) => (e.status === 'error' ? n + 1 : n), 0)
+  const [failedOpen, setFailedOpen] = useState(false)
+  // Grouped by message, because a dropped connection fails every file in flight with the SAME
+  // reason: 98 identical rows is not 98 pieces of information, it is one, repeated until the
+  // person stops reading. One line per distinct reason, with a count.
+  const failedByReason = useMemo(() => {
+    const m = new Map<string, number>()
+    for (const e of entries) {
+      if (e.status !== 'error') continue
+      const key = e.error?.trim() || t('upload.retry.unknown')
+      m.set(key, (m.get(key) ?? 0) + 1)
+    }
+    return [...m.entries()].sort((x, y) => y[1] - x[1])
+  }, [entries, t])
   const retryFailedUploads = useCallback(() => {
     // Same functional-updater discipline as retryEntry: the status check and the state write happen
     // inside one updater, so a double tap cannot start two uploads of the same file.
@@ -1911,21 +1924,52 @@ export default function UploadZone({ album, userTier, onPhotosUploaded }: Props)
 
   return (
     <div className="hush-upload-zone px-3 sm:px-4 pt-2 pb-4">
+      {/* Deliberately a small chip rather than the banner this used to be. Something failing is
+          worth surfacing, not worth taking over the screen — most of the time the person just
+          wants to carry on adding photos. It only exists while there is something in it, opens on
+          tap, and stays put until the files are retried, so a guest who looks away mid-upload can
+          still find out what did not make it. */}
       {failedCount > 0 && (
-        <div style={{ marginBottom: 12, padding: 14, borderRadius: 14, background: '#FBF0E6', border: '1px solid #E8D3BC' }}>
-          <p style={{ margin: '0 0 4px', fontSize: 15, fontWeight: 700, color: '#7A4A1F' }}>
-            {t('upload.retry.title', { n: failedCount })}
-          </p>
-          <p style={{ margin: '0 0 12px', fontSize: 13.5, lineHeight: 1.5, color: '#5C4A3C' }}>
-            {t('upload.retry.body')}
-          </p>
+        <div style={{ marginBottom: 10 }}>
           <button
             type="button"
-            onClick={retryFailedUploads}
-            style={{ fontSize: 14, fontWeight: 700, color: '#FDFAF5', background: '#7A4A1F', border: 'none', borderRadius: 12, padding: '10px 18px', cursor: 'pointer' }}
+            onClick={() => setFailedOpen((v) => !v)}
+            aria-expanded={failedOpen}
+            style={{
+              display: 'inline-flex', alignItems: 'center', gap: 7, fontSize: 13, fontWeight: 600,
+              color: '#7A4A1F', background: '#FBF0E6', border: '1px solid #E8D3BC',
+              borderRadius: 999, padding: '6px 12px', cursor: 'pointer',
+            }}
           >
-            {t('upload.retry.action', { n: failedCount })}
+            <span style={{
+              minWidth: 18, height: 18, borderRadius: 999, background: '#7A4A1F', color: '#FDFAF5',
+              fontSize: 11, fontWeight: 700, lineHeight: '18px', textAlign: 'center', padding: '0 5px',
+            }}>{failedCount}</span>
+            {t('upload.retry.chip')}
+            <span aria-hidden="true" style={{ fontSize: 10, opacity: 0.7 }}>{failedOpen ? '▲' : '▼'}</span>
           </button>
+
+          {failedOpen && (
+            <div style={{ marginTop: 8, padding: 12, borderRadius: 12, background: '#FBF0E6', border: '1px solid #E8D3BC' }}>
+              <p style={{ margin: '0 0 8px', fontSize: 13, lineHeight: 1.5, color: '#5C4A3C' }}>
+                {t('upload.retry.body')}
+              </p>
+              <ul style={{ margin: '0 0 10px', padding: 0, listStyle: 'none' }}>
+                {failedByReason.map(([reason, n]) => (
+                  <li key={reason} style={{ fontSize: 12.5, color: '#5C4A3C', margin: '0 0 4px' }}>
+                    <strong>{n}×</strong> {reason}
+                  </li>
+                ))}
+              </ul>
+              <button
+                type="button"
+                onClick={() => { setFailedOpen(false); retryFailedUploads() }}
+                style={{ fontSize: 13.5, fontWeight: 700, color: '#FDFAF5', background: '#7A4A1F', border: 'none', borderRadius: 10, padding: '8px 16px', cursor: 'pointer' }}
+              >
+                {t('upload.retry.action', { n: failedCount })}
+              </button>
+            </div>
+          )}
         </div>
       )}
       {/* The wall, as an offer rather than an error. Hitting the cap is the moment of highest

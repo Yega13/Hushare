@@ -381,6 +381,8 @@ export const en = {
   'upload.retry.title': '{n} did not make it',
   'upload.retry.body': 'Your connection dropped while these were uploading. They are still here - nothing to find again, just tap below when you have signal.',
   'upload.retry.action': 'Try these {n} again',
+  'upload.retry.chip': 'did not upload',
+  'upload.retry.unknown': 'Upload failed',
   'ot.faceConsent.title': 'Before you switch this on',
   'ot.faceConsent.b1': 'Face search works by computing a mathematical template of each face in your album. That is biometric data, and in Europe and several US states it is prohibited unless the people involved have given explicit consent.',
   'ot.faceConsent.b2': 'Explicit consent means an active choice you can evidence - an unticked box on your entry or invitation form, and a record of who ticked it. A sign at the venue is not enough. You are welcome to use our wording:',
