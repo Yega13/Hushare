@@ -124,7 +124,7 @@ export default function WeddingPhotoSharingPage() {
         },
         {
           q: 'How long will the wedding album last?',
-          a: 'Free albums are kept as long as the album is active - they retire after 1 year of inactivity (we email a warning first). On Pro, albums never expire. For a wedding album you want to keep forever, Pro is the right tier.',
+          a: 'Free albums are kept as long as the album is active - they retire after 1 year of inactivity. If you made the album while signed in, we email a warning first - albums made without an account have no address to warn. On Pro, albums never expire. For a wedding album you want to keep forever, Pro is the right tier.',
         },
         {
           q: 'Can we add a custom URL like hushare.space/anna-and-david?',

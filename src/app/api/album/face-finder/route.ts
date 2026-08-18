@@ -14,14 +14,25 @@ export async function POST(req: Request) {
   const csrfError = forbidCrossSiteRequest(req)
   if (csrfError) return csrfError
 
-  const body = await req.json().catch(() => null) as { slug?: unknown; enabled?: unknown } | null
-  const { slug, enabled } = body ?? {}
+  const body = await req.json().catch(() => null) as { slug?: unknown; enabled?: unknown; consent?: unknown } | null
+  const { slug, enabled, consent } = body ?? {}
 
   if (typeof slug !== 'string') {
     return NextResponse.json({ error: 'Missing slug' }, { status: 400, headers: NO_STORE })
   }
   if (typeof enabled !== 'boolean') {
     return NextResponse.json({ error: 'enabled must be a boolean' }, { status: 400, headers: NO_STORE })
+  }
+
+  // Enabling face search creates biometric data, which European law prohibits unless the people
+  // involved have given explicit consent. The Terms assert the owner confirms they hold it, so the
+  // product has to actually ask — and refuse if the answer never came. Enforced here rather than
+  // only in the dialog, because the dialog is client-side and this endpoint is the real boundary.
+  if (enabled === true && consent !== true) {
+    return NextResponse.json(
+      { error: 'Face Finder needs you to confirm you have consent from the people in these photos.' },
+      { status: 400, headers: NO_STORE },
+    )
   }
 
   const access = await verifyOwnerViaCookieWithRateLimit(req, slug.trim())
@@ -37,7 +48,17 @@ export async function POST(req: Request) {
   }
 
   const admin = createAdminClient()
-  const { error } = await admin.from('albums').update({ face_finder_enabled: enabled }).eq('id', access.album.id)
+  const { error } = await admin
+    .from('albums')
+    .update(
+      enabled
+        // Recorded at the moment of the decision, against the person who made it. Switching off
+        // clears it so a later re-enable has to be confirmed again rather than riding on a
+        // confirmation given for a different set of photographs.
+        ? { face_finder_enabled: true, face_consent_at: new Date().toISOString(), face_consent_by: access.userId }
+        : { face_finder_enabled: false, face_consent_at: null, face_consent_by: null },
+    )
+    .eq('id', access.album.id)
 
   // Switching the feature OFF used to leave every face template in place, still enrolled and still
   // matchable — the switch stopped new photos being read and did nothing about the biometric data

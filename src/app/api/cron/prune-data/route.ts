@@ -34,6 +34,23 @@ export async function POST(req: Request) {
   const iso = (days: number) => new Date(Date.now() - days * 864e5).toISOString()
   const result: Record<string, unknown> = {}
 
+  // Presence rows say which page someone has open, so the policy promises they are gone within 10
+  // minutes of a visitor leaving. That promise used to rest on a Math.random() < 0.02 sweep during
+  // INCOMING pings: expected closer to 25 minutes with one visitor, and unbounded once traffic
+  // stopped, because the thing that cleans up only ran when there was something to clean up after.
+  // Exactly the pattern the rate-limit note below complains about. This mode runs every minute
+  // whether or not anyone is on the site, which is what makes the published number true.
+  {
+    const { error, count } = await admin
+      .from('active_sessions')
+      .delete({ count: 'exact' })
+      .lt('last_seen', new Date(Date.now() - 10 * 60 * 1000).toISOString())
+    result.presenceDeleted = error ? `error: ${error.message}` : (count ?? 0)
+  }
+  if (new URL(req.url).searchParams.get('mode') === 'presence') {
+    return NextResponse.json({ ok: true, ...result }, { headers: NO_STORE })
+  }
+
   // ── Abuse / rate-limit records (contain raw IPs) ───────────────────────────
   {
     const { error, count } = await admin
@@ -53,8 +70,22 @@ export async function POST(req: Request) {
   }
 
   // ── Face collections for albums that have gone quiet ──────────────────────
-  // Only albums that still have the feature on are considered: switching it off already deletes
-  // the collection, and an album with it off has nothing left to expire.
+  // Two things were wrong here and both defeated the published 90-day promise entirely.
+  //
+  // 1. The candidate filter was last_activity_at, which touchActivity() bumps on ANY album VIEW.
+  //    The policy says "90 days with no new photo added". An album someone glances at once a month
+  //    never became a candidate at all, so its face templates were kept forever. The photo check
+  //    below was described as "belt and braces" but it only ever ran on albums that had already
+  //    passed the wrong filter, so it could not save it. The clock now runs off the newest photo,
+  //    which is the thing the policy actually names.
+  //
+  // 2. Deleting the collection was not enough. face_finder_enabled stayed true, and the every-minute
+  //    bib-index cron selects purely on that flag with no activity filter of its own. It called
+  //    ensureCollection() and re-enrolled every face within sixty seconds of the deletion, then did
+  //    it again the next night, forever — so the most sensitive retention promise on the site was
+  //    not just unenforced, it was actively undone, at full IndexFaces price every single day.
+  //    Turning the flag off is what actually ends it. The owner can switch it back on, which
+  //    re-indexes from scratch — a deliberate act by the person allowed to make it.
   {
     const cutoff = iso(FACE_IDLE_DAYS)
     const { data: albums } = await admin
@@ -62,15 +93,11 @@ export async function POST(req: Request) {
       .select('id')
       .eq('face_finder_enabled', true)
       .is('retired_at', null)
-      .lt('last_activity_at', cutoff)
-      .limit(25)
+      .limit(200)
       .returns<{ id: string }[]>()
 
     let expired = 0
     for (const album of albums ?? []) {
-      // Belt and braces: last_activity_at moves on any view, so confirm against the photos
-      // themselves that nothing has actually been ADDED inside the window before deleting
-      // biometric data.
       const { data: recent } = await admin
         .from('photos')
         .select('id')
@@ -82,8 +109,12 @@ export async function POST(req: Request) {
 
       try {
         await deleteCollection(album.id)
-        // face_ids back to NULL means "never looked at". If the owner ever switches the feature
-        // back on, the sweep re-indexes from scratch rather than trusting ids AWS no longer has.
+        // Order matters: the flag goes down FIRST. If the process dies between these two writes,
+        // stopping short leaves an album with no collection and no indexing, which self-heals on
+        // the next run. The reverse order would leave the flag up and re-enroll everything.
+        await admin.from('albums').update({ face_finder_enabled: false }).eq('id', album.id)
+        // face_ids back to NULL means "never looked at", so a re-enable indexes from scratch
+        // rather than trusting ids AWS no longer has.
         await admin.from('photos').update({ face_ids: null }).eq('album_id', album.id)
         expired++
       } catch (e) {

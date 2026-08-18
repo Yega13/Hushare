@@ -66,7 +66,12 @@ const worker = {
       // Bib indexing for race albums. Cheap no-op (one indexed query) when no album has it on.
       // This is the reliable path: the sweep kicked off by an upload gets cut short by the
       // post-response budget, so this is what actually carries an album to completion.
-      ctx.waitUntil(callCronRoute(baseUrl, '/api/cron/bib-index', secret))
+      ctx.waitUntil(Promise.all([
+        callCronRoute(baseUrl, '/api/cron/bib-index', secret),
+        // Presence rows are promised gone within 10 minutes of someone leaving, so the sweep has to
+        // run on a clock rather than on the traffic it is cleaning up after.
+        callCronRoute(baseUrl, '/api/cron/prune-data?mode=presence', secret),
+      ]))
       return
     }
 

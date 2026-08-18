@@ -381,10 +381,16 @@ export default function PrivacyPage() {
               a person, the conversation is emailed to us.
             </li>
             <li>
-              <strong style={INK}>Cloudflare Analytics Engine</strong> - counts
-              of things that happen (albums created, photos uploaded, searches
-              run) so we can see what the service is doing. No names, and kept
-              for 90 days.
+              <strong style={INK}>Cloudflare Analytics Engine</strong> - our
+              own usage statistics: albums created, photos uploaded, searches
+              run, and so on. To be precise about what an event record holds, it
+              can include the album&rsquo;s id and, if you were signed in, your
+              account id - so this is not fully anonymous, and we would rather
+              say that than call it &ldquo;anonymous statistics&rdquo;. It never
+              contains your name, your email, or your photos. Questions typed
+              into our support chat are also logged here, with obvious personal
+              details stripped out first, so we can see what people get stuck on.
+              Kept for 90 days.
             </li>
             <li>
               <strong style={INK}>Google (Gmail)</strong> - our support inbox. If
@@ -424,6 +430,14 @@ export default function PrivacyPage() {
               biometric data.
             </li>
           </ul>
+          <p className="mt-3">
+            <strong style={INK}>Who can run a search.</strong> We should be plain
+            about this, because the name of the feature suggests otherwise:
+            anyone who can open your album can run a face search on it, and
+            nothing stops them searching for a face that is not their own. The
+            feature finds people; it does not check who is asking. If that is not
+            what you want for your album, leave it switched off.
+          </p>
           <p className="mt-3">
             Face data is deleted when any one of these happens, whichever comes
             first: the photo it came from is deleted, the album is deleted, the
@@ -518,9 +532,9 @@ export default function PrivacyPage() {
             ourselves for an album; only its owner can do that.
           </p>
           <p className="mt-3">
-            In limited circumstances, authorised Hushare staff may access album
-            content - including photos and videos - where it is necessary to run
-            the service: to respond to a report or legal request, to investigate
+            In limited circumstances the person who runs Hushare may access
+            album content - including photos and videos - where it is necessary
+            to keep the service running: to respond to a report or legal request, to investigate
             suspected illegal or abusive content, to comply with applicable law,
             or to help you with a support request you have raised. We access
             content only when there is a specific, legitimate reason to do so -

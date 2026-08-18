@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import * as tus from 'tus-js-client'
 import type { Album, Tier } from '@/types'
-import { stripExifFromJpeg, jpegOrientation } from '@/lib/exif'
+import { stripExifFromJpeg, jpegOrientation, stripMetadataFromPng, stripMetadataFromWebp } from '@/lib/exif'
 import { snapshotFileRobust, readFileRobust } from '@/lib/file-read'
 import { showAppToast } from '@/components/AppToast'
 import { useT } from '@/i18n/LocaleProvider'
@@ -487,8 +487,15 @@ async function processImageInner(file: File): Promise<ProcessedImage> {
       }
     }
 
-    // Small PNG/WebP: original bytes untouched (no EXIF concern).
-    return { blob: file, thumbBlob, mimeType, name: file.name, width: bitmap.width, height: bitmap.height }
+    // Small PNG/WebP: pixels are kept exactly as-is, but the metadata chunks come out. Both formats
+    // can carry GPS (PNG via eXIf, WebP via its EXIF chunk) and the privacy policy promises location
+    // never reaches us, so "no EXIF concern" was wrong for anything that was not a screenshot.
+    const raw = new Uint8Array(await file.arrayBuffer())
+    const cleaned = mimeType === 'image/png' ? stripMetadataFromPng(raw) : stripMetadataFromWebp(raw)
+    const blob = cleaned.length === raw.length
+      ? file
+      : new Blob([cleaned.buffer as unknown as ArrayBuffer], { type: mimeType })
+    return { blob, thumbBlob, mimeType, name: file.name, width: bitmap.width, height: bitmap.height }
   } finally {
     bitmap.close()
   }
@@ -1877,8 +1884,45 @@ export default function UploadZone({ album, userTier, onPhotosUploaded }: Props)
     }
   }
 
+  // On 2026-08-17 at 23:34 a single Android phone lost its connection mid-batch: 41 photos landed
+  // and 52 failed together as their retry deadlines expired. The uploader had already fought for
+  // two minutes per file — the connection was simply gone — but there was nothing to do afterwards
+  // except find those 52 photos in the camera roll and pick them again by hand. The File objects
+  // are still in memory, so one tap is enough. This matters most at exactly the moment it is
+  // hardest: a venue full of people sharing one saturated access point.
+  const failedCount = entries.reduce((n, e) => (e.status === 'error' ? n + 1 : n), 0)
+  const retryFailedUploads = useCallback(() => {
+    // Same functional-updater discipline as retryEntry: the status check and the state write happen
+    // inside one updater, so a double tap cannot start two uploads of the same file.
+    let fresh: FileEntry[] = []
+    setEntries(prev => {
+      fresh = prev.filter(e => e.status === 'error').map(e => ({ ...e, status: 'pending' as const, progress: 0, error: undefined }))
+      if (fresh.length === 0) return prev
+      const byId = new Map(fresh.map(e => [e.id, e]))
+      return prev.map(e => byId.get(e.id) ?? e)
+    })
+    if (fresh.length > 0) void startUploads(fresh)
+  }, [startUploads])
+
   return (
     <div className="hush-upload-zone px-3 sm:px-4 pt-2 pb-4">
+      {failedCount > 0 && (
+        <div style={{ marginBottom: 12, padding: 14, borderRadius: 14, background: '#FBF0E6', border: '1px solid #E8D3BC' }}>
+          <p style={{ margin: '0 0 4px', fontSize: 15, fontWeight: 700, color: '#7A4A1F' }}>
+            {t('upload.retry.title', { n: failedCount })}
+          </p>
+          <p style={{ margin: '0 0 12px', fontSize: 13.5, lineHeight: 1.5, color: '#5C4A3C' }}>
+            {t('upload.retry.body')}
+          </p>
+          <button
+            type="button"
+            onClick={retryFailedUploads}
+            style={{ fontSize: 14, fontWeight: 700, color: '#FDFAF5', background: '#7A4A1F', border: 'none', borderRadius: 12, padding: '10px 18px', cursor: 'pointer' }}
+          >
+            {t('upload.retry.action', { n: failedCount })}
+          </button>
+        </div>
+      )}
       {/* The wall, as an offer rather than an error. Hitting the cap is the moment of highest
           intent — the visitor is actively trying to hand over their photos — and it used to be a
           red failure that lost their place. One guest retried 39 times and never registered.

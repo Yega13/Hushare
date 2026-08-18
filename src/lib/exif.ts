@@ -119,3 +119,69 @@ export function stripExifFromJpeg(bytes: Uint8Array): Uint8Array {
   }
   return out
 }
+
+// ─── PNG / WebP metadata ──────────────────────────────────────────────────────
+//
+// The upload path used to pass small PNG/WebP through with a comment claiming "no EXIF concern".
+// That is false. PNG carries an `eXIf` chunk (PNG 1.5) and WebP has an `EXIF` chunk in its RIFF
+// container, and either can hold the GPS coordinates the photo was taken at. Screenshots are
+// harmless, but a phone told to save as PNG, or any image round-tripped through an editor that
+// preserves metadata, is not — and the privacy policy states flatly that location is removed in the
+// browser before anything reaches us. Both formats are chunked, so the metadata can be cut out
+// without re-encoding: the pixels are bit-identical, only the metadata chunks are dropped.
+
+const PNG_MAGIC = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]
+// eXIf is the explicit carrier; tEXt/zTXt/iTXt hold arbitrary text (editors write camera and
+// sometimes location data there); tIME is a timestamp. None affect rendering.
+const PNG_STRIP = new Set(['eXIf', 'tEXt', 'zTXt', 'iTXt', 'tIME'])
+
+export function stripMetadataFromPng(bytes: Uint8Array): Uint8Array {
+  if (bytes.length < 8 || PNG_MAGIC.some((b, i) => bytes[i] !== b)) return bytes
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength)
+  const keep: [number, number][] = [[0, 8]]
+  let pos = 8
+  let dropped = false
+  while (pos + 8 <= bytes.length) {
+    const len = view.getUint32(pos)
+    const type = String.fromCharCode(bytes[pos + 4], bytes[pos + 5], bytes[pos + 6], bytes[pos + 7])
+    const end = pos + 12 + len // length + type + data + CRC
+    if (end > bytes.length) break // truncated file: return it untouched rather than corrupt it
+    if (PNG_STRIP.has(type)) dropped = true
+    else keep.push([pos, end])
+    pos = end
+    if (type === 'IEND') break
+  }
+  if (!dropped) return bytes
+  const out = new Uint8Array(keep.reduce((n, [a, b]) => n + (b - a), 0))
+  let o = 0
+  for (const [a, b] of keep) { out.set(bytes.subarray(a, b), o); o += b - a }
+  return out
+}
+
+export function stripMetadataFromWebp(bytes: Uint8Array): Uint8Array {
+  const tag = (i: number) => String.fromCharCode(bytes[i], bytes[i + 1], bytes[i + 2], bytes[i + 3])
+  if (bytes.length < 12 || tag(0) !== 'RIFF' || tag(8) !== 'WEBP') return bytes
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength)
+  const keep: [number, number][] = []
+  let pos = 12
+  let dropped = false
+  while (pos + 8 <= bytes.length) {
+    const size = view.getUint32(pos + 4, true) // RIFF is little-endian
+    const type = tag(pos)
+    const end = pos + 8 + size + (size % 2) // chunks are padded to even length
+    if (end > bytes.length) break
+    if (type === 'EXIF' || type === 'XMP ') dropped = true
+    else keep.push([pos, end])
+    pos = end
+  }
+  if (!dropped) return bytes
+  const body = keep.reduce((n, [a, b]) => n + (b - a), 0)
+  const out = new Uint8Array(12 + body)
+  out.set(bytes.subarray(0, 12), 0)
+  let o = 12
+  for (const [a, b] of keep) { out.set(bytes.subarray(a, b), o); o += b - a }
+  // The RIFF header carries the total size of everything after it, so it has to be rewritten or
+  // decoders read past the end of the shortened file.
+  new DataView(out.buffer).setUint32(4, out.length - 8, true)
+  return out
+}
