@@ -6,7 +6,7 @@ import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { isAccountAdmin } from '@/lib/auth'
 import AdminRefreshButton from '@/components/AdminRefreshButton'
-import AdminResetErrorsButton from '@/components/AdminResetErrorsButton'
+import AdminErrorTabs, { type ErrorRow } from '@/components/AdminErrorTabs'
 import AdminDeleteAlbumButton from '@/components/AdminDeleteAlbumButton'
 import AdminSyncPolarButton from '@/components/AdminSyncPolarButton'
 import AdminPublishStatement from '@/components/AdminPublishStatement'
@@ -103,18 +103,14 @@ export default async function AdminPage() {
     admin.from('error_events').select('id', { count: 'exact', head: true }).eq('level', 'error').is('resolved_at', null).gte('created_at', dayAgo),
     admin.from('error_events').select('created_at, level, source, message, album_id, ua')
       .is('resolved_at', null)
-      .order('created_at', { ascending: false }).limit(60)
-      .returns<{ created_at: string; level: string; source: string; message: string; album_id: string | null; ua: string | null }[]>(),
+      .order('created_at', { ascending: false }).limit(200)
+      .returns<ErrorRow[]>(),
   ])
 
   const recentAlbums = recentAlbumsRes.data ?? []
   const subs = subsRes.data ?? []
   const allUsers = usersRes.data?.users ?? []
   const recentErrors = recentErrorsRes.data ?? []
-  // Group recent errors by message to show the top recurring problems.
-  const errorTally = new Map<string, number>()
-  for (const e of recentErrors) errorTally.set(e.message, (errorTally.get(e.message) ?? 0) + 1)
-  const topErrors = [...errorTally.entries()].sort((a, b) => b[1] - a[1]).slice(0, 6)
 
   // id → email map for owners + recent signups (one listUsers call, no N+1)
   const emailById = new Map<string, string>()
@@ -380,46 +376,11 @@ export default async function AdminPage() {
           <AdminPublishStatement />
         </div>
 
-        {/* Errors — top recurring + recent stream */}
-        <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 12, margin: '0 0 10px' }}>
-          <h2 id="errors" style={{ fontSize: 15, fontWeight: 700, color: INK, margin: 0, scrollMarginTop: 64 }}>
-            Errors <span style={{ fontSize: 12, fontWeight: 400, color: MUTED }}>(real guest failures reported from their devices)</span>
-          </h2>
-          {recentErrors.length > 0 && <AdminResetErrorsButton />}
-        </div>
-        {recentErrors.length === 0 ? (
-          <div style={{ background: CARD, border: `1px solid ${BORDER}`, borderRadius: 12, padding: '14px 16px', marginBottom: 28, fontSize: 13, color: MUTED }}>
-            No errors reported. 🎉 If a guest hits an upload failure, it shows up here with the device and reason.
-          </div>
-        ) : (
-          <div style={{ marginBottom: 28 }}>
-            {topErrors.length > 0 && (
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 12 }}>
-                {topErrors.map(([msg, n]) => (
-                  <span key={msg} style={{ fontSize: 12, background: '#FBEEF0', color: BRAND, border: `1px solid #EAD3D8`, borderRadius: 999, padding: '4px 10px' }}>
-                    <strong>{n}×</strong> {msg.slice(0, 60)}{msg.length > 60 ? '…' : ''}
-                  </span>
-                ))}
-              </div>
-            )}
-            <div style={{ overflowX: 'auto', background: CARD, border: `1px solid ${BORDER}`, borderRadius: 12 }}>
-              <table style={{ borderCollapse: 'collapse', width: '100%', minWidth: 680 }}>
-                <thead><tr><th style={th}>When</th><th style={th}>Lvl</th><th style={th}>Source</th><th style={th}>Message</th><th style={th}>Device</th></tr></thead>
-                <tbody>
-                  {recentErrors.map((e, i) => (
-                    <tr key={i}>
-                      <td style={td}>{fmt(e.created_at)}</td>
-                      <td style={{ ...td, color: e.level === 'error' ? '#B3261E' : '#8A6D00' }}>{e.level}</td>
-                      <td style={td}>{e.source}</td>
-                      <td style={{ ...td, whiteSpace: 'normal', maxWidth: 320 }}>{e.message}</td>
-                      <td style={{ ...td, whiteSpace: 'normal', maxWidth: 180, fontSize: 11, color: MUTED }}>{(e.ua ?? '').replace(/Mozilla\/[\d.]+ /,'').slice(0, 60)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        )}
+        {/* Errors and warnings, split — see AdminErrorTabs for why they were separated. */}
+        <h2 id="errors" style={{ fontSize: 15, fontWeight: 700, color: INK, margin: '0 0 10px', scrollMarginTop: 64 }}>
+          Reported from guest devices
+        </h2>
+        <AdminErrorTabs rows={recentErrors} />
 
         {/* Recent albums */}
         <h2 id="albums" style={{ fontSize: 15, fontWeight: 700, color: INK, margin: '0 0 10px', scrollMarginTop: 64 }}>Recent albums</h2>
