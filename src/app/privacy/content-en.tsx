@@ -62,9 +62,11 @@ export const en: PrivacyContent = {
               <strong style={INK}>Photos and videos</strong> uploaded by you
               or anyone you share the album link with. Photos have their hidden
               camera data - including GPS location, if the phone recorded any -
-              removed in your browser before they ever reach us.{' '}
-              <strong style={INK}>Videos do not:</strong> they upload as they
-              are, so a video may still carry the location it was filmed at.
+              removed in your browser before they ever reach us. Videos keep
+              their camera data on upload, but they are converted for playback
+              before anyone can watch them and the converted version carries no
+              location. Videos cannot be downloaded from an album either, so the
+              file that left your phone is never handed to anybody.
             </li>
             <li>
               <strong style={INK}>Owner token</strong> - a random string
@@ -270,7 +272,7 @@ export const en: PrivacyContent = {
             the album. That last one runs on its own - nobody has to remember it,
             so an album that has finished its event stops holding face data three
             months later either way. <strong style={INK}>If you are an event organiser,
-            telling people is not enough.</strong> A face template is biometric
+            telling people is not enough - you need their permission.</strong> A face template is biometric
             data, which European law protects more strictly than almost anything
             else: it is prohibited by default, and the exception we rely on is
             the <strong style={INK}>explicit consent</strong> of the person whose
@@ -288,13 +290,6 @@ export const en: PrivacyContent = {
             </em>{' '}
             Keep a record of who ticked it. If someone leaves it unticked, that
             is a complete answer - they simply do not get face search.
-          </p>
-          <p className="mt-3">
-            If collecting that is impractical,{' '}
-            <strong style={INK}>leave Face Finder off and use race-number search
-            instead</strong>. It reads the digits printed on a bib, identifies
-            nobody, creates no biometric data, and needs consent from no one. At
-            a race it finds most of the same photographs.
           </p>
           <p className="mt-3">
             To have face data for a specific person or album removed at any
@@ -355,8 +350,19 @@ export const en: PrivacyContent = {
             Albums are <strong style={INK}>unlisted</strong>. They are not
             indexed by search engines, cannot be browsed from the site, and
             are only reachable by someone who has the link. You decide who
-            receives that link. We do not sell, rent, or share your data with
-            advertisers - ever.
+            receives that link.
+          </p>
+          <p className="mt-3">
+            <strong style={INK}>Could a stranger find your album by guessing?</strong>{' '}
+            In practice, no. An album address is eight random characters - about
+            2.8 trillion possibilities - so typing one that happens to exist is
+            roughly as likely as guessing a specific person&rsquo;s phone number
+            on the first try. Repeated attempts are rate-limited, and albums are
+            not linked from anywhere or indexed, so there is nothing to stumble
+            across. A password adds a second lock on top.
+          </p>
+          <p className="mt-3">
+            We do not sell, rent, or share your data with advertisers - ever.
           </p>
           <p className="mt-3">
             <strong style={INK}>What we never do with your photos.</strong> We do

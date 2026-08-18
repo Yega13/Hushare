@@ -501,27 +501,29 @@ export default function AlbumDesigner({ album, photos, onAlbumUpdated, onClose }
                         style={{ position: 'absolute', top: -6, right: -6, width: 20, height: 20, borderRadius: '50%', background: BRAND, color: '#FDFAF5', border: '2px solid #FFFFFF', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
                         <X className="w-3 h-3" />
                       </button>
-                      {/* Only rendered with two or more logos, because with ONE there is nothing to
-                          reorder and both arrows are necessarily disabled — which is exactly what
-                          "the arrows don't work" turned out to mean. A control that can never do
-                          anything should not be on screen.
-                          LEFT/RIGHT, not up/down: the strip is a horizontal row, so up-and-down
-                          chevrons described a movement that does not exist. The first logo still
-                          cannot move left and the last cannot move right, so one arrow of each pair
-                          is inert — at 28px with a visible surface that reads as deliberate, which
-                          a 14px bare icon did not. */}
+                      {/* Only the arrow that can actually DO something is rendered. Previously both
+                          were always drawn and the impossible one was merely disabled, so with the
+                          common case of two logos exactly half of all arrows were inert: the first
+                          logo's left arrow and the last logo's right arrow did nothing when tapped.
+                          A greyed-out control still invites a tap, and a tap that does nothing is
+                          indistinguishable from a broken feature — which is what it was reported
+                          as, twice. Nothing on screen now is unresponsive. */}
                       {album.sponsor_logos.length > 1 && (
-                      <div style={{ display: 'flex', justifyContent: 'center', gap: 4, marginTop: 4 }}>
-                        <button type="button" onClick={() => moveSponsor(s.id, -1)} disabled={i === 0}
-                          title={t('ad.moveLeft')} aria-label={t('ad.moveLeft')}
-                          style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 28, height: 28, borderRadius: 7, background: i === 0 ? 'transparent' : '#F5F0E8', border: 'none', cursor: i === 0 ? 'default' : 'pointer', color: i === 0 ? '#E4DCCC' : BRAND, padding: 0, touchAction: 'manipulation' }}>
-                          <ChevronLeft className="w-4 h-4" />
-                        </button>
-                        <button type="button" onClick={() => moveSponsor(s.id, 1)} disabled={i === album.sponsor_logos.length - 1}
-                          title={t('ad.moveRight')} aria-label={t('ad.moveRight')}
-                          style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 28, height: 28, borderRadius: 7, background: i === album.sponsor_logos.length - 1 ? 'transparent' : '#F5F0E8', border: 'none', cursor: i === album.sponsor_logos.length - 1 ? 'default' : 'pointer', color: i === album.sponsor_logos.length - 1 ? '#E4DCCC' : BRAND, padding: 0, touchAction: 'manipulation' }}>
-                          <ChevronRight className="w-4 h-4" />
-                        </button>
+                      <div style={{ display: 'flex', justifyContent: 'center', gap: 4, marginTop: 4, minHeight: 28 }}>
+                        {i > 0 && (
+                          <button type="button" onClick={() => moveSponsor(s.id, -1)}
+                            title={t('ad.moveLeft')} aria-label={t('ad.moveLeft')}
+                            style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 28, height: 28, borderRadius: 7, background: '#F5F0E8', border: 'none', cursor: 'pointer', color: BRAND, padding: 0, touchAction: 'manipulation' }}>
+                            <ChevronLeft className="w-4 h-4" />
+                          </button>
+                        )}
+                        {i < album.sponsor_logos.length - 1 && (
+                          <button type="button" onClick={() => moveSponsor(s.id, 1)}
+                            title={t('ad.moveRight')} aria-label={t('ad.moveRight')}
+                            style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 28, height: 28, borderRadius: 7, background: '#F5F0E8', border: 'none', cursor: 'pointer', color: BRAND, padding: 0, touchAction: 'manipulation' }}>
+                            <ChevronRight className="w-4 h-4" />
+                          </button>
+                        )}
                       </div>
                       )}
                     </div>
