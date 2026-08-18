@@ -34,7 +34,8 @@ export async function POST(req: Request) {
       count: 8,
       windowMinutes: 10,
       deviceCount: 2,
-      top: [['This is a test of the Hushare error alert — nothing is wrong', 8]],
+      test: true,
+      top: [['Example: a photo failed to upload after the connection dropped', 8]],
     })
   } catch (e) {
     // Surfaced to the browser rather than only the server log: the point is that the admin finds

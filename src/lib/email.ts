@@ -258,33 +258,52 @@ export async function sendExpiryWarningEmail(
 
 // Operational alert to the operator, not to a user. Plain and scannable on a phone lock screen,
 // because the whole point is being read while standing in a field rather than at a desk.
+//
+// `test` matters more than it looks. The first version sent test messages through the real template,
+// so the email announced "these are real failures — something is not working right now" and then
+// listed "this is a test, nothing is wrong". Contradicting itself in the first two lines is a good
+// way to teach someone to ignore the alert entirely.
 export async function sendErrorSpikeEmail(
   to: string,
-  info: { count: number; windowMinutes: number; deviceCount: number; top: [string, number][] },
+  info: { count: number; windowMinutes: number; deviceCount: number; top: [string, number][]; test?: boolean },
 ) {
-  const { count, windowMinutes, deviceCount, top } = info
-  const subject = `Hushare: ${count} errors in ${windowMinutes} min`
+  const { count, windowMinutes, deviceCount, top, test } = info
+  const subject = test
+    ? 'Hushare: test alert (nothing is wrong)'
+    : `Hushare: ${count} uploads or pages failed for guests in ${windowMinutes} min`
+  const heading = test
+    ? 'This is a test. Nothing is wrong.'
+    : `${count} things failed for guests in the last ${windowMinutes} minutes`
+  const explain = test
+    ? `You asked for this from the admin dashboard, to check the alert reaches you. A real alert looks like this one, but names what broke and how many people it hit. If this arrived, alerting works — nothing to do.`
+    : `That means ${count} times, on ${deviceCount} device${deviceCount === 1 ? '' : 's'}, someone using Hushare had something fail: a photo that would not upload, or a page that crashed. It is not a warning about limits — those are excluded. Something is broken for real people right now.`
   const rows = top
     .map(([msg, n]) => `<li style="margin:0 0 6px;"><strong>${n}×</strong> ${escapeHtml(msg.slice(0, 140))}</li>`)
     .join('')
   const html = `
 <div style="font-family:-apple-system,system-ui,sans-serif;color:#630826;max-width:560px;margin:0 auto;padding:24px;">
-  <h2 style="margin:0 0 8px;font-size:18px;">${count} errors in the last ${windowMinutes} minutes</h2>
-  <p style="margin:0 0 16px;color:#5C4A3C;">
-    Across ${deviceCount} device${deviceCount === 1 ? '' : 's'}. Warnings are excluded, so these are
-    real failures — something is not working for someone right now.
-  </p>
+  <h2 style="margin:0 0 10px;font-size:18px;">${escapeHtml(heading)}</h2>
+  <p style="margin:0 0 16px;color:#5C4A3C;line-height:1.5;">${escapeHtml(explain)}</p>
+  <p style="margin:0 0 6px;color:#5C4A3C;font-weight:600;font-size:14px;">${test ? 'Sample' : 'What is failing'}:</p>
   <ul style="margin:0 0 20px;padding-left:18px;color:#5C4A3C;font-size:14px;">${rows}</ul>
   <a href="${SITE_URL}/admin#errors"
      style="display:inline-block;background:#630826;color:#FDFAF5;text-decoration:none;border-radius:10px;padding:10px 20px;font-size:14px;font-weight:600;">
     Open the admin dashboard
   </a>
   <p style="margin:20px 0 0;color:#B0A090;font-size:12px;">
-    One alert per hour at most, however long this lasts.
+    ${test ? 'Test messages ignore the hourly limit.' : 'You will not get another of these for an hour, however long this lasts.'}
   </p>
 </div>`
-  const text = `${count} errors in the last ${windowMinutes} minutes, across ${deviceCount} device(s).\n\n`
-    + top.map(([m, n]) => `${n}x ${m}`).join('\n')
-    + `\n\n${SITE_URL}/admin#errors\n\nOne alert per hour at most.`
+  // Assembled as lines rather than one escaped template string: the plain-text part is what a
+  // lock-screen preview shows, so its line breaks matter.
+  const text = [
+    heading,
+    '',
+    explain,
+    '',
+    ...top.map(([m, n]) => `${n}x ${m}`),
+    '',
+    `${SITE_URL}/admin#errors`,
+  ].join(`\n`)
   await sendEmail(to, subject, html, text)
 }
