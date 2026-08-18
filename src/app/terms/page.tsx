@@ -1,4 +1,9 @@
 import type { Metadata } from 'next'
+import { getServerLocale } from '@/i18n/server'
+import { en } from './content-en'
+import { ru } from './content-ru'
+import { hy } from './content-hy'
+import { CHROME } from './chrome'
 import Image from 'next/image'
 import Link from 'next/link'
 import AccountNavLink from '@/components/AccountNavLink'
@@ -61,16 +66,18 @@ const BODY  = { color: '#5C4A3C' } as const
 const RULE  = { background: '#E8E0D0' } as const
 
 function Section({
+  id,
   number,
   heading,
   children,
 }: {
+  id: string
   number: number
   heading: string
   children: React.ReactNode
 }) {
   return (
-    <section className="mt-10">
+    <section id={id} className="mt-10 scroll-mt-24">
       <h2 className="text-2xl font-bold mb-3" style={{ ...SERIF, ...INK }}>
         <span style={{ color: '#7C4A2D', marginRight: '0.6rem' }}>{number}.</span>
         {heading}
@@ -82,7 +89,12 @@ function Section({
   )
 }
 
-export default function TermsPage() {
+export default async function TermsPage() {
+  // Same locale source as the rest of the site; a language without a translation falls back to
+  // English rather than showing a half-translated page.
+  const locale = await getServerLocale()
+  const content = locale === 'ru' ? ru : locale === 'hy' ? hy : en
+  const chrome = CHROME[locale] ?? CHROME.en
   return (
     <main
       className="min-h-screen"
@@ -138,229 +150,29 @@ export default function TermsPage() {
             fontWeight: 700,
           }}
         >
-          Terms of Service
+          {chrome.title}
         </h1>
         <p className="mt-4 text-sm" style={{ color: '#8B6F4E' }}>
-          Last updated: <time dateTime={LAST_UPDATED}>{LAST_UPDATED_HUMAN}</time>
+          {chrome.lastUpdated}: <time dateTime={LAST_UPDATED}>{LAST_UPDATED_HUMAN}</time>
         </p>
 
         <div className="mt-6 h-px" style={RULE} />
 
+        {content.localeNote && (
+          <p className="mt-8 text-sm rounded-xl p-3" style={{ ...BODY, background: '#F6F1E8', border: '1px solid #E8E0D0' }}>
+            {content.localeNote}
+          </p>
+        )}
+
         <p className="mt-8 text-lg leading-relaxed" style={BODY}>
-          By using Hushare (&ldquo;we&rdquo;, &ldquo;us&rdquo;, &ldquo;the
-          service&rdquo;), you agree to these terms. If you do not agree,
-          please do not use Hushare. These terms are written in plain English
-          on purpose - we want you to actually understand them.
+          {chrome.intro}
         </p>
 
-        <Section number={1} heading="What Hushare is">
-          <p>
-            Hushare is a shared photo and video album platform. You create an
-            album, share the link, and anyone with that link can view and add
-            photos and videos. Hushare is not a social network, a cloud backup
-            service, or a content distribution platform.
-          </p>
-        </Section>
-
-        <Section number={2} heading="What you can upload">
-          <p>You may upload photos and videos that you have the right to share. You may <strong style={INK}>not</strong> upload:</p>
-          <ul className="list-disc pl-5 space-y-2 mt-3">
-            <li>Content that is illegal in your jurisdiction or ours.</li>
-            <li>Child sexual abuse material (CSAM) - any such content will be reported to the relevant authorities immediately and without exception.</li>
-            <li>Non-consensual intimate imagery (&ldquo;revenge porn&rdquo;).</li>
-            <li>Content that infringes on a third party&apos;s intellectual property rights.</li>
-            <li>Spam, malware, or content intended to deceive or defraud.</li>
-            <li>Anything you do not have the right to share (e.g. photos taken by someone else without their permission).</li>
-          </ul>
-        </Section>
-
-        <Section number={3} heading="Ownership of content">
-          <p>
-            You keep ownership of everything you upload. By uploading to
-            Hushare, you grant us a limited, non-exclusive, worldwide licence
-            to host, store, and display your content solely to provide the
-            service. We do not use your photos or videos for advertising,
-            training AI models, or any purpose beyond running Hushare.
-          </p>
-        </Section>
-
-        <Section number={4} heading="Who is responsible for an album">
-          <p>
-            Whoever creates an album decides what it is for, who gets the link,
-            which features are switched on, and what happens to the photos in
-            it. That makes them responsible for it. Hushare provides the tools
-            and the storage; we do not decide what an album collects or who may
-            see it.
-          </p>
-          <p className="mt-3">
-            If you are running an album for an event - a race, a wedding, a
-            festival - you are responsible for telling the people being
-            photographed what is happening, for having a lawful basis to
-            collect and share those photos where your local law requires one,
-            and for honouring requests from people who want their photo taken
-            down. We will help you act on such a request; we cannot make that
-            judgement for you.
-          </p>
-        </Section>
-
-        <Section number={5} heading="Face search">
-          <p>
-            Face search is <strong style={INK}>off by default</strong>. An
-            album owner has to switch it on. When it is on, faces in that
-            album&apos;s photos are analysed so that a visitor can find pictures
-            of themselves by taking a selfie.
-          </p>
-          <p className="mt-3">
-            This is biometric processing, and in Europe and several US states it
-            is prohibited unless the people involved have given{' '}
-            <strong style={INK}>explicit consent</strong>. Telling them is not
-            the same thing: consent is an active choice you can evidence, which
-            in practice means an unticked box on your entry or invitation form
-            and a record of who ticked it. A sign at the venue is not enough. By
-            switching Face Finder on you confirm you have that consent for the
-            people in your photographs. If you cannot get it, leave it off -
-            race-number search finds most of the same pictures and creates no
-            biometric data at all.
-          </p>
-          <p className="mt-3">
-            A visitor&apos;s selfie is used to run the search and is not added to
-            the album, not shown to anyone, and not kept afterwards. Face data
-            derived from an album is deleted when the album is deleted. Details
-            of how this works, and which processor performs the analysis, are
-            in our{' '}
-            <Link href="/privacy" style={{ color: '#630826', textDecoration: 'underline', textDecorationStyle: 'dotted' }}>
-              Privacy Policy
-            </Link>
-            .
-          </p>
-        </Section>
-
-        <Section number={6} heading="Race numbers">
-          <p>
-            On albums where the owner has switched it on, we read the race
-            numbers printed on bibs so a runner can find their photos by typing
-            their number. This looks for digits on a bib; it does not identify
-            anyone, and it is independent of face search - you can use either,
-            both, or neither.
-          </p>
-          <p className="mt-3">
-            Numbers are read from the photo alone. We do not receive, request,
-            or hold a start list, so a number is only ever a number to us: what
-            it corresponds to is known to the organiser, not to Hushare.
-          </p>
-        </Section>
-
-        <Section number={7} heading="Guests and moderation">
-          <p>
-            Anyone with the album link can view it, and - unless the owner has
-            turned uploads off - add to it. If the album has a password, they
-            need the password to view it or add to it.
-          </p>
-          <p className="mt-3">
-            Owners can require new uploads to be approved before anyone else
-            sees them, hide individual items, and delete anything in their
-            album. If you add a photo to someone else&apos;s album, you are
-            giving them the ability to keep, hide, or delete it. Deletion is
-            permanent: we cannot recover a deleted album or photo for you.
-          </p>
-        </Section>
-
-        <Section number={8} heading="Logos and sponsor branding">
-          <p>
-            You can add your own logo and sponsor marks to an album. By
-            uploading them you confirm you are allowed to use those marks in
-            that way. We do not check trade mark rights, and we will remove
-            branding on a valid complaint from the rights holder.
-          </p>
-        </Section>
-
-        <Section number={9} heading="Album links and passwords">
-          <p>
-            An album has two links: a public one you share, and a private
-            management link that identifies you as the owner. Anyone holding
-            the management link can administer the album, so treat it like a
-            password. If you lose it and the album is not attached to an
-            account, contact us with the album name and roughly when you
-            created it and we will try to verify you manually - we cannot
-            promise we will be able to.
-          </p>
-          <p className="mt-3">
-            Attaching an album to a Hushare account is the reliable way to keep
-            access to it.
-          </p>
-        </Section>
-
-        <Section number={10} heading="Paid plans">
-          <p>
-            Paid plans are billed in advance through our payment provider,
-            which handles your card details - we never see or store them.
-            Plans renew automatically until you cancel, and you can cancel at
-            any time from your account; you keep the paid features until the
-            end of the period you have already paid for.
-          </p>
-          <p className="mt-3">
-            If something is genuinely wrong - you were charged twice, or the
-            service did not work - email us and we will sort it out. Prices
-            and plan limits can change; if a change affects a plan you are
-            already paying for, we will tell you before it applies to you.
-          </p>
-        </Section>
-
-        <Section number={11} heading="Our rights to remove content">
-          <p>
-            We reserve the right to remove any content and/or terminate access
-            to any album that violates these terms, without notice. We are not
-            obligated to review all content proactively, but we will act
-            promptly on valid reports and legal notices.
-          </p>
-        </Section>
-
-        <Section number={12} heading="DMCA and intellectual property">
-          <p>
-            To submit a DMCA takedown notice, email{' '}
-            <a
-              href="mailto:husharesupport@gmail.com"
-              style={{ color: '#630826', textDecoration: 'underline', textDecorationStyle: 'dotted' }}
-            >
-              husharesupport@gmail.com
-            </a>{' '}
-            with: your contact information, a description of the copyrighted
-            work, a link to the infringing content, a statement of good faith
-            belief, and a statement that the information is accurate under
-            penalty of perjury. Our designated DMCA agent registration number
-            is DMCA-1072882. Counter-notices may be submitted to the same
-            address.
-          </p>
-        </Section>
-
-        <Section number={13} heading="Limitation of liability">
-          <p>
-            Hushare is provided &ldquo;as is&rdquo; and &ldquo;as
-            available&rdquo;. To the maximum extent permitted by law, we
-            disclaim all warranties, express or implied. We are not liable for
-            any indirect, incidental, special, consequential, or punitive
-            damages arising from your use of - or inability to use - the
-            service, including but not limited to loss of data. Our total
-            liability to you for any direct damages is limited to the amount
-            you paid us in the past twelve months, or $10, whichever is
-            greater.
-          </p>
-        </Section>
-
-        <Section number={14} heading="Changes and termination">
-          <p>
-            We may update these terms at any time. The &ldquo;Last
-            updated&rdquo; date at the top of this page will reflect any
-            changes. Continued use of Hushare after an update constitutes
-            acceptance of the new terms. We may terminate or suspend access
-            for users who violate these terms. You may stop using the service
-            at any time; if you want your data deleted, see our{' '}
-            <Link href="/privacy" style={{ color: '#630826', textDecoration: 'underline', textDecorationStyle: 'dotted' }}>
-              Privacy Policy
-            </Link>
-            .
-          </p>
-        </Section>
+        {content.sections.map((sec, i) => (
+          <Section key={sec.id} id={sec.id} number={i + 1} heading={sec.heading}>
+            {sec.body}
+          </Section>
+        ))}
 
         <div className="mt-16 h-px" style={RULE} />
 
@@ -368,7 +180,7 @@ export default function TermsPage() {
           className="text-center text-sm mt-8 italic"
           style={{ color: '#8B6F4E', ...SERIF }}
         >
-          - with love, from Yerevan
+          {chrome.footer}
         </p>
       </article>
     </main>
