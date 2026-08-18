@@ -1742,12 +1742,17 @@ export default function UploadZone({ album, userTier, onPhotosUploaded }: Props)
             // instead of restarting from zero.
             ...(e instanceof VideoUploadError && e.resume ? { videoResume: e.resume } : {}),
           })
-          // Adaptive lane: a genuine upload failure (not a user cancel, not a pre-upload reject like
-          // too-large / unsupported) means the network can't take the current concurrency — snap back
-          // to serial and stop probing.
-          if (kind === 'video'
-            && !(e instanceof DOMException && e.name === 'AbortError')
-            && !(e instanceof Error && (e.message.startsWith('File too large') || e.message.startsWith('Unsupported')))) {
+          // A refusal is not a failure. Too-large and unsupported-type mean the product looked at
+          // the file and correctly declined it — the same class of event as hitting the album cap,
+          // which is already logged at warn. Logged as errors they sat in the admin Errors tab
+          // implying something was broken: a 103 MB video refused twice on 2026-08-18 was two of
+          // the four "errors" outstanding, and nothing was wrong.
+          const expectedRejection = e instanceof Error
+            && (e.message.startsWith('File too large') || e.message.startsWith('Unsupported'))
+          // Adaptive lane: a genuine upload failure (not a user cancel, not a pre-upload reject)
+          // means the network can't take the current concurrency — snap back to serial and stop
+          // probing. Same distinction as above, so it is now made once.
+          if (kind === 'video' && !(e instanceof DOMException && e.name === 'AbortError') && !expectedRejection) {
             noteVideoOutcome(false)
           }
           // Surface the real error (it was previously hidden in a title tooltip, invisible on
@@ -1756,7 +1761,7 @@ export default function UploadZone({ album, userTier, onPhotosUploaded }: Props)
             showAppToast(`Upload failed: ${msg}`, 'error')
             // Report to /admin so real guest failures are visible, not invisible. Raw message
             // (not the friendly one) is the diagnostic value; include device + file context.
-            reportClientEvent('error', kind === 'video' ? 'upload:video' : 'upload:image',
+            reportClientEvent(expectedRejection ? 'warn' : 'error', kind === 'video' ? 'upload:video' : 'upload:image',
               e instanceof Error ? e.message : String(e), album.id,
               { fileType: entry.file.type, sizeMB: Math.round(entry.file.size / 1024 / 1024), status: e instanceof HttpError ? e.status : undefined })
           }

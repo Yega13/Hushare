@@ -70,6 +70,34 @@ async function getStreamUsage(): Promise<{ minutes: number; limit: number; video
   } catch { return null }
 }
 
+
+// R2 holds every photo, and until now nothing on this page said how much was in there or what it
+// costs. Photos are the thing there are millions of, so before a 3000-photo race day this is the
+// number worth knowing. There is no size column on `photos` — sizes were never recorded — so this
+// asks R2 itself, which is also the only source that counts thumbnails, posters and mirrors.
+//
+// Needs a token with R2 Read; CLOUDFLARE_STREAM_TOKEN is scoped to Stream and returns 403. Falls
+// back to null rather than throwing, exactly like getStreamUsage, so a missing token degrades the
+// card instead of the page.
+async function getR2Usage(): Promise<{ gb: number; objects: number; usd: number } | null> {
+  const acc = process.env.CLOUDFLARE_ACCOUNT_ID
+  const tok = process.env.CLOUDFLARE_R2_TOKEN
+  const bucket = process.env.R2_BUCKET_NAME ?? 'hushare-media'
+  if (!acc || !tok) return null
+  try {
+    const r = await fetch(`https://api.cloudflare.com/client/v4/accounts/${acc}/r2/buckets/${bucket}/usage`, {
+      headers: { Authorization: `Bearer ${tok}` }, cache: 'no-store',
+    })
+    const j = await r.json() as { result?: { payloadSize?: string | number; objectCount?: string | number } }
+    if (!j.result) return null
+    const bytes = Number(j.result.payloadSize ?? 0)
+    const gb = bytes / 1e9
+    // R2 standard storage is $0.015 per GB-month and charges nothing for egress, which is the whole
+    // reason photos are cheap here. Rounded up to a cent so it never reads as free when it is not.
+    return { gb, objects: Number(j.result.objectCount ?? 0), usd: Math.ceil(gb * 0.015 * 100) / 100 }
+  } catch { return null }
+}
+
 function fmt(ts: string): string {
   // Stable, locale-independent formatting (avoids hydration drift): YYYY-MM-DD HH:MM
   return ts.replace('T', ' ').slice(0, 16)
@@ -84,10 +112,9 @@ export default async function AdminPage() {
 
   const admin = createAdminClient()
 
-  const dayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()
   const [
     albumsActive, albumsRetired, imgCount, vidCount, subsCount,
-    recentAlbumsRes, subsRes, streamUsage, usersRes, errors24Res, recentErrorsRes,
+    recentAlbumsRes, subsRes, streamUsage, r2Usage, usersRes, errors24Res, recentErrorsRes,
   ] = await Promise.all([
     admin.from('albums').select('id', { count: 'exact', head: true }).is('retired_at', null),
     admin.from('albums').select('id', { count: 'exact', head: true }).not('retired_at', 'is', null),
@@ -99,8 +126,12 @@ export default async function AdminPage() {
     admin.from('subscriptions').select('user_id, tier, status, current_period_end, created_at')
       .order('created_at', { ascending: false }).limit(30),
     getStreamUsage(),
+    getR2Usage(),
     admin.auth.admin.listUsers({ page: 1, perPage: 200 }),
-    admin.from('error_events').select('id', { count: 'exact', head: true }).eq('level', 'error').is('resolved_at', null).gte('created_at', dayAgo),
+    // Deliberately NOT windowed to 24h. It used to be, while the tab it points at listed everything
+    // unresolved — so the card said 0 and the tab said 4, both labelled "errors". One definition:
+    // an error is open until it is cleared.
+    admin.from('error_events').select('id', { count: 'exact', head: true }).eq('level', 'error').is('resolved_at', null),
     admin.from('error_events').select('created_at, level, source, message, album_id, ua')
       .is('resolved_at', null)
       .order('created_at', { ascending: false }).limit(200)
@@ -213,7 +244,10 @@ export default async function AdminPage() {
     streamUsage
       ? { label: 'Stream video', value: `${streamUsage.minutes} / ${streamUsage.limit} min`, hint: `${streamUsage.videos} videos stored` }
       : { label: 'Stream video', value: 'n/a', hint: 'CF token missing' },
-    { label: 'Errors (24h)', value: String(errors24Res.count ?? 0), hint: (errors24Res.count ?? 0) > 0 ? 'see below ↓' : 'all clear' },
+    r2Usage
+      ? { label: 'Photo storage', value: `${r2Usage.gb.toFixed(2)} GB`, hint: `${r2Usage.objects.toLocaleString('en-US')} files · ~$${r2Usage.usd.toFixed(2)}/mo` }
+      : { label: 'Photo storage', value: 'n/a', hint: 'add CLOUDFLARE_R2_TOKEN' },
+    { label: 'Open errors', value: String(errors24Res.count ?? 0), hint: (errors24Res.count ?? 0) > 0 ? 'see below ↓' : 'all clear' },
   ]
 
   const th: React.CSSProperties = { textAlign: 'left', padding: '8px 10px', fontSize: 12, color: MUTED, fontWeight: 600, borderBottom: `1px solid ${BORDER}`, whiteSpace: 'nowrap' }

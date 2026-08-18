@@ -615,17 +615,29 @@ export default function PrivacyPage() {
             under your local law.
           </p>
           <p className="mt-3">
-            We ask one thing specifically:{' '}
-            <strong style={INK}>
-              do not switch on face search for any album in which children
-              appear
-            </strong>{' '}
-            - a school event, a family album, or a race with a junior category.
-            If children are a small part of an event you are otherwise entitled
-            to run face search on, either leave it off or remove their photos
-            before enabling it. If you cannot separate them, leave it off.
-            Race-number search reads junior bibs perfectly well and creates no
-            biometric data at all.
+            Face search deserves its own line here. A child&rsquo;s face template
+            is biometric data exactly as an adult&rsquo;s is, and it needs the
+            same explicit consent - the difference is only{' '}
+            <strong style={INK}>who is entitled to give it</strong>. For a child
+            that is their parent or guardian, nobody else.
+          </p>
+          <p className="mt-3">
+            So it comes down to which one you are. If the children in the album
+            are <strong style={INK}>your own</strong> - a family album, a
+            birthday, your own kids at a match - you are the person who can
+            decide, and you may switch face search on. If they are{' '}
+            <strong style={INK}>other people&rsquo;s</strong> children - a school
+            event, a club, a race with a junior category - you cannot consent on
+            their parents&rsquo; behalf, however well-run your event is. You
+            would need each parent&rsquo;s consent, on the entry or permission
+            form, the same unticked box as for adults.
+          </p>
+          <p className="mt-3">
+            If you cannot collect that, leave face search off.{' '}
+            <strong style={INK}>Race-number search reads junior bibs perfectly
+            well</strong>, finds the same photographs, and creates no biometric
+            data of anybody - which is why we suggest it for events rather than
+            treating it as the lesser option.
           </p>
           <p className="mt-3">
             A parent or guardian can ask us to take down a photograph of their
@@ -684,6 +696,17 @@ export default function PrivacyPage() {
             language, without waiting until we have every detail. You will hear
             what was involved, what we have done about it, and what you should
             do.
+          </p>
+          <p className="mt-3">
+            <strong style={INK}>When.</strong> As soon as we know - not after an
+            internal review, and not on a schedule that suits us. We would
+            rather tell you something incomplete on the day than something
+            complete a week later. If we learn more afterwards, you get that too.
+          </p>
+          <p className="mt-3">
+            If you are an event organiser, the same applies to you first: the
+            people in your album are your responsibility as much as ours, and
+            you cannot warn them if we have not warned you.
           </p>
           <p className="mt-3">
             We are not going to promise you a regulator filing we cannot
