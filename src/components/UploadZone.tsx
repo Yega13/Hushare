@@ -1709,6 +1709,13 @@ export default function UploadZone({ album, userTier, onPhotosUploaded }: Props)
     // three different surfaces all saying one thing 98 times. Failures are collected here and
     // summarised once the batch settles.
     const batchFailures: { msg: string; kind: string; sizeMB: number; status?: number }[] = []
+    // Which reasons have already been shown to the user in THIS batch. A toast per file turned one
+    // dropped connection into a wall of identical messages; a single toast at the end of the batch
+    // said nothing until everything had finished failing, which on a long queue is a minute of
+    // silence. One toast the first time each DISTINCT reason appears is the useful middle: the
+    // person hears immediately that something is wrong, hears once per kind of problem, and two
+    // genuinely different problems still both get said.
+    const announced = new Set<string>()
 
     const run = async () => {
       await Promise.all(toUpload.map(async (entry) => {
@@ -1765,14 +1772,20 @@ export default function UploadZone({ album, userTier, onPhotosUploaded }: Props)
           // Surface the real error (it was previously hidden in a title tooltip, invisible on
           // mobile). AbortError is a deliberate cancel, not worth toasting.
           if (!(e instanceof DOMException && e.name === 'AbortError')) {
-            // Collected, not announced. The chip above the uploader already shows the count and
-            // the reasons; the summary toast and the admin report are sent once below.
+            // Recorded for the grouped admin report sent once the batch settles; the toast below
+            // is deduplicated by reason so the same failure is never said twice.
             batchFailures.push({
               msg: e instanceof Error ? e.message : String(e),
               kind: kind === 'video' ? 'upload:video' : 'upload:image',
               sizeMB: Math.round(entry.file.size / 1024 / 1024),
               status: e instanceof HttpError ? e.status : undefined,
             })
+            // `msg` here is the friendly text, so two files that failed the same way produce the
+            // same key and the second one stays quiet.
+            if (!announced.has(msg)) {
+              announced.add(msg)
+              showAppToast(msg, 'error')
+            }
           }
         } finally {
           release()
@@ -1804,9 +1817,6 @@ export default function UploadZone({ album, userTier, onPhotosUploaded }: Props)
         reportClientEvent(expected ? 'warn' : 'error', sample.kind, sample.msg, album.id,
           { failedFiles: n, sizeMB: sample.sizeMB, status: sample.status })
       }
-      // A single toast for the whole batch. The chip is the durable surface; this is just the nudge
-      // that makes someone look at it.
-      showAppToast(t('upload.retry.toast', { n: batchFailures.length }), 'error')
     }
 
     const savedCount = await saver.finish()
@@ -1862,17 +1872,15 @@ export default function UploadZone({ album, userTier, onPhotosUploaded }: Props)
   }, [])
 
   const retryEntry = useCallback((id: string) => {
-    // Functional updater: status check and state update are atomic — prevents a rapid
-    // double-click from using a stale closure to spawn two concurrent uploads of the same file
-    let fresh: FileEntry | null = null
-    setEntries(prev => {
-      const entry = prev.find(e => e.id === id)
-      if (!entry || entry.status !== 'error') return prev  // already retried or in progress
-      fresh = { ...entry, status: 'pending', progress: 0, error: undefined }
-      return prev.map(e => e.id === id ? fresh! : e)
-    })
-    if (fresh) void startUploads([fresh])
-  }, [startUploads])
+    // Same defect as the bulk path: `fresh` was assigned inside a setState updater and read on the
+    // next line, before React had run it, so it was always null and startUploads was never called.
+    // The tile flipped to "Preparing" and stayed there.
+    const entry = entries.find(e => e.id === id)
+    if (!entry || entry.status !== 'error') return  // already retried or in progress
+    const fresh: FileEntry = { ...entry, status: 'pending', progress: 0, error: undefined }
+    setEntries(prev => prev.map(e => (e.id === id ? fresh : e)))
+    void startUploads([fresh])
+  }, [entries, startUploads])
 
   const dismissDone = useCallback(() => {
     setEntries(prev => {
@@ -1926,6 +1934,7 @@ export default function UploadZone({ album, userTier, onPhotosUploaded }: Props)
   // hardest: a venue full of people sharing one saturated access point.
   const failedCount = entries.reduce((n, e) => (e.status === 'error' ? n + 1 : n), 0)
   const [failedOpen, setFailedOpen] = useState(false)
+  const retryingRef = useRef(false)
   // Grouped by message, because a dropped connection fails every file in flight with the SAME
   // reason: 98 identical rows is not 98 pieces of information, it is one, repeated until the
   // person stops reading. One line per distinct reason, with a count.
@@ -1939,17 +1948,23 @@ export default function UploadZone({ album, userTier, onPhotosUploaded }: Props)
     return [...m.entries()].sort((x, y) => y[1] - x[1])
   }, [entries, t])
   const retryFailedUploads = useCallback(() => {
-    // Same functional-updater discipline as retryEntry: the status check and the state write happen
-    // inside one updater, so a double tap cannot start two uploads of the same file.
-    let fresh: FileEntry[] = []
-    setEntries(prev => {
-      fresh = prev.filter(e => e.status === 'error').map(e => ({ ...e, status: 'pending' as const, progress: 0, error: undefined }))
-      if (fresh.length === 0) return prev
-      const byId = new Map(fresh.map(e => [e.id, e]))
-      return prev.map(e => byId.get(e.id) ?? e)
-    })
-    if (fresh.length > 0) void startUploads(fresh)
-  }, [startUploads])
+    // Derived from `entries` rather than from inside a setState updater. A functional updater does
+    // NOT run synchronously — React defers it to the render phase — so the previous version read
+    // its result on the very next line, always got an empty array, and called startUploads([]),
+    // which returns immediately on an empty list. The files were left marked "Preparing" with
+    // nothing scheduled to upload them: stuck forever, and silent about it.
+    if (retryingRef.current) return
+    const fresh = entries
+      .filter(e => e.status === 'error')
+      .map(e => ({ ...e, status: 'pending' as const, progress: 0, error: undefined }))
+    if (fresh.length === 0) return
+    // Ref guard replaces the atomicity the updater was supposed to provide: a second tap before
+    // the state has settled cannot start the same files twice.
+    retryingRef.current = true
+    const byId = new Map(fresh.map(e => [e.id, e]))
+    setEntries(prev => prev.map(e => byId.get(e.id) ?? e))
+    void startUploads(fresh).finally(() => { retryingRef.current = false })
+  }, [entries, startUploads])
 
   return (
     <div className="hush-upload-zone px-3 sm:px-4 pt-2 pb-4">
