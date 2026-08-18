@@ -24,9 +24,15 @@ function requireSafeUrl(url: string, field: string): void {
 }
 
 async function sendEmail(to: string, subject: string, html: string, text: string) {
+  // Trimmed before validating: a value set with `echo x | wrangler secret put` carries a trailing
+  // newline, and JS `$` does not match before one — so a perfectly good address failed the test.
+  to = to.trim()
   if (!EMAIL_RE.test(to)) {
-    console.error('[email] invalid recipient address — dropped:', to.slice(0, 64))
-    return
+    // Throws rather than returning. Silently dropping a send meant the caller reported success, so
+    // a misconfigured address looked identical to a delivered email — which cost an hour of
+    // tracing an alert that had never been attempted. A caller that wants to tolerate this can
+    // catch it; none should want to hide it.
+    throw new Error(`[email] invalid recipient address: ${to.slice(0, 64)}`)
   }
   const apiKey = process.env.RESEND_API_KEY
   if (!apiKey) {
@@ -46,6 +52,11 @@ async function sendEmail(to: string, subject: string, html: string, text: string
       console.error('[email] Resend error:', res.status, body)
       throw new Error(`Email send failed: ${res.status}`)
     }
+    // Log the provider's id on success too. Without it, "Resend accepted it" and "nothing was ever
+    // sent" produce identical (empty) logs, and the only way to tell them apart is to go and look
+    // in an inbox — which is not a debugging tool.
+    const ok = await res.json().catch(() => null) as { id?: string } | null
+    console.log('[email] sent:', subject.slice(0, 60), '->', to, 'id=', ok?.id ?? 'unknown')
   } catch (err) {
     console.error('[email] fetch failed:', err instanceof Error ? err.message : String(err))
     throw err

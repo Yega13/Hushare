@@ -7,6 +7,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { isAccountAdmin } from '@/lib/auth'
 import AdminRefreshButton from '@/components/AdminRefreshButton'
 import AdminErrorTabs, { type ErrorRow } from '@/components/AdminErrorTabs'
+import AdminTestAlertButton from '@/components/AdminTestAlertButton'
 import AdminDeleteAlbumButton from '@/components/AdminDeleteAlbumButton'
 import AdminSyncPolarButton from '@/components/AdminSyncPolarButton'
 import AdminPublishStatement from '@/components/AdminPublishStatement'
@@ -415,6 +416,13 @@ export default async function AdminPage() {
           Reported from guest devices
         </h2>
         <AdminErrorTabs rows={recentErrors} />
+        <div style={{ background: CARD, border: `1px solid ${BORDER}`, borderRadius: 12, padding: '14px 16px', marginBottom: 28 }}>
+          <p style={{ margin: '0 0 4px', fontSize: 13, fontWeight: 600, color: INK }}>Error alerts</p>
+          <p style={{ margin: '0 0 10px', fontSize: 12.5, color: MUTED }}>
+            8 or more real errors inside 10 minutes sends one email, then stays quiet for an hour. Warnings never trigger it.
+          </p>
+          <AdminTestAlertButton />
+        </div>
 
         {/* Recent albums */}
         <h2 id="albums" style={{ fontSize: 15, fontWeight: 700, color: INK, margin: '0 0 10px', scrollMarginTop: 64 }}>Recent albums</h2>
