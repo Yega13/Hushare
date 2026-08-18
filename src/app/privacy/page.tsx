@@ -5,6 +5,7 @@ import AccountNavLink from '@/components/AccountNavLink'
 import { getServerLocale } from '@/i18n/server'
 import { en } from './content-en'
 import { ru } from './content-ru'
+import { hy } from './content-hy'
 import { CHROME } from './chrome'
 import HamburgerMenu from '@/components/HamburgerMenu'
 
@@ -109,7 +110,7 @@ export default async function PrivacyPage() {
   // consent, so it follows the same cookie locale as the rest of the site. A language with no
   // translation yet falls through to English — the behaviour the page already had.
   const locale = await getServerLocale()
-  const content = locale === 'ru' ? ru : en
+  const content = locale === 'ru' ? ru : locale === 'hy' ? hy : en
   const chrome = CHROME[locale] ?? CHROME.en
   return (
     <main
