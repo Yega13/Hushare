@@ -244,3 +244,36 @@ export async function sendExpiryWarningEmail(
 
   await sendEmail(ownerEmail, subject, html, text)
 }
+
+// Operational alert to the operator, not to a user. Plain and scannable on a phone lock screen,
+// because the whole point is being read while standing in a field rather than at a desk.
+export async function sendErrorSpikeEmail(
+  to: string,
+  info: { count: number; windowMinutes: number; deviceCount: number; top: [string, number][] },
+) {
+  const { count, windowMinutes, deviceCount, top } = info
+  const subject = `Hushare: ${count} errors in ${windowMinutes} min`
+  const rows = top
+    .map(([msg, n]) => `<li style="margin:0 0 6px;"><strong>${n}×</strong> ${escapeHtml(msg.slice(0, 140))}</li>`)
+    .join('')
+  const html = `
+<div style="font-family:-apple-system,system-ui,sans-serif;color:#630826;max-width:560px;margin:0 auto;padding:24px;">
+  <h2 style="margin:0 0 8px;font-size:18px;">${count} errors in the last ${windowMinutes} minutes</h2>
+  <p style="margin:0 0 16px;color:#5C4A3C;">
+    Across ${deviceCount} device${deviceCount === 1 ? '' : 's'}. Warnings are excluded, so these are
+    real failures — something is not working for someone right now.
+  </p>
+  <ul style="margin:0 0 20px;padding-left:18px;color:#5C4A3C;font-size:14px;">${rows}</ul>
+  <a href="${SITE_URL}/admin#errors"
+     style="display:inline-block;background:#630826;color:#FDFAF5;text-decoration:none;border-radius:10px;padding:10px 20px;font-size:14px;font-weight:600;">
+    Open the admin dashboard
+  </a>
+  <p style="margin:20px 0 0;color:#B0A090;font-size:12px;">
+    One alert per hour at most, however long this lasts.
+  </p>
+</div>`
+  const text = `${count} errors in the last ${windowMinutes} minutes, across ${deviceCount} device(s).\n\n`
+    + top.map(([m, n]) => `${n}x ${m}`).join('\n')
+    + `\n\n${SITE_URL}/admin#errors\n\nOne alert per hour at most.`
+  await sendEmail(to, subject, html, text)
+}

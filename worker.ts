@@ -71,6 +71,9 @@ const worker = {
         // Presence rows are promised gone within 10 minutes of someone leaving, so the sweep has to
         // run on a clock rather than on the traffic it is cleaning up after.
         callCronRoute(baseUrl, '/api/cron/prune-data?mode=presence', secret),
+        // Watches for a CLUSTER of real errors and emails once per hour at most. Cheap: one indexed
+        // count, and it returns before touching anything else unless the threshold is crossed.
+        callCronRoute(baseUrl, '/api/cron/error-alert', secret),
       ]))
       return
     }

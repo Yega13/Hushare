@@ -22,12 +22,23 @@ function parseSafeNext(raw: string): string {
   }
 }
 
-function buildCallbackUrl(): string {
+function buildCallbackUrl(base: string = window.location.origin): string {
   const params = new URLSearchParams(window.location.search)
   const safeNext = parseSafeNext(params.get('next') ?? '')
-  const url = new URL('/auth/callback', window.location.origin)
+  const url = new URL('/auth/callback', base)
   if (safeNext) url.searchParams.set('next', safeNext)
   return url.toString()
+}
+
+// Base for a link that gets EMAILED. window.location.origin is right for OAuth, which comes back
+// to the same browser, and wrong here: the whole point of "email me a link" is that it is often
+// opened somewhere else — the laptop asks, the phone opens it. A link built on
+// http://localhost:3000 is dead on any other device, and that is exactly how this surfaced.
+// Pinned to the canonical site in production; in local development localhost genuinely IS the site.
+function emailLinkBase(): string {
+  const canonical = process.env.NEXT_PUBLIC_SITE_URL
+  if (canonical && process.env.NODE_ENV === 'production') return canonical
+  return window.location.origin
 }
 
 export default function LoginForm() {
@@ -94,7 +105,7 @@ export default function LoginForm() {
     setErrorMsg('')
     const { error } = await supabase.auth.signInWithOtp({
       email: trimmed,
-      options: { emailRedirectTo: buildCallbackUrl() },
+      options: { emailRedirectTo: buildCallbackUrl(emailLinkBase()) },
     })
     if (error) {
       setStatus('error')
