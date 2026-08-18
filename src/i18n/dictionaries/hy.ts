@@ -368,6 +368,7 @@ export const hy: Partial<Record<DictKey, string>> = {
   'upload.retry.title': '{n}-ը չբեռնվեց',
   'upload.retry.body': 'Բեռնման ընթացքում կապն ընդհատվեց։ Ֆայլերը դեռ այստեղ են - նորից փնտրելու կարիք չկա, պարզապես սեղմեք, երբ կապ լինի։',
   'upload.retry.action': 'Կրկնել ({n})',
+  'upload.retry.toast': '{n}-ը չբեռնվեց - սեղմեք տեսնելու համար',
   'upload.retry.chip': 'չբեռնվեց',
   'upload.retry.unknown': 'Բեռնումը ձախողվեց',
   'ot.faceConsent.title': 'Նախքան միացնելը',

@@ -15,6 +15,7 @@ export type ErrorRow = {
   message: string
   album_id: string | null
   ua: string | null
+  context?: unknown
 }
 
 const BRAND = '#630826'
@@ -152,7 +153,18 @@ export default function AdminErrorTabs({ rows }: { rows: ErrorRow[] }) {
                   <tr key={i}>
                     <td style={td}>{fmt(e.created_at)}</td>
                     <td style={td}>{e.source}</td>
-                    <td style={{ ...td, whiteSpace: 'normal', maxWidth: 320 }}>{e.message}</td>
+                    <td style={{ ...td, whiteSpace: 'normal', maxWidth: 320 }}>
+                      {e.message}
+                      {/* Uploads report one row per REASON with the number of files it hit, so a
+                          dropped connection is one line rather than ninety-eight. Without this the
+                          row would understate the incident as a single failure. */}
+                      {(() => {
+                        const n = (e.context as { failedFiles?: number } | null)?.failedFiles
+                        return typeof n === 'number' && n > 1
+                          ? <span style={{ color: MUTED }}> · {n} files</span>
+                          : null
+                      })()}
+                    </td>
                     <td style={{ ...td, whiteSpace: 'normal', maxWidth: 180, fontSize: 11, color: MUTED }}>
                       {(e.ua ?? '').replace(/Mozilla\/[\d.]+ /, '').slice(0, 60)}
                     </td>

@@ -1703,6 +1703,13 @@ export default function UploadZone({ album, userTier, onPhotosUploaded }: Props)
       (msg) => showAppToast(msg, 'success'),
     )
 
+    // One dropped connection fails every file in flight for the SAME reason. Reporting and
+    // toasting each one separately turned a single incident into 98 toasts churning through the
+    // viewport, 98 rows in the admin dashboard, and 98 counts against the error-alert threshold —
+    // three different surfaces all saying one thing 98 times. Failures are collected here and
+    // summarised once the batch settles.
+    const batchFailures: { msg: string; kind: string; sizeMB: number; status?: number }[] = []
+
     const run = async () => {
       await Promise.all(toUpload.map(async (entry) => {
         // Detect kind BEFORE acquiring so videos take the dedicated (tighter) lane and photos the
@@ -1758,12 +1765,14 @@ export default function UploadZone({ album, userTier, onPhotosUploaded }: Props)
           // Surface the real error (it was previously hidden in a title tooltip, invisible on
           // mobile). AbortError is a deliberate cancel, not worth toasting.
           if (!(e instanceof DOMException && e.name === 'AbortError')) {
-            showAppToast(`Upload failed: ${msg}`, 'error')
-            // Report to /admin so real guest failures are visible, not invisible. Raw message
-            // (not the friendly one) is the diagnostic value; include device + file context.
-            reportClientEvent(expectedRejection ? 'warn' : 'error', kind === 'video' ? 'upload:video' : 'upload:image',
-              e instanceof Error ? e.message : String(e), album.id,
-              { fileType: entry.file.type, sizeMB: Math.round(entry.file.size / 1024 / 1024), status: e instanceof HttpError ? e.status : undefined })
+            // Collected, not announced. The chip above the uploader already shows the count and
+            // the reasons; the summary toast and the admin report are sent once below.
+            batchFailures.push({
+              msg: e instanceof Error ? e.message : String(e),
+              kind: kind === 'video' ? 'upload:video' : 'upload:image',
+              sizeMB: Math.round(entry.file.size / 1024 / 1024),
+              status: e instanceof HttpError ? e.status : undefined,
+            })
           }
         } finally {
           release()
@@ -1778,6 +1787,26 @@ export default function UploadZone({ album, userTier, onPhotosUploaded }: Props)
       await navigator.locks.request('hushare-upload', { mode: 'shared' }, run)
     } else {
       await run()
+    }
+
+    // One report per distinct reason, carrying how many files it hit — so the admin dashboard and
+    // the alert threshold both see one incident rather than a hundred, without losing the count.
+    if (batchFailures.length > 0) {
+      const groups = new Map<string, { n: number; sample: typeof batchFailures[number] }>()
+      for (const f of batchFailures) {
+        const key = `${f.kind}|${f.msg}`
+        const g = groups.get(key)
+        if (g) g.n++
+        else groups.set(key, { n: 1, sample: f })
+      }
+      for (const { n, sample } of groups.values()) {
+        const expected = sample.msg.startsWith('File too large') || sample.msg.startsWith('Unsupported')
+        reportClientEvent(expected ? 'warn' : 'error', sample.kind, sample.msg, album.id,
+          { failedFiles: n, sizeMB: sample.sizeMB, status: sample.status })
+      }
+      // A single toast for the whole batch. The chip is the durable surface; this is just the nudge
+      // that makes someone look at it.
+      showAppToast(t('upload.retry.toast', { n: batchFailures.length }), 'error')
     }
 
     const savedCount = await saver.finish()

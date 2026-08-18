@@ -368,6 +368,7 @@ export const ru: Partial<Record<DictKey, string>> = {
   'upload.retry.title': '{n} не загрузились',
   'upload.retry.body': 'Во время загрузки пропало соединение. Файлы никуда не делись - искать заново ничего не нужно, просто нажмите, когда появится связь.',
   'upload.retry.action': 'Повторить ({n})',
+  'upload.retry.toast': '{n} не загрузились - нажмите, чтобы посмотреть',
   'upload.retry.chip': 'не загрузились',
   'upload.retry.unknown': 'Загрузка не удалась',
   'ot.faceConsent.title': 'Прежде чем включить',

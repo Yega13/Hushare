@@ -133,7 +133,7 @@ export default async function AdminPage() {
     // unresolved — so the card said 0 and the tab said 4, both labelled "errors". One definition:
     // an error is open until it is cleared.
     admin.from('error_events').select('id', { count: 'exact', head: true }).eq('level', 'error').is('resolved_at', null),
-    admin.from('error_events').select('created_at, level, source, message, album_id, ua')
+    admin.from('error_events').select('created_at, level, source, message, album_id, ua, context')
       .is('resolved_at', null)
       .order('created_at', { ascending: false }).limit(200)
       .returns<ErrorRow[]>(),

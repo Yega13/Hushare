@@ -381,6 +381,7 @@ export const en = {
   'upload.retry.title': '{n} did not make it',
   'upload.retry.body': 'Your connection dropped while these were uploading. They are still here - nothing to find again, just tap below when you have signal.',
   'upload.retry.action': 'Try these {n} again',
+  'upload.retry.toast': '{n} didn\'t upload - tap to see why',
   'upload.retry.chip': 'did not upload',
   'upload.retry.unknown': 'Upload failed',
   'ot.faceConsent.title': 'Before you switch this on',
