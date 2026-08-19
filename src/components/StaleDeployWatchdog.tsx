@@ -28,6 +28,10 @@ export default function StaleDeployWatchdog() {
         reportClientError({
           source: 'stale-deploy-watchdog',
           message: 'Navigation stuck on loading fallback; document chunks are gone (stale deploy)',
+          // isStaleDocument has already PROVEN this by asking for the scripts this document booted
+          // with and getting a 404, and the reload below fixes it. Said explicitly because this
+          // message carries no chunk-error text for the pattern match to find.
+          staleDeploy: true,
           context: { waitedMs: FALLBACK_PATIENCE_MS },
         })
         reloadOnceForStaleDeploy()

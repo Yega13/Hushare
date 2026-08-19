@@ -16,6 +16,11 @@ export type ReportInput = {
   level?: 'error' | 'warn'
   albumId?: string | null
   context?: Record<string, unknown>
+  // "This IS a stale deploy, whatever my message looks like." For the watchdog, which detects the
+  // silent version of the failure: nothing throws, so there is no chunk text to pattern-match, and
+  // matching on its own synthetic sentence would be a rule about our own prose rather than about
+  // what happened. Only affects the level chosen below; the reload path still keys off the message.
+  staleDeploy?: boolean
 }
 
 // Never throws and never returns a rejected promise: reporting an error must not be able to cause
@@ -43,6 +48,13 @@ export function reloadOnceForStaleDeploy(): boolean {
   } catch { return false }
   window.location.reload()
   return true
+}
+
+// Is the one-shot reload still available in this tab? Asked BEFORE reporting, to decide whether a
+// chunk failure is an incident or a deploy doing what deploys do. Deliberately only reads the flag
+// — consuming it here would spend the recovery on a log line.
+function staleReloadStillAvailable(): boolean {
+  try { return !sessionStorage.getItem(RELOAD_FLAG) } catch { return false }
 }
 
 // The silent version of the same failure, and the one that actually stranded people.
@@ -139,6 +151,19 @@ export function reportClientError(input: ReportInput): void {
     seen.add(key)
     sent++
 
+    // A chunk failure we are ABOUT to fix is not an incident, it is a deploy landing under an open
+    // tab: the file names change, whatever was still open asks for the old ones, and the reload
+    // below puts it right within a second. Nothing failed for that person.
+    //
+    // Filing it as an error was actively harmful, not just untidy. The alert cron watches for 8
+    // errors in 10 minutes, and a deploy during an event hands the SAME chunk error to every guest
+    // with the album open at once — an alarm email about a problem that had already fixed itself,
+    // arriving exactly when nobody has time to check. Recorded at warn instead, because how often
+    // this happens is still worth seeing.
+    //
+    // The distinction is whether recovery is actually available: once the one-shot reload has been
+    // spent and the chunk STILL fails, the page is genuinely broken and that is a real error.
+    const recoverable = (stale || input.staleDeploy === true) && staleReloadStillAvailable()
     void fetch('/api/log/client-error', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -148,11 +173,12 @@ export function reportClientError(input: ReportInput): void {
       body: JSON.stringify({
         source: input.source.slice(0, 60),
         message,
-        level: input.level ?? 'error',
+        level: recoverable ? 'warn' : (input.level ?? 'error'),
         albumId: input.albumId ?? undefined,
         context: {
           ...(input.context ?? {}),
           path: window.location.pathname,
+          ...(recoverable ? { autoReloaded: true } : {}),
         },
       }),
     }).catch(() => { /* telemetry is best-effort by definition */ })
