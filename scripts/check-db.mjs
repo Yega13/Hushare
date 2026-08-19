@@ -5,25 +5,12 @@
 // anything is missing — wire this into CI so schema drift can never ship silently
 // (this is the class of bug that caused "Album not found" and blank albums).
 //
-// Connection: same as scripts/db-migrate.mjs (SUPABASE_DB_URL or local password file).
+// Connection: shared with scripts/db-migrate.mjs — see scripts/db-connection.mjs.
 //
 //   node scripts/check-db.mjs
 
-import { readFileSync, existsSync } from 'node:fs'
 import pg from 'pg'
-
-const POOLER_HOST = 'aws-1-ap-southeast-2.pooler.supabase.com'
-const DB_USER = 'postgres.yqngmyjquwemwogdyuwv'
-
-function connectionString() {
-  if (process.env.SUPABASE_DB_URL) return process.env.SUPABASE_DB_URL
-  if (existsSync('Supabase Password.txt')) {
-    const pw = encodeURIComponent(readFileSync('Supabase Password.txt', 'utf8').trim())
-    return `postgresql://${DB_USER}:${pw}@${POOLER_HOST}:5432/postgres`
-  }
-  console.error('[check-db] No SUPABASE_DB_URL and no local password file. Aborting.')
-  process.exit(1)
-}
+import { connectionString } from './db-connection.mjs'
 
 // What the application requires. Add to this whenever code starts depending on a
 // new column/table/function/policy — that keeps the check honest.
@@ -49,7 +36,7 @@ const REQUIRED_POLICIES = [
 // leaks that shipped: photos (2951 rows enumerable), active_sessions (live album slugs).
 const MUST_DENY_ANON = ['photos', 'active_sessions', 'schema_migrations']
 
-const client = new pg.Client({ connectionString: connectionString(), ssl: { rejectUnauthorized: false } })
+const client = new pg.Client({ connectionString: connectionString('check-db'), ssl: { rejectUnauthorized: false } })
 await client.connect()
 
 const cols = (await client.query(

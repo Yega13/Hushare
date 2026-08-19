@@ -7,33 +7,22 @@
 // THIS is what keeps the live DB in sync with the code: all schema changes go in a
 // migration file, and this runner applies them. Never hand-edit the database.
 //
-// Connection: set SUPABASE_DB_URL (the Supabase pooler "session" connection string),
-// e.g. in CI. For local use it falls back to building the URL from the host below +
-// the password in "Supabase Password.txt".
+// Connection: shared with scripts/check-db.mjs — see scripts/db-connection.mjs. Set
+// SUPABASE_DB_URL (the Supabase pooler "session" connection string) in CI; locally it
+// falls back to the password file in ~/.hushare-secrets/, outside this repository.
 //
 //   node scripts/db-migrate.mjs
 
-import { readFileSync, readdirSync, existsSync } from 'node:fs'
+import { readFileSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
 import pg from 'pg'
+import { connectionString } from './db-connection.mjs'
 
 const MIGRATIONS_DIR = 'supabase/migrations'
 // Non-secret connection coordinates (project ref + pooler host). Password only is secret.
-const POOLER_HOST = 'aws-1-ap-southeast-2.pooler.supabase.com'
-const DB_USER = 'postgres.yqngmyjquwemwogdyuwv'
-
-function connectionString() {
-  if (process.env.SUPABASE_DB_URL) return process.env.SUPABASE_DB_URL
-  if (existsSync('Supabase Password.txt')) {
-    const pw = encodeURIComponent(readFileSync('Supabase Password.txt', 'utf8').trim())
-    return `postgresql://${DB_USER}:${pw}@${POOLER_HOST}:5432/postgres`
-  }
-  console.error('[db-migrate] No SUPABASE_DB_URL env var and no local password file. Aborting.')
-  process.exit(1)
-}
 
 const files = readdirSync(MIGRATIONS_DIR).filter((f) => f.endsWith('.sql')).sort()
-const client = new pg.Client({ connectionString: connectionString(), ssl: { rejectUnauthorized: false } })
+const client = new pg.Client({ connectionString: connectionString('db-migrate'), ssl: { rejectUnauthorized: false } })
 
 await client.connect()
 await client.query(`
