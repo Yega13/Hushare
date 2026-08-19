@@ -33,14 +33,6 @@
   font-style: normal;
   font-display: swap;
 }
-/* Anton — compressed poster display (used on the /homepage-new-design-test experiment). */
-@font-face {
-  font-family: 'Anton';
-  src: url('/fonts/anton.woff2') format('woff2');
-  font-weight: 400 900;
-  font-style: normal;
-  font-display: swap;
-}
 
 :root {
   --background: #FDFAF5;
