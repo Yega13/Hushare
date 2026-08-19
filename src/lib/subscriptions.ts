@@ -66,9 +66,40 @@ type SubForTierCheck = {
   cancel_at_period_end: boolean
 }
 
+// Short-lived per-isolate cache for the tier lookup.
+//
+// This call sits on two hot paths at once: /api/upload/presign runs it once per FILE, and the album
+// page now runs it on every load to size that album's upload caps. At an event both explode against
+// the SAME user id — hundreds of guests opening one album, then hundreds of photos each — and every
+// one of those asks an identical question with an identical answer. Worse, for a registered free
+// owner the miss path also makes an auth.admin round trip to resolve the ADMIN_EMAILS override.
+//
+// Keyed strictly by user id, so no request can ever be served another user's answer, and holding
+// only a tier — not a session, not a token. 30s is long enough to collapse a crowd into one lookup
+// and short enough that an upgrade lands while the buyer is still on the page.
+const TIER_TTL_MS = 30_000
+// Bounds memory on a long-lived isolate. Cleared wholesale rather than evicted one by one: this is
+// a latency cache, and rebuilding it costs one query per active album.
+const TIER_CACHE_MAX = 500
+const tierCache = new Map<string, { tier: Tier; at: number }>()
+
 export async function getUserTierById(userId: string | null | undefined): Promise<Tier> {
   if (!userId) return 'free'
 
+  const cached = tierCache.get(userId)
+  if (cached && Date.now() - cached.at < TIER_TTL_MS) return cached.tier
+
+  const { tier, cacheable } = await computeUserTier(userId)
+  // A failed subscriptions query degrades to 'free'. Never cache that — it would turn one blip into
+  // 30 seconds of a paying customer being told their album is free tier.
+  if (cacheable) {
+    if (tierCache.size >= TIER_CACHE_MAX) tierCache.clear()
+    tierCache.set(userId, { tier, at: Date.now() })
+  }
+  return tier
+}
+
+async function computeUserTier(userId: string): Promise<{ tier: Tier; cacheable: boolean }> {
   const admin = createAdminClient()
   // Consider ALL of the user's rows (resubscribe / bulk sync can create several), and return the
   // highest ACTIVE tier — not merely the newest row, which might be a stale/canceled one.
@@ -83,16 +114,20 @@ export async function getUserTierById(userId: string | null | undefined): Promis
   if (subErr) console.error('[subscriptions] getUserTierById query failed:', subErr.message)
 
   const active = (subs ?? []).filter(isSubActive)
-  if (active.some((s) => s.tier === 'studio')) return 'studio'
-  if (active.some((s) => s.tier === 'pro')) return 'pro'
+  if (active.some((s) => s.tier === 'studio')) return { tier: 'studio', cacheable: true }
+  if (active.some((s) => s.tier === 'pro')) return { tier: 'pro', cacheable: true }
+
+  // Below here the answer is 'free' unless the admin override says otherwise. If the query that
+  // got us here FAILED, 'free' is a guess rather than a fact, so it must not be remembered.
+  const cacheable = !subErr
 
   // Only make the auth round-trip when admin emails are configured — avoids unconditional
   // DB hit for every free-tier user when the admin override feature is not in use
-  if (!process.env.ADMIN_EMAILS) return 'free'
+  if (!process.env.ADMIN_EMAILS) return { tier: 'free', cacheable }
 
   const { data: authData } = await admin.auth.admin.getUserById(userId)
-  if (isAccountAdmin({ email: authData?.user?.email })) return 'studio'
-  return 'free'
+  if (isAccountAdmin({ email: authData?.user?.email })) return { tier: 'studio', cacheable }
+  return { tier: 'free', cacheable }
 }
 
 // RETENTION grace for lapsed paying customers. Policy: a paid album is kept while the

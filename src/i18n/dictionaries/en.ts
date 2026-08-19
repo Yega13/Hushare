@@ -29,6 +29,10 @@ export const en = {
   'upload.uploaded': '{n} uploaded',
   'upload.failed': '{n} failed',
   'upload.retry': 'Retry',
+  // Shown on a tile the uploader has parked because the network dropped — it retries by itself.
+  // Kept to two short words: it renders inside an 84px tile.
+  'upload.waitingNetwork': 'Waiting for network',
+  'upload.waitingCount': '{n} waiting for network',
   'upload.clear': 'Clear',
 
   // account page

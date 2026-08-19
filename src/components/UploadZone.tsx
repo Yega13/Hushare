@@ -2,12 +2,12 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import * as tus from 'tus-js-client'
-import type { Album, Tier } from '@/types'
+import type { Album } from '@/types'
 import { stripExifFromJpeg, jpegOrientation, stripMetadataFromPng, stripMetadataFromWebp } from '@/lib/exif'
 import { snapshotFileRobust, readFileRobust } from '@/lib/file-read'
 import { showAppToast } from '@/components/AppToast'
 import { useT } from '@/i18n/LocaleProvider'
-import { detectKind, uploadCapsForTier, generateVideoPoster } from '@/lib/media'
+import { detectKind, uploadCapsForTier, formatCapSize, generateVideoPoster } from '@/lib/media'
 import {
   UPLOAD_CONCURRENCY_MOBILE,
   UPLOAD_CONCURRENCY_DESKTOP,
@@ -621,6 +621,59 @@ async function originReachable(): Promise<boolean> {
   }
 }
 
+// Settle to `fallback` if `p` hasn't resolved within `ms`. Generic enough that two very different
+// callers want it: bounding a best-effort side task (the poster upload, which must never hold a
+// video's concurrency slot hostage) and racing the shared reachability probe below against one
+// caller's own deadline. Always clears its timer, so neither use leaks a pending timeout.
+function settleWithin<T>(p: Promise<T>, ms: number, fallback: T): Promise<T> {
+  let timer: ReturnType<typeof setTimeout>
+  const timeout = new Promise<T>(resolve => { timer = setTimeout(() => resolve(fallback), ms) })
+  return Promise.race([p, timeout]).finally(() => clearTimeout(timer))
+}
+
+// ONE reachability probe for the whole page, not one per file.
+//
+// Every in-flight file used to run its own probe loop: six concurrent images plus a video meant
+// ~70 HEADs from a single device for a single outage, each independently rediscovering a fact the
+// page already knew. They also recovered independently, so files trickled back one deadline at a
+// time instead of resuming together. Now the first caller starts the loop and every other caller
+// awaits the same promise — identical detection latency, a fraction of the traffic, and one shared
+// moment of recovery. At an event, where hundreds of devices sit behind one venue NAT, that
+// difference is the gap between probing an origin and hammering it.
+//
+// Deliberately has NO deadline of its own: callers have different budgets (a presign waits 30s, a
+// save 180s), so a shared loop bounded by the shortest one would cut the others short. Each caller
+// races it against its own deadline instead, via settleWithin.
+let reachabilityProbe: Promise<boolean> | null = null
+
+// Hard cap so the loop can never outlive the uploads that wanted it — a tab left open on a dead
+// network would otherwise poll forever. Comfortably longer than the longest caller deadline
+// (the 180s save), so this bound never cuts a caller short; it only stops an orphaned loop.
+const REACHABILITY_PROBE_MAX_MS = 4 * 60_000
+
+function originRecovered(): Promise<boolean> {
+  if (!reachabilityProbe) {
+    const until = Date.now() + REACHABILITY_PROBE_MAX_MS
+    const probeLoop = (async () => {
+      let probe = 0
+      while (Date.now() < until) {
+        if (await originReachable()) return true
+        // Ramps 1s → 5s. Full jitter for the same reason the fetch backoff carries it: devices that
+        // lost the network together come back together, and lockstep recovery is a second outage.
+        probe++
+        const wait = Math.min(5000, 1000 * probe) * (0.5 + Math.random() * 0.5)
+        if (Date.now() + wait >= until) break
+        await new Promise(r => setTimeout(r, wait))
+      }
+      return false
+    })()
+    reachabilityProbe = probeLoop
+    // Cleared on settle so a LATER outage starts a fresh loop rather than reusing a resolved one.
+    void probeLoop.finally(() => { if (reachabilityProbe === probeLoop) reachabilityProbe = null })
+  }
+  return reachabilityProbe
+}
+
 // Presign, stream-init and save are the control plane: small JSON calls that decide whether a
 // photo's bytes are allowed up and whether they are recorded once they are. They used to get 3
 // attempts with 0.5s + 1s of backoff — about 1.5 SECONDS of total tolerance, against byte
@@ -643,12 +696,30 @@ const FETCH_DEADLINE_SAVE_MS = 180_000
 // is how a slow database becomes a tripped rate limit and a hard failure for every guest.
 const MAX_SERVER_ERROR_ATTEMPTS = 4
 
+// Extra time granted when connectivity is CONFIRMED back inside the window.
+//
+// The probe loop returning true is fresh positive evidence: the origin answered a HEAD moments ago.
+// Without this, that evidence was thrown away — the loop exited reachable, fell into the ordinary
+// backoff at the top of the for, hit `Date.now() + wait >= deadline` and threw "Failed to fetch"
+// having just proved the server was up, WITHOUT ever re-issuing the request. The whole budget went
+// on detecting the outage and the one attempt it was saving up for was never made. That is the
+// exact shape of the 2026-08-18 19:47 report: 5 images and 3 videos, every one of them dead at the
+// control plane with no bytes moved.
+const POST_RECOVERY_GRACE_MS = 8_000
+// Capped so a network that flaps up and down can extend the deadline twice, not indefinitely.
+const MAX_RECOVERY_GRACES = 2
+
 async function fetchWithRetry(
   url: string,
   init: RequestInit,
   opts: { deadlineMs?: number } = {},
 ): Promise<Response> {
-  const deadline = Date.now() + (opts.deadlineMs ?? FETCH_DEADLINE_DEFAULT_MS)
+  const startedAt = Date.now()
+  let deadline = startedAt + (opts.deadlineMs ?? FETCH_DEADLINE_DEFAULT_MS)
+  let graces = 0
+  // Set when the probe confirms the origin is back: the next attempt skips the backoff, because
+  // waiting out a delay we already spent probing is exactly the wasted patience described above.
+  let skipBackoff = false
   let lastErr: Error | null = null
   // The most recent 5xx, held so that running out of time still returns the server's own response
   // rather than throwing a generic error. Callers read the real message — and the `code` that
@@ -658,7 +729,7 @@ async function fetchWithRetry(
   let attempt = 0
   let serverErrors = 0
   for (;;) {
-    if (attempt > 0) {
+    if (attempt > 0 && !skipBackoff) {
       // FULL jitter, not the ±300ms the raw curve carries. Devices that lost the network together
       // come back together, and at an event that means thousands of clients firing inside the same
       // narrow window — recovery turning straight back into an outage. Spreading each wait across
@@ -668,6 +739,7 @@ async function fetchWithRetry(
       if (Date.now() + wait >= deadline) break
       await new Promise(r => setTimeout(r, wait))
     }
+    skipBackoff = false
     attempt++
     try {
       // Per-attempt timeout: a hung request should burn 20s, not hang the file forever.
@@ -691,16 +763,26 @@ async function fetchWithRetry(
       // Nothing came back. Before spending another attempt (and another 20s timeout) on a
       // connection that may simply be gone, ask whether we can reach ourselves at all. While we
       // can't, poll cheaply rather than hammering the real endpoint — this is the part that turns
-      // "the batch died" into "the batch paused".
+      // "the batch died" into "the batch paused". The probe is shared page-wide (see
+      // originRecovered) and raced against THIS call's deadline, so every file waiting on the same
+      // outage waits on one loop and they all resume together the instant it clears.
       if (isNetworkClass(e)) {
-        let probe = 0
-        while (Date.now() < deadline && !(await originReachable())) {
-          // Ramps 1s → 5s. This counter used to be the OUTER attempt number, which never changes
-          // inside this loop, so the interval was pinned at 1s for the whole outage.
-          probe++
-          const wait = Math.min(5000, 1000 * probe) * (0.5 + Math.random() * 0.5)
-          if (Date.now() + wait >= deadline) break
-          await new Promise(r => setTimeout(r, wait))
+        const remaining = deadline - Date.now()
+        if (remaining <= 0) break
+        const recovered = await settleWithin(originRecovered(), remaining, false)
+        // Confirmed up. Give the request a real chance to run now rather than expiring on the
+        // doorstep — and go straight there, without a backoff we effectively already served.
+        //
+        // Both effects are deliberately tied to the SAME budget. An origin that answers HEAD while
+        // this particular request keeps failing (a proxy blocking one path, a body that won't
+        // stream) would otherwise loop probe→retry→probe with no backoff for as long as the window
+        // lasted, turning a bounded wait into a tight spin against our own health endpoint. Once
+        // the graces are spent, further recoveries fall back to ordinary jittered backoff, which
+        // the deadline already bounds.
+        if (recovered && graces < MAX_RECOVERY_GRACES) {
+          graces++
+          deadline = Math.max(deadline, Date.now() + POST_RECOVERY_GRACE_MS)
+          skipBackoff = true
         }
       }
     }
@@ -708,7 +790,20 @@ async function fetchWithRetry(
   // Out of time. A server that answered badly still told us something useful — hand that back
   // rather than a generic network error, exactly as the pre-deadline version did.
   if (lastServerRes) return lastServerRes
-  throw lastErr ?? new Error('Network request failed')
+  // Name the endpoint. "Failed to fetch" on its own cannot distinguish a presign from a
+  // stream-init from a save — all three are the same TypeError from this one helper — so an /admin
+  // report of it was unactionable: it said the network broke, never where. The message stays
+  // PREFIXED by the original text, so friendlyUploadError's substring matching (and the network
+  // classifier) behave exactly as before.
+  //
+  // How long we waited is deliberately NOT in the message. /admin tallies incidents by exact
+  // message string, so a value that varies per file (30s here, 31s there) would shatter one
+  // outage into a column of one-count chips — destroying the grouping this same file works hard
+  // to produce. It rides along in the report context instead, where it is recorded without
+  // affecting how rows are grouped.
+  const path = (() => { try { return new URL(url, window.location.origin).pathname } catch { return url } })()
+  const err = new Error(`${lastErr?.message ?? 'Network request failed'} (${path})`)
+  throw Object.assign(err, { waitedMs: Date.now() - startedAt })
 }
 
 // The old policy threw on ANY HTTP error — including R2's transient 500/502/503s, which are
@@ -950,11 +1045,19 @@ function tusHttpStatus(e: unknown): number | null {
 type FileEntry = {
   id: string
   file: File
-  status: 'pending' | 'uploading' | 'done' | 'error'
+  // 'waiting' is a failure the NETWORK caused, parked rather than surfaced: the uploader resumes it
+  // by itself once the origin is reachable again (see isRecoverableNetworkFailure). It is a distinct
+  // state and not a flavour of 'error' on purpose — a tile that says "failed" while it is quietly
+  // about to upload is a lie, and the failed-files chip must not collect files nobody needs to act
+  // on. Anything still unrecovered after that becomes a real 'error' with a manual Retry.
+  status: 'pending' | 'uploading' | 'done' | 'error' | 'waiting'
   progress: number
   error?: string
   preview?: string  // object URL for the image thumbnail (revoked on clear/unmount)
   videoResume?: VideoResume  // set when a video fails mid-TUS; Retry resumes from the offset
+  // One automatic resume per file. A second network failure means auto-recovery is not working for
+  // this file, so it stops being clever and hands the guest the Retry button.
+  autoResumed?: boolean
 }
 
 type PhotoRow = {
@@ -1023,7 +1126,7 @@ async function uploadImageToR2(
   // compresses to <1MB should not bounce off a 25MB tier cap. The server enforces the same
   // cap on the presigned size, so this is UX, not security.
   if (processed.blob.size > imageCapBytes) {
-    throw new Error(`File too large (max ${Math.round(imageCapBytes / 1024 / 1024)} MB for your tier)`)
+    throw new Error(`File too large (max ${formatCapSize(imageCapBytes)} for this album)`)
   }
 
   // ONE presign round trip covers both the image and its thumbnail (the old flow made two,
@@ -1103,15 +1206,6 @@ async function uploadPosterToR2(albumId: string, blob: Blob, signal?: AbortSigna
     blob, () => {}, signal,
   )
   return result.publicUrl
-}
-
-// Settle to `fallback` if `p` hasn't resolved within `ms`. Used so a best-effort side task (the
-// poster upload) can NEVER hold the video — and therefore its concurrency slot — hostage: however
-// the poster path behaves on a hostile network, the video still finishes/errors and frees the lane.
-function settleWithin<T>(p: Promise<T>, ms: number, fallback: T): Promise<T> {
-  let timer: ReturnType<typeof setTimeout>
-  const timeout = new Promise<T>(resolve => { timer = setTimeout(() => resolve(fallback), ms) })
-  return Promise.race([p, timeout]).finally(() => clearTimeout(timer))
 }
 
 // A TUS error with a 4xx response is a final server verdict (expired/invalid upload URL,
@@ -1430,6 +1524,27 @@ function reportClientEvent(
   } catch { /* never let telemetry break an upload */ }
 }
 
+// Did this file fail because the NETWORK went away, rather than because anything about the file or
+// the server was wrong? Only those are worth parking and resuming on our own: the connection coming
+// back is a real, observable event that changes the answer, whereas a 413 or an unsupported codec
+// will fail identically forever and must stay a plain error with a manual Retry.
+//
+// Deliberately allow-list, not deny-list: an unrecognised failure stays an error. Parking something
+// that can never succeed would leave a tile claiming it is waiting for a network that was never the
+// problem — strictly worse than showing the real error straight away.
+function isRecoverableNetworkFailure(e: unknown): boolean {
+  // A deliberate cancel, and a server that answered (even badly), are both out of scope.
+  if (e instanceof DOMException && e.name === 'AbortError') return false
+  if (e instanceof HttpError) return false
+  // Videos: httpStatus null means no HTTP response ever arrived on ANY attempt, direct or relayed
+  // — the same signal runTusWithRecovery uses to decide the network itself is the problem.
+  if (e instanceof VideoUploadError) return e.httpStatus === null
+  const raw = e instanceof Error ? e.message : String(e)
+  // Refusals the product made on purpose are never network failures, whatever else they contain.
+  if (/^(File too large|Unsupported)/i.test(raw)) return false
+  return /failed to fetch|load failed|network request failed|networkerror|network error during upload|couldn't upload after trying multiple connection methods|couldn't reach the server|upload stalled/i.test(raw)
+}
+
 // tus failures stringify their entire request/response internals — a wall of text that
 // overflows a phone screen and tells the user nothing. Map known failure shapes to short,
 // actionable messages that still NAME the real cause (HTTP status), so a failure screenshot is
@@ -1532,7 +1647,6 @@ function createRowSaver(
 
 type Props = {
   album: Album
-  userTier: Tier
   onPhotosUploaded?: () => void
 }
 
@@ -1542,7 +1656,7 @@ type Props = {
 // recognize HEIC by MIME type alone and need the extension to filter correctly.
 const FILE_ACCEPT = 'image/jpeg,image/png,image/gif,image/webp,image/heic,image/heif,.heic,.heif,video/mp4,video/quicktime,video/webm'
 
-export default function UploadZone({ album, userTier, onPhotosUploaded }: Props) {
+export default function UploadZone({ album, onPhotosUploaded }: Props) {
   const { t } = useT()
   const [entries, setEntries] = useState<FileEntry[]>([])
   const [isDragging, setIsDragging] = useState(false)
@@ -1570,8 +1684,18 @@ export default function UploadZone({ album, userTier, onPhotosUploaded }: Props)
   // Adaptive video lane widens toward this ceiling only as a network proves it can take it.
   const videoMax = isMobileRef.current ? VIDEO_CONCURRENCY_MAX_MOBILE : VIDEO_CONCURRENCY_MAX_DESKTOP
 
-  // Memoized so startUploads/addFiles/retryEntry are not rebuilt on every progress flush
-  const caps = useMemo(() => uploadCapsForTier(userTier), [userTier])
+  // The ALBUM's caps, sized server-side by its owner's tier — not the visitor's own tier.
+  //
+  // The visitor's own tier is the wrong question and was silently costing uploads: a guest at an
+  // event has no account, so their tier reads as free, and a Studio album's 4 GB video allowance
+  // became a 50 MB wall enforced on the phone before a single byte was sent. The server had always
+  // sized it correctly from album.user_id — the two ends simply never compared notes. Now the
+  // server's own answer travels with the album, so there is one number and no way to disagree.
+  //
+  // Falls back to free caps only if an older cached album payload arrives without the field; the
+  // server still enforces the real limit either way, so the worst case is a needless local reject
+  // rather than a bad upload.
+  const caps = useMemo(() => album.media_caps ?? uploadCapsForTier('free'), [album.media_caps])
 
   // Tracks whether the component is still mounted — prevents onPhotosUploaded firing
   // after unmount which would leak a setTimeout in AlbumPageClient
@@ -1708,7 +1832,7 @@ export default function UploadZone({ album, userTier, onPhotosUploaded }: Props)
     // viewport, 98 rows in the admin dashboard, and 98 counts against the error-alert threshold —
     // three different surfaces all saying one thing 98 times. Failures are collected here and
     // summarised once the batch settles.
-    const batchFailures: { msg: string; kind: string; sizeMB: number; status?: number }[] = []
+    const batchFailures: { msg: string; kind: string; sizeMB: number; status?: number; parked: boolean; waitedMs?: number }[] = []
     // Which reasons have already been shown to the user in THIS batch. A toast per file turned one
     // dropped connection into a wall of identical messages; a single toast at the end of the batch
     // said nothing until everything had finished failing, which on a long queue is a minute of
@@ -1736,7 +1860,7 @@ export default function UploadZone({ album, userTier, onPhotosUploaded }: Props)
           // client-side first, so their cap is enforced on the processed size inside
           // uploadImageToR2 (a 30MB photo that compresses to 1MB should upload fine).
           if (kind === 'video' && entry.file.size > caps.video) {
-            throw new Error(`File too large (max ${Math.round(caps.video / 1024 / 1024)} MB for your tier)`)
+            throw new Error(`File too large (max ${formatCapSize(caps.video)} for this album)`)
           }
 
           const row = kind === 'image'
@@ -1749,8 +1873,15 @@ export default function UploadZone({ album, userTier, onPhotosUploaded }: Props)
           if (kind === 'video') noteVideoOutcome(true) // clean video → adaptive lane may widen
         } catch (e) {
           const msg = friendlyUploadError(e)
+          // Park a network failure instead of killing it — but only once per file. On 2026-08-18 at
+          // 19:47 one Android phone lost its connection and 8 files (5 images, 3 videos) died at the
+          // control plane with no bytes moved; nothing watched for the network coming back, so they
+          // sat as red tiles until the guest happened to look. A phone that goes back in a pocket
+          // took those photos with it. The File objects are still in memory, so the uploader can
+          // simply wait and try again.
+          const parked = isRecoverableNetworkFailure(e) && !entry.autoResumed
           patchEntry(entry.id, {
-            status: 'error',
+            status: parked ? 'waiting' : 'error',
             error: msg,
             // Keep the resume state so Retry continues this video from its confirmed offset
             // instead of restarting from zero.
@@ -1779,10 +1910,18 @@ export default function UploadZone({ album, userTier, onPhotosUploaded }: Props)
               kind: kind === 'video' ? 'upload:video' : 'upload:image',
               sizeMB: Math.round(entry.file.size / 1024 / 1024),
               status: e instanceof HttpError ? e.status : undefined,
+              parked,
+              // How long the control plane fought before giving up (see fetchWithRetry). Reported
+              // as context rather than message text so it cannot fragment the grouping.
+              waitedMs: typeof (e as { waitedMs?: unknown })?.waitedMs === 'number'
+                ? (e as { waitedMs: number }).waitedMs
+                : undefined,
             })
             // `msg` here is the friendly text, so two files that failed the same way produce the
-            // same key and the second one stays quiet.
-            if (!announced.has(msg)) {
+            // same key and the second one stays quiet. A parked file says nothing at all: it is
+            // about to retry itself, its tile already says so, and an error toast for something the
+            // uploader is still working on trains people to ignore the toasts that do matter.
+            if (!parked && !announced.has(msg)) {
               announced.add(msg)
               showAppToast(msg, 'error')
             }
@@ -1814,8 +1953,20 @@ export default function UploadZone({ album, userTier, onPhotosUploaded }: Props)
       }
       for (const { n, sample } of groups.values()) {
         const expected = sample.msg.startsWith('File too large') || sample.msg.startsWith('Unsupported')
-        reportClientEvent(expected ? 'warn' : 'error', sample.kind, sample.msg, album.id,
-          { failedFiles: n, sizeMB: sample.sizeMB, status: sample.status })
+        // A parked failure is not (yet) a lost photo — the uploader is going to retry it by itself.
+        // Reporting it at error level would put a row in the Errors tab, and a count against the
+        // error-alert threshold, for an incident the product is in the middle of handling
+        // correctly; on ordinary venue Wi-Fi that is the dashboard crying wolf all evening. It is
+        // still reported, at warn, because how often guests hit this is worth knowing. If auto-
+        // resume then fails, that second failure is not parked and lands as a real error.
+        const level = expected || sample.parked ? 'warn' : 'error'
+        reportClientEvent(level, sample.kind, sample.msg, album.id, {
+          failedFiles: n,
+          sizeMB: sample.sizeMB,
+          status: sample.status,
+          ...(sample.parked ? { parked: true } : {}),
+          ...(sample.waitedMs !== undefined ? { waitedSeconds: Math.round(sample.waitedMs / 1000) } : {}),
+        })
       }
     }
 
@@ -1876,8 +2027,18 @@ export default function UploadZone({ album, userTier, onPhotosUploaded }: Props)
     // next line, before React had run it, so it was always null and startUploads was never called.
     // The tile flipped to "Preparing" and stayed there.
     const entry = entries.find(e => e.id === id)
-    if (!entry || entry.status !== 'error') return  // already retried or in progress
-    const fresh: FileEntry = { ...entry, status: 'pending', progress: 0, error: undefined }
+    // 'waiting' is tappable too: the tile offers an immediate retry for anyone who would rather not
+    // wait for the probe.
+    if (!entry || (entry.status !== 'error' && entry.status !== 'waiting')) return
+    const fresh: FileEntry = {
+      ...entry, status: 'pending', progress: 0, error: undefined,
+      // Tapping a PARKED tile only skips the wait — same recovery cycle, so it consumes the one
+      // automatic resume and a second network failure becomes a real error. Tapping a genuinely
+      // FAILED tile is a fresh decision by someone who may have just switched to mobile data, so it
+      // earns a new one; without this reset the retry they were invited to make would be the one
+      // attempt that is never allowed to park.
+      autoResumed: entry.status === 'waiting',
+    }
     setEntries(prev => prev.map(e => (e.id === id ? fresh : e)))
     void startUploads([fresh])
   }, [entries, startUploads])
@@ -1899,6 +2060,7 @@ export default function UploadZone({ album, userTier, onPhotosUploaded }: Props)
   const doneCount    = entries.filter(e => e.status === 'done').length
   const errorCount   = entries.filter(e => e.status === 'error').length
   const activeCount  = entries.filter(e => e.status === 'uploading' || e.status === 'pending').length
+  const waitingCount = entries.filter(e => e.status === 'waiting').length
 
   async function retryBlockedRows() {
     const pending = pendingSaveRef.current
@@ -1947,6 +2109,55 @@ export default function UploadZone({ album, userTier, onPhotosUploaded }: Props)
     }
     return [...m.entries()].sort((x, y) => y[1] - x[1])
   }, [entries, t])
+  // ── Auto-resume parked uploads ────────────────────────────────────────────────────────────────
+  //
+  // Deliberately NOT driven by the 'online' event. navigator.onLine reports whether the device is
+  // ASSOCIATED with a network, not whether anything gets through — a phone on a saturated venue
+  // access point stays onLine === true for the entire outage, so 'online' never fires and a
+  // listener would sleep through exactly the case this exists for (the same reasoning as
+  // originReachable). Asking the origin directly is the only question worth asking, and
+  // originRecovered is already polling on behalf of any upload still in flight, so joining it
+  // costs nothing extra.
+  const resumeWaitingRef = useRef(false)
+  // Reads entriesRef rather than closing over `entries`, so the callback identity is stable and the
+  // effect below is driven purely by files entering the parked state. Deriving the list here (not
+  // inside a setState updater) is the same correctness point the two manual retry paths were fixed
+  // for: React defers updaters, so a list read back on the next line is always empty and
+  // startUploads gets called with nothing while the tiles sit marked "Preparing" forever.
+  const resumeWaitingUploads = useCallback(() => {
+    const fresh = entriesRef.current
+      .filter(e => e.status === 'waiting')
+      .map(e => ({ ...e, status: 'pending' as const, progress: 0, error: undefined, autoResumed: true }))
+    if (fresh.length === 0) return
+    const byId = new Map(fresh.map(e => [e.id, e]))
+    setEntries(prev => prev.map(e => byId.get(e.id) ?? e))
+    void startUploads(fresh)
+  }, [startUploads])
+
+  useEffect(() => {
+    if (waitingCount === 0 || resumeWaitingRef.current) return
+    resumeWaitingRef.current = true
+    // No per-effect cancellation flag, deliberately. Files park in waves — the images give up on
+    // their deadline before the serial videos reach theirs — so waitingCount changes WHILE the
+    // probe is in flight. A flag cancelled by that re-render would abandon the only probe running
+    // (the re-run returns early on the ref guard), and every parked file would wait forever for a
+    // resume that had already been called off. The probe is page-wide and the callback resumes
+    // whatever is parked at the moment it resolves, so simply letting it finish is both correct and
+    // what makes the later arrivals recover in the same sweep. mountedRef is the only guard needed.
+    void originRecovered().then((recovered) => {
+      if (!mountedRef.current) return
+      if (recovered) { resumeWaitingUploads(); return }
+      // The shared probe hit its 4-minute cap and the origin is still unreachable. Stop promising a
+      // resume that is not coming: hand these back as ordinary errors so the failed chip appears
+      // and the guest gets the Retry button, which is where this used to start. They keep the
+      // message they already carry, so nothing about the explanation changes.
+      setEntries(prev => prev.map(e => (e.status === 'waiting' ? { ...e, status: 'error' as const } : e)))
+      // Release in `finally`, never in the success path alone: a throw anywhere above would
+      // otherwise leave this latched forever and silently disable auto-resume for the rest of the
+      // session — the files would sit parked with nothing left watching for the network.
+    }).catch(() => {}).finally(() => { resumeWaitingRef.current = false })
+  }, [waitingCount, resumeWaitingUploads])
+
   const retryFailedUploads = useCallback(() => {
     // Derived from `entries` rather than from inside a setState updater. A functional updater does
     // NOT run synchronously — React defers it to the render phase — so the previous version read
@@ -1956,7 +2167,13 @@ export default function UploadZone({ album, userTier, onPhotosUploaded }: Props)
     if (retryingRef.current) return
     const fresh = entries
       .filter(e => e.status === 'error')
-      .map(e => ({ ...e, status: 'pending' as const, progress: 0, error: undefined }))
+      .map(e => ({
+        ...e, status: 'pending' as const, progress: 0, error: undefined,
+        // Same rule as the single-tile Retry: a deliberate retry of a failed file earns a fresh
+        // automatic recovery, so a drop during THIS attempt parks and heals itself rather than
+        // landing straight back in the failed chip.
+        autoResumed: false,
+      }))
     if (fresh.length === 0) return
     // Ref guard replaces the atomicity the updater was supposed to provide: a second tap before
     // the state has settled cannot start the same files twice.
@@ -2149,7 +2366,7 @@ export default function UploadZone({ album, userTier, onPhotosUploaded }: Props)
                   key={entry.id}
                   className="relative rounded-xl overflow-hidden"
                   style={{ width: 84, height: 84, background: '#EFE7DA', border: '1px solid #E3D8C7' }}
-                  title={entry.status === 'error' ? entry.error : entry.file.name}
+                  title={entry.status === 'error' ? entry.error : entry.status === 'waiting' ? t('upload.waitingNetwork') : entry.file.name}
                 >
                   {entry.preview && isVid ? (
                     // eslint-disable-next-line jsx-a11y/media-has-caption
@@ -2190,6 +2407,24 @@ export default function UploadZone({ album, userTier, onPhotosUploaded }: Props)
                     </div>
                   )}
 
+                  {/* Parked on a dead network — the uploader resumes this by itself. Deliberately
+                      NOT the red error treatment: nothing has been lost and there is nothing for
+                      the guest to do, so it reads as a pause (amber, a clock) rather than a
+                      failure. Tapping still forces an immediate retry for anyone who would rather
+                      not wait. */}
+                  {entry.status === 'waiting' && (
+                    <button
+                      type="button"
+                      onClick={e => { e.stopPropagation(); retryEntry(entry.id) }}
+                      className="absolute inset-0 flex flex-col items-center justify-center"
+                      style={{ background: 'rgba(122,74,14,0.62)' }}
+                      aria-label={`${t('upload.waitingNetwork')} — ${entry.file.name}`}
+                    >
+                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#FDFAF5" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="9" /><polyline points="12 7 12 12 15 14" /></svg>
+                      <span className="mt-0.5 text-center text-[9px] font-bold leading-tight" style={{ color: '#FDFAF5' }}>{t('upload.waitingNetwork')}</span>
+                    </button>
+                  )}
+
                   {/* error overlay → click to retry */}
                   {entry.status === 'error' && (
                     <button
@@ -2208,13 +2443,17 @@ export default function UploadZone({ album, userTier, onPhotosUploaded }: Props)
             })}
           </div>
 
-          {/* Summary row */}
-          {!isUploading && activeCount === 0 && (doneCount > 0 || errorCount > 0) && (
+          {/* Summary row. Parked files are counted separately from failed ones — folding them into
+              "failed" would tell the guest photos were lost at the exact moment the uploader is
+              still working on getting them up. */}
+          {!isUploading && activeCount === 0 && (doneCount > 0 || errorCount > 0 || waitingCount > 0) && (
             <div className="flex items-center justify-between mt-3 px-1">
               <span className="text-xs" style={{ color: '#7C6752' }}>
                 {doneCount > 0 && t('upload.uploaded', { n: doneCount })}
                 {doneCount > 0 && errorCount > 0 && ' · '}
                 {errorCount > 0 && t('upload.failed', { n: errorCount })}
+                {(doneCount > 0 || errorCount > 0) && waitingCount > 0 && ' · '}
+                {waitingCount > 0 && t('upload.waitingCount', { n: waitingCount })}
               </span>
               {doneCount > 0 && (
                 <button type="button" onClick={dismissDone} className="text-xs font-semibold" style={{ color: '#630826' }}>

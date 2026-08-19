@@ -26,6 +26,8 @@ export const hy: Partial<Record<DictKey, string>> = {
   'upload.uploaded': '{n} վերբեռնված',
   'upload.failed': '{n} ձախողված',
   'upload.retry': 'Կրկնել',
+  'upload.waitingNetwork': 'Սպասում ենք ցանցին',
+  'upload.waitingCount': '{n} սպասում է ցանցին',
   'upload.clear': 'Մաքրել',
 
   'acct.serviceError': 'Ծառայության սխալ',

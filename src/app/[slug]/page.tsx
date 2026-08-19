@@ -144,6 +144,14 @@ export default async function AlbumPage({ params }: Props) {
 
   if (resolved.kind === 'invalid' || resolved.kind === 'notfound') notFound()
 
+  // NOTE: canonicalising the URL to the album's custom slug is done in the BROWSER
+  // (see AlbumPageClient), NOT with a redirect() here. A server redirect was tried on 2026-08-19 and
+  // locked owners out of their own albums: the account page links to /{random-slug}#owner={token}
+  // through a Next <Link>, so the navigation is client-side, the router resolves the redirect
+  // itself, and it navigates to the bare Location value — dropping the fragment that carries the
+  // owner token. The owner landed on the canonical URL as a guest, every single time.
+  // Fragments are never sent to a server, so no server-side redirect can preserve one here.
+
   if (resolved.kind === 'reveal') {
     return (
       <>

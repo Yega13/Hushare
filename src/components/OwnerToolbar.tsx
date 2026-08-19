@@ -50,7 +50,9 @@ type Props = {
   album: Album
   photos: Photo[]
   ownerToken: string | null
-  userTier: Tier
+  // null while the tier is still resolving — see the note in AlbumPageClient. Rendering a paid
+  // feature as locked before the answer arrives is a lie the owner sees and remembers.
+  userTier: Tier | null
   mediaRadiusMax: number
   onAlbumUpdated: (
     patch: Partial<Album>,
@@ -221,13 +223,22 @@ export default function OwnerToolbar({ album, photos, ownerToken, userTier, medi
   // The owner link works whether the token came from the #owner= hash (ownerToken prop)
   // or was fetched for an account owner (fetchedOwnerToken).
   const effectiveOwnerToken = ownerToken ?? fetchedOwnerToken
-  const ownerUrl = effectiveOwnerToken && origin ? `${origin}/${album.slug}#owner=${effectiveOwnerToken}` : null
+  // custom_slug first: it is the album's canonical address, so the management link the owner keeps
+  // (and re-opens for months) should already be the URL the album actually lives at.
+  const ownerUrl = effectiveOwnerToken && origin ? `${origin}/${album.custom_slug ?? album.slug}#owner=${effectiveOwnerToken}` : null
   // A real photo from the album in the transition preview, so the owner judges the motion against
   // what they will actually be watching rather than a grey rectangle.
   const motionPreviewThumb = photos.find((p) => p.media_type !== 'video')?.thumb_url
     ?? photos[0]?.poster_url ?? photos[0]?.thumb_url ?? ''
   const canCustomize = userTier === 'pro' || userTier === 'studio'
   const canUseCollections = userTier === 'studio'
+  // Gate every LOCKED affordance — the Pro/Max badge and the dimming — on actually knowing the
+  // tier. While it is unknown the row simply renders plain: no badge appears and then vanishes.
+  // The controls themselves stay inert (canCustomize is false either way) for those few hundred
+  // milliseconds, which is invisible next to a label that contradicts what the owner paid for.
+  const tierKnown = userTier !== null
+  const showLockedCustomize = tierKnown && !canCustomize
+  const showLockedCollections = tierKnown && !canUseCollections
   const radiusMax = Math.max(1, Math.round(mediaRadiusMax))
 
   useEffect(() => {
@@ -1223,13 +1234,13 @@ export default function OwnerToolbar({ album, photos, ownerToken, userTier, medi
 
                     <label
                       className="flex items-center justify-between gap-4 rounded-xl px-3 py-3"
-                      style={{ background: '#FDFAF5', border: '1px solid #DDD5C5', cursor: canUseCollections ? 'pointer' : 'not-allowed', opacity: canUseCollections ? 1 : 0.6 }}
+                      style={{ background: '#FDFAF5', border: '1px solid #DDD5C5', cursor: showLockedCollections ? 'not-allowed' : 'pointer', opacity: showLockedCollections ? 0.6 : 1 }}
                     >
                       <span>
                         <span className="flex items-center gap-2 text-sm font-semibold" style={{ color: '#630826' }}>
                           <ScanFace className="w-4 h-4" />
                           {t('ot.faceFinder')}
-                          {!canUseCollections && <span className="text-[10px] font-semibold uppercase" style={{ color: '#7C4A2D', letterSpacing: '0.06em' }}>Max</span>}
+                          {showLockedCollections && <span className="text-[10px] font-semibold uppercase" style={{ color: '#7C4A2D', letterSpacing: '0.06em' }}>Max</span>}
                         </span>
                         <span className="block text-xs" style={{ color: '#7C5C3E' }}>{t('ot.faceFinderSub')}</span>
                       </span>
@@ -1293,11 +1304,11 @@ export default function OwnerToolbar({ album, photos, ownerToken, userTier, medi
               {/* Custom URL */}
               <section style={settingsSectionStyle}>
                 <button type="button" className="hush-motion" style={accordionButton} onClick={() => toggleSection('customUrl')}>
-                  <Link2 className="w-4 h-4" style={{ color: canCustomize ? '#7C5C3E' : '#A89880' }} />
+                  <Link2 className="w-4 h-4" style={{ color: showLockedCustomize ? '#A89880' : '#7C5C3E' }} />
                   <span style={sectionTitle}>{t('ot.customUrl')}</span>
-                  {!canCustomize && <span className="ml-auto text-[10px] font-semibold uppercase" style={{ color: '#7C4A2D', letterSpacing: '0.06em' }}>Pro</span>}
+                  {showLockedCustomize && <span className="ml-auto text-[10px] font-semibold uppercase" style={{ color: '#7C4A2D', letterSpacing: '0.06em' }}>Pro</span>}
                   <ChevronDown
-                    className={canCustomize ? 'ml-auto w-4 h-4 transition-transform' : 'w-4 h-4 transition-transform'}
+                    className={showLockedCustomize ? 'w-4 h-4 transition-transform' : 'ml-auto w-4 h-4 transition-transform'}
                     style={{ color: '#A89880', transform: openSection === 'customUrl' ? 'rotate(180deg)' : 'rotate(0deg)' }}
                   />
                 </button>
@@ -1306,7 +1317,7 @@ export default function OwnerToolbar({ album, photos, ownerToken, userTier, medi
                     <p className="text-xs mb-3" style={{ color: '#7C5C3E' }}>
                       {t('ot.customUrlSub')}
                     </p>
-                    <div className="flex items-stretch rounded-lg overflow-hidden" style={{ border: '1px solid #DDD5C5', background: '#FDFAF5', opacity: canCustomize ? 1 : 0.55 }}>
+                    <div className="flex items-stretch rounded-lg overflow-hidden" style={{ border: '1px solid #DDD5C5', background: '#FDFAF5', opacity: showLockedCustomize ? 0.55 : 1 }}>
                       <span className="text-xs flex items-center px-2 select-none" style={{ color: '#A89880' }}>hushare.space/</span>
                       <input
                         type="text"
@@ -1352,14 +1363,14 @@ export default function OwnerToolbar({ album, photos, ownerToken, userTier, medi
               <section style={settingsSectionStyle}>
                 <button type="button" className="hush-motion" style={accordionButton} onClick={() => toggleSection('password')}>
                   {album.password_protected ? (
-                    <Lock className="w-4 h-4" style={{ color: canCustomize ? '#630826' : '#A89880' }} />
+                    <Lock className="w-4 h-4" style={{ color: showLockedCustomize ? '#A89880' : '#630826' }} />
                   ) : (
-                    <LockOpen className="w-4 h-4" style={{ color: canCustomize ? '#7C5C3E' : '#A89880' }} />
+                    <LockOpen className="w-4 h-4" style={{ color: showLockedCustomize ? '#A89880' : '#7C5C3E' }} />
                   )}
                   <span style={sectionTitle}>{t('ot.password')}</span>
-                  {!canCustomize && <span className="ml-auto text-[10px] font-semibold uppercase" style={{ color: '#7C4A2D', letterSpacing: '0.06em' }}>Pro</span>}
+                  {showLockedCustomize && <span className="ml-auto text-[10px] font-semibold uppercase" style={{ color: '#7C4A2D', letterSpacing: '0.06em' }}>Pro</span>}
                   <ChevronDown
-                    className={canCustomize ? 'ml-auto w-4 h-4 transition-transform' : 'w-4 h-4 transition-transform'}
+                    className={showLockedCustomize ? 'w-4 h-4 transition-transform' : 'ml-auto w-4 h-4 transition-transform'}
                     style={{ color: '#A89880', transform: openSection === 'password' ? 'rotate(180deg)' : 'rotate(0deg)' }}
                   />
                 </button>
@@ -1417,11 +1428,11 @@ export default function OwnerToolbar({ album, photos, ownerToken, userTier, medi
               {/* Collections */}
               <section style={settingsSectionStyle}>
                 <button type="button" className="hush-motion" style={accordionButton} onClick={() => toggleSection('collection')}>
-                  <FolderPlus className="w-4 h-4" style={{ color: canUseCollections ? '#7C5C3E' : '#A89880' }} />
+                  <FolderPlus className="w-4 h-4" style={{ color: showLockedCollections ? '#A89880' : '#7C5C3E' }} />
                   <span style={sectionTitle}>{t('ot.collections')}</span>
-                  {!canUseCollections && <span className="ml-auto text-[10px] font-semibold uppercase" style={{ color: '#7C4A2D', letterSpacing: '0.06em' }}>Max</span>}
+                  {showLockedCollections && <span className="ml-auto text-[10px] font-semibold uppercase" style={{ color: '#7C4A2D', letterSpacing: '0.06em' }}>Max</span>}
                   <ChevronDown
-                    className={canUseCollections ? 'ml-auto w-4 h-4 transition-transform' : 'w-4 h-4 transition-transform'}
+                    className={showLockedCollections ? 'w-4 h-4 transition-transform' : 'ml-auto w-4 h-4 transition-transform'}
                     style={{ color: '#A89880', transform: openSection === 'collection' ? 'rotate(180deg)' : 'rotate(0deg)' }}
                   />
                 </button>

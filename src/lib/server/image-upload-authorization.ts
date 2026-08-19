@@ -4,7 +4,7 @@ import { v4 as uuid } from 'uuid'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { isAllowedImage, safeExtForMime } from '@/lib/cloudflare/r2'
 import { checkRateLimit, clientIpKey } from '@/lib/rate-limit'
-import { uploadCapsForTier } from '@/lib/media'
+import { uploadCapsForTier, formatCapSize } from '@/lib/media'
 import { getUserTierById } from '@/lib/subscriptions'
 import { gateAllowsContribution, ALBUM_GATE_COLS } from '@/lib/server/album-access'
 import type { Tier } from '@/types'
@@ -105,7 +105,7 @@ export async function authorizeImageUpload(
     return {
       ok: false,
       response: NextResponse.json(
-        { error: `File too large (max ${caps.image / 1024 / 1024} MB for your tier)` },
+        { error: `File too large (max ${formatCapSize(caps.image)} for this album)` },
         { status: 413, headers: NO_STORE },
       ),
     }

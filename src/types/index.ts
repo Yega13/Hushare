@@ -89,6 +89,16 @@ export type Album = {
   bib_max: number | null;
   // Derived server-side from password_hash presence — the hash itself is never sent
   password_protected: boolean;
+  // Per-file upload size limits for THIS album, derived server-side from the ALBUM OWNER's tier —
+  // never from whoever happens to be looking.
+  //
+  // The uploader used to compute these from the visitor's own tier, which is wrong for the case
+  // that matters most: a guest at an event has no account at all, so "their tier" is free by
+  // default and a Studio album's 4 GB video allowance became 50 MB for every guest trying to use
+  // it. The bytes were rejected on the phone, before any request, while the server would have
+  // accepted them — /api/upload/presign has always sized the cap by album.user_id. Sending the
+  // server's own answer down with the album is what keeps the two ends from disagreeing again.
+  media_caps: UploadCaps;
   last_activity_at: string;
   last_notification_at: string | null;
   created_at: string;

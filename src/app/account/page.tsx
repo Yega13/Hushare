@@ -472,7 +472,7 @@ export default async function AccountPage({ searchParams }: Props) {
               <div className="space-y-3">
                 {recentAlbums.map((album) => (
                   <div key={album.id} className="rounded-xl p-3" style={{ background: '#FDFAF5', border: '1px solid #E8E0D2' }}>
-                    <Link href={`/${album.slug}#owner=${album.owner_token}`} className="flex items-center gap-3 transition hover:opacity-80">
+                    <Link href={`/${album.custom_slug ?? album.slug}#owner=${album.owner_token}`} className="flex items-center gap-3 transition hover:opacity-80">
                       <span className="relative h-14 w-14 flex-none overflow-hidden rounded-lg" style={{ background: '#E8E0D2' }}>
                         {album.cover_url ? (
                           <Image src={album.cover_url} alt="" fill sizes="56px" className="object-cover" unoptimized />

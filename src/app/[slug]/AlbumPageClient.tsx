@@ -138,7 +138,11 @@ export default function AlbumPageClient({ initialAlbum = null, initialPhotos, in
   const pendingLeaveHrefRef = useRef<string | null>(null)
 
   // Display state — consumed by Phase 7–9 components
-  const [userTier, setUserTier] = useState<Tier>('free')
+  // null = NOT YET KNOWN, which is a genuinely different state from 'free' and has to be modelled
+  // as one. Starting at 'free' meant the toolbar rendered a verdict it had not received: a paying
+  // owner watched PRO and MAX badges sit on their own features for the length of one /api/me/tier
+  // round trip. Nothing renders a negative answer until the answer exists.
+  const [userTier, setUserTier] = useState<Tier | null>(null)
   const [mediaRadiusMax, setMediaRadiusMax] = useState(144)
   const [forceGlobalRadius, setForceGlobalRadius] = useState(false)
   const [slideshowRequestId, setSlideshowRequestId] = useState(0)
@@ -198,6 +202,33 @@ export default function AlbumPageClient({ initialAlbum = null, initialPhotos, in
     if (ownerTokenReady && !effectiveIsOwner) delete document.documentElement.dataset.hushOwner
   }, [ownerTokenReady, effectiveIsOwner])
   useEffect(() => () => { delete document.documentElement.dataset.hushOwner }, [])
+
+  // Show the album's custom URL in the address bar once it has one, so /wog0op5z becomes /tali
+  // rather than the album answering on two addresses forever. The random slug still WORKS — QR codes
+  // get printed and links get sent long before an owner thinks to set a custom URL, and breaking
+  // those would strand guests at a 404 in front of a poster. It is only ever rewritten, never
+  // rejected.
+  //
+  // This is deliberately NOT a server redirect. That was tried on 2026-08-19 and locked owners out
+  // of their own albums: the account page links to /{random-slug}#owner={token} via a Next <Link>,
+  // so the navigation is client-side, the router resolves the redirect itself and goes to the bare
+  // Location value — dropping the fragment carrying the owner token. Every owner arrived as a guest.
+  // A fragment is never sent to a server, so no redirect can preserve one; only the browser can.
+  //
+  // replaceState (not push) so Back still leaves the album instead of bouncing between two spellings
+  // of the same page, and history.state is passed through untouched so Next's router keeps its own
+  // navigation state — this changes what is displayed, nothing about where the app thinks it is.
+  useEffect(() => {
+    const custom = album?.custom_slug
+    if (!custom) return
+    const path = window.location.pathname.replace(/^\/+/, '').replace(/\/+$/, '')
+    if (decodeURIComponent(path).toLowerCase() === custom) return
+    window.history.replaceState(
+      window.history.state,
+      '',
+      `/${custom}${window.location.search}${window.location.hash}`,
+    )
+  }, [album?.custom_slug])
 
   // Tombstone recently-deleted photo IDs so a realtime reconnect/refetch (common on mobile)
   // cannot reinstate a photo the user just deleted. Auto-expires after 60s.
@@ -464,7 +495,7 @@ export default function AlbumPageClient({ initialAlbum = null, initialPhotos, in
     prevGuestDownloadsRef.current = null
     // Reset display state that persists across navigations
     setArrangeMode(false)
-    setUserTier('free')
+    setUserTier(null)
     setForceGlobalRadius(false)
     setSlideshowRequestId(0)
     setMediaRadiusMax(144)
@@ -1079,7 +1110,7 @@ export default function AlbumPageClient({ initialAlbum = null, initialPhotos, in
         )}
 
         {(album.guest_uploads_enabled || effectiveIsOwner) && (
-          <UploadZone album={album} userTier={userTier} onPhotosUploaded={handlePhotosUploaded} />
+          <UploadZone album={album} onPhotosUploaded={handlePhotosUploaded} />
         )}
 
         <div className="hush-container pb-6">

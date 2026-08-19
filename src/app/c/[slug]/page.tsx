@@ -284,7 +284,7 @@ export default async function CollectionPage({ params }: Props) {
             // Owner → management link (base slug + #owner= token, matching the account page).
             // Guest → plain public link (never carries the token).
             const href = isCollectionOwner
-              ? `/${album.slug}#owner=${album.owner_token}`
+              ? `/${album.custom_slug ?? album.slug}#owner=${album.owner_token}`
               : `/${album.custom_slug ?? album.slug}`
             return (
               <Link

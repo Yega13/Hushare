@@ -2,6 +2,8 @@ import { getCloudflareContext } from '@opennextjs/cloudflare'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { verifyAccessToken } from '@/lib/album-password'
 import { timingSafeEqual } from '@/lib/timing-safe'
+import { getUserTierById } from '@/lib/subscriptions'
+import { uploadCapsForTier } from '@/lib/media'
 import type { Album, Photo, SponsorLogo } from '@/types'
 
 // Shared album access/gating logic — the SINGLE source of truth used by both the API routes
@@ -19,7 +21,9 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 // Mirrors the SELECT in the former resolve route. password_hash + retired_at are internal
 // (stripped before returning); owner_token is fetched separately only when owner mode is asked.
 const ALBUM_SELECT_COLS = [
-  'id', 'slug', 'custom_slug', 'title', 'background_theme',
+  // user_id is fetched to size this album's upload caps by its OWNER's tier (see media_caps below).
+  // It is stripped before the album is returned — it must never reach a client.
+  'id', 'user_id', 'slug', 'custom_slug', 'title', 'background_theme',
   'media_radius', 'media_filter', 'media_hover', 'mobile_grid_columns', 'photo_layout',
   'slideshow_interval_ms', 'slideshow_animation', 'slideshow_motion', 'video_autoplay',
   'cover_photo_id', 'header_image', 'header_focal', 'header_zoom', 'header_touched', 'header_video_mode', 'reveal_at', 'guest_uploads_enabled', 'allow_guest_downloads',
@@ -39,7 +43,7 @@ const PHOTO_SELECT_COLS = [
 ].join(', ')
 
 type AlbumRow = {
-  id: string; slug: string; custom_slug: string | null; title: string
+  id: string; user_id: string | null; slug: string; custom_slug: string | null; title: string
   background_theme: string | null; media_radius: number; media_filter: string
   media_hover: string; mobile_grid_columns: number; photo_layout: string
   slideshow_interval_ms: number; slideshow_animation: string; slideshow_motion: unknown; video_autoplay: boolean
@@ -104,9 +108,14 @@ export type ResolveResult =
   | { kind: 'album'; album: Album }
 
 // Resolve a slug (random or custom) to an album, applying the reveal/password gates.
-// wantsOwner=true (owner is in owner view via the #owner= link) bypasses the gates when a valid
-// owner cookie is present. The server render always passes wantsOwner=false — it cannot read the
-// URL fragment — so gated albums render their gate server-side and never leak photos into HTML.
+//
+// A valid owner cookie bypasses the gates, whether or not the caller asked for owner mode — see the
+// note at the ownership check below for why those are separate questions. wantsOwner=true (the
+// client, which CAN read the #owner= fragment) additionally forces the ownership lookup on an
+// ungated album, where it would otherwise be wasted work.
+//
+// Gated albums still never leak photos into HTML for anyone who is not the owner: without a cookie
+// that matches owner_token, the gate is rendered server-side exactly as before.
 export async function resolveAlbum(
   slugRaw: string,
   wantsOwner: boolean,
@@ -130,9 +139,27 @@ export async function resolveAlbum(
 
   const albumId = album.id
 
+  // "Is this the owner?" and "is this an owner-MODE url?" are two different questions, and answering
+  // the first with the second is what made an owner watch "this album is protected" on their own
+  // album for a second before it opened.
+  //
+  // The #owner= token lives in the URL fragment, which no server ever receives — but the owner
+  // COOKIE is httpOnly with path '/', so the browser sends it on the page request itself. The server
+  // therefore already knows this visitor owns the album; it simply was not asking, because the check
+  // was gated behind wantsOwner and the server render hardcodes that to false. fetchAuthorizedPhotos
+  // in this same file has always trusted the cookie on its own, so the two halves of one access
+  // decision disagreed: the resolve said "password gate", the photo read said "here are the photos".
+  //
+  // Owner chrome (the toolbar) still keys off the fragment, client-side, exactly as before. Only the
+  // GATE bypass moves to the cookie — which is the credential that actually proves ownership, is
+  // compared timing-safely against owner_token, and is scoped to this one album.
+  const gated = !!album.password_hash || (!!album.reveal_at && new Date(album.reveal_at) > new Date())
   let isOwner = false
   const ownerCookieVal = (cookieStore.get(`hushare_owner_${albumId}`)?.value ?? '').trim()
-  if (wantsOwner && ownerCookieVal) {
+  // Only pay for the lookup when the answer can change what gets rendered: an owner-mode request, or
+  // a gate that ownership would lift. On an open album in guest view it changes nothing, so the
+  // common path costs exactly what it did before.
+  if (ownerCookieVal && (wantsOwner || gated)) {
     const { data: ownerRow } = await admin
       .from('albums').select('owner_token').eq('id', albumId)
       .maybeSingle<{ owner_token: string }>()
@@ -155,9 +182,22 @@ export async function resolveAlbum(
   touchActivity(admin, albumId, album.last_activity_at)
   maybeAutoSuggestHeader(admin, album)
 
-  const { password_hash: _pw, retired_at: _ra, header_touched: _ht, ...publicAlbum } = album
-  void _ra; void _ht
-  return { kind: 'album', album: { ...publicAlbum, password_protected: !!_pw } as unknown as Album }
+  // Sized by the OWNER's tier, exactly as /api/upload/presign sizes it (getUserTierById on the same
+  // album.user_id), so the uploader and the authorizer cannot disagree about what this album allows.
+  // One indexed subscriptions lookup per album load — negligible next to the presign path, which
+  // runs this same call once per FILE.
+  const ownerTier = await getUserTierById(album.user_id)
+
+  const { password_hash: _pw, retired_at: _ra, header_touched: _ht, user_id: _uid, ...publicAlbum } = album
+  void _ra; void _ht; void _uid
+  return {
+    kind: 'album',
+    album: {
+      ...publicAlbum,
+      password_protected: !!_pw,
+      media_caps: uploadCapsForTier(ownerTier),
+    } as unknown as Album,
+  }
 }
 
 // The gate applied to CONTRIBUTING to an album, as opposed to reading it.

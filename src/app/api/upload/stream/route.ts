@@ -3,7 +3,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { isAllowedVideo } from '@/lib/cloudflare/r2'
 import { createStreamUpload } from '@/lib/cloudflare/stream'
 import { checkRateLimit, clientIpKey } from '@/lib/rate-limit'
-import { uploadCapsForTier, STUDIO_VIDEO_BYTES } from '@/lib/media'
+import { uploadCapsForTier, formatCapSize, STUDIO_VIDEO_BYTES } from '@/lib/media'
 import { getUserTierById } from '@/lib/subscriptions'
 import { forbidCrossSiteRequest } from '@/lib/request-security'
 import { gateAllowsContribution, ALBUM_GATE_COLS } from '@/lib/server/album-access'
@@ -122,7 +122,7 @@ export async function POST(req: Request) {
   const caps = uploadCapsForTier(tier)
   if (fileSize > caps.video) {
     return NextResponse.json(
-      { error: `File too large (max ${caps.video / 1024 / 1024} MB for your tier)` },
+      { error: `File too large (max ${formatCapSize(caps.video)} for this album)` },
       { status: 413, headers: NO_STORE },
     )
   }

@@ -14,6 +14,16 @@ export const PRO_IMAGE_BYTES = 200 * MB
 export const PRO_VIDEO_BYTES = 1 * GB
 export const STUDIO_VIDEO_BYTES = 4 * GB
 
+// Human-readable size for a cap in an error message. A 4 GB studio video cap read as "4096 MB",
+// which nobody parses as a generous limit. Whole GB above the 1 GB mark, MB below it.
+export function formatCapSize(bytes: number): string {
+  if (bytes >= GB) {
+    const gb = bytes / GB
+    return `${Number.isInteger(gb) ? gb : gb.toFixed(1)} GB`
+  }
+  return `${Math.round(bytes / MB)} MB`
+}
+
 export function uploadCapsForTier(tier: Tier): UploadCaps {
   if (tier === 'studio') {
     return { image: PRO_IMAGE_BYTES, video: STUDIO_VIDEO_BYTES }

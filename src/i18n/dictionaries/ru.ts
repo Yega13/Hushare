@@ -26,6 +26,8 @@ export const ru: Partial<Record<DictKey, string>> = {
   'upload.uploaded': '{n} загружено',
   'upload.failed': '{n} с ошибкой',
   'upload.retry': 'Повторить',
+  'upload.waitingNetwork': 'Ждём сеть',
+  'upload.waitingCount': '{n} ждут сеть',
   'upload.clear': 'Очистить',
 
   'acct.serviceError': 'Ошибка сервиса',
