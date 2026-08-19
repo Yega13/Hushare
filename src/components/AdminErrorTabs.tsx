@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo, useState } from 'react'
+import { useMemo, useState, useSyncExternalStore } from 'react'
 
 // Errors and warnings used to share one list, which made the list useless: on a normal day most
 // rows say "You've reached this album's upload limit" — the free cap doing its job, logged at warn
@@ -32,11 +32,29 @@ const td: React.CSSProperties = {
   fontSize: 12.5, color: INK, padding: '8px 12px', borderBottom: `1px solid #F2ECE0`, whiteSpace: 'nowrap',
 }
 
-function fmt(iso: string): string {
-  // Pinned to UTC for the same reason formatDate is: the Worker and the browser otherwise disagree
-  // about which day a late-evening timestamp belongs to, which is a hydration mismatch.
+// The album page pins dates to UTC because the Worker and the browser must agree on the markup, and
+// a creation date there is a label rather than a clock. This table is the opposite case: it is an
+// operator reading "did something break just now?", and a row stamped 06:59 when the wall clock says
+// 11:00 is actively misleading — you cannot line it up against the event you are investigating. So
+// these render in the READER'S timezone.
+//
+// The hydration constraint is still real, and the mismatch is resolved rather than ignored: the
+// server has no idea what zone the reader is in, so it renders UTC, and the browser re-renders in
+// local time immediately after hydrating. useSyncExternalStore is the mechanism React provides for
+// exactly this server/client split — unlike a useState+useEffect flag, it does not set state from an
+// effect, and React treats the two snapshots as intended rather than as a mismatch to warn about.
+function useIsHydrated(): boolean {
+  return useSyncExternalStore(
+    () => () => {},   // never changes after hydration, so nothing to subscribe to
+    () => true,       // client
+    () => false,      // server
+  )
+}
+
+function fmt(iso: string, local: boolean): string {
   return new Date(iso).toLocaleString('en-GB', {
-    day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit', timeZone: 'UTC',
+    day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit',
+    ...(local ? {} : { timeZone: 'UTC' }),
   })
 }
 
@@ -59,6 +77,7 @@ function Badge({ n, active, tone }: { n: number; active: boolean; tone: 'error' 
 export default function AdminErrorTabs({ rows }: { rows: ErrorRow[] }) {
   const [tab, setTab] = useState<'error' | 'warn'>('error')
   const [busy, setBusy] = useState(false)
+  const isHydrated = useIsHydrated()
 
   const errors = useMemo(() => rows.filter(r => r.level === 'error'), [rows])
   // Anything not explicitly an error counts as a warning, so a row logged at some future third
@@ -151,7 +170,7 @@ export default function AdminErrorTabs({ rows }: { rows: ErrorRow[] }) {
               <tbody>
                 {shown.map((e, i) => (
                   <tr key={i}>
-                    <td style={td}>{fmt(e.created_at)}</td>
+                    <td style={td}>{fmt(e.created_at, isHydrated)}</td>
                     <td style={td}>{e.source}</td>
                     <td style={{ ...td, whiteSpace: 'normal', maxWidth: 320 }}>
                       {e.message}
