@@ -61,3 +61,6 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# Claude Code local session config / caches. Machine-specific, not project config.
+/.claude/
