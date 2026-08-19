@@ -30,16 +30,53 @@ export default function AppToastViewport() {
   const [toasts, setToasts] = useState<Toast[]>([])
 
   useEffect(() => {
-    const timerIds = new Set<ReturnType<typeof setTimeout>>()
+    // Keyed by type+message so identical messages collapse into ONE toast. Uploads are the case
+    // that forced this: a dropped connection fails many files for the same reason, and each retry
+    // is its own batch with its own dedupe, so the same sentence stacked up the screen three at a
+    // time. Two genuinely different problems still get a toast each — the key includes the message,
+    // so only true repeats collapse. Insertion-ordered, which is what makes the eviction below pick
+    // the oldest. Living here rather than in the uploader fixes it for every caller in the app.
+    const visible = new Map<string, { id: number; timerId: ReturnType<typeof setTimeout> }>()
+    const MAX_VISIBLE = 3
+    const DISMISS_MS = 3200
+
+    function schedule(key: string, id: number) {
+      return setTimeout(() => {
+        visible.delete(key)
+        setToasts((current) => current.filter((toast) => toast.id !== id))
+      }, DISMISS_MS)
+    }
+
+    function drop(key: string, entry: { id: number; timerId: ReturnType<typeof setTimeout> }) {
+      clearTimeout(entry.timerId)
+      visible.delete(key)
+      setToasts((current) => current.filter((toast) => toast.id !== entry.id))
+    }
 
     function push(message: string, type: AppToastType = 'success') {
+      const key = `${type}:${message}`
+      const existing = visible.get(key)
+      if (existing) {
+        // Already on screen. Restart its clock instead of adding a second copy, so a repeating
+        // failure keeps the message up for as long as it keeps happening rather than expiring
+        // mid-incident — one toast that persists, not a column of duplicates.
+        clearTimeout(existing.timerId)
+        existing.timerId = schedule(key, existing.id)
+        return
+      }
       const id = Date.now() + Math.random()
-      setToasts((current) => [...current, { id, message, type }].slice(-3))
-      const timerId = setTimeout(() => {
-        timerIds.delete(timerId)
-        setToasts((current) => current.filter((toast) => toast.id !== id))
-      }, 3200)
-      timerIds.add(timerId)
+      visible.set(key, { id, timerId: schedule(key, id) })
+      // Cap explicitly rather than with slice(-3) in the updater: a toast dropped by slice kept its
+      // timer AND its `visible` entry, so the app still believed it was on screen and silently
+      // swallowed its next occurrence. Evicting properly keeps the map honest about what is shown.
+      while (visible.size > MAX_VISIBLE) {
+        const oldestKey = visible.keys().next().value
+        if (oldestKey === undefined || oldestKey === key) break
+        const oldest = visible.get(oldestKey)
+        if (!oldest) break
+        drop(oldestKey, oldest)
+      }
+      setToasts((current) => [...current, { id, message, type }])
     }
 
     // Guard sessionStorage access — throws SecurityError in Safari private mode.
@@ -65,7 +102,8 @@ export default function AppToastViewport() {
     window.addEventListener(APP_TOAST_EVENT, onToast)
     return () => {
       window.removeEventListener(APP_TOAST_EVENT, onToast)
-      timerIds.forEach((id) => clearTimeout(id))
+      visible.forEach((entry) => clearTimeout(entry.timerId))
+      visible.clear()
     }
   }, [])
 
