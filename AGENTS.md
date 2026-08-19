@@ -22,3 +22,4 @@ WE NEED STRICT JUDGEMENT.
 5.do NOT do things because i said so - if you know better way, then FIGHT for it, prove it!
 6.if i ask ANY question about code, architecture, security, speed, optimization e.t.c. you should NEVER lie to me, NEVER. you should realistically view the question and answer it with the brutalest way possible, we're here not to lie to each other. we need work to be done.
 7.ALWAYS keep in mind that when you're working on some feature, you should NOT break another one without even noticing. after new feature, code update, change. ALWAYS review what could possible gone wrong? and check it.
+8.IMPORTANT - when you're explaining / describing smth - explain it with easy words, like you're explaining it to 5 years old! i don't need childish examples, i need eas words.
