@@ -709,10 +709,40 @@ const POST_RECOVERY_GRACE_MS = 8_000
 // Capped so a network that flaps up and down can extend the deadline twice, not indefinitely.
 const MAX_RECOVERY_GRACES = 2
 
+// Per-attempt timeout that ALSO honours the caller's own cancellation.
+//
+// AbortSignal.any() would be one line, but it lands in Chrome 116 / Safari 17.4 and a good share of
+// the phones at an event are older than that — the Android 10 devices in our own error log among
+// them. Wiring the two together by hand keeps cancellation working on the devices most likely to
+// need it. Returns a cleanup that must run in a finally: without it every attempt leaves a live
+// timer and an abort listener on a signal that outlives the request.
+function withTimeoutSignal(caller: AbortSignal | undefined, timeoutMs: number) {
+  const ctrl = new AbortController()
+  const onCallerAbort = () => ctrl.abort(caller?.reason)
+  // TimeoutError, not a bare abort: isNetworkClass treats it as network-class, which is what makes
+  // a hung request wait for the origin rather than burn an attempt.
+  const timer = setTimeout(() => ctrl.abort(new DOMException('Timed out', 'TimeoutError')), timeoutMs)
+  if (caller) {
+    if (caller.aborted) ctrl.abort(caller.reason)
+    else caller.addEventListener('abort', onCallerAbort, { once: true })
+  }
+  return {
+    signal: ctrl.signal,
+    cleanup: () => {
+      clearTimeout(timer)
+      caller?.removeEventListener('abort', onCallerAbort)
+    },
+  }
+}
+
 async function fetchWithRetry(
   url: string,
   init: RequestInit,
-  opts: { deadlineMs?: number } = {},
+  // signal: the CALLER's cancellation. `{ ...init, signal }` used to overwrite whatever was passed
+  // in init, silently — so the control-plane calls were simply not cancellable, and any future
+  // caller adding one would have had it discarded without a word. Taken as an explicit option now
+  // so it cannot be shadowed by a spread again.
+  opts: { deadlineMs?: number; signal?: AbortSignal } = {},
 ): Promise<Response> {
   const startedAt = Date.now()
   let deadline = startedAt + (opts.deadlineMs ?? FETCH_DEADLINE_DEFAULT_MS)
@@ -741,9 +771,11 @@ async function fetchWithRetry(
     }
     skipBackoff = false
     attempt++
+    // Per-attempt timeout: a hung request should burn 20s, not hang the file forever. Combined with
+    // the caller's signal, so cancelling an upload also stops the request it is waiting on.
+    const attemptSignal = withTimeoutSignal(opts.signal, 20_000)
     try {
-      // Per-attempt timeout: a hung request should burn 20s, not hang the file forever.
-      const res = await fetch(url, { ...init, signal: AbortSignal.timeout(20_000) })
+      const res = await fetch(url, { ...init, signal: attemptSignal.signal })
       if (res.status >= 500) {
         serverErrors++
         if (serverErrors < MAX_SERVER_ERROR_ATTEMPTS && Date.now() < deadline) {
@@ -758,6 +790,15 @@ async function fetchWithRetry(
       void lastServerRes?.body?.cancel()
       return res
     } catch (e) {
+      // A deliberate cancel is a final answer, not a transient failure. Without this the abort
+      // surfaces as a plain DOMException, isNetworkClass says "not network", and the loop politely
+      // backs off and tries again — retrying the exact request the caller just cancelled.
+      if (opts.signal?.aborted) {
+        // Drain a retained 5xx on the way out, same as every other exit from this loop — otherwise
+        // cancelling mid-retry is the one path that leaves a body pinning its connection.
+        void lastServerRes?.body?.cancel()
+        throw new DOMException('Upload aborted', 'AbortError')
+      }
       lastErr = e instanceof Error ? e : new Error(String(e))
       if (Date.now() >= deadline) break
       // Nothing came back. Before spending another attempt (and another 20s timeout) on a
@@ -785,6 +826,12 @@ async function fetchWithRetry(
           skipBackoff = true
         }
       }
+    } finally {
+      // Must be finally: the try block exits by `continue` on a retried 5xx and by `return` on
+      // success, so anything after it would be skipped on exactly the paths that run most. Each
+      // attempt otherwise leaves a live 20s timer and an abort listener on a signal that outlives
+      // the whole upload — one per attempt, per file.
+      attemptSignal.cleanup()
     }
   }
   // Out of time. A server that answered badly still told us something useful — hand that back
@@ -1141,7 +1188,7 @@ async function uploadImageToR2(
       fileSize: processed.blob.size,  // actual size of the blob we're about to PUT
       ...(processed.thumbBlob ? { thumbSize: processed.thumbBlob.size } : {}),
     }),
-  })
+  }, { signal })
   if (!presignRes.ok) {
     const err = await presignRes.json().catch(() => ({})) as { error?: string }
     throw new Error(err.error ?? `Presign failed (${presignRes.status})`)
@@ -1197,7 +1244,7 @@ async function uploadPosterToR2(albumId: string, blob: Blob, signal?: AbortSigna
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ albumId, fileName: 'poster.jpg', contentType: 'image/jpeg', fileSize: blob.size, isThumb: true }),
-  })
+  }, { signal })
   if (!presign.ok) throw new Error(`Poster presign failed (${presign.status})`)
   const { presignedUrl, key, publicUrl } = await readJson<{ presignedUrl: string; key: string; publicUrl: string }>(presign)
   const result = await putImageWithRelay(
@@ -1419,7 +1466,7 @@ async function uploadVideoToStream(
         // 360 min — a handful exhausted the whole account quota and blocked all video uploads.
         durationSeconds: durationSeconds > 0 ? Math.round(durationSeconds) : undefined,
       }),
-    })
+    }, { signal })
     if (!initRes.ok) {
       const err = await initRes.json().catch(() => ({})) as { error?: string }
       throw new Error(err.error ?? `Stream init failed (${initRes.status})`)
@@ -1494,6 +1541,11 @@ async function saveUploadedRows(albumId: string, rows: PhotoRow[]): Promise<{ wa
     body: JSON.stringify({ albumId, photos: rows }),
     // The bytes are already in R2 by the time we get here, so giving up costs a photo rather than
     // an attempt — this call gets the longest patience in the pipeline.
+    //
+    // Deliberately NO signal, unlike presign and stream-init. Cancelling this does not save work,
+    // it strands an uploaded photo: bytes sitting in R2 with no database row, which nothing
+    // reconciles server-side. Closing the tab mid-save should still finish the save. Do not "finish
+    // the job" by threading the abort signal in here.
   }, { deadlineMs: FETCH_DEADLINE_SAVE_MS })
   if (!res.ok) {
     const err = await res.json().catch(() => ({})) as { error?: string; code?: string }
