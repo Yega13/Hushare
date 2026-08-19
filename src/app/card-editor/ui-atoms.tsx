@@ -17,8 +17,13 @@ export function ColorSwatch({ value, onChange }: { value: string; onChange: (v: 
           className="absolute inset-0 opacity-0 cursor-pointer" style={{ width: 24, height: 24 }} />
         <div className="rounded border" style={{ width: 24, height: 24, background: value, borderColor: '#D0D0D0' }} />
       </div>
+      {/* Sized in ch, not px: this is the one fixed-width field in the app, and on a touch device
+          base.css raises every control to 16px to stop iOS zooming the page on focus. At 16px a
+          hard 72px could not fit "#FFFFFF" and the value clipped. 9ch tracks the font size, so it
+          holds 7 monospace characters plus padding at both 12px and 16px without a second magic
+          number to keep in sync. */}
       <input type="text" value={hex} onChange={e => handle(e.target.value)} maxLength={7}
-        className="rounded border px-1.5 py-0.5 text-xs font-mono" style={{ width: 72, borderColor: '#E0E0E0' }} />
+        className="rounded border px-1.5 py-0.5 text-xs font-mono" style={{ width: '9ch', borderColor: '#E0E0E0' }} />
     </div>
   )
 }

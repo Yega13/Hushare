@@ -201,3 +201,27 @@ html {
     transform: scale(1.008);
   }
 }
+
+/* ── Touch devices: never let a form control trigger iOS's focus zoom ─────────
+   Safari zooms the entire page in when a focused input's font-size is below 16px, and does NOT
+   zoom back out afterwards. The guest taps a caption field and the album is suddenly at 1.4x,
+   scrolled sideways, with no obvious way back — on a site whose whole surface is a photo grid,
+   that reads as the page breaking. The threshold is the only lever Safari offers: the alternative,
+   user-scalable=no, would fix it by disabling pinch-zoom for everyone, which is unacceptable on a
+   photo site and an accessibility regression besides.
+
+   Scoped to (pointer: coarse) so desktop typography is untouched — this corrects a touch-device
+   behaviour, not a design decision. 17 controls were below the threshold, in the album's photo
+   settings, the Designer, the owner toolbar and the account pages; all of those are edited on a
+   phone routinely.
+
+   !important is load-bearing here rather than lazy: the sizes it corrects come from BOTH Tailwind
+   utilities and inline style props, and an inline style would otherwise win on specificity. Types
+   whose font-size is meaningless, or whose box is sized by their own chrome, are left alone. */
+@media (pointer: coarse) {
+  input:not([type='checkbox']):not([type='radio']):not([type='range']):not([type='color']):not([type='file']),
+  textarea,
+  select {
+    font-size: 16px !important;
+  }
+}
