@@ -84,6 +84,9 @@ RESEND_DOMAIN_VERIFIED = "true"
 # POLAR_PRODUCT_STUDIO_MONTHLY
 # POLAR_PRODUCT_STUDIO_YEARLY
 # ADMIN_EMAILS                   (comma-separated emails)
+# ERROR_ALERT_EMAIL              (where the error-spike alarm is sent — /api/cron/error-alert.
+#                                 Unset means the cron returns ok+skipped every minute and the
+#                                 alarm is silently off. "Send a test alert" on /admin proves it.)
 # AWS_ACCESS_KEY_ID              (Rekognition — Studio tier face search)
 # AWS_SECRET_ACCESS_KEY          (Rekognition)
 # AWS_REGION                     (defaults to eu-west-1)
