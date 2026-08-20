@@ -151,10 +151,26 @@ export function Globe3D({
     const h = mount.clientHeight || 400
 
     // ── Renderer ─────────────────────────────────────────────────────────────
-    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true })
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
-    renderer.setSize(w, h)
-    mount.appendChild(renderer.domElement)
+    // WebGL is not guaranteed to exist. Firefox with hardware acceleration turned off, a machine
+    // that has hit its per-browser WebGL context limit, a locked-down or virtualised environment —
+    // all make this constructor throw. It threw from inside an effect, so React sent it to the
+    // error boundary, which replaced the ENTIRE about page with "Something went wrong". Reported
+    // from a real visitor on Firefox/macOS on 2026-08-19.
+    //
+    // A decoration must never be able to take down the page it decorates. On failure the effect
+    // simply stops: the reserved square stays empty and every word on the page still renders. No
+    // cleanup is registered because nothing was created — returning undefined from an effect is
+    // valid, and the cleanup below closes over objects that do not exist on this path.
+    let renderer: THREE.WebGLRenderer
+    try {
+      renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true })
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
+      renderer.setSize(w, h)
+      mount.appendChild(renderer.domElement)
+    } catch (err) {
+      console.warn('[3d-globe] WebGL unavailable — showing the page without the globe:', err)
+      return
+    }
     t.renderer = renderer
 
     // ── Scene + Camera ───────────────────────────────────────────────────────
