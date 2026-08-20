@@ -68,6 +68,11 @@ async function lookupOwnableAlbum<T extends AlbumOwnerBase>(cleanSlug: string, c
     .limit(2)
     .returns<T[]>()
   if (error || !rows || rows.length === 0) return null
+  // `slug` is deliberately forced into the select above. It used to be absent, so this find read
+  // an undefined property through an `as unknown as` cast, always missed, and silently fell through
+  // to rows[0] — the exact ambiguity it exists to resolve. When one album's custom_slug matches
+  // another album's random slug, picking the wrong row 403s every owner mutation on that album.
+  // resolveAlbum has always selected slug and got this right; the two auth paths now agree.
   return rows.find((r) => (r as unknown as { slug?: string }).slug === cleanSlug) ?? rows[0]
 }
 
@@ -100,7 +105,7 @@ export async function verifyAlbumOwnerAccess<T extends AlbumOwnerBase = AlbumOwn
   }
 
   const cols = Array.from(new Set([
-    'id', 'owner_token', 'user_id', 'custom_slug',
+    'id', 'owner_token', 'user_id', 'slug', 'custom_slug',
     ...validateExtraColumns(extraColumns),
   ])).join(', ')
 
@@ -144,7 +149,7 @@ export async function verifyOwnerViaCookie<T extends AlbumOwnerBase = AlbumOwner
   }
 
   const cols = Array.from(new Set([
-    'id', 'owner_token', 'user_id', 'custom_slug',
+    'id', 'owner_token', 'user_id', 'slug', 'custom_slug',
     ...validateExtraColumns(extraColumns),
   ])).join(', ')
 

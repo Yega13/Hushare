@@ -107,10 +107,15 @@ export default function AppToastViewport() {
     }
   }, [])
 
+  // z-400 must stay ABOVE every overlay in the app, or an error message is painted behind the
+  // thing that caused it. At z-90 it sat under the Album Designer (zIndex 120), the share menu and
+  // photo modals (200/210) and the owner sheets — so a failed save inside the Designer rolled the
+  // change back with its explanation invisible, which reads as "the button did nothing". That is
+  // exactly how the sponsor reorder became undiagnosable.
   if (toasts.length === 0) return null
 
   return (
-    <div className="fixed bottom-4 right-4 z-[90] flex flex-col gap-2" style={{ width: 'min(calc(100vw - 2rem), 360px)' }}>
+    <div className="fixed bottom-4 right-4 z-[400] flex flex-col gap-2" style={{ width: 'min(calc(100vw - 2rem), 360px)' }}>
       {toasts.map((toast) => {
         const isError = toast.type === 'error'
         const Icon = isError ? AlertCircle : CheckCircle2

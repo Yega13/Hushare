@@ -497,6 +497,27 @@ export default function AlbumDesigner({ album, photos, onAlbumUpdated, onClose }
                         width: 64, height: 64, borderRadius: 10, background: '#FFFFFF', border: `1.5px solid ${BORDER}`,
                         backgroundImage: `url("${s.url}")`, backgroundSize: 'contain', backgroundRepeat: 'no-repeat', backgroundPosition: 'center',
                       }} />
+                      {/* The position number, and the reason it exists.
+                          On the common two-sponsor album a reorder was INVISIBLE: the arrows are
+                          drawn by index, so slot 0 always shows a right chevron and slot 1 always a
+                          left one — identical before and after the swap. The only visible effect
+                          was two 64px thumbnails trading places, and the live preview that would
+                          show it is scrolled far off-screen on a phone. Tapping one arrow and then
+                          the other is the same swap twice, landing exactly back where you started.
+                          So a working feature read as a dead button, and three previous fixes all
+                          changed WHICH arrows are drawn without making their effect visible.
+                          This number changes. That is the whole point of it. */}
+                      <span
+                        aria-hidden
+                        style={{
+                          position: 'absolute', bottom: -4, left: -4, minWidth: 18, height: 18,
+                          padding: '0 5px', borderRadius: 999, background: BRAND, color: '#FDFAF5',
+                          fontSize: 10, fontWeight: 700, lineHeight: '18px', textAlign: 'center',
+                          border: '2px solid #FFFFFF', pointerEvents: 'none',
+                        }}
+                      >
+                        {i + 1}
+                      </span>
                       <button type="button" onClick={() => removeSponsor(s.id)} title={t('ad.none')}
                         style={{ position: 'absolute', top: -6, right: -6, width: 20, height: 20, borderRadius: '50%', background: BRAND, color: '#FDFAF5', border: '2px solid #FFFFFF', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
                         <X className="w-3 h-3" />
@@ -511,14 +532,14 @@ export default function AlbumDesigner({ album, photos, onAlbumUpdated, onClose }
                       {album.sponsor_logos.length > 1 && (
                       <div style={{ display: 'flex', justifyContent: 'center', gap: 4, marginTop: 4, minHeight: 28 }}>
                         {i > 0 && (
-                          <button type="button" onClick={() => moveSponsor(s.id, -1)}
+                          <button type="button" onClick={() => moveSponsor(s.id, -1)} className="hush-press"
                             title={t('ad.moveLeft')} aria-label={t('ad.moveLeft')}
                             style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 28, height: 28, borderRadius: 7, background: '#F5F0E8', border: 'none', cursor: 'pointer', color: BRAND, padding: 0, touchAction: 'manipulation' }}>
                             <ChevronLeft className="w-4 h-4" />
                           </button>
                         )}
                         {i < album.sponsor_logos.length - 1 && (
-                          <button type="button" onClick={() => moveSponsor(s.id, 1)}
+                          <button type="button" onClick={() => moveSponsor(s.id, 1)} className="hush-press"
                             title={t('ad.moveRight')} aria-label={t('ad.moveRight')}
                             style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 28, height: 28, borderRadius: 7, background: '#F5F0E8', border: 'none', cursor: 'pointer', color: BRAND, padding: 0, touchAction: 'manipulation' }}>
                             <ChevronRight className="w-4 h-4" />
