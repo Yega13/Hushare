@@ -388,6 +388,9 @@ export async function POST(req: Request) {
       .map(p => p.stream_uid as string),
   )]
 
+  // Stream uids we could not verify. Their rows are skipped; everything else in the batch saves.
+  const rejectedStreamUids = new Set<string>()
+
   if (streamUidsToVerify.length > 0) {
     // Atomic DELETE+RETURNING: verify and consume in one statement.
     // A plain SELECT-then-DELETE TOCTOU allows two concurrent requests to both pass
@@ -406,17 +409,30 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'Failed to process photos' }, { status: 500, headers: NO_STORE })
     }
     const verified = new Set((consumed ?? []).map((r: { stream_uid: string }) => r.stream_uid))
+    // An unverified uid drops ITS OWN row. It used to 403 the entire batch, which meant one bad
+    // video destroyed the photos uploaded alongside it — and those photos were already sitting in
+    // R2, fully paid for, with a save that is idempotent and would have succeeded.
+    //
+    // The batch is a client-side convenience (SAVE_DEBOUNCE_MS groups whatever finished together),
+    // not a unit of meaning. Nothing about a photo depends on the video next to it, so nothing
+    // about the video's fate should decide the photo's.
+    //
+    // How a uid legitimately reaches here unverified: the token is consumed above, then the insert
+    // below fails or the request dies before it commits. The client's save call retries (it has the
+    // longest deadline in the pipeline, by design), the dedup pre-check finds no row so the uid is
+    // still in the batch, and the token is already gone. Previously that returned 403 forever and
+    // took every photo in the batch with it, on every retry, with nothing the guest could do.
     for (const uid of streamUidsToVerify) {
-      if (!verified.has(uid)) {
-        return NextResponse.json({ error: 'stream_uid not issued for this album' }, { status: 403, headers: NO_STORE })
-      }
+      if (!verified.has(uid)) rejectedStreamUids.add(uid)
     }
   }
 
   // Split by backend. Both use upsert+ignoreDuplicates: R2 has unique(album_id,storage_path),
   // stream now has unique(album_id,stream_uid) — concurrent races never abort the whole batch.
   const r2Rows = rows.filter(r => r.storage_backend === 'r2')
-  const streamRows = rows.filter(r => r.storage_backend === 'stream')
+  const streamRows = rows.filter(
+    r => r.storage_backend === 'stream' && !rejectedStreamUids.has(r.stream_uid as string),
+  )
 
   let insertedImages = 0
   let insertedVideos = 0
@@ -491,5 +507,10 @@ export async function POST(req: Request) {
 
   // Recompute skipped from actual insertedCount — the pre-insert dedup may undercount
   // if the upsert's ignoreDuplicates silently handled a concurrent race
-  return NextResponse.json({ inserted, skipped: photos.length - inserted, warning }, { headers: NO_STORE })
+  // `rejected` names the stream uids that were skipped, so the client can mark exactly those
+  // tiles as failed instead of ticking the whole batch green for rows that were never written.
+  return NextResponse.json(
+    { inserted, skipped: photos.length - inserted, warning, rejected: [...rejectedStreamUids] },
+    { headers: NO_STORE },
+  )
 }

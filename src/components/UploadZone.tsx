@@ -1533,7 +1533,7 @@ async function uploadVideoToStream(
 
 // ─── Incremental DB save ──────────────────────────────────────────────────────
 
-async function saveUploadedRows(albumId: string, rows: PhotoRow[]): Promise<{ warning?: string }> {
+async function saveUploadedRows(albumId: string, rows: PhotoRow[]): Promise<{ warning?: string; rejected?: string[] }> {
   const res = await fetchWithRetry('/api/album/photos/create', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -1553,8 +1553,8 @@ async function saveUploadedRows(albumId: string, rows: PhotoRow[]): Promise<{ wa
     // failure, without string-matching an English message.
     throw Object.assign(new Error(err.error ?? `Save failed (${res.status})`), { code: err.code })
   }
-  const data = await res.json().catch(() => ({})) as { warning?: string }
-  return { warning: data.warning }
+  const data = await res.json().catch(() => ({})) as { warning?: string; rejected?: string[] }
+  return { warning: data.warning, rejected: data.rejected }
 }
 
 // Fire-and-forget telemetry so real guest failures/near-misses surface in /admin. Never throws,
@@ -1671,9 +1671,25 @@ function createRowSaver(
     queue = []
     chain = chain.then(async () => {
       try {
-        const { warning } = await saveUploadedRows(albumId, batch.map(b => b.row))
-        savedCount += batch.length
-        onSaved(batch.map(b => b.entryId))
+        const { warning, rejected } = await saveUploadedRows(albumId, batch.map(b => b.row))
+        // The server saves what it can and names what it could not. Ticking the whole batch green
+        // on a 200 would mark a video "done" that was never written — the guest sees a finished
+        // tile for a video that is not in the album, which is a worse failure than an honest error
+        // because nothing prompts them to fix it.
+        const refused = new Set(rejected ?? [])
+        const lost = refused.size > 0
+          ? batch.filter(b => b.row.stream_uid && refused.has(b.row.stream_uid))
+          : []
+        const saved = lost.length > 0 ? batch.filter(b => !lost.includes(b)) : batch
+        savedCount += saved.length
+        onSaved(saved.map(b => b.entryId))
+        if (lost.length > 0) {
+          // Deliberately NO rows passed: the pending-save queue retries the SAVE, and a refused uid
+          // will be refused again forever — its upload token is already spent. Re-uploading is what
+          // actually works (Retry starts a fresh Stream session), so this has to reach the tile's
+          // Retry button rather than the "finish the job" banner.
+          onFailed(lost.map(b => b.entryId), 'its upload session had already been used. Tap Retry to send it again.')
+        }
         if (warning && !warned) { warned = true; onWarning?.(warning) }
       } catch (e) {
         onFailed(batch.map(b => b.entryId), e instanceof Error ? e.message : 'Failed to save', (e as { code?: string })?.code, batch.map(b => b.row))
