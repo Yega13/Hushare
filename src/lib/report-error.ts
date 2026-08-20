@@ -57,6 +57,44 @@ function staleReloadStillAvailable(): boolean {
   try { return !sessionStorage.getItem(RELOAD_FLAG) } catch { return false }
 }
 
+// A DOM the browser rewrote underneath React.
+//
+// Seen 2026-08-20 on an album page from Android 10: "Failed to execute 'insertBefore' on 'Node':
+// The node before which the new node is to be inserted is not a child of this node", with a stack
+// recursing through React's commit phase. React holds direct references to the DOM nodes it
+// created; anything that moves or replaces them behind its back makes the next commit reference a
+// node that is no longer where React believes it is, and the whole tree throws.
+//
+// The usual cause is the browser's built-in page translation, which replaces text nodes wholesale
+// and fires automatically on Android Chrome for a page not in the reader's language. Extensions
+// that inject or rewrite markup do the same. Being honest about the limits of that diagnosis: the
+// stack proves the DOM was inconsistent, it does not prove which actor made it so.
+//
+// Either way the page is already dead — the error boundary has replaced the album with "Something
+// went wrong" — so a reload costs nothing that was not already lost, and rebuilds the tree from
+// scratch. One shot only, on its own flag so it can never consume, or be consumed by, the
+// stale-deploy recovery: if it happens twice the reload is not the answer and the error is real.
+const DOM_CORRUPTION_RE =
+  /Failed to execute '(?:insertBefore|removeChild|appendChild)' on 'Node'|The node (?:before which the new node is to be inserted|to be removed) is not a child of this node/i
+const DOM_RELOAD_FLAG = 'hush-dom-reloaded'
+
+export function looksLikeDomCorruption(message: string): boolean {
+  return DOM_CORRUPTION_RE.test(message)
+}
+
+function domReloadStillAvailable(): boolean {
+  try { return !sessionStorage.getItem(DOM_RELOAD_FLAG) } catch { return false }
+}
+
+export function reloadOnceForDomCorruption(): boolean {
+  try {
+    if (sessionStorage.getItem(DOM_RELOAD_FLAG)) return false
+    sessionStorage.setItem(DOM_RELOAD_FLAG, '1')
+  } catch { return false }
+  window.location.reload()
+  return true
+}
+
 // The silent version of the same failure, and the one that actually stranded people.
 //
 // The recovery above needs the chunk error to REACH us — as a window error, an unhandled rejection,
@@ -117,8 +155,15 @@ const WALLET_NAME_RE = /\b(?:ethereum|solana|phantom|Backpack|coinbaseWalletExte
 const GLOBAL_PROP_RE =
   /window\.|#<Window>|globalThis|\bredefine\b|non-?configurable|only a getter|read[ -]?only property/i
 
+// `iabjs:` is the in-app browser inside Facebook, Instagram and similar apps. It injects its own
+// analytics script into every page it opens, and when that script throws, window.onerror fires on
+// OUR page with ITS filename. Seen 2026-08-20 from an Android 16 device:
+// "Error invoking postMessage: Java object is gone" at iabjs://navigation_performance_logger_android
+// — entirely inside their bridge, nothing to do with this site, and not fixable from here. Guests
+// arrive from Instagram links constantly, so this is a steady source of unactionable noise in the
+// Errors tab, which is exactly what buries the reports that matter.
 const EXTENSION_ORIGIN_RE =
-  /^(?:chrome|moz|safari-web|safari|ms-browser)-extension:\/\/|^webkit-masked-url:/
+  /^(?:chrome|moz|safari-web|safari|ms-browser)-extension:\/\/|^webkit-masked-url:|^iabjs:/
 
 export function isForeignError(message: string, file?: string): boolean {
   if (file && EXTENSION_ORIGIN_RE.test(file)) return true
@@ -163,7 +208,10 @@ export function reportClientError(input: ReportInput): void {
     //
     // The distinction is whether recovery is actually available: once the one-shot reload has been
     // spent and the chunk STILL fails, the page is genuinely broken and that is a real error.
-    const recoverable = (stale || input.staleDeploy === true) && staleReloadStillAvailable()
+    const domBroken = looksLikeDomCorruption(message)
+    const recoverable =
+      ((stale || input.staleDeploy === true) && staleReloadStillAvailable()) ||
+      (domBroken && domReloadStillAvailable())
     void fetch('/api/log/client-error', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -185,6 +233,9 @@ export function reportClientError(input: ReportInput): void {
 
     // Reload AFTER the report is in flight — keepalive keeps it alive across the navigation.
     if (stale) reloadOnceForStaleDeploy()
+    // After the report is in flight, same as the stale-deploy path — keepalive carries it across
+    // the navigation, so the incident is always recorded even though the page is about to reload.
+    else if (domBroken) reloadOnceForDomCorruption()
   } catch { /* must never surface */ }
 }
 
