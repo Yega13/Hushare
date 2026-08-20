@@ -64,3 +64,9 @@ next-env.d.ts
 
 # Claude Code local session config / caches. Machine-specific, not project config.
 /.claude/
+
+# Security audit findings. Kept OUT of the repository: this repo is PUBLIC, and the audit
+# documents unfixed vulnerabilities with file:line reproduction steps plus live database
+# statistics. Publishing it would be handing over an exploit playbook for holes that are still
+# open. Findings live in ~/.hushare-secrets/ until the issues they describe are closed.
+/docs/
