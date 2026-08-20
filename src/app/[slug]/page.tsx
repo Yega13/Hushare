@@ -17,6 +17,7 @@ type Props = { params: Promise<{ slug: string }> }
 type AlbumMeta = {
   id: string
   title: string
+  slug: string
   custom_slug: string | null
   cover_photo_id: string | null
   header_image: string | null
@@ -31,6 +32,9 @@ type PhotoMeta = {
   poster_url: string | null
   stream_thumbnail_url: string | null
 }
+
+// Same charset resolveAlbum enforces before its own .or() — see the note in fetchAlbumMeta.
+const SLUG_SAFE = /^[a-zA-Z0-9-]{1,80}$/
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL ?? 'https://hushare.space'
 const BRAND_OG_IMAGE = `${SITE_URL}/logo/logo-1-primary.png`
@@ -63,12 +67,26 @@ function photoOgUrl(photo: PhotoMeta): string | null {
 
 async function fetchAlbumMeta(slug: string): Promise<AlbumMeta | null> {
   const admin = createAdminClient()
-  const cols = 'id, title, custom_slug, cover_photo_id, header_image, reveal_at, password_hash'
-  const [bySlug, byCustom] = await Promise.all([
-    admin.from('albums').select(cols).eq('slug', slug).is('retired_at', null).maybeSingle(),
-    admin.from('albums').select(cols).eq('custom_slug', slug).is('retired_at', null).maybeSingle(),
-  ])
-  return (bySlug.data ?? byCustom.data ?? null) as AlbumMeta | null
+  const cols = 'id, title, slug, custom_slug, cover_photo_id, header_image, reveal_at, password_hash'
+  // One query, not two. This asked for the same row twice — once by slug, once by custom_slug —
+  // on every album page load, because generateMetadata runs alongside the page body. resolveAlbum
+  // has always used the .or() form for exactly this lookup; this just stops the metadata path
+  // disagreeing with it.
+  //
+  // The slug charset guard matters: PostgREST parses .or() as a filter expression, so a value
+  // containing , ( ) " or \ could break out of the intended condition. SLUG_SAFE mirrors the guard
+  // resolveAlbum applies before its own .or(). A rejected slug simply has no album.
+  if (!SLUG_SAFE.test(slug)) return null
+  const { data } = await admin
+    .from('albums')
+    .select(cols)
+    .or(`slug.eq.${slug},custom_slug.eq.${slug}`)
+    .is('retired_at', null)
+    .limit(2)
+  const rows = (data ?? []) as AlbumMeta[]
+  // Prefer an exact slug match, mirroring resolveAlbum, so the two never resolve to different
+  // albums if a custom_slug ever shadowed another album's random slug.
+  return rows.find((r) => r.slug === slug) ?? rows[0] ?? null
 }
 
 async function fetchCoverUrl(album: AlbumMeta): Promise<string | null> {

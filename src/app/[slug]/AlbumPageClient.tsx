@@ -642,8 +642,18 @@ export default function AlbumPageClient({ initialAlbum = null, initialPhotos, in
             status === 'TIMED_OUT' ||
             status === 'CLOSED'
           ) {
-            // Exponential backoff: 2s, 4s, 8s, 16s, capped at 30s
-            const delay = Math.min(2000 * Math.pow(2, retryCount), 30_000)
+            // Exponential backoff: 2s, 4s, 8s, 16s, capped at 30s — with FULL jitter.
+            //
+            // Without the jitter every phone in the room reconnects on the same tick. A venue
+            // access point does not drop one guest, it drops all of them at once, so 300 clients
+            // see CHANNEL_ERROR in the same instant, all wait exactly 2000ms, and all come back
+            // together — and each one refetches the whole album on SUBSCRIBED. That is one
+            // synchronised burst against the origin at the moment the network is least able to
+            // carry it, and if the burst itself fails they retry in lockstep at 4s, then 8s.
+            //
+            // Spreading each wait across half its nominal value turns one spike into a 1-30s
+            // smear. Same reasoning, and the same 0.5 + random() form, as the upload retry path.
+            const delay = Math.min(2000 * Math.pow(2, retryCount), 30_000) * (0.5 + Math.random())
             retryCount++
             retryTimer = setTimeout(connect, delay)
           }

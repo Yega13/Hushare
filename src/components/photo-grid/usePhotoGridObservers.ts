@@ -45,7 +45,10 @@ export function usePhotoGridObservers(
           const imgEl = tile.querySelector<HTMLImageElement>('img')
           if (imgEl?.src) {
             const loader = new window.Image()
-            ;(loader as HTMLImageElement & { fetchPriority?: string }).fetchPriority = 'high'
+            // 'low', not 'high'. This is speculative work for tiles the guest has not reached yet;
+            // marking it high told the browser to prioritise it over the guest's own uploads on the
+            // same connection. Preloading should use the spare capacity, never bid for it.
+            ;(loader as HTMLImageElement & { fetchPriority?: string }).fetchPriority = 'low'
             loader.src = imgEl.src
           }
           preloadObserver.unobserve(entry.target)

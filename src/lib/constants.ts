@@ -29,7 +29,14 @@ export const SWIPE_THRESHOLD_PX = 22;
 export const SWIPE_VELOCITY_MIN = 0.22;
 export const SWIPE_RESET_ANIMATE_MS = 180;
 
-export const GRID_PRELOAD_MARGIN_PX = 2000;
+// How far outside the viewport a tile starts preloading its full image.
+//
+// 2000px is roughly five phone screens of images fetched ahead, and the preloader below asks for
+// them at HIGH priority. At an event that competes directly with the guest's own uploads on the
+// same saturated link — the browser is told that pictures nobody is looking at matter more than
+// the photos they are trying to send. 400px still hides the load behind a normal scroll (a tile is
+// ~180px, so roughly two rows of lead-in) without bidding against the uploads.
+export const GRID_PRELOAD_MARGIN_PX = 400;
 export const HOLD_TO_SELECT_MS = 500;
 export const HOLD_TO_SELECT_MOBILE_MS = 550;
 export const SUPPRESS_CLICK_AFTER_REORDER_MS = 300;

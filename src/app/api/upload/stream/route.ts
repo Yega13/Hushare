@@ -44,10 +44,19 @@ export async function POST(req: Request) {
   const csrfError = forbidCrossSiteRequest(req)
   if (csrfError) return csrfError
 
-  // Per-IP, but events share one venue-WiFi IP. 200/hr blocked a crowd from posting videos.
-  // 2400/hr fits a busy event; Cloudflare Stream storage quota + the per-album cap below are the
-  // real cost guards (raise the Stream plan for heavy video traffic — see docs/ops notes).
-  const ipRl = await checkRateLimit(clientIpKey(req, 'stream_ip'), 3600, 2400, { failOpen: false })
+  // Per-IP, but a venue is ONE IP — every guest in the room shares this counter.
+  //
+  // 200/hr blocked a crowd outright. 2400/hr was sized for "a busy event", but a 300-guest wedding
+  // posting 8 videos each is 2400 exactly: the limit sits precisely at the expected load, so the
+  // room hits it near the end of the night and the last guests are refused with nothing wrong.
+  // A limit you are meant to reach is not a safety limit, it is a bug with a 429.
+  //
+  // 10000 keeps it an abuse backstop rather than a participation cap. The real cost guards are
+  // unchanged and are the ones that should bind: Cloudflare Stream's storage quota, the per-album
+  // media cap below, and the per-tier file-size cap. Note this counter is itself a row-per-call in
+  // Postgres (see lib/rate-limit.ts) — the durable fix is the Cloudflare rate-limit binding already
+  // configured in wrangler.toml, which is scheduled for after the August events.
+  const ipRl = await checkRateLimit(clientIpKey(req, 'stream_ip'), 3600, 10000, { failOpen: false })
   if (!ipRl.ok) {
     return NextResponse.json(
       { error: 'Too many requests' },
