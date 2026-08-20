@@ -6,13 +6,15 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint",
+    "lint": "eslint src",
     "clean:build": "node -e \"const fs=require('fs');for(const d of ['.next','.open-next','.turbo']) fs.rmSync(d,{recursive:true,force:true})\"",
     "cf:build": "node scripts/check-build-env.mjs && npm run clean:build && node scripts/patch-opennext.mjs && opennextjs-cloudflare build && node scripts/patch-worker.mjs",
     "deploy": "npm run cf:build && wrangler deploy",
     "preview": "npm run cf:build && wrangler dev",
     "db:migrate": "node scripts/db-migrate.mjs",
-    "db:check": "node scripts/check-db.mjs"
+    "db:check": "node scripts/check-db.mjs",
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1071.0",
