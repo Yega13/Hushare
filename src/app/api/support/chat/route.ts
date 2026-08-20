@@ -62,9 +62,9 @@ WHO USES HUSHARE / COLLABORATIONS
 - Hushare is a young startup but already partners with musicians and events. Examples: Eurovision artists Ladaniva and Tali Golergant — fans upload their concert photos via a QR into one shared album; and running events like the Tricolor Night Run and Puma Run Club, where runners find and download their own photos (including by selfie with Face Finder). We've powered events across roughly 15 countries.
 
 PLANS (photos & videos = same pool)
-- Guest (no account): 2 albums, up to 150 items each.
-- Free (free account): 3 albums, up to 250 items each.
-- Pro (~$4/month): 15 albums, up to 2,500 items each, password protection, custom album URLs, HD video, larger uploads.
+- Guest (no account): 2 albums, up to 250 items each.
+- Free (free account): 3 albums, up to 1,000 items each.
+- Pro (~$4/month): 15 albums, up to 3,000 items each, password protection, custom album URLs, HD video, larger uploads.
 - Max (~$10/month): 50 albums, up to 10,000 items each, Face Finder, custom branding, priority support.
 - You can start free with no credit card. Big partner/event albums can be raised on request.
 

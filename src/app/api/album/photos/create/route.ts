@@ -272,7 +272,7 @@ export async function POST(req: Request) {
     )
   }
 
-  // Per-album media cap by the OWNER's tier (Free 500 / Pro 2500 / Max 10000). The tier lookup is
+  // Per-album media cap by the OWNER's tier (guest 250 / Free 1000 / Pro 3000 / Max 10000). The lookup is
   // only done once the album is at/over the smallest cap — the vast majority never reach 500, so
   // normal uploads pay nothing extra.
   const { count: photoCount, error: countErr } = await admin

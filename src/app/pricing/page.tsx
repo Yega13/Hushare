@@ -66,6 +66,11 @@ type Tier = {
   monthlyPlan?: PlanKey
   yearlyPlan?: PlanKey
   highlight: boolean
+  // NOTE: these strings are never rendered. Line ~306 maps over this array purely for its LENGTH
+  // and pulls the real text from the dictionary (`pricing.<tier>.f<n>`). They are kept in step with
+  // the dictionary anyway because a developer reading this file will otherwise believe them — the
+  // free-tier number sat 4x below what the code actually grants and was wrong here first.
+  // Changing the LENGTH of any of these arrays changes how many dictionary keys are read.
   features: string[]
 }
 
@@ -79,7 +84,7 @@ const tiers: Tier[] = [
     href: '/',
     highlight: false,
     features: [
-      'Up to 250 photos & videos per album (150 as a guest)',
+      'Up to 1,000 photos & videos per album (250 as a guest)',
       'Anyone can view & add via the link',
       'Download full album as ZIP',
       'Photos up to 25 MB · videos up to 50 MB',
@@ -107,7 +112,7 @@ const tiers: Tier[] = [
       'HD video - large uploads up to 1 GB (Free: 50 MB)',
       'Larger photos - up to 200 MB per upload',
       'Account dashboard to manage your subscription',
-      'Up to 2,500 photos & videos per album',
+      'Up to 3,000 photos & videos per album',
       'Create up to 15 albums',
     ],
   },
