@@ -23,6 +23,8 @@ export default defineConfig({
   resolve: {
     alias: {
       '@': fileURLToPath(new URL('./src', import.meta.url)),
+      // See tests/stubs/server-only.ts — a build-time marker with no runtime behaviour.
+      'server-only': fileURLToPath(new URL('./tests/stubs/server-only.ts', import.meta.url)),
     },
   },
 })

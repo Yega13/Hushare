@@ -7,7 +7,10 @@ import type { Tier, Subscription } from '@/types'
 // customer) essentially impossible, while still closing the hole below.
 const ACTIVE_PERIOD_GRACE_MS = 7 * 24 * 60 * 60 * 1000
 
-function isSubActive(sub: { status: string; current_period_end: string | null }): boolean {
+// Exported for tests. This function decides whether someone keeps paid features and whether their
+// album is protected from retirement — the two places where being wrong costs a customer or their
+// photos. It is worth asserting directly rather than only through the DB-bound callers.
+export function isSubActive(sub: { status: string; current_period_end: string | null }): boolean {
   if (sub.status === 'active') {
     // 'active' used to be trusted unconditionally, which meant a single missed
     // subscription.canceled webhook granted that account paid features forever: the row simply
