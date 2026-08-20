@@ -21,6 +21,10 @@ export type ReportInput = {
   // matching on its own synthetic sentence would be a rule about our own prose rather than about
   // what happened. Only affects the level chosen below; the reload path still keys off the message.
   staleDeploy?: boolean
+  // "This error left the page unrenderable." Set ONLY by the error boundaries, which is the one
+  // situation where the user has already lost whatever was on screen. Recovery that RELOADS must
+  // never fire without it — see the note on the DOM recovery below.
+  fatal?: boolean
 }
 
 // Never throws and never returns a rejected promise: reporting an error must not be able to cause
@@ -185,12 +189,27 @@ export function reportClientError(input: ReportInput): void {
     // thousands of identical rows. First occurrence is the informative one.
     // Report it first (so the frequency is visible in /admin), then recover.
     const stale = looksLikeStaleDeploy(message)
+    // A DOM-corruption reload is only safe when the page is ALREADY DEAD.
+    //
+    // reportClientError is the sink for window.onerror too (see installGlobalErrorReporting), and
+    // that handler is mounted app-wide from the root layout — including the album page that hosts
+    // the uploader. A non-fatal insertBefore/removeChild error from a timer, an async callback or
+    // an unmount cleanup would therefore have reloaded the page underneath a guest with photos
+    // still uploading, destroying the in-memory File objects, the resumable video sessions and the
+    // pending-save queue. Nothing warns them, and nothing recovers it. That is far worse than the
+    // cosmetic glitch the reload was meant to repair.
+    //
+    // Only the error boundaries set `fatal`, and only there has the user already lost the screen.
+    const domFatal = input.fatal === true && looksLikeDomCorruption(message)
 
     const key = `${input.source}:${message}`
     // Recovery is not telemetry, so it must not be suppressed by the dedupe key or the per-pageload
     // cap. Ten junk errors ahead of a chunk error would otherwise leave the user staring at a dead
     // page with the fix one line away.
     if (stale && (seen.has(key) || sent >= MAX_PER_PAGELOAD)) { reloadOnceForStaleDeploy(); return }
+    // Same reasoning as the line above: a corrupted DOM makes React throw repeatedly, so the tenth
+    // error is exactly when recovery matters most. Without this the cap silently swallows the fix.
+    if (domFatal && (seen.has(key) || sent >= MAX_PER_PAGELOAD)) { reloadOnceForDomCorruption(); return }
     if (seen.has(key)) return
     if (sent >= MAX_PER_PAGELOAD) return
     seen.add(key)
@@ -208,10 +227,9 @@ export function reportClientError(input: ReportInput): void {
     //
     // The distinction is whether recovery is actually available: once the one-shot reload has been
     // spent and the chunk STILL fails, the page is genuinely broken and that is a real error.
-    const domBroken = looksLikeDomCorruption(message)
     const recoverable =
       ((stale || input.staleDeploy === true) && staleReloadStillAvailable()) ||
-      (domBroken && domReloadStillAvailable())
+      (domFatal && domReloadStillAvailable())
     void fetch('/api/log/client-error', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -235,7 +253,7 @@ export function reportClientError(input: ReportInput): void {
     if (stale) reloadOnceForStaleDeploy()
     // After the report is in flight, same as the stale-deploy path — keepalive carries it across
     // the navigation, so the incident is always recorded even though the page is about to reload.
-    else if (domBroken) reloadOnceForDomCorruption()
+    else if (domFatal) reloadOnceForDomCorruption()
   } catch { /* must never surface */ }
 }
 

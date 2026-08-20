@@ -653,7 +653,7 @@ export default function AlbumPageClient({ initialAlbum = null, initialPhotos, in
             //
             // Spreading each wait across half its nominal value turns one spike into a 1-30s
             // smear. Same reasoning, and the same 0.5 + random() form, as the upload retry path.
-            const delay = Math.min(2000 * Math.pow(2, retryCount), 30_000) * (0.5 + Math.random())
+            const delay = Math.min(2000 * Math.pow(2, retryCount), 30_000) * (0.5 + Math.random() * 0.5)
             retryCount++
             retryTimer = setTimeout(connect, delay)
           }

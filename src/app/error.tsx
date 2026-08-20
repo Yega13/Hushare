@@ -19,6 +19,9 @@ export default function AppError({
     }
     reportClientError({
       source: 'app/error',
+      // The boundary rendered instead of the page: whatever was on screen is already gone,
+      // so a recovery reload can cost nothing further. See report-error.ts.
+      fatal: true,
       message: error.message || 'unknown render error',
       context: { digest: error.digest, stack: error.stack?.slice(0, 400) },
     })

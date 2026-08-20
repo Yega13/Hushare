@@ -31,7 +31,18 @@ type Body = {
 // (Cloudflare rejects a video LONGER than maxDurationSeconds, so the margin absorbs measurement
 // error), and fall back to 2h only when the client couldn't measure the duration.
 const CF_MAX_DURATION_CEILING = 21600 // Cloudflare's absolute max (6h)
-const FALLBACK_MAX_DURATION = 7200    // 2h — covers virtually any real video when duration unknown
+// Used ONLY when the client could not measure the video (a failed poster decode). Cloudflare
+// reserves this many seconds of account storage quota for the whole time the upload is pending,
+// so the exposure is (concurrent failed uploads x this value). At 7200 (2h), six abandoned uploads
+// were measured holding 720 of the account's 1000 minutes on 2026-08-20 — 72% of the quota, for
+// zero minutes of stored video. Eight would exhaust it, and then EVERY video upload fails for
+// everyone, which at an event is the whole room at once.
+//
+// 900 (15 min) makes that exposure 8x smaller. It caps only videos whose length is unknown;
+// anything measurable passes its own tight value computed above. An unmeasurable video longer
+// than 15 minutes is refused, which is a far better failure than one stuck upload denying video
+// to an entire event.
+const FALLBACK_MAX_DURATION = 900
 function resolveMaxDurationSeconds(durationSeconds: unknown): number {
   if (typeof durationSeconds === 'number' && Number.isFinite(durationSeconds) && durationSeconds > 0) {
     const withMargin = Math.ceil(durationSeconds * 1.5) + 60
