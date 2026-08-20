@@ -31,12 +31,14 @@ export const SWIPE_RESET_ANIMATE_MS = 180;
 
 // How far outside the viewport a tile starts preloading its full image.
 //
-// 2000px is roughly five phone screens of images fetched ahead, and the preloader below asks for
-// them at HIGH priority. At an event that competes directly with the guest's own uploads on the
-// same saturated link — the browser is told that pictures nobody is looking at matter more than
-// the photos they are trying to send. 400px still hides the load behind a normal scroll (a tile is
-// ~180px, so roughly two rows of lead-in) without bidding against the uploads.
-export const GRID_PRELOAD_MARGIN_PX = 400;
+// Two screens of lead-in. It was briefly cut to 400px alongside the fetchPriority change below,
+// on the theory that preloading was stealing bandwidth from guests' uploads. That was one change
+// too many: PRIORITY was the actual problem — 'high' told the browser that images nobody is
+// looking at outrank the photos the guest is sending. The DISTANCE was never the problem, and
+// shortening it just meant fast scrolling outran the loader and showed bare background, which
+// looks broken. At 'low' the browser already yields to the uploads on its own, so the lead-in can
+// stay generous. Reverted 2026-08-20 after it was visibly worse on a real phone.
+export const GRID_PRELOAD_MARGIN_PX = 2000;
 export const HOLD_TO_SELECT_MS = 500;
 export const HOLD_TO_SELECT_MOBILE_MS = 550;
 export const SUPPRESS_CLICK_AFTER_REORDER_MS = 300;
