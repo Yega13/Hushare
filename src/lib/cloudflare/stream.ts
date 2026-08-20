@@ -56,7 +56,21 @@ export async function createStreamUpload(
   // symptom). CRITICAL: Cloudflare reserves maxDurationSeconds of STORAGE QUOTA per pending
   // upload, so the caller passes a TIGHT value (client-measured duration + margin) — a blanket 6h
   // reserved 360 min per incomplete upload and exhausted the account quota. Clamp defensively.
-  const safeMaxDuration = Math.min(21600, Math.max(60, Math.round(maxDurationSeconds) || 7200))
+  // The FALLBACK (used only when the client could not measure the video — a failed poster decode)
+  // was 7200s = 120 minutes. Measured on the live account 2026-08-20: six uploads abandoned during
+  // one test session were holding 720 of the account's 1000 minutes — 72% of the quota, for 0
+  // minutes of actual video. Total real content at the time was 37.8 minutes.
+  //
+  // The quota is reserved per PENDING upload and only released when the upload completes or its
+  // 2h window expires, so the exposure is (concurrent failed uploads x fallback). At 120 min, eight
+  // simultaneous failures exhaust the account and then EVERY video upload fails for everyone —
+  // which at an event is the whole room at once, exactly when uploads are most likely to fail.
+  //
+  // 900s = 15 minutes keeps that exposure 8x smaller. It only ever applies to a video whose length
+  // we could not read; anything we CAN measure still passes its own tight value, so ordinary long
+  // videos are unaffected. An unmeasurable video longer than 15 minutes is now refused — a far
+  // better failure than one stuck upload denying video to an entire event.
+  const safeMaxDuration = Math.min(21600, Math.max(60, Math.round(maxDurationSeconds) || 900))
   // expiry: how long this upload URL stays valid; also when an abandoned pending upload (and its
   // reserved quota) is reclaimed. 2h covers a slow, resumed large-video upload while freeing
   // quota from abandoned uploads reasonably quickly. Cloudflare requires 2 min–6h from now.
