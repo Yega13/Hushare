@@ -3,7 +3,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { verifyOwnerViaCookieWithRateLimit } from '@/lib/album-owner-access'
 import { forbidCrossSiteRequest } from '@/lib/request-security'
 import { queueAlbumSettingsBroadcast } from '@/lib/broadcast'
-import { deleteR2ObjectByPublicUrl } from '@/lib/cloudflare/r2'
+import { deleteR2ObjectByPublicUrl, isOwnAlbumAsset } from '@/lib/cloudflare/r2'
 
 export const runtime = 'nodejs'
 
@@ -61,6 +61,12 @@ export async function POST(req: Request) {
 
   const access = await verifyOwnerViaCookieWithRateLimit<LogoAlbum>(req, slug.trim(), 'logo_url')
   if (!access.ok) return NextResponse.json({ error: access.error }, { status: access.status, headers: NO_STORE })
+
+  // Ownership is known only now, so the album-scoped check has to happen here. The prefix check
+  // above rejects wrong-host and wrong-folder URLs cheaply; this one rejects another album's asset.
+  if (value !== null && !isOwnAlbumAsset(value, 'logos', access.album.id, r2Host)) {
+    return NextResponse.json({ error: 'Invalid logo_url value' }, { status: 403, headers: NO_STORE })
+  }
 
   // NOTE: the logo was gated to paid tiers. Gating is deliberately OFF while we get every design
   // feature working end-to-end; revisit pricing once the feature set settles. Keeping this comment

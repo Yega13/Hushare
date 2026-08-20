@@ -3,7 +3,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { verifyOwnerViaCookieWithRateLimit } from '@/lib/album-owner-access'
 import { forbidCrossSiteRequest } from '@/lib/request-security'
 import { queueAlbumSettingsBroadcast } from '@/lib/broadcast'
-import { deleteR2ObjectByPublicUrl } from '@/lib/cloudflare/r2'
+import { deleteR2ObjectByPublicUrl, isOwnAlbumAsset } from '@/lib/cloudflare/r2'
 
 export const runtime = 'nodejs'
 
@@ -73,6 +73,12 @@ export async function POST(req: Request) {
 
   const access = await verifyOwnerViaCookieWithRateLimit<BgAlbum>(req, slug.trim(), 'background_theme')
   if (!access.ok) return NextResponse.json({ error: access.error }, { status: access.status, headers: NO_STORE })
+
+  // Ownership is known only now, so the album-scoped check belongs here. A curated (non-image:)
+  // theme has no URL to own, so only custom uploads are checked.
+  if (theme?.startsWith('image:') && !isOwnAlbumAsset(theme.slice(6), 'backgrounds', access.album.id, r2Host)) {
+    return NextResponse.json({ error: 'Invalid background_theme value' }, { status: 403, headers: NO_STORE })
+  }
 
   const admin = createAdminClient()
   const { error } = await admin.from('albums').update({ background_theme: theme }).eq('id', access.album.id)

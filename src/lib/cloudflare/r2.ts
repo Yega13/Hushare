@@ -136,6 +136,39 @@ export function r2PublicUrl(key: string): string {
 // isn't ours or R2_PUBLIC_HOST/the bucket binding isn't available — callers don't pre-check any of
 // that themselves. Shared by every route that replaces or clears a previously R2-hosted image
 // (album cover/header photo, album background) so the cleanup logic can't drift between them.
+// Does this public URL point at an asset belonging to THIS album?
+//
+// The design-asset routes (logo, header image, background, sponsor logos) accept a URL from the
+// client and store it, then delete whatever URL the album held before. They validated the host and
+// the bare prefix — `/logos/`, `/headers/`, `/backgrounds/`, `/sponsors/` — but never checked WHOSE
+// album the key belonged to, even though the upload routes mint every key album-scoped as
+// `logos/{albumId}/{uuid}.ext`. The album id was sitting in the path, unread.
+//
+// That made every album's design assets destroyable by any other album's owner in two requests:
+// point your own album at a victim's URL (passes the prefix check), then set yours to null and the
+// route deletes the victim's object from the shared bucket. Permanent, no audit trail, and aimed
+// squarely at paying customers — logos and sponsor logos are paid features, and sponsor branding on
+// a race album is contractual.
+//
+// Must be called AFTER ownership is verified: the album id is not known before that. Lives here,
+// beside the delete it protects, so the four routes share one rule instead of four copies that
+// drift — the drift is what produced the bug.
+export function isOwnAlbumAsset(
+  url: string,
+  prefix: string,
+  albumId: string,
+  r2Host: string,
+): boolean {
+  try {
+    const parsed = new URL(url)
+    if (parsed.origin !== `https://${r2Host}`) return false
+    if (parsed.pathname.includes('..')) return false
+    return parsed.pathname.startsWith(`/${prefix}/${albumId}/`)
+  } catch {
+    return false
+  }
+}
+
 export function deleteR2ObjectByPublicUrl(url: string): void {
   const rawHost = process.env.R2_PUBLIC_HOST
   if (!rawHost) return

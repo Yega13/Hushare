@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { isOwnAlbumAsset } from '@/lib/cloudflare/r2'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { verifyOwnerViaCookieWithRateLimit } from '@/lib/album-owner-access'
 import { forbidCrossSiteRequest } from '@/lib/request-security'
@@ -60,6 +61,12 @@ export async function POST(req: Request) {
 
   const access = await verifyOwnerViaCookieWithRateLimit<HeaderImageAlbum>(req, slug.trim(), 'header_image')
   if (!access.ok) return NextResponse.json({ error: access.error }, { status: access.status, headers: NO_STORE })
+
+  // Ownership is known only now, so the album-scoped check has to happen here. The prefix check
+  // above rejects wrong-host and wrong-folder URLs cheaply; this one rejects another album's asset.
+  if (value !== null && !isOwnAlbumAsset(value, 'headers', access.album.id, r2Host)) {
+    return NextResponse.json({ error: 'Invalid header_image value' }, { status: 403, headers: NO_STORE })
+  }
 
   const admin = createAdminClient()
   // Setting a custom header image (or clearing it, value null) always replaces whatever photo was

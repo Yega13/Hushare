@@ -3,7 +3,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { verifyOwnerViaCookieWithRateLimit } from '@/lib/album-owner-access'
 import { forbidCrossSiteRequest } from '@/lib/request-security'
 import { queueAlbumSettingsBroadcast } from '@/lib/broadcast'
-import { deleteR2ObjectByPublicUrl } from '@/lib/cloudflare/r2'
+import { deleteR2ObjectByPublicUrl, isOwnAlbumAsset } from '@/lib/cloudflare/r2'
 import type { SponsorLogo } from '@/types'
 
 export const runtime = 'nodejs'
@@ -72,6 +72,13 @@ export async function POST(req: Request) {
 
   const access = await verifyOwnerViaCookieWithRateLimit<SponsorAlbum>(req, slug.trim(), 'sponsor_logos')
   if (!access.ok) return NextResponse.json({ error: access.error }, { status: access.status, headers: NO_STORE })
+
+  // Ownership is known only now. Every entry is checked, not just the first: the route diffs the
+  // old list against the new one and deletes whatever disappeared, so a single foreign URL smuggled
+  // into the list and then removed would delete another album's sponsor logo.
+  if (next.some((sp) => !isOwnAlbumAsset(sp.url, 'sponsors', access.album.id, r2Host))) {
+    return NextResponse.json({ error: 'Each sponsor entry needs a valid id and url' }, { status: 403, headers: NO_STORE })
+  }
 
   const admin = createAdminClient()
   const { error } = await admin.from('albums').update({ sponsor_logos: next }).eq('id', access.album.id)
