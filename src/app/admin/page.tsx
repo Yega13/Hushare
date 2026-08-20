@@ -230,8 +230,8 @@ export default async function AdminPage() {
     }
   }
   const trafficCards: { label: string; value: string; hint?: string }[] = workerMetrics ? [
-    { label: 'Requests', value: workerMetrics.requests.toLocaleString(), hint: 'last 24h' },
-    { label: 'Errors', value: workerMetrics.errors.toLocaleString(), hint: workerMetrics.requests > 0 ? `${((workerMetrics.errors / workerMetrics.requests) * 100).toFixed(2)}%` : 'last 24h' },
+    { label: 'Requests', value: workerMetrics.requests.toLocaleString('en-US'), hint: 'last 24h' },
+    { label: 'Errors', value: workerMetrics.errors.toLocaleString('en-US'), hint: workerMetrics.requests > 0 ? `${((workerMetrics.errors / workerMetrics.requests) * 100).toFixed(2)}%` : 'last 24h' },
     { label: 'CPU p50', value: `${workerMetrics.cpuP50} µs`, hint: 'per request' },
     { label: 'CPU p99', value: `${workerMetrics.cpuP99} µs`, hint: 'per request' },
   ] : []
@@ -356,7 +356,7 @@ export default async function AdminPage() {
                   <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
                     {eventTotals.map((e) => (
                       <span key={e.event} style={{ fontSize: 12, background: '#F5F0E8', color: INK, border: `1px solid ${BORDER}`, borderRadius: 999, padding: '4px 10px' }}>
-                        {EVENT_LABELS[e.event] ?? e.event} <strong>{e.count.toLocaleString()}</strong>
+                        {EVENT_LABELS[e.event] ?? e.event} <strong>{e.count.toLocaleString('en-US')}</strong>
                       </span>
                     ))}
                   </div>
@@ -374,7 +374,7 @@ export default async function AdminPage() {
                       return (
                         <tr key={a.albumId}>
                           <td style={{ ...td, whiteSpace: 'normal', maxWidth: 320 }}>{meta?.title ?? '(deleted / unknown)'}</td>
-                          <td style={td}>{a.views.toLocaleString()}</td>
+                          <td style={td}>{a.views.toLocaleString('en-US')}</td>
                           <td style={td}>{meta && <a href={`/${meta.slug}`} target="_blank" rel="noreferrer" style={{ color: BRAND }}>open</a>}</td>
                         </tr>
                       )

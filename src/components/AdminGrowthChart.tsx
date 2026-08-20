@@ -29,8 +29,14 @@ export default function AdminGrowthChart({
   const prettyDay = (day: string) => {
     const d = new Date(`${day}T00:00:00Z`)
     return Number.isNaN(d.getTime())
+  // Locale must be EXPLICIT on every server-rendered number and date.
+  // toLocaleString() with no locale uses the RUNTIME's locale, and the runtimes differ: the Worker
+  // formats 1234 as "1,234" while a phone set to Armenian or Russian formats it "1 234". React then
+  // hydrates against text that does not match what the server sent and throws #418, which is what
+  // was arriving from an Android device on /admin. This page is English-only anyway, so 'en-US' is
+  // both correct and stable across both sides.
       ? day
-      : d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', timeZone: 'UTC' })
+      : d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' })
   }
 
   return (
@@ -41,8 +47,8 @@ export default function AdminGrowthChart({
             14-day total, so the number appears where the eye already is. */}
         <div style={{ fontSize: 12, color: active ? '#2A211C' : '#8A7A66', fontWeight: active ? 700 : 400, fontVariantNumeric: 'tabular-nums' }}>
           {active
-            ? `${prettyDay(active.day)}: ${active.value.toLocaleString()} ${unit ?? ''}`
-            : `${total.toLocaleString()} ${unit ?? ''} · 14d`}
+            ? `${prettyDay(active.day)}: ${active.value.toLocaleString('en-US')} ${unit ?? ''}`
+            : `${total.toLocaleString('en-US')} ${unit ?? ''} · 14d`}
         </div>
       </div>
 
@@ -82,7 +88,7 @@ export default function AdminGrowthChart({
 
       <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, color: '#8A7A66', marginTop: 4 }}>
         <span>{points[0] ? prettyDay(points[0].day) : ''}</span>
-        <span>peak {peak.toLocaleString()}</span>
+        <span>peak {peak.toLocaleString('en-US')}</span>
         <span>{points[n - 1] ? prettyDay(points[n - 1].day) : 'today'}</span>
       </div>
     </div>

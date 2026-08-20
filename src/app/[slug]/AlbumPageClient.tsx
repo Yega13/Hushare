@@ -1153,7 +1153,7 @@ export default function AlbumPageClient({ initialAlbum = null, initialPhotos, in
               className="hush-press"
               style={{ fontSize: 14, fontWeight: 600, color: '#FDFAF5', background: '#630826', border: 'none', borderRadius: 999, padding: '10px 24px', cursor: loadingMore ? 'default' : 'pointer', opacity: loadingMore ? 0.6 : 1 }}
             >
-              {loadingMore ? 'Loading…' : `Load more · ${photos.length.toLocaleString()} of ${total.toLocaleString()}`}
+              {loadingMore ? 'Loading…' : `Load more · ${photos.length.toLocaleString('en-US')} of ${total.toLocaleString('en-US')}`}
             </button>
           </div>
         )}
