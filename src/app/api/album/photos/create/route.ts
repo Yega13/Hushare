@@ -9,6 +9,7 @@ import { track } from '@/lib/analytics'
 import { timingSafeEqual } from '@/lib/timing-safe'
 import { getUserTierById } from '@/lib/subscriptions'
 import { albumMediaCapForTier, ANON_ALBUM_MEDIA } from '@/lib/media'
+import { gateAllowsContribution } from '@/lib/server/album-access'
 import { queueBibIndex } from '@/lib/server/bib-index'
 import { cookies } from 'next/headers'
 
@@ -66,6 +67,9 @@ type AlbumRow = {
   title: string
   slug: string
   owner_token: string
+  // Gate columns — the album's password/reveal state, checked by gateAllowsContribution below.
+  password_hash: string | null
+  reveal_at: string | null
   created_at: string
   media_cap_override: number | null
 }
@@ -221,7 +225,7 @@ export async function POST(req: Request) {
 
   const { data: album, error: albumError } = await admin
     .from('albums')
-    .select('id, user_id, guest_uploads_enabled, require_approval, title, slug, owner_token, created_at, media_cap_override')
+    .select('id, user_id, guest_uploads_enabled, require_approval, title, slug, owner_token, password_hash, reveal_at, created_at, media_cap_override')
     .eq('id', albumId)
     .is('retired_at', null)
     .maybeSingle<AlbumRow>()
@@ -235,6 +239,23 @@ export async function POST(req: Request) {
   }
   if (!album.guest_uploads_enabled) {
     return NextResponse.json({ error: 'Uploads disabled for this album' }, { status: 403, headers: NO_STORE })
+  }
+
+  // The album's password/reveal gate applies to CONTRIBUTING, not just to viewing.
+  //
+  // /api/upload/presign, /api/upload/image-relay and /api/upload/stream all call this. This route —
+  // the one that actually writes the photos rows — did not. That made the gate advisory: knowing
+  // the album's internal id was enough to POST fabricated rows straight past it, uploading no bytes
+  // at all, into an album whose password was specifically changed to revoke someone. Three requests
+  // fill a free album's cap, after which every real guest at the event gets "album full".
+  //
+  // gateAllowsContribution recomputes the owner check that `isOwner` below also performs. That is
+  // deliberate: the alternative is changing the shared helper's signature, which three working
+  // routes depend on. Both use the same owner cookie against the same owner_token via the same
+  // timing-safe compare, so they cannot disagree unless one is edited alone — do not do that.
+  const uploadGate = await gateAllowsContribution(album, await cookies())
+  if (!uploadGate.ok) {
+    return NextResponse.json({ error: uploadGate.error }, { status: 403, headers: NO_STORE })
   }
 
   // Owner vs guest (owner cookie === owner_token). When the album requires approval, GUEST uploads
