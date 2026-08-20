@@ -88,13 +88,19 @@ export async function POST(req: Request) {
   //    re-indexes from scratch — a deliberate act by the person allowed to make it.
   {
     const cutoff = iso(FACE_IDLE_DAYS)
+    // ORDER BY is not cosmetic here. LIMIT without it returns rows in whatever order Postgres
+    // finds convenient, which can be the SAME 200 albums every night — leaving the rest holding
+    // biometric templates indefinitely, past the 90 days the privacy policy publishes. Ordering by
+    // id makes the set deterministic; once more than 200 albums use Face Finder this needs a
+    // cursor, but a stable window is strictly better than an arbitrary one.
     const { data: albums } = await admin
       .from('albums')
-      .select('id')
+      .select('id, created_at')
       .eq('face_finder_enabled', true)
       .is('retired_at', null)
+      .order('id', { ascending: true })
       .limit(200)
-      .returns<{ id: string }[]>()
+      .returns<{ id: string; created_at: string }[]>()
 
     let expired = 0
     for (const album of albums ?? []) {
@@ -107,12 +113,27 @@ export async function POST(req: Request) {
         .returns<{ id: string }[]>()
       if (recent && recent.length > 0) continue
 
+      // "No photo in 90 days" and "no photos yet" are the same query result and completely
+      // different situations. An owner who sets up a race album the night before, switches Face
+      // Finder on, and uploads nothing until the morning would have had the feature silently
+      // turned off overnight and the collection deleted — the paid feature dead all race day, with
+      // nobody told. An album created INSIDE the window has not finished an event, so there is
+      // nothing to expire yet.
+      //
+      // Deliberately keyed on the album's own age, not on "has zero photos": an album that DID
+      // hold photos and had them all deleted is genuinely finished, and its face data must still
+      // expire on schedule. That is the promise this block exists to keep.
+      if (album.created_at > cutoff) continue
+
       try {
-        await deleteCollection(album.id)
-        // Order matters: the flag goes down FIRST. If the process dies between these two writes,
-        // stopping short leaves an album with no collection and no indexing, which self-heals on
-        // the next run. The reverse order would leave the flag up and re-enroll everything.
+        // The flag goes down FIRST, before the collection is deleted. If the isolate dies between
+        // these two writes, the album is left with the flag down and its collection still present
+        // — no re-enrolment, and the next run finishes the job. The reverse order leaves the flag
+        // UP with the collection gone, and the every-minute indexer immediately re-enrols every
+        // face at full IndexFaces price, which is the exact failure this block exists to prevent.
+        // (The code previously deleted first while this comment claimed otherwise.)
         await admin.from('albums').update({ face_finder_enabled: false }).eq('id', album.id)
+        await deleteCollection(album.id)
         // face_ids back to NULL means "never looked at", so a re-enable indexes from scratch
         // rather than trusting ids AWS no longer has.
         await admin.from('photos').update({ face_ids: null }).eq('album_id', album.id)
