@@ -40,6 +40,21 @@ const footerRoutes = new Set([
   '/wedding-photo-sharing',
 ])
 
+// Routes that get the scroll REVEAL rather than a plain footer. Marketing pages only: a page you
+// arrived at to read is a fine place for a flourish, whereas /login, /report, /support and /account
+// are pages someone is trying to finish. Animating the furniture while they fill in a support form
+// is decoration getting in the way of the job.
+const revealRoutes = new Set([
+  '/',
+  '/about',
+  '/pricing',
+  '/collabs',
+  '/event-photo-sharing',
+  '/qr-code-photo-album',
+  '/shared-photo-album',
+  '/wedding-photo-sharing',
+])
+
 export default function SiteFooter() {
   const { t } = useT()
   const pathname = usePathname()
@@ -47,10 +62,11 @@ export default function SiteFooter() {
   // Show on the listed routes, plus every individual statement page (/statement/<slug>).
   if (!footerRoutes.has(normalizedPathname) && !normalizedPathname.startsWith('/statement/')) return null
 
+  const reveal = revealRoutes.has(normalizedPathname)
   const visibleLinks = footerLinks.filter((link) => link.href !== normalizedPathname)
 
   return (
-    <footer className="hush-site-footer mt-auto" style={{ background: '#FBF6EC', borderTop: '1px solid #E8E0D0' }}>
+    <footer className={`hush-site-footer mt-auto${reveal ? ' hush-footer-reveal' : ''}`} style={{ background: '#FBF6EC', borderTop: '1px solid #E8E0D0' }}>
       <div style={{ width: 'min(100% - 2.5rem, 1200px)', marginInline: 'auto', paddingBlock: 'clamp(1.75rem, 3vw, 2.75rem)' }}>
         {/* Top tier: brand + tagline on the left, links on the right */}
         <div className="hush-foot-top" style={{ display: 'flex', flexWrap: 'wrap', gap: '1.5rem 2rem', alignItems: 'flex-start', justifyContent: 'space-between' }}>

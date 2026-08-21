@@ -789,3 +789,68 @@
     margin-top: 0.55rem !important;
   }
 }
+
+/* ── Footer reveal ───────────────────────────────────────────────────────────
+   The footer sits UNDER the page. As you reach the bottom, the content slides up off it and
+   uncovers it, fading in as it appears.
+
+   Built in CSS rather than with a scroll-animation library. The library version costs ~40-100KB
+   shipped to every visitor of a marketing page, to move one block that CSS can move for nothing —
+   and it would run the animation through React on every scroll frame instead of on the compositor,
+   which is exactly the wrong place for it on a phone.
+
+   Only applied on marketing routes (see revealRoutes in SiteFooter.tsx). Album pages render no
+   footer at all, so nothing here can reach a guest looking at photos.
+
+   HOW IT WORKS: the footer is sticky at the bottom of the viewport, and the page content above it
+   carries a solid background and a higher stacking order. So the footer is pinned there the whole
+   time, hidden behind the page, and is uncovered as the content scrolls past. Sticky keeps the
+   element in normal flow, which matters: BackToTop measures the footer's height and the document's
+   scrollHeight to decide how far to lift itself, and both are unchanged by sticky. `position:
+   fixed` would take the footer out of flow and quietly break that.
+
+   The content needs `position: relative` for its z-index to mean anything — without it the footer
+   paints on top of the page instead of underneath it. */
+.hush-footer-reveal {
+  position: sticky;
+  bottom: 0;
+  z-index: 0;
+}
+
+/* The page itself. LocaleProvider renders no DOM wrapper, so <main> is a direct child of <body> —
+   verified against the live HTML rather than assumed. All eight reveal routes render a <main> that
+   already carries this exact background: four define it directly, the four SEO landing routes get
+   it from SeoLandingPage. It is repeated here so the rule does not depend on a component keeping
+   an inline style; without a solid background the footer shows through the page instead of being
+   hidden behind it. */
+body:has(.hush-footer-reveal) > main {
+  position: relative;
+  z-index: 1;
+  background: #FDFAF5;
+}
+
+/* The fade, tied to how much of the footer has been uncovered. animation-timeline runs on the
+   compositor, so it does not cost a scroll handler or a React render. Browsers without support
+   simply skip it and the footer renders fully opaque — the reveal still works, only the fade is
+   lost, which is the right way round for a decoration. */
+@supports (animation-timeline: view()) {
+  .hush-footer-reveal > * {
+    animation: hush-footer-fade linear both;
+    animation-timeline: view();
+    animation-range: entry 0% entry 90%;
+  }
+}
+
+@keyframes hush-footer-fade {
+  from { opacity: 0; transform: translateY(18px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* Asked for less movement, gets less movement: the footer is simply there. */
+@media (prefers-reduced-motion: reduce) {
+  .hush-footer-reveal > * {
+    animation: none;
+    opacity: 1;
+    transform: none;
+  }
+}
