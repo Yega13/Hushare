@@ -92,7 +92,7 @@ export default async function CollabsPage() {
         <HamburgerMenu>
           <Link href="/pricing" className="text-sm font-medium hover:underline" style={{ color: '#630826' }}>{dict['nav.pricing']}</Link>
           <Link href="/about" className="text-sm font-medium hover:underline" style={{ color: '#630826' }}>{dict['nav.about']}</Link>
-          <span className="text-sm font-semibold underline underline-offset-4" style={{ color: '#630826' }}>{dict['nav.collabs']}</span>
+          <span className="text-sm font-semibold" style={{ color: '#630826' }}>{dict['nav.collabs']}</span>
           <Link href="/support" className="text-sm font-medium hover:underline" style={{ color: '#630826' }}>{dict['nav.support']}</Link>
           <AccountNavLink />
         </HamburgerMenu>

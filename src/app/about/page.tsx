@@ -72,7 +72,7 @@ export default async function AboutPage() {
         </Link>
         <HamburgerMenu>
           <Link href="/pricing" className="text-sm font-medium hover:underline" style={{ color: '#630826' }}>{dict['nav.pricing']}</Link>
-          <span className="text-sm font-semibold underline underline-offset-4" style={{ color: '#630826' }}>{dict['nav.about']}</span>
+          <span className="text-sm font-semibold" style={{ color: '#630826' }}>{dict['nav.about']}</span>
           <Link href="/collabs" className="text-sm font-medium hover:underline" style={{ color: '#630826' }}>{dict['nav.collabs']}</Link>
           <Link href="/support" className="text-sm font-medium hover:underline" style={{ color: '#630826' }}>{dict['nav.support']}</Link>
           <AccountNavLink />

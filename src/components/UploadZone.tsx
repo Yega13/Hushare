@@ -1570,7 +1570,13 @@ function reportClientEvent(
     void fetch('/api/log/client-error', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ level, source, message: String(message).slice(0, 500), albumId, context }),
+      // build: which bundle produced this. Inlined at compile time, so it identifies the code the
+      // BROWSER is running -- not the code the server is serving -- which is the whole point when a
+      // long-open tab is still on a version from days ago.
+      body: JSON.stringify({
+        level, source, message: String(message).slice(0, 500), albumId,
+        context: { ...(context ?? {}), build: process.env.NEXT_PUBLIC_BUILD_ID ?? 'unknown' },
+      }),
       keepalive: true,
     }).catch(() => {})
   } catch { /* never let telemetry break an upload */ }

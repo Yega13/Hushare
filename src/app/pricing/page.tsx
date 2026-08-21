@@ -349,7 +349,7 @@ export default async function PricingPage() {
           />
         </Link>
         <HamburgerMenu>
-          <span className="text-sm font-semibold underline underline-offset-4" style={{ color: '#630826' }}>{dict['nav.pricing']}</span>
+          <span className="text-sm font-semibold" style={{ color: '#630826' }}>{dict['nav.pricing']}</span>
           <Link href="/about" className="text-sm font-medium hover:underline" style={{ color: '#630826' }}>{dict['nav.about']}</Link>
           <Link href="/collabs" className="text-sm font-medium hover:underline" style={{ color: '#630826' }}>{dict['nav.collabs']}</Link>
           <Link href="/support" className="text-sm font-medium hover:underline" style={{ color: '#630826' }}>{dict['nav.support']}</Link>

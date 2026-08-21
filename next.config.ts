@@ -1,4 +1,27 @@
 import type { NextConfig } from "next";
+import { execSync } from "node:child_process";
+
+// Stamped into every client error report, so "is this old code?" is a FACT rather than a theory.
+//
+// It cost a full investigation to learn this the hard way: 91 reports of a bare "Failed to fetch"
+// arrived over two days from a message string that no live code path could still produce. Every
+// network failure has carried its endpoint since 2026-08-19, and each byte-transfer path throws its
+// own distinct text, so the only remaining explanation was a browser running a bundle from before
+// that deploy -- and there was no way to confirm it. An unprovable theory is not a diagnosis, so
+// the incident was left unfixed rather than guessed at. One field ends that class of ambiguity for
+// good: a report either carries the build that is live, or it does not.
+//
+// The git SHA is the honest identifier (it names the exact code), with a timestamp fallback so a
+// build in a tree without git still produces SOMETHING unique instead of throwing and failing the
+// whole build. stdio silences git's own stderr on that path.
+const BUILD_ID = (() => {
+  try {
+    return execSync("git rev-parse --short HEAD", { stdio: ["ignore", "pipe", "ignore"] })
+      .toString().trim() || `t${Date.now().toString(36)}`;
+  } catch {
+    return `t${Date.now().toString(36)}`;
+  }
+})();
 
 const SUPABASE_HOST = "yqngmyjquwemwogdyuwv.supabase.co";
 const R2_ACCOUNT   = "cd64a4cdd390c827e46bff2ff1ab30ed";
@@ -59,6 +82,7 @@ const securityHeaders = [
 
 const nextConfig: NextConfig = {
   output: "standalone",
+  env: { NEXT_PUBLIC_BUILD_ID: BUILD_ID },
   transpilePackages: ["cobe"],
   ...(process.env.NEXT_DIST_DIR ? { distDir: process.env.NEXT_DIST_DIR } : {}),
   async headers() {

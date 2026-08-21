@@ -244,6 +244,8 @@ export function reportClientError(input: ReportInput): void {
         context: {
           ...(input.context ?? {}),
           path: window.location.pathname,
+          // Which bundle this browser is actually running (see next.config.ts).
+          build: process.env.NEXT_PUBLIC_BUILD_ID ?? 'unknown',
           ...(recoverable ? { autoReloaded: true } : {}),
         },
       }),

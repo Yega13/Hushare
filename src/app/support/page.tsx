@@ -130,7 +130,7 @@ export default function SupportPage() {
           <Link href="/pricing" className="text-sm font-medium hover:underline" style={{ color: '#630826' }}>Pricing</Link>
           <Link href="/about" className="text-sm font-medium hover:underline" style={{ color: '#630826' }}>About</Link>
           <Link href="/collabs" className="text-sm font-medium hover:underline" style={{ color: '#630826' }}>Collabs</Link>
-          <span className="text-sm font-semibold underline underline-offset-4" style={{ color: '#630826' }}>Support</span>
+          <span className="text-sm font-semibold" style={{ color: '#630826' }}>Support</span>
           <AccountNavLink />
         </HamburgerMenu>
       </nav>

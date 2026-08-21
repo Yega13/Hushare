@@ -1,5 +1,6 @@
 'use client'
 
+import { useEffect, useRef } from 'react'
 import Image from 'next/image'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
@@ -59,14 +60,57 @@ export default function SiteFooter() {
   const { t } = useT()
   const pathname = usePathname()
   const normalizedPathname = pathname === '/' ? pathname : pathname.replace(/\/$/, '')
+  // Computed BEFORE the early return below, together with the ref and effect that use it. React
+  // forbids a hook after a conditional return, and this component returns null on most routes --
+  // declaring them here is what keeps the hook order identical on every render.
+  const reveal = revealRoutes.has(normalizedPathname)
+  const footerRef = useRef<HTMLElement | null>(null)
+
+  // Measures how far the page's bottom edge has risen past the bottom of the viewport, which is
+  // exactly how much of the sticky footer is uncovered, and hands it to CSS as --hush-reveal.
+  // See the note in layout.css for why this is not `animation-timeline: view()`.
+  useEffect(() => {
+    if (!reveal) return
+    const el = footerRef.current
+    // The var is written on the CHILD, not on the footer. Custom properties inherit, but the
+    // stylesheet declares `--hush-reveal: 1` on `.hush-footer-reveal > *`, and a child's own
+    // declaration beats an inherited one -- setting it on the parent would be silently ignored.
+    const inner = el?.firstElementChild as HTMLElement | null
+    const main = document.querySelector('main')
+    if (!inner || !main) return
+    // Skipped entirely rather than animated-then-overridden, so a reader who asked for less motion
+    // costs nothing per frame.
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return
+
+    let raf = 0
+    const paint = () => {
+      raf = 0
+      const height = el!.offsetHeight
+      if (height <= 0) return
+      const uncovered = (window.innerHeight - main.getBoundingClientRect().bottom) / height
+      inner.style.setProperty('--hush-reveal', Math.min(1, Math.max(0, uncovered)).toFixed(3))
+    }
+    // Coalesced to one write per frame. A scroll event can fire many times between paints, and
+    // each write here costs a style recalc on a blurred, full-width box -- the one thing worth
+    // being careful about in this whole effect.
+    const schedule = () => { if (!raf) raf = requestAnimationFrame(paint) }
+
+    paint()
+    window.addEventListener('scroll', schedule, { passive: true })
+    window.addEventListener('resize', schedule, { passive: true })
+    return () => {
+      window.removeEventListener('scroll', schedule)
+      window.removeEventListener('resize', schedule)
+      if (raf) cancelAnimationFrame(raf)
+    }
+  }, [reveal, normalizedPathname])
+
   // Show on the listed routes, plus every individual statement page (/statement/<slug>).
   if (!footerRoutes.has(normalizedPathname) && !normalizedPathname.startsWith('/statement/')) return null
-
-  const reveal = revealRoutes.has(normalizedPathname)
   const visibleLinks = footerLinks.filter((link) => link.href !== normalizedPathname)
 
   return (
-    <footer className={`hush-site-footer mt-auto${reveal ? ' hush-footer-reveal' : ''}`} style={{ background: '#FBF6EC', borderTop: '1px solid #E8E0D0' }}>
+    <footer ref={footerRef} className={`hush-site-footer mt-auto${reveal ? ' hush-footer-reveal' : ''}`} style={{ background: '#FBF6EC', borderTop: '1px solid #E8E0D0' }}>
       <div style={{ width: 'min(100% - 2.5rem, 1200px)', marginInline: 'auto', paddingBlock: 'clamp(1.75rem, 3vw, 2.75rem)' }}>
         {/* Top tier: brand + tagline on the left, links on the right */}
         <div className="hush-foot-top" style={{ display: 'flex', flexWrap: 'wrap', gap: '1.5rem 2rem', alignItems: 'flex-start', justifyContent: 'space-between' }}>

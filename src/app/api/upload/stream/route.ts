@@ -94,7 +94,13 @@ export async function POST(req: Request) {
   }
 
   if (fileSize > MAX_VIDEO_HARD_CAP) {
-    return NextResponse.json({ error: 'File too large' }, { status: 413, headers: NO_STORE })
+    // The absolute ceiling, above every tier. It said only 'File too large' because it predates
+    // the shared helper -- the one refusal on the whole path that still left someone with nothing
+    // to do about it. Nobody has reached it yet; that is not a reason to leave it rude.
+    return NextResponse.json(
+      { error: tooLargeMessage('video', MAX_VIDEO_HARD_CAP) },
+      { status: 413, headers: NO_STORE },
+    )
   }
 
   const admin = createAdminClient()

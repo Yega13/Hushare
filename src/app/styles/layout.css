@@ -829,51 +829,41 @@ body:has(.hush-footer-reveal) > main {
   background: #FDFAF5;
 }
 
-/* The reveal, tied to how much of the footer has been uncovered. animation-timeline runs on the
-   compositor, so it costs no scroll handler and no React render. Browsers without support skip it
-   and the footer renders sharp and opaque — the reveal itself still works, only the decoration is
-   lost, which is the right way round for something decorative.
+/* The frosted reveal, driven by a single custom property that SiteFooter writes on scroll.
+   0 = still fully covered by the page, 1 = fully uncovered.
 
-   TWO animations on the same timeline rather than one, because they want different ranges. Folding
-   the blur into the fade would throw it away: the footer would be at its most blurred while it was
-   still transparent, so the only part anyone could actually see would be the part that had already
-   finished. The fade completes early (45%) so there is a solid footer to look at, and the blur goes
-   on resolving all the way to 100% — barely uncovered reads as frosted glass, and it sharpens as
-   you pull it up. */
-@supports (animation-timeline: view()) {
-  .hush-footer-reveal > * {
-    animation: hush-footer-fade linear both, hush-footer-sharpen linear both;
-    animation-timeline: view(), view();
-    animation-range: entry 0% entry 45%, entry 0% entry 100%;
-  }
+   This was written first with `animation-timeline: view()`, which is the nicer answer on paper --
+   no listener, no React, runs on the compositor -- and it produced no visible blur at all, on
+   desktop or phone. Two reasons, either of which is fatal on its own:
+
+     1. Scroll-driven animations are Chrome 115+ and Safari 26+. Most phones at an event are
+        iPhones, so for a large part of the audience that CSS simply does not exist.
+     2. This element is `position: sticky` and pinned to the bottom of the viewport for the whole
+        scroll. A view() timeline measures how much of the element is inside the scrollport, and a
+        pinned element's answer never changes -- so the progress that was supposed to drive the
+        blur sat frozen.
+
+   The reveal is not actually about the footer's own position at all. It is about how far the
+   PAGE's bottom edge has risen past the bottom of the viewport, which is a number nothing in CSS
+   can currently name. So it is measured directly, once per animation frame, and handed to CSS.
+
+   The default of 1 is the safety net: no JavaScript, an error before the effect runs, or a browser
+   that never fires the listener all leave a sharp, fully opaque footer -- exactly what it looked
+   like before any of this existed. Nothing here can leave the page permanently blurred. */
+.hush-footer-reveal > * {
+  --hush-reveal: 1;
+  /* 14px is a ceiling, not a taste call: blur costs the GPU roughly with the AREA it covers, and
+     this box is the full width of the page. Past this it buys a difference nobody can name at the
+     price of frames on the cheap Android phones that are most of an event's guests. */
+  filter: blur(calc((1 - var(--hush-reveal)) * 14px));
+  opacity: calc(0.35 + 0.65 * var(--hush-reveal));
 }
 
-@keyframes hush-footer-fade {
-  from { opacity: 0; transform: translateY(18px); }
-  to   { opacity: 1; transform: translateY(0); }
-}
-
-/* 14px is a deliberate ceiling, not a taste call. A blur costs the GPU roughly with the AREA it
-   covers, and this box is the full width of the page — past this it starts costing frames on the
-   cheap Android phones that are most of an event's guests, to buy a difference nobody could name.
-   Deliberately NOT paired with `will-change: filter`: that would pin a full-width compositor layer
-   in memory for the entire life of the page, on every one of these routes, to optimise a few
-   hundred milliseconds at the very bottom. Chrome already promotes an element while a compositor
-   animation is actually running, which is the only moment it matters.
-
-   Scoped to `.hush-footer-reveal`, so it exists on the eight marketing routes and nowhere near an
-   album page — the hot path with 300 guests uploading pays exactly nothing for this. */
-@keyframes hush-footer-sharpen {
-  from { filter: blur(14px); }
-  to   { filter: blur(0); }
-}
-
-/* Asked for less movement, gets less movement: the footer is simply there, and sharp. */
+/* Asked for less movement, gets less movement: the footer is simply there, and sharp. The effect
+   is skipped in JS too, so the property is never even written. */
 @media (prefers-reduced-motion: reduce) {
   .hush-footer-reveal > * {
-    animation: none;
-    opacity: 1;
-    transform: none;
     filter: none;
+    opacity: 1;
   }
 }
