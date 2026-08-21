@@ -76,8 +76,7 @@ export default function SiteFooter() {
     // stylesheet declares `--hush-reveal: 1` on `.hush-footer-reveal > *`, and a child's own
     // declaration beats an inherited one -- setting it on the parent would be silently ignored.
     const inner = el?.firstElementChild as HTMLElement | null
-    const main = document.querySelector('main')
-    if (!inner || !main) return
+    if (!el || !inner) return
     // Skipped entirely rather than animated-then-overridden, so a reader who asked for less motion
     // costs nothing per frame.
     if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return
@@ -85,10 +84,20 @@ export default function SiteFooter() {
     let raf = 0
     const paint = () => {
       raf = 0
-      const height = el!.offsetHeight
+      const height = el.offsetHeight
       if (height <= 0) return
-      const uncovered = (window.innerHeight - main.getBoundingClientRect().bottom) / height
-      inner.style.setProperty('--hush-reveal', Math.min(1, Math.max(0, uncovered)).toFixed(3))
+      // How many pixels of scrolling are left before the document ends. That is EXACTLY how much of
+      // the sticky footer is still covered by the page above it, so once it drops below the
+      // footer's own height it doubles as the reveal progress.
+      //
+      // Measured from the document rather than from <main>'s box, which is what the first version
+      // did and what made the footer vanish: it depended on finding the right <main>, on that
+      // element being the thing that actually covers the footer, and on its rect behaving through a
+      // sticky overlap. scrollHeight, innerHeight and scrollY are three numbers that are always
+      // correct and depend on no assumption about the page's structure.
+      const remaining = document.documentElement.scrollHeight - window.innerHeight - window.scrollY
+      const uncovered = 1 - Math.min(1, Math.max(0, remaining / height))
+      inner.style.setProperty('--hush-reveal', uncovered.toFixed(3))
     }
     // Coalesced to one write per frame. A scroll event can fire many times between paints, and
     // each write here costs a style recalc on a blurred, full-width box -- the one thing worth

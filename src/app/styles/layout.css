@@ -848,15 +848,20 @@ body:has(.hush-footer-reveal) > main {
    can currently name. So it is measured directly, once per animation frame, and handed to CSS.
 
    The default of 1 is the safety net: no JavaScript, an error before the effect runs, or a browser
-   that never fires the listener all leave a sharp, fully opaque footer -- exactly what it looked
-   like before any of this existed. Nothing here can leave the page permanently blurred. */
+   that never fires the listener all leave a sharp footer -- exactly what it looked like before any
+   of this existed.
+
+   It animates ONLY blur, never opacity. The first attempt faded to 0.35 as well, and when the
+   measurement driving it was wrong the footer did not look subtle, it looked absent: a blank cream
+   band with a hairline above it. An effect whose failure mode is "the content is gone" is the wrong
+   trade for decoration. Blurred-but-present is a visible bug someone reports; invisible is one that
+   just looks like a broken page. */
 .hush-footer-reveal > * {
   --hush-reveal: 1;
   /* 14px is a ceiling, not a taste call: blur costs the GPU roughly with the AREA it covers, and
      this box is the full width of the page. Past this it buys a difference nobody can name at the
      price of frames on the cheap Android phones that are most of an event's guests. */
   filter: blur(calc((1 - var(--hush-reveal)) * 14px));
-  opacity: calc(0.35 + 0.65 * var(--hush-reveal));
 }
 
 /* Asked for less movement, gets less movement: the footer is simply there, and sharp. The effect
@@ -864,6 +869,5 @@ body:has(.hush-footer-reveal) > main {
 @media (prefers-reduced-motion: reduce) {
   .hush-footer-reveal > * {
     filter: none;
-    opacity: 1;
   }
 }
