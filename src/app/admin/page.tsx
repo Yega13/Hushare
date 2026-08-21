@@ -13,6 +13,7 @@ import AdminSyncPolarButton from '@/components/AdminSyncPolarButton'
 import AdminPublishStatement from '@/components/AdminPublishStatement'
 import AdminLiveUsers from '@/components/AdminLiveUsers'
 import AdminGrowthChart from '@/components/AdminGrowthChart'
+import AdminAreaChartLazy from '@/components/AdminAreaChartLazy'
 import { getTrafficAnalytics } from '@/lib/cf-analytics'
 import AdminSupportLookup from '@/components/AdminSupportLookup'
 
@@ -311,11 +312,16 @@ export default async function AdminPage() {
           ))}
         </div>
 
-        {/* Growth charts — daily trend over the last 14 days (hover a bar for its value) */}
+        {/* Growth charts — daily trend over the last 14 days. Area charts (Recharts, code-split
+            via AdminAreaChartLazy so no guest ever downloads the library). Hover anywhere on a
+            chart: the day and value appear in that chart's own header rather than in a floating
+            card, which at 120px tall would cover most of the data it is describing.
+            Album views below deliberately keeps the bar chart — it is a different kind of number
+            (traffic, not creation) and reads better as discrete daily columns. */}
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 12, marginBottom: 28 }}>
-          <AdminGrowthChart label="New albums / day" points={albumsPts} color={BRAND} unit="albums" />
-          <AdminGrowthChart label="Uploads / day" points={uploadsPts} color="#B4531F" unit="items" />
-          <AdminGrowthChart label="Signups / day" points={signupsPts} color="#1F5136" unit="users" />
+          <AdminAreaChartLazy label="Signups / day" points={signupsPts} color="#1F5136" unit="users" />
+          <AdminAreaChartLazy label="New albums / day" points={albumsPts} color={BRAND} unit="albums" />
+          <AdminAreaChartLazy label="Uploads / day" points={uploadsPts} color="#B4531F" unit="items" />
         </div>
 
         {/* Traffic & performance — Cloudflare worker metrics + product events */}
