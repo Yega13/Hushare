@@ -270,7 +270,7 @@ export default async function AdminPage() {
             <Link href="/account" style={{ color: MUTED }}>Account</Link>
           </div>
         </div>
-        <p style={{ fontSize: 12, color: MUTED, marginBottom: 22 }}>Signed in as {user?.email}. Live data — reload to update.</p>
+        <div style={{ marginBottom: 22 }} />
 
         {/* Real-time active users — self-updating (polls every 5s) */}
         {/* Sticky jump-nav so every section is one click away */}
