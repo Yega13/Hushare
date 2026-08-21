@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import {
-  uploadCapsForTier, albumMediaCapForTier, formatCapSize,
+  uploadCapsForTier, albumMediaCapForTier, formatCapSize, tooLargeMessage,
   FREE_VIDEO_BYTES, PRO_VIDEO_BYTES, STUDIO_VIDEO_BYTES,
 } from '@/lib/media'
 import { looksLikeStaleDeploy, looksLikeDomCorruption, isForeignError } from '@/lib/report-error'
@@ -44,6 +44,35 @@ describe('formatCapSize', () => {
   it('never renders a gigabyte cap as four thousand megabytes', () => {
     // The reason this function exists: "4096 MB" does not read as a generous limit.
     expect(formatCapSize(STUDIO_VIDEO_BYTES)).not.toContain('4096')
+  })
+})
+
+describe('tooLargeMessage', () => {
+  // THE invariant. Three separate code paths decide "deliberate refusal" vs "something broke" by
+  // testing this text with startsWith('File too large') / /^(File too large|Unsupported)/:
+  // the network classifier, the batch reporter's level choice, and the adaptive video lane. Reword
+  // the opening and all three flip at once, silently -- every refused file would land in the Errors
+  // tab as a real failure and every oversized video would narrow the upload concurrency for
+  // everyone else. Cheap to assert, expensive to discover in production.
+  it('keeps the prefix the refusal classifiers match on', () => {
+    for (const m of [tooLargeMessage('video', FREE_VIDEO_BYTES), tooLargeMessage('image', 25 * 1024 * 1024)]) {
+      expect(m.startsWith('File too large')).toBe(true)
+      expect(/^(File too large|Unsupported)/i.test(m)).toBe(true)
+    }
+  })
+
+  it('states the cap and, for video, what to do about it', () => {
+    const v = tooLargeMessage('video', FREE_VIDEO_BYTES)
+    expect(v).toContain('50 MB')
+    expect(v).toMatch(/trim/i)          // a guest cannot upgrade someone else's album; trimming is their only route
+    expect(tooLargeMessage('image', 25 * 1024 * 1024)).toContain('25 MB')
+  })
+
+  it('carries no per-file number, so /admin groups repeats into one row', () => {
+    // Message text is the grouping key. A file's own size varies per upload and would shatter one
+    // recurring problem into a column of one-count rows -- it rides in the report context instead.
+    expect(tooLargeMessage('video', FREE_VIDEO_BYTES)).toBe(tooLargeMessage('video', FREE_VIDEO_BYTES))
+    expect(tooLargeMessage('video', FREE_VIDEO_BYTES)).not.toBe(tooLargeMessage('video', PRO_VIDEO_BYTES))
   })
 })
 

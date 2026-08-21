@@ -7,7 +7,7 @@ import { stripExifFromJpeg, jpegOrientation, stripMetadataFromPng, stripMetadata
 import { snapshotFileRobust, readFileRobust } from '@/lib/file-read'
 import { showAppToast } from '@/components/AppToast'
 import { useT } from '@/i18n/LocaleProvider'
-import { detectKind, uploadCapsForTier, formatCapSize, generateVideoPoster } from '@/lib/media'
+import { detectKind, uploadCapsForTier, tooLargeMessage, generateVideoPoster } from '@/lib/media'
 import {
   UPLOAD_CONCURRENCY_MOBILE,
   UPLOAD_CONCURRENCY_DESKTOP,
@@ -1173,7 +1173,7 @@ async function uploadImageToR2(
   // compresses to <1MB should not bounce off a 25MB tier cap. The server enforces the same
   // cap on the presigned size, so this is UX, not security.
   if (processed.blob.size > imageCapBytes) {
-    throw new Error(`File too large (max ${formatCapSize(imageCapBytes)} for this album)`)
+    throw new Error(tooLargeMessage('image', imageCapBytes))
   }
 
   // ONE presign round trip covers both the image and its thumbnail (the old flow made two,
@@ -1928,7 +1928,7 @@ export default function UploadZone({ album, onPhotosUploaded }: Props) {
           // client-side first, so their cap is enforced on the processed size inside
           // uploadImageToR2 (a 30MB photo that compresses to 1MB should upload fine).
           if (kind === 'video' && entry.file.size > caps.video) {
-            throw new Error(`File too large (max ${formatCapSize(caps.video)} for this album)`)
+            throw new Error(tooLargeMessage('video', caps.video))
           }
 
           const row = kind === 'image'

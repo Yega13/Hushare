@@ -24,6 +24,28 @@ export function formatCapSize(bytes: number): string {
   return `${Math.round(bytes / MB)} MB`
 }
 
+// The refusal a guest actually reads when a file is over this album's cap. Kept in ONE place so the
+// client pre-check and the two server backstops cannot drift into three different explanations of
+// the same rule.
+//
+// It names ONLY the cap, never the file's own size. /admin groups incidents by exact message
+// string, so a number that changes per file (74 MB here, 63 MB there) would split one recurring
+// problem into a column of one-count rows -- the same reason fetchWithRetry keeps its wait time out
+// of the message. The actual size already travels in the report context, where it is recorded
+// without touching the grouping.
+//
+// The advice is the point of the rewrite. On 2026-08-21 a guest hit this four times in eight
+// minutes with the same 74 MB clip and then stopped uploading: the old text stated the limit and
+// stopped there, which reads as "this is broken" rather than "here is what to do instead".
+// Trimming is something every phone gallery app can already do, and it is the only route a GUEST
+// has -- they cannot upgrade someone else's album, so an upsell here would be advice they are
+// unable to act on.
+export function tooLargeMessage(kind: MediaKind, capBytes: number): string {
+  return kind === 'video'
+    ? `File too large (max ${formatCapSize(capBytes)} for videos in this album). Trim it shorter in your phone, then try again.`
+    : `File too large (max ${formatCapSize(capBytes)} for photos in this album).`
+}
+
 export function uploadCapsForTier(tier: Tier): UploadCaps {
   if (tier === 'studio') {
     return { image: PRO_IMAGE_BYTES, video: STUDIO_VIDEO_BYTES }
