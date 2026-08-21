@@ -544,9 +544,26 @@ export default function PhotoGrid({ album, photos, albumPhotoCount, isOwner, slu
           />
         )
 
+        // translate="no" on both grids below is a fix for a CRASH, not a preference.
+        //
+        // Android Chrome auto-translates a page whose language does not match the reader's, and it
+        // does so by REPLACING text nodes in place. React holds direct references to the nodes it
+        // created, so the next commit reaches for a node that is no longer where it believes it is
+        // and the whole tree throws: "Failed to execute 'insertBefore' on 'Node'". The album is
+        // replaced by "Something went wrong" — a working album killed by a browser feature.
+        //
+        // Reported from Android 10 on 2026-08-20 and AGAIN on 2026-08-21, after the one-shot
+        // recovery reload shipped. That recurrence is what turned this from a suspicion into the
+        // fix; it was deliberately not done first, because the stack proves the DOM was
+        // inconsistent, not what made it so.
+        //
+        // Scoped to the grid rather than the document on purpose: the site's own UI stays
+        // translatable, and the only text sealed off is what should never be translated anyway —
+        // the captions and names guests type. Rewriting a person's name into another language is a
+        // bug in its own right.
         if (masonry) {
           return (
-            <div ref={gridRef} className="hush-masonry" style={{ gap: MASONRY_GAP }}>
+            <div ref={gridRef} translate="no" className="hush-masonry" style={{ gap: MASONRY_GAP }}>
               {masonryColumns.map((col, ci) => (
                 <div key={ci} className="hush-masonry-col" style={{ gap: MASONRY_GAP }}>
                   {col.items.map((item) => renderTile(item.photo, item.index, undefined, item.height))}
@@ -559,6 +576,7 @@ export default function PhotoGrid({ album, photos, albumPhotoCount, isOwner, slu
         return (
           <div
             ref={gridRef}
+            translate="no"
             className="hush-photo-grid grid gap-3 xl:gap-4"
             style={{ '--hush-grid-cols': album.mobile_grid_columns ?? 3 } as React.CSSProperties}
           >

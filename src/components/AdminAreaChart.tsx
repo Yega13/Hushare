@@ -76,12 +76,16 @@ export default function AdminAreaChart({
           <AreaChart
             data={points}
             margin={{ top: 10, right: 4, bottom: 0, left: 4 }}
-            // Recharts 3 hands back the active INDEX rather than the payload (activePayload was a
-            // v2 shape), so the point is looked up from our own data — which is more honest anyway:
-            // `points` is the source of truth, not whatever the chart chose to attach.
+            // Recharts 3 hands back the active INDEX, not the v2 activePayload shape, so the point
+            // is looked up from our own data — `points` is the source of truth regardless.
+            //
+            // The index arrives as a STRING: it is typed `number | TooltipIndex`, and
+            // TooltipIndex is `string | null` (recharts/types/state/tooltipSlice.d.ts). A
+            // `typeof === 'number'` guard therefore never passes and the readout silently never
+            // updated — the crosshair moved and the header did not. Coerced, then bounds-checked.
             onMouseMove={(state) => {
-              const i = state?.activeTooltipIndex
-              setHovered(typeof i === 'number' && points[i] ? points[i] : null)
+              const i = Number(state?.activeTooltipIndex)
+              setHovered(Number.isInteger(i) && i >= 0 && i < points.length ? points[i] : null)
             }}
             onMouseLeave={() => setHovered(null)}
           >
@@ -113,11 +117,33 @@ export default function AdminAreaChart({
               axisLine={false}
             />
 
+            {/* A card at the cursor AND the header readout. The header alone was not enough:
+                at a glance the number you want is the one under your finger, not one in the
+                corner. Kept deliberately small and offset upward so it shades as little of a
+                120px-tall chart as possible. */}
             <Tooltip
               cursor={{ stroke: color, strokeWidth: 1, strokeDasharray: '3 3' }}
-              // The card is suppressed: the value is already in the header, and a floating card
-              // over a 120px chart covers most of the data it is describing.
-              content={() => null}
+              offset={12}
+              allowEscapeViewBox={{ x: false, y: true }}
+              wrapperStyle={{ outline: 'none', zIndex: 1 }}
+              content={({ active, payload }) => {
+                if (!active || !payload?.length) return null
+                const p = payload[0].payload as Point
+                return (
+                  <div
+                    style={{
+                      background: '#2A211C', color: '#FDFAF5', borderRadius: 8,
+                      padding: '5px 9px', fontSize: 11, lineHeight: 1.35,
+                      boxShadow: '0 4px 14px rgba(42,33,28,0.28)', whiteSpace: 'nowrap',
+                    }}
+                  >
+                    <div style={{ fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>
+                      {p.value.toLocaleString('en-US')}{unit ? ' ' + unit : ''}
+                    </div>
+                    <div style={{ opacity: 0.7 }}>{prettyDay(p.day)}</div>
+                  </div>
+                )
+              }}
             />
 
             <Area
