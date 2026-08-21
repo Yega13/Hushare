@@ -71,7 +71,24 @@ html[lang="hy"] {
 html,
 body {
   max-width: 100%;
+  /* `overflow-x: hidden` computes overflow-y to `auto`, which makes these SCROLL CONTAINERS.
+     Anything `position: sticky` inside then resolves against a box that never scrolls and silently
+     does nothing — which is why the footer reveal shipped with no effect, and why the sticky page
+     navs were unlikely to have been working either. */
   overflow-x: hidden;
+}
+
+/* `overflow-x: clip` clips exactly the same overflow WITHOUT creating a scroll container, so
+   sticky keeps working. It lives in @supports rather than as a second declaration in the rule
+   above because the CSS minifier collapses duplicate properties and keeps only the last one — the
+   fallback was silently deleted at build time on the first attempt. A separate at-rule cannot be
+   collapsed into the first, so anything without clip support (Safari 15 and older) keeps today's
+   behaviour instead of gaining a horizontal scrollbar. */
+@supports (overflow: clip) {
+  html,
+  body {
+    overflow-x: clip;
+  }
 }
 
 body {
