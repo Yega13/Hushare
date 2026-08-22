@@ -70,3 +70,9 @@ next-env.d.ts
 # statistics. Publishing it would be handing over an exploit playbook for holes that are still
 # open. Findings live in ~/.hushare-secrets/ until the issues they describe are closed.
 /docs/
+
+# Database dumps from scripts/backup-db.mjs. This repository is PUBLIC and a dump contains every
+# owner token, every album password hash and every user email -- anyone holding one can open any
+# private album. It is the single most dangerous file this project can produce, so it is ignored
+# before the script that writes it was ever run.
+/backups/

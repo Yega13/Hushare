@@ -236,10 +236,19 @@ export default function AdminErrorTabs(
                           dropped connection is one line rather than ninety-eight. Without this the
                           row would understate the incident as a single failure. */}
                       {(() => {
-                        const n = (e.context as { failedFiles?: number } | null)?.failedFiles
-                        return typeof n === 'number' && n > 1
-                          ? <span style={{ color: MUTED }}> · {n} files</span>
-                          : null
+                        const ctx = e.context as { failedFiles?: number; parked?: boolean } | null
+                        const n = ctx?.failedFiles
+                        return (
+                          <>
+                            {typeof n === 'number' && n > 1 ? <span style={{ color: MUTED }}> · {n} files</span> : null}
+                            {/* The same text appears in BOTH tabs and looked like duplication. It is
+                                one incident logged twice on purpose: a warning when the upload
+                                parks and is about to retry itself, an error if that retry also
+                                fails. Saying which is which is the whole difference between "being
+                                handled" and "gave up". */}
+                            {ctx?.parked ? <span style={{ color: MUTED }}> · retrying</span> : null}
+                          </>
+                        )
                       })()}
                     </td>
                     <td style={{ ...td, whiteSpace: 'normal', maxWidth: 180, fontSize: 11, color: MUTED }}>

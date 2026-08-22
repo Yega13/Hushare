@@ -64,7 +64,7 @@ function asReadFailure(cause: unknown): Error {
   return new Error(`${READ_FAILURE} (${name})`)
 }
 
-export async function readFileRobust(file: Blob, attempts = 5): Promise<ArrayBuffer> {
+export async function readFileRobust(file: Blob, attempts = 7): Promise<ArrayBuffer> {
   // The FIRST error, not the last. The three reads are tried in order of how much they are trusted,
   // so the earliest failure is the one that describes what is actually wrong with the file; the
   // last is always the blob-URL fallback, whose error says nothing except that the fallback also
@@ -91,7 +91,18 @@ export async function readFileRobust(file: Blob, attempts = 5): Promise<ArrayBuf
     } catch (e) {
       remember(e)
     }
-    if (i < attempts - 1) await new Promise(r => setTimeout(r, 250 * (i + 1)))
+    // Climbs to 2s rather than 1s, over 7 rounds rather than 5: about 8 seconds of patience
+    // instead of 2.5. The case this exists for is a photo taken in the phone's OWN camera app and
+    // picked seconds later -- Android hands back a content:// URI as soon as the row is created,
+    // while the media store is still writing the file behind it, and a large HEIC is not readable
+    // for a while after that. 2.5 seconds was simply not long enough, and the guest saw a refusal
+    // for a photo that would have been readable moments later.
+    //
+    // The cost is paid ONLY by files that are failing: a readable file returns on the first
+    // attempt and never sleeps at all. A permanently dead reference now takes ~8s to be reported
+    // instead of ~2.5s, which is the right trade -- these are batched through a worker pool, so a
+    // slow failure does not hold up the files behind it.
+    if (i < attempts - 1) await new Promise(r => setTimeout(r, Math.min(2000, 400 * (i + 1))))
   }
   throw asReadFailure(firstErr)
 }

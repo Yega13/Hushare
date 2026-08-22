@@ -14,7 +14,9 @@
     "db:migrate": "node scripts/db-migrate.mjs",
     "db:check": "node scripts/check-db.mjs",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "backup": "node scripts/backup-db.mjs",
+    "restore": "node scripts/restore-db.mjs"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1071.0",
