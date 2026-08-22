@@ -2117,9 +2117,25 @@ export default function UploadZone({ album, onPhotosUploaded }: Props) {
   }, [startUploads])
 
   const handleInputChange = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(e.target.files ?? [])
-    e.target.value = ''  // allow re-selecting same file after error
-    addFiles(await snapshotFiles(files))
+    const input = e.target
+    const files = Array.from(input.files ?? [])
+    // Read the bytes BEFORE clearing the input, never after.
+    //
+    // Clearing an <input type=file> releases the underlying reference the browser holds for each
+    // File. On Android those are content:// URIs owned by another process, and a photo the CAMERA
+    // has just written is backed by a short-lived one that dies with the input -- so every read
+    // afterwards threw NotReadableError and the capture was lost. A gallery pick survives the same
+    // treatment, which is exactly why "take a photo" failed while "choose a file" worked and the
+    // difference looked like a camera problem.
+    //
+    // snapshotFiles copies each file into an in-memory File, so once it has returned the bytes are
+    // ours and the input can be released safely. finally, so a throw mid-snapshot still leaves the
+    // control usable rather than stuck holding a selection it cannot re-pick.
+    try {
+      addFiles(await snapshotFiles(files))
+    } finally {
+      input.value = ''  // allow re-selecting the same file after an error
+    }
   }, [addFiles])
 
   const handleDrop = useCallback(async (e: React.DragEvent) => {

@@ -134,6 +134,46 @@ export async function createStreamUpload(
   }
 }
 
+// Is this video actually playable yet?
+//
+// A row is written the moment the BYTES finish uploading, but Cloudflare then has to encode, and
+// for a large file that takes real time -- an 849 MB, ten-minute clip was 54% encoded eight
+// minutes in and finished at about twenty. That is normal Stream behaviour, not a fault. But until
+// it finishes the player answers "An unknown error occurred", so for twenty minutes the guest who
+// uploaded a perfectly good video is told it is broken, and so is everyone else in the album.
+//
+// Returns null when the answer is unknown (no credentials, Stream unreachable, video missing). The
+// caller must treat null as "assume playable": being wrong that way shows the player's own error on
+// a video that really is broken, while being wrong the other way hides a working video behind a
+// "still processing" notice that never goes away.
+export async function getStreamVideoStatus(
+  uid: string,
+): Promise<{ ready: boolean; pct: number } | null> {
+  const accountId = process.env.CLOUDFLARE_ACCOUNT_ID
+  const token = process.env.CLOUDFLARE_STREAM_TOKEN
+  if (!accountId || !token) return null
+
+  try {
+    const res = await fetch(`${CLOUDFLARE_API}/accounts/${accountId}/stream/${uid}`, {
+      headers: { Authorization: `Bearer ${token}` },
+      signal: AbortSignal.timeout(5000),
+    })
+    if (!res.ok) return null
+    const body = await res.json() as {
+      success?: boolean
+      result?: { readyToStream?: boolean; status?: { state?: string; pctComplete?: string } }
+    }
+    if (!body.success || !body.result) return null
+    const pct = Number(body.result.status?.pctComplete)
+    return {
+      ready: body.result.readyToStream === true,
+      pct: Number.isFinite(pct) ? Math.max(0, Math.min(100, Math.round(pct))) : 0,
+    }
+  } catch {
+    return null
+  }
+}
+
 export async function deleteStreamVideo(uid: string): Promise<void> {
   const accountId = process.env.CLOUDFLARE_ACCOUNT_ID
   const token = process.env.CLOUDFLARE_STREAM_TOKEN

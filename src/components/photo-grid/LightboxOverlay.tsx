@@ -151,6 +151,37 @@ export default function LightboxOverlay({
   React.useEffect(() => {
     setVideoStarted(slideshowMode ? !slideshowPaused : videoAutoplay)
   }, [current.id, videoAutoplay, slideshowMode, slideshowPaused])
+
+  // How far Cloudflare has got with encoding, when it has NOT finished. null means playable (or
+  // unknown, which is treated the same -- see the route).
+  //
+  // A row exists as soon as the bytes land, but encoding runs afterwards and takes real time on a
+  // large file. For the whole of that window the Stream player answers "An unknown error occurred",
+  // which tells the person who just uploaded a perfectly good video that it is broken.
+  //
+  // Asked once per video, and NOT before mounting the player: a ready video -- which is almost all
+  // of them -- must not pay a round trip before it will start. The player mounts immediately and is
+  // replaced only if the answer comes back "not ready", so the only case that waits is the one that
+  // was going to show an error anyway.
+  const [encodingPct, setEncodingPct] = React.useState<number | null>(null)
+  React.useEffect(() => {
+    setEncodingPct(null)
+    const uid = current.stream_uid
+    if (current.media_type !== 'video' || !uid) return
+    let cancelled = false
+    void fetch('/api/album/video-status', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ uid }),
+    })
+      .then(r => (r.ok ? r.json() : null))
+      .then((d: { ready?: boolean; pct?: number } | null) => {
+        if (cancelled || !d || d.ready !== false) return
+        setEncodingPct(typeof d.pct === 'number' ? d.pct : 0)
+      })
+      .catch(() => { /* unknown reads as playable */ })
+    return () => { cancelled = true }
+  }, [current.id, current.media_type, current.stream_uid])
   React.useEffect(() => {
     setVideoAspect(null)
     if (current.media_type !== 'video' || hasStoredDims) return
@@ -301,7 +332,30 @@ export default function LightboxOverlay({
               ...slideshowFrameStyle,
             }}
           >
-            {videoStarted ? (
+            {encodingPct !== null ? (
+              /* Still encoding. Deliberately warm rather than alarming: nothing has gone wrong,
+                 the video is simply not finished being prepared, and the only useful instruction
+                 is to come back. */
+              <div
+                onClick={(e) => e.stopPropagation()}
+                style={{
+                  display: 'flex', flexDirection: 'column', alignItems: 'center',
+                  justifyContent: 'center', gap: 10, width: '100%', height: '100%',
+                  background: '#1A1512', color: '#FDFAF5', textAlign: 'center', padding: 24,
+                  borderRadius: previewRadiusFor(current),
+                }}
+              >
+                <div style={{ fontSize: 15, fontWeight: 600 }}>Still processing this video</div>
+                <div style={{ fontSize: 13, opacity: 0.75, maxWidth: 320, lineHeight: 1.5 }}>
+                  It uploaded fine — a long video takes a while to prepare. Check back in a few
+                  minutes.
+                </div>
+                <div style={{ width: 'min(220px, 70%)', height: 4, borderRadius: 999, background: 'rgba(253,250,245,0.22)', overflow: 'hidden' }}>
+                  <div style={{ width: `${Math.max(3, encodingPct)}%`, height: '100%', background: '#FDFAF5' }} />
+                </div>
+                <div style={{ fontSize: 12, opacity: 0.6, fontVariantNumeric: 'tabular-nums' }}>{encodingPct}%</div>
+              </div>
+            ) : videoStarted ? (
               /* Once started, mount the native Stream player with autoplay — it opens already
                  playing, so Stream's oversized centre play button never appears, and all native
                  controls (pause/seek/sound/settings/fullscreen) work. Volume preset to 50%. */
