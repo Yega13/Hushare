@@ -1187,11 +1187,36 @@ type PhotoRow = {
 // (large videos) would risk OOM on mobile if several were read at once. Those keep their
 // original reference — the stale-reference bug overwhelmingly hits image picks, not big videos.
 const SNAPSHOT_MAX_BYTES = 80 * 1024 * 1024
-// Bounded workers, NOT Promise.all over everything: a 200-photo drop would otherwise buffer
-// every file's bytes into memory simultaneously — an OOM on mobile before uploading starts.
+// Bounded workers, so only this many files are being READ at any moment.
+//
+// Note what this does NOT do, because it was believed to and does not: it bounds concurrency, not
+// retention. Every snapshot is kept in the array this function returns and lives for the whole
+// session, so a 700-photo selection ends up holding all 700 copies at once no matter how few are
+// read simultaneously. The budget below is what actually bounds memory.
 const SNAPSHOT_CONCURRENCY = 4
+
+// Total bytes of in-memory copies a single selection may hold.
+//
+// On 2026-08-22 a photographer added a wedding album in one go -- roughly 700 photos at 15-18 MB
+// each. At ~12 GB of copies the tab ran out of memory, and the symptom was not a clean failure but
+// NotReadableError on WINDOWS, where a file reference cannot go stale and the snapshot buys nothing
+// at all. Throughput went from 50 photos a minute to 1, and uploads started failing on both the
+// direct and relay paths, because allocation was failing everywhere at once. The protection was
+// causing the exact failure it exists to prevent.
+//
+// 200 MB covers what the snapshot is actually FOR: a phone user picking ten or fifty photos from a
+// gallery, where the reference really does go stale. Past that, files keep their original
+// reference, which is free and -- on a desktop -- entirely safe.
+//
+// Scoped per SELECTION rather than per session on purpose. Making it a session-wide total would
+// leave a mobile user who adds several batches unprotected on all but the first, which is the case
+// the snapshot exists for. Adding many large batches can still accumulate; bounding one selection
+// is what turns an OOM into a non-event, and is honest about the rest.
+const SNAPSHOT_TOTAL_BUDGET = 200 * 1024 * 1024
+
 async function snapshotFiles(files: File[]): Promise<File[]> {
   const out = new Array<File>(files.length)
+  let budgetLeft = SNAPSHOT_TOTAL_BUDGET
   let next = 0
   const worker = async () => {
     while (next < files.length) {
@@ -1200,10 +1225,18 @@ async function snapshotFiles(files: File[]): Promise<File[]> {
       // Big videos keep their original reference (buffering several into memory risks OOM);
       // the stale-reference bug overwhelmingly hits image picks, not large videos.
       if (f.size > SNAPSHOT_MAX_BYTES) { out[i] = f; continue }
+      // Past the budget, keep the original reference. Claimed BEFORE the await so concurrent
+      // workers cannot each see the same remaining budget and all decide they fit.
+      if (f.size > budgetLeft) { out[i] = f; continue }
+      budgetLeft -= f.size
       // Robust snapshot (retries + FileReader fallback) into an in-memory File — this is what
       // makes every downstream read (decode, EXIF, upload) immune to the reference going stale.
       // Falls back to the original reference only if the bytes are truly unreadable.
-      out[i] = (await snapshotFileRobust(f)) ?? f
+      const snapshot = await snapshotFileRobust(f)
+      // Hand the budget back when the copy was never made, so one unreadable file does not cost
+      // the files behind it their protection.
+      if (!snapshot) budgetLeft += f.size
+      out[i] = snapshot ?? f
     }
   }
   await Promise.all(Array.from({ length: Math.min(SNAPSHOT_CONCURRENCY, files.length) }, worker))
