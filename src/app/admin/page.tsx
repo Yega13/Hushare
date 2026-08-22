@@ -117,6 +117,7 @@ export default async function AdminPage() {
   const [
     albumsActive, albumsRetired, imgCount, vidCount, subsCount,
     recentAlbumsRes, subsRes, streamUsage, r2Usage, usersRes, errors24Res, recentErrorsRes,
+    clearedMsgsRes,
   ] = await Promise.all([
     admin.from('albums').select('id', { count: 'exact', head: true }).is('retired_at', null),
     admin.from('albums').select('id', { count: 'exact', head: true }).not('retired_at', 'is', null),
@@ -138,6 +139,16 @@ export default async function AdminPage() {
       .is('resolved_at', null)
       .order('created_at', { ascending: false }).limit(200)
       .returns<ErrorRow[]>(),
+    // Every message that has EVER been cleared. Membership separates "this came back after we
+    // thought it was fixed" from "nobody has seen this before" — the one distinction the table
+    // could not make, and the one worth acting on.
+    //
+    // Fetched as a flat column and de-duplicated below rather than aggregated in SQL, because
+    // PostgREST cannot express GROUP BY and the alternative (an .in() filter carrying 200 message
+    // strings) builds a URL long enough to be truncated. At a few hundred rows this is nothing; if
+    // error_events ever grows past the limit it should become a database view, and the cap means
+    // the failure mode is a missing mark rather than a slow admin page.
+    admin.from('error_events').select('message').not('resolved_at', 'is', null).limit(5000),
   ])
 
   const recentAlbums = recentAlbumsRes.data ?? []
@@ -421,7 +432,13 @@ export default async function AdminPage() {
         <h2 id="errors" style={{ fontSize: 15, fontWeight: 700, color: INK, margin: '0 0 10px', scrollMarginTop: 64 }}>
           Reported from guest devices
         </h2>
-        <AdminErrorTabs rows={recentErrors} />
+        <AdminErrorTabs
+          rows={recentErrors}
+          seenBefore={[...new Set((clearedMsgsRes.data ?? []).map(r => r.message as string))]}
+          // The build this page was served by. A report stamped with anything else came from a
+          // browser running code we no longer ship.
+          buildId={process.env.NEXT_PUBLIC_BUILD_ID ?? ''}
+        />
         <div style={{ background: CARD, border: `1px solid ${BORDER}`, borderRadius: 12, padding: '14px 16px', marginBottom: 28 }}>
           <p style={{ margin: '0 0 4px', fontSize: 13, fontWeight: 600, color: INK }}>Error alerts</p>
           <p style={{ margin: '0 0 10px', fontSize: 12.5, color: MUTED }}>

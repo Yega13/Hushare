@@ -74,7 +74,64 @@ function Badge({ n, active, tone }: { n: number; active: boolean; tone: 'error' 
   )
 }
 
-export default function AdminErrorTabs({ rows }: { rows: ErrorRow[] }) {
+// ─── Row marks ────────────────────────────────────────────────────────────────
+//
+// One glance should answer "does this need me?", which a wall of identical-looking rows never did.
+//
+// Every mark here is DERIVED, never typed in by hand. Hand-applied labels are correct the day they
+// are set and quietly wrong a month later, and with a new message string appearing most weeks they
+// would be a permanent chore that decays into noise. Anything that genuinely needs a human opinion
+// (this one needs money rather than code) belongs on the message string itself, not on a row, so it
+// applies to future occurrences without being re-applied.
+type Mark = { label: string; bg: string; fg: string; border: string; title: string }
+
+const MARKS = {
+  design:    { label: 'by design',  bg: '#E9F3EC', fg: '#2E6B3E', border: '#C9E2D2', title: 'Not a fault. The product refused something on purpose, or a fallback engaged and worked.' },
+  oldCode:   { label: 'old code',   bg: '#EFEAE1', fg: '#7A6A58', border: '#DED5C6', title: 'Reported by a browser running a bundle older than the live deploy — a stale tab, not a live bug.' },
+  regressed: { label: 'regressed',  bg: '#FBE8E7', fg: '#B3261E', border: '#EFCFCC', title: 'This exact message was cleared before and has come back. Something that was believed fixed is not.' },
+  fresh:     { label: 'new',        bg: '#E7EFF8', fg: '#1B4F86', border: '#CBDBEE', title: 'This message has never been seen before — nobody has looked at it yet.' },
+} satisfies Record<string, Mark>
+
+// Order is the point. A refusal is not a fault whatever else is true of it, and code that is no
+// longer deployed cannot be a live bug — so both of those outrank "it came back", which would
+// otherwise raise an alarm about a browser nobody can reach any more.
+function markFor(row: ErrorRow, seenBefore: Set<string>, liveBuild: string): Mark {
+  if (
+    row.source === 'album-full' ||
+    row.source.endsWith('-relay') ||
+    /^(File too large|Unsupported)/i.test(row.message)
+  ) return MARKS.design
+
+  const build = (row.context as { build?: unknown } | null)?.build
+  // Only meaningful when BOTH are known: rows predating build stamping carry no build at all, and
+  // marking those "old code" would be a guess dressed as a fact — the exact mistake stamping exists
+  // to prevent.
+  if (typeof build === 'string' && build && liveBuild && build !== liveBuild) return MARKS.oldCode
+
+  return seenBefore.has(row.message) ? MARKS.regressed : MARKS.fresh
+}
+
+function MarkChip({ mark }: { mark: Mark }) {
+  return (
+    <span
+      title={mark.title}
+      style={{
+        display: 'inline-block', fontSize: 10.5, fontWeight: 700, letterSpacing: '0.03em',
+        background: mark.bg, color: mark.fg, border: `1px solid ${mark.border}`,
+        borderRadius: 999, padding: '2px 8px', whiteSpace: 'nowrap',
+      }}
+    >
+      {mark.label}
+    </span>
+  )
+}
+
+export default function AdminErrorTabs(
+  { rows, seenBefore = [], buildId = '' }:
+  { rows: ErrorRow[]; seenBefore?: string[]; buildId?: string },
+) {
+  // Messages that have EVER been cleared. Membership is what separates "came back" from "new".
+  const seen = useMemo(() => new Set(seenBefore), [seenBefore])
   const [tab, setTab] = useState<'error' | 'warn'>('error')
   const [busy, setBusy] = useState(false)
   const isHydrated = useIsHydrated()
@@ -165,11 +222,12 @@ export default function AdminErrorTabs({ rows }: { rows: ErrorRow[] }) {
             </div>
           )}
           <div style={{ overflowX: 'auto', background: CARD, border: `1px solid ${BORDER}`, borderRadius: 12 }}>
-            <table style={{ borderCollapse: 'collapse', width: '100%', minWidth: 680 }}>
-              <thead><tr><th style={th}>When</th><th style={th}>Source</th><th style={th}>Message</th><th style={th}>Device</th></tr></thead>
+            <table style={{ borderCollapse: 'collapse', width: '100%', minWidth: 780 }}>
+              <thead><tr><th style={th}></th><th style={th}>When</th><th style={th}>Source</th><th style={th}>Message</th><th style={th}>Device</th></tr></thead>
               <tbody>
                 {shown.map((e, i) => (
                   <tr key={i}>
+                    <td style={td}><MarkChip mark={markFor(e, seen, buildId)} /></td>
                     <td style={td}>{fmt(e.created_at, isHydrated)}</td>
                     <td style={td}>{e.source}</td>
                     <td style={{ ...td, whiteSpace: 'normal', maxWidth: 320 }}>
