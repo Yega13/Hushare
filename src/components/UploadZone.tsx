@@ -482,7 +482,17 @@ async function processImageInner(file: File): Promise<ProcessedImage> {
     // still gets its lossless metadata strip. May still fail at PUT if bytes are unreadable, but
     // there's nothing more we can do here.
     if (mimeType === 'image/jpeg' || mimeType === 'image/jpg') {
-      return { blob: await strippedJpegBlob(file), thumbBlob: null, mimeType: 'image/jpeg', name: file.name, width: null, height: null }
+      try {
+        return { blob: await strippedJpegBlob(file), thumbBlob: null, mimeType: 'image/jpeg', name: file.name, width: null, height: null }
+      } catch {
+        // The EXIF strip needs the raw bytes, and by definition we only reach here because every
+        // path to those bytes has already failed -- so this threw and killed the upload at the
+        // exact point the code above intends to "upload it untouched anyway". The last resort was
+        // not a last resort at all; it was one more read. Fall through and hand over the original
+        // File: the PUT reads it through XMLHttpRequest, which is another path again and may
+        // succeed where these did not. If it does not, the failure is at least an honest one at
+        // the point of upload rather than a refusal before we ever tried.
+      }
     }
     return { blob: file, thumbBlob: null, mimeType, name: file.name, width: null, height: null }
   }
@@ -503,7 +513,18 @@ async function processImageInner(file: File): Promise<ProcessedImage> {
     }
 
     if (mimeType === 'image/jpeg' || mimeType === 'image/jpg') {
-      const raw = new Uint8Array(await readFileRobust(file))
+      // Reaching here means createImageBitmap already read this file successfully, so the bytes
+      // were available a moment ago -- but "a moment ago" is not a guarantee on a device that is
+      // still writing the file. If the read fails now, re-encode from the bitmap we are already
+      // holding rather than throwing: orientation is baked into those pixels, so the result is
+      // correct, and a slightly larger upload is infinitely better than a lost photo.
+      let raw: Uint8Array
+      try {
+        raw = new Uint8Array(await readFileRobust(file))
+      } catch {
+        const main = await scaleAndEncode(bitmap, MAX_IMG_DIM, 'image/jpeg', 0.92)
+        return { blob: main.blob, thumbBlob, mimeType: 'image/jpeg', name: file.name, width: main.width, height: main.height }
+      }
       if (jpegOrientation(raw) !== 1) {
         // The lossless strip drops APP1 — including the EXIF orientation tag — so a rotated
         // photo would upload sideways. Re-encode instead: createImageBitmap already baked the
