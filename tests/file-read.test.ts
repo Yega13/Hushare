@@ -48,6 +48,26 @@ describe('readFileRobust', () => {
     expect(err.message).not.toContain('boom')
   })
 
+  it('recovers a file that only becomes readable after a moment', async () => {
+    // THE camera case, and the one 2.5 seconds of patience was not enough for. A photo taken in the
+    // phone's own camera app is handed over as a content:// URI the instant the media-store row
+    // exists, while the file behind it is still being written -- so the first reads fail and a
+    // later one succeeds. Refusing it is the bug; waiting is the whole fix.
+    let calls = 0
+    const flaky = {
+      arrayBuffer: () => {
+        calls++
+        return calls < 3
+          ? Promise.reject(Object.assign(new Error('not yet'), { name: 'NotReadableError' }))
+          : Promise.resolve(new ArrayBuffer(4))
+      },
+    } as unknown as Blob
+
+    const buf = await readFileRobust(flaky, 4)
+    expect(buf.byteLength).toBe(4)
+    expect(calls).toBe(3)   // it kept trying rather than giving up on the first refusal
+  })
+
   it('still returns the bytes when the file reads normally', async () => {
     const buf = new ArrayBuffer(8)
     const ok = { arrayBuffer: () => Promise.resolve(buf) } as unknown as Blob

@@ -88,7 +88,7 @@ type Mark = { label: string; bg: string; fg: string; border: string; title: stri
 const MARKS = {
   design:    { label: 'by design',  bg: '#E9F3EC', fg: '#2E6B3E', border: '#C9E2D2', title: 'Not a fault. The product refused something on purpose, or a fallback engaged and worked.' },
   oldCode:   { label: 'old code',   bg: '#EFEAE1', fg: '#7A6A58', border: '#DED5C6', title: 'Reported by a browser running a bundle older than the live deploy — a stale tab, not a live bug.' },
-  regressed: { label: 'regressed',  bg: '#FBE8E7', fg: '#B3261E', border: '#EFCFCC', title: 'This exact message was cleared before and has come back. Something that was believed fixed is not.' },
+  regressed: { label: 'regressed',  bg: '#FBE8E7', fg: '#B3261E', border: '#EFCFCC', title: 'This exact message was cleared before and has appeared again. Worth checking whether something believed fixed is not — though a transient failure (a timeout, a dropped connection) simply recurring will also land here.' },
   fresh:     { label: 'new',        bg: '#E7EFF8', fg: '#1B4F86', border: '#CBDBEE', title: 'This message has never been seen before — nobody has looked at it yet.' },
 } satisfies Record<string, Mark>
 
