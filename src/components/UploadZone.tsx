@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import * as tus from 'tus-js-client'
 import type { Album } from '@/types'
 import { stripExifFromJpeg, jpegOrientation, stripMetadataFromPng, stripMetadataFromWebp } from '@/lib/exif'
-import { snapshotFileRobust, readFileRobust } from '@/lib/file-read'
+import { snapshotFileRobust, readFileRobust, isFileReadFailure } from '@/lib/file-read'
 import { showAppToast } from '@/components/AppToast'
 import { useT } from '@/i18n/LocaleProvider'
 import { detectKind, uploadCapsForTier, tooLargeMessage, generateVideoPoster } from '@/lib/media'
@@ -169,6 +169,20 @@ async function convertHeicMainThread(file: File): Promise<Blob> {
 
 // ─── Image processing helpers ─────────────────────────────────────────────────
 
+// A data: URL back into bytes. Needed because toDataURL is the only encoder left when toBlob
+// refuses, and every caller downstream wants a Blob.
+function dataUrlToBlob(dataUrl: string): Blob | null {
+  const comma = dataUrl.indexOf(',')
+  if (comma < 0) return null
+  const header = dataUrl.slice(0, comma)
+  if (!header.startsWith('data:') || !header.includes(';base64')) return null
+  const mime = header.slice(5, header.indexOf(';')) || 'image/jpeg'
+  const binary = atob(dataUrl.slice(comma + 1))
+  const bytes = new Uint8Array(binary.length)
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i)
+  return new Blob([bytes], { type: mime })
+}
+
 async function encodeCanvas(
   canvas: HTMLCanvasElement | OffscreenCanvas,
   mimeType: string,
@@ -177,13 +191,34 @@ async function encodeCanvas(
   if (canvas instanceof OffscreenCanvas) {
     return canvas.convertToBlob({ type: mimeType, quality })
   }
-  return new Promise<Blob>((resolve, reject) =>
-    (canvas as HTMLCanvasElement).toBlob(
-      b => (b ? resolve(b) : reject(new Error('canvas.toBlob returned null'))),
-      mimeType,
-      quality,
-    ),
-  )
+  const el = canvas as HTMLCanvasElement
+  const once = () => new Promise<Blob | null>(resolve => el.toBlob(resolve, mimeType, quality))
+
+  // toBlob hands back NULL rather than throwing when WebKit cannot allocate the encode buffer,
+  // which happens on iPhones part-way through a large batch. One null used to end the photo.
+  let blob = await once()
+
+  // Memory pressure is a moment, not a verdict: the previous file's buffers are released between
+  // these two attempts, and the retry usually lands.
+  if (!blob) {
+    await new Promise(r => setTimeout(r, 150))
+    blob = await once()
+  }
+
+  // A genuinely different encoder path in WebKit, not a repeat of the same one -- toDataURL
+  // allocates a string rather than a Blob and regularly succeeds where toBlob has just returned
+  // null. It costs a base64 round trip, which is why it is third and not first.
+  if (!blob) {
+    try {
+      const fallback = dataUrlToBlob(el.toDataURL(mimeType, quality))
+      if (fallback && fallback.size > 0) blob = fallback
+    } catch { /* fall through to the throw below */ }
+  }
+
+  if (blob) return blob
+  // Deliberately carries no dimensions or sizes: /admin groups by exact message text, so a number
+  // that changes per photo would scatter one recurring problem across a column of single rows.
+  throw new Error('Could not process this photo on this device — try again, or with fewer photos at once.')
 }
 
 // ─── Single-decode pipeline constants ────────────────────────────────────────
@@ -1600,6 +1635,13 @@ function isRecoverableNetworkFailure(e: unknown): boolean {
   const raw = e instanceof Error ? e.message : String(e)
   // Refusals the product made on purpose are never network failures, whatever else they contain.
   if (/^(File too large|Unsupported)/i.test(raw)) return false
+  // A file the DEVICE would not hand over. It earns the same treatment as a dropped connection --
+  // park it, try once more -- for an entirely different reason: a freshly captured or cloud-backed
+  // photo is very often readable a moment after it is not, and that second attempt is what saves
+  // it. Until 2026-08-22 these arrived as a bare "Failed to fetch" and matched the regex below BY
+  // ACCIDENT, so the behaviour here is unchanged on purpose; what changed is that it is now a
+  // decision rather than a coincidence, and the message no longer blames the network for it.
+  if (isFileReadFailure(e)) return true
   return /failed to fetch|load failed|network request failed|networkerror|network error during upload|couldn't upload after trying multiple connection methods|couldn't reach the server|upload stalled/i.test(raw)
 }
 
