@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { verifyOwnerViaCookieWithRateLimit } from '@/lib/album-owner-access'
 import { forbidCrossSiteRequest } from '@/lib/request-security'
-import { r2KeyFromUrl } from '@/lib/album-delete'
+import { r2KeyFromUrl, deleteR2KeysChunked } from '@/lib/album-delete'
 import { deleteStreamVideo } from '@/lib/cloudflare/stream'
 import { deleteFaces } from '@/lib/rekognition'
 import { getCloudflareContext } from '@opennextjs/cloudflare'
@@ -42,7 +42,7 @@ async function deleteR2Keys(keys: string[]): Promise<void> {
     const ctx = getCloudflareContext()
     const bucket = (ctx?.env as R2Env | undefined)?.R2_BUCKET
     if (bucket) {
-      await bucket.delete(keys)
+      await deleteR2KeysChunked(bucket, keys, 'photo/bulk-delete')
     } else {
       console.error('[photo/bulk-delete] R2 binding unavailable, orphaning keys:', keys)
     }

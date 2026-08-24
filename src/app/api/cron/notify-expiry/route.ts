@@ -106,9 +106,16 @@ export async function POST(req: Request) {
         Math.round((new Date(album.last_activity_at).getTime() + RETIRE_AFTER_DAYS * 24 * 60 * 60 * 1000 - now) / (24 * 60 * 60 * 1000)),
       )
 
-      // Mark first so duplicate emails don't send if the email call hangs on retry
-      await admin.from('albums').update({ last_notification_at: new Date().toISOString() }).eq('id', album.id)
+      // SEND FIRST, then mark. The order matters more than it looks.
+      //
+      // Marking first was chosen to avoid duplicate emails, but it trades a nuisance for permanent
+      // data loss: the query only ever considers albums where last_notification_at IS NULL, so if
+      // the send then failed -- Resend down, rate-limited, the isolate dying between two awaits --
+      // the album was flagged as warned, was never retried, and retire-albums deleted it and every
+      // photo in it thirty days later having told nobody. The worst case in this order is that
+      // somebody receives the same warning twice.
       await sendExpiryWarningEmail(email, album.title, albumUrl, daysLeft)
+      await admin.from('albums').update({ last_notification_at: new Date().toISOString() }).eq('id', album.id)
       notified += 1
     } catch (err) {
       console.error('[notify-expiry] failed for album', album.id, ':', err instanceof Error ? err.message : String(err))

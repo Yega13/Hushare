@@ -89,8 +89,13 @@ export async function POST(req: Request) {
 
   const tierMatch = tierFromProduct(sub.product_id)
   if (!tierMatch) {
-    console.error('[polar/webhook] unknown product_id:', sub.product_id)
-    return NextResponse.json({ ok: true, error: 'unknown_product' }, { headers: NO_STORE })
+    // 500, not 200. A 200 tells Polar the event was handled and it never retries -- so a product
+    // rotated in Polar, or a POLAR_PRODUCT_* variable missing from the Worker, silently swallows a
+    // real payment: the customer is charged, gets no access, and the only trace is a console line
+    // nobody reads. Failing loudly lets Polar's own retry schedule cover the configuration gap
+    // while it is fixed, which is exactly what that retry exists for.
+    console.error('[polar/webhook] unknown product_id (check POLAR_PRODUCT_* secrets):', sub.product_id)
+    return NextResponse.json({ error: 'unknown_product' }, { status: 500, headers: NO_STORE })
   }
 
   const admin = createAdminClient()

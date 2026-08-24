@@ -235,8 +235,20 @@ export async function cleanupStaleStreamUploads(): Promise<{
     scanned += batch.length
     for (const v of batch) {
       if (v.status?.state === 'ready') continue
-      // Non-ready (pendingupload/inprogress/queued/downloading/error): delete only once its upload
-      // window has closed, so a currently-in-flight upload is never caught.
+      // ENCODING IS NOT UPLOADING, and conflating them destroys finished videos.
+      //
+      // uploadExpiry is set to upload-start + 2h and bounds the UPLOAD window. Cloudflare then
+      // encodes, which is separate work and takes real time on a large file -- an 849 MB clip
+      // measured on 2026-08-22 was 54% done eight minutes in, and a 4 GB Studio-tier video takes
+      // considerably longer. A guest who finishes a slow upload at T+1h50m is still encoding at
+      // T+2h, and this cron fires at 02:00, which is exactly when an evening event's uploads land.
+      // The old guard would delete that video, and nothing removes the photos row -- so the album
+      // keeps a permanently broken tile with no record and no way to recover it.
+      //
+      // queued/inprogress/downloading all mean Cloudflare is still working. Only pendingupload
+      // (bytes never arrived) and error (Cloudflare gave up) are genuinely abandoned.
+      const state = v.status?.state
+      if (state === 'queued' || state === 'inprogress' || state === 'downloading') continue
       if (v.uploadExpiry && new Date(v.uploadExpiry).getTime() < now) {
         stale.push({ uid: v.uid, maxDurationSeconds: v.maxDurationSeconds ?? 0 })
       }
@@ -245,6 +257,33 @@ export async function cleanupStaleStreamUploads(): Promise<{
     const nextCursor = batch[batch.length - 1]?.created
     if (!nextCursor || nextCursor === end) break // no progress → stop (avoids a dup-timestamp loop)
     end = nextCursor
+  }
+
+  // Second, independent guard: never delete a video we have a photos row for.
+  //
+  // The state check above is a judgement about Cloudflare's vocabulary; this is a fact about ours.
+  // A photos row exists only after the bytes landed and the upload was accepted, so any uid with a
+  // row is a real video belonging to a real album -- whatever state the API reports. Belt and
+  // braces on the one operation here that cannot be undone.
+  if (stale.length > 0) {
+    try {
+      const { createAdminClient } = await import('@/lib/supabase/admin')
+      const { data: known } = await createAdminClient()
+        .from('photos')
+        .select('stream_uid')
+        .in('stream_uid', stale.map(x => x.uid))
+        .returns<{ stream_uid: string }[]>()
+      const keep = new Set((known ?? []).map(r => r.stream_uid))
+      if (keep.size > 0) {
+        for (let i = stale.length - 1; i >= 0; i--) if (keep.has(stale[i].uid)) stale.splice(i, 1)
+        console.warn(`[stream] cleanup skipped ${keep.size} video(s) that have a photos row`)
+      }
+    } catch (e) {
+      // If we cannot confirm what is ours, delete NOTHING. Reclaiming quota is a housekeeping
+      // nicety; deleting a customer's wedding video is not recoverable.
+      console.error('[stream] cleanup aborted — could not verify against photos:', e instanceof Error ? e.message : String(e))
+      return { scanned, deleted: 0, failed: 0, reclaimedMinutes: 0 }
+    }
   }
 
   let deleted = 0

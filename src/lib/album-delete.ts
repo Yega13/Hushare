@@ -22,6 +22,30 @@ type PhotoToDelete = {
   thumb_url: string | null
 }
 
+// R2's delete() takes at most 1000 keys per call, and an over-long array fails the WHOLE batch.
+//
+// Every image contributes two keys (the original and its thumbnail), so any album past ~500 photos
+// exceeded it -- and by then the database rows are already gone, so the failure orphans every
+// object with no record left to retry from. Silent, permanent, and it grows with each large album
+// anyone deletes. This is storage being paid for forever with nothing pointing at it.
+//
+// Chunked, and each chunk is independent: one failing batch must not take the others with it.
+export async function deleteR2KeysChunked(
+  bucket: { delete: (keys: string[]) => Promise<unknown> },
+  keys: string[],
+  label: string,
+): Promise<void> {
+  const CHUNK = 900   // under R2's 1000 ceiling, with room for the limit to be interpreted strictly
+  for (let i = 0; i < keys.length; i += CHUNK) {
+    const batch = keys.slice(i, i + CHUNK)
+    try {
+      await bucket.delete(batch)
+    } catch (e) {
+      console.error(`[${label}] R2 delete failed for ${batch.length} key(s):`, e instanceof Error ? e.message : String(e))
+    }
+  }
+}
+
 export function r2KeyFromUrl(url: string | null): string | null {
   if (!url) return null
   const rawHost = process.env.R2_PUBLIC_HOST
@@ -103,7 +127,7 @@ export async function deleteAlbumAssetsAndRows(
       const ctx = getCloudflareContext()
       const bucket = (ctx?.env as R2Env | undefined)?.R2_BUCKET
       if (bucket) {
-        await bucket.delete([...r2Keys])
+        await deleteR2KeysChunked(bucket, [...r2Keys], 'album/delete')
       } else {
         console.error('[album/delete] R2 binding unavailable; orphaning', [...r2Keys])
       }

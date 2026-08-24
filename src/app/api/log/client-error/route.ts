@@ -82,9 +82,33 @@ export async function POST(req: Request) {
   if (prior) {
     const priorCtx = (prior.context ?? {}) as Record<string, unknown>
     const repeats = typeof priorCtx.repeats === 'number' ? priorCtx.repeats : 1
+    const incoming = (context ?? {}) as Record<string, unknown>
+
+    // Merge rather than discard. The first version of this kept only the FIRST report's context,
+    // which quietly threw away every later one -- including directCause/relayCause, the fields
+    // added the day before precisely to explain a failure that is stable by design and therefore
+    // coalesces every single time. One sample and a count is not the same as knowing.
+    //
+    // Only keys the stored row is MISSING are adopted, so the first occurrence stays the sample
+    // and a later report cannot rewrite history; but a diagnostic that only some occurrences carry
+    // still survives instead of being lost to whichever one happened to arrive first.
+    const merged: Record<string, unknown> = { ...priorCtx }
+    for (const [k, v] of Object.entries(incoming)) {
+      if (merged[k] === undefined && v !== undefined && v !== null) merged[k] = v
+    }
+    merged.repeats = repeats + 1
+    // The row keeps its original created_at so the timeline is not shredded, which means nothing
+    // otherwise says an old-looking row is still happening RIGHT NOW.
+    merged.lastSeen = new Date().toISOString()
+    // One incident across several devices is a different problem from one device failing
+    // repeatedly, and collapsing rows hides the difference. A flag is enough to tell them apart
+    // without letting context grow with every reporter.
+    if (ua && typeof priorCtx.firstUa === 'string' && priorCtx.firstUa !== ua) merged.multiDevice = true
+    else if (ua && priorCtx.firstUa === undefined) merged.firstUa = ua.slice(0, 80)
+
     const { error } = await admin
       .from('error_events')
-      .update({ context: { ...priorCtx, repeats: repeats + 1 } })
+      .update({ context: merged })
       .eq('id', prior.id)
     if (error) console.error('[client-error] repeat update failed:', error.message)
     return new NextResponse(null, { status: 204, headers: NO_STORE })

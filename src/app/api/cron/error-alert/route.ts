@@ -15,6 +15,8 @@ const NO_STORE = { 'Cache-Control': 'no-store' }
 // make up most of a normal day cannot trigger it, and it needs a CLUSTER rather than a single
 // event, because one guest on a dying connection is not an incident.
 const WINDOW_MINUTES = 10
+// Must match the coalescing window in api/log/client-error.
+const COALESCE_WINDOW_MINUTES = 5
 const THRESHOLD = 8
 // One message per incident, not one per minute for as long as it lasts. An alert that arrives 40
 // times gets muted by its reader, which is worse than no alert at all.
@@ -33,21 +35,36 @@ export async function POST(req: Request) {
   if (!to) return NextResponse.json({ ok: true, skipped: 'ERROR_ALERT_EMAIL not set' }, { headers: NO_STORE })
 
   const admin = createAdminClient()
-  const since = new Date(Date.now() - WINDOW_MINUTES * 60_000).toISOString()
+  // Widened by the coalescing window, and counted by REPEATS rather than by rows.
+  //
+  // api/log/client-error merges a repeat of the same (level, source, message, album) into the
+  // existing row within five minutes and increments context.repeats. Counting rows after that
+  // change silently disarmed this alarm: one message failing a hundred times in one album -- the
+  // exact incident this exists to catch -- becomes at most two rows in a ten-minute window, which
+  // never reaches a threshold of eight. It would have required eight DISTINCT messages, and one
+  // widespread problem by definition does not produce those.
+  //
+  // The window is widened by the same five minutes because a row that is actively absorbing
+  // repeats keeps its ORIGINAL created_at, so it can sit just outside a ten-minute window while
+  // still being the thing going wrong right now.
+  const since = new Date(Date.now() - (WINDOW_MINUTES + COALESCE_WINDOW_MINUTES) * 60_000).toISOString()
 
   const { data: rows, error } = await admin
     .from('error_events')
-    .select('message, source, ua')
+    .select('message, source, ua, context')
     .eq('level', 'error')
     .gte('created_at', since)
     .limit(200)
-    .returns<{ message: string; source: string; ua: string | null }[]>()
+    .returns<{ message: string; source: string; ua: string | null; context: { repeats?: number } | null }[]>()
   if (error) {
     console.error('[cron/error-alert] query failed:', error.message)
     return NextResponse.json({ error: 'query failed' }, { status: 500, headers: NO_STORE })
   }
 
-  const count = rows?.length ?? 0
+  // How many times something actually went wrong, not how many rows describe it.
+  const occurrences = (r: { context: { repeats?: number } | null }) =>
+    typeof r.context?.repeats === 'number' && r.context.repeats > 0 ? r.context.repeats : 1
+  const count = (rows ?? []).reduce((n, r) => n + occurrences(r), 0)
   if (count < THRESHOLD) return NextResponse.json({ ok: true, count, alerted: false }, { headers: NO_STORE })
 
   // Cooldown is checked AFTER the threshold so a quiet period does not consume it, and read from
@@ -66,7 +83,9 @@ export async function POST(req: Request) {
   await admin.from('system_state').upsert({ key: STATE_KEY, value: nowIso, updated_at: nowIso })
 
   const tally = new Map<string, number>()
-  for (const r of rows ?? []) tally.set(r.message, (tally.get(r.message) ?? 0) + 1)
+  // Weighted the same way, so the email names the message that is actually dominating rather than
+  // whichever one happens to own the most rows.
+  for (const r of rows ?? []) tally.set(r.message, (tally.get(r.message) ?? 0) + occurrences(r))
   const top = [...tally.entries()].sort((a, b) => b[1] - a[1]).slice(0, 5)
   const devices = new Set((rows ?? []).map(r => (r.ua ?? '').match(/\((.*?)\)/)?.[1] ?? 'unknown'))
 

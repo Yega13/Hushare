@@ -566,7 +566,19 @@ async function processImageInner(file: File): Promise<ProcessedImage> {
     // Small PNG/WebP: pixels are kept exactly as-is, but the metadata chunks come out. Both formats
     // can carry GPS (PNG via eXIf, WebP via its EXIF chunk) and the privacy policy promises location
     // never reaches us, so "no EXIF concern" was wrong for anything that was not a screenshot.
-    const raw = new Uint8Array(await file.arrayBuffer())
+    // Same protection the JPEG branch above got, and for the same reason: reaching here means
+    // createImageBitmap already read this file, so the bytes were available a moment ago -- which is
+    // not a guarantee on a device still writing the file. A bare arrayBuffer() here threw
+    // NotReadableError while a perfectly good bitmap sat open in hand, and because that raw error
+    // is not wrapped by asReadFailure it was classified as neither a read failure nor a network
+    // one: never parked, never auto-resumed, and the guest told to remove a photo we were holding.
+    let raw: Uint8Array
+    try {
+      raw = new Uint8Array(await readFileRobust(file))
+    } catch {
+      const main = await scaleAndEncode(bitmap, MAX_IMG_DIM, mimeType === 'image/png' ? 'image/png' : 'image/webp', MAIN_QUALITY)
+      return { blob: main.blob, thumbBlob, mimeType, name: file.name, width: main.width, height: main.height }
+    }
     const cleaned = mimeType === 'image/png' ? stripMetadataFromPng(raw) : stripMetadataFromWebp(raw)
     const blob = cleaned.length === raw.length
       ? file
@@ -2219,9 +2231,14 @@ export default function UploadZone({ album, onPhotosUploaded }: Props) {
     // treatment, which is exactly why "take a photo" failed while "choose a file" worked and the
     // difference looked like a camera problem.
     //
-    // snapshotFiles copies each file into an in-memory File, so once it has returned the bytes are
-    // ours and the input can be released safely. finally, so a throw mid-snapshot still leaves the
-    // control usable rather than stuck holding a selection it cannot re-pick.
+    // snapshotFiles copies each file into an in-memory File, so for those the bytes are ours and
+    // the input can be released safely. NOT ALL of them: past SNAPSHOT_TOTAL_BUDGET a file keeps
+    // its original reference, so on a very large selection most files are still holding a
+    // content:// grant when the input is cleared. That is a deliberate trade -- copying 700 photos
+    // into memory is what exhausted the tab and stopped uploads entirely -- but it means the
+    // protection below is partial, and anyone changing either side should know which.
+    // finally, so a throw mid-snapshot still leaves the control usable rather than stuck holding a
+    // selection it cannot re-pick.
     try {
       addFiles(await snapshotFiles(files))
     } finally {
