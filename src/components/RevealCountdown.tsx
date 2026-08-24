@@ -42,6 +42,18 @@ function Unit({ value, label }: { value: number; label: string }) {
     <div className="flex flex-col items-center" style={{ minWidth: '4.5rem' }}>
       <span
         className="font-mono font-bold tabular-nums"
+        // The one place in the app where server and client are SUPPOSED to disagree.
+        //
+        // getTimeLeft() reads Date.now(), so the server renders the seconds at request time and the
+        // browser recomputes them at hydration — a second or two later, and always a different
+        // number. React saw the text change underneath it and threw #418 (a hydration text
+        // mismatch) on every album with a countdown, which then reached window.onerror and /admin.
+        //
+        // suppressHydrationWarning is exactly what this is for: content that is legitimately
+        // time-dependent. The alternative — rendering a placeholder until hydrated — would flash
+        // "--" on every load to fix a warning nobody could see, which is a worse product for a
+        // tidier console.
+        suppressHydrationWarning
         style={{
           fontSize: 'clamp(2.8rem, 10vw, 5rem)',
           color: '#FDFAF5',
@@ -193,6 +205,7 @@ export default function RevealCountdown({ revealAt, title, onUnlocked }: Props) 
         <div
           className="flex items-end justify-center"
           aria-live="off"
+          suppressHydrationWarning
           aria-label={`${timeLeft.days > 0 ? `${timeLeft.days} ${t('reveal.ariaDaysUnit')} ` : ''}${pad(timeLeft.hours)} ${t('reveal.ariaHoursUnit')} ${pad(timeLeft.minutes)} ${t('reveal.ariaMinutesUnit')} ${pad(timeLeft.seconds)} ${t('reveal.ariaSecondsUnit')} ${t('reveal.ariaRemaining')}`}
         >
           {/* Regular flex wrapper (not display:contents) so visibility:hidden
