@@ -909,6 +909,17 @@ body:has(.hush-footer-reveal) > main {
 ::view-transition-new(hush-photo-morph) {
   animation-duration: 280ms;
   animation-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
+
+  /* THE SQUASH FIX.
+     The grid tile is object-fit: cover — a square crop of the photo. The lightbox is
+     object-fit: contain — the whole photo, its real shape. So the morph is asked to travel between
+     two boxes of DIFFERENT aspect ratios, and these snapshot pseudo-elements default to stretching
+     to fill their box. The photo visibly squashes on the way out and unsquashes on the way in.
+     cover crops instead of stretching, which is what the eye reads as the same photo moving. */
+  object-fit: cover;
+  /* Pinned, or the snapshot's own intrinsic size animates alongside the group and fights it. */
+  width: 100%;
+  height: 100%;
 }
 
 /* The GROUP is what actually moves and resizes the photo; old/new above only cross-fade. Setting
