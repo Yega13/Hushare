@@ -161,6 +161,7 @@ export default function OwnerToolbar({ album, photos, ownerToken, userTier, medi
   const { zipping, zipProgress, zipStatus, downloadZip } = useZipDownload(photos, album)
 
   const [allowGuestDownloads, setAllowGuestDownloads] = useState(album.allow_guest_downloads !== false)
+  const [hideBranding, setHideBranding] = useState(!!album.hide_branding)
   const [requireApproval, setRequireApproval] = useState(!!album.require_approval)
   const [faceFinderEnabled, setFaceFinderEnabled] = useState(!!album.face_finder_enabled)
   // Switching face search ON is the one control here that creates biometric data, so it is the one
@@ -300,6 +301,7 @@ export default function OwnerToolbar({ album, photos, ownerToken, userTier, medi
       setVideoAutoplay(!!album.video_autoplay)
       setPhotoLayout(album.photo_layout === 'justified' ? 'justified' : 'grid')
       setAllowGuestDownloads(album.allow_guest_downloads !== false)
+      setHideBranding(!!album.hide_branding)
       setRequireApproval(!!album.require_approval)
       setFaceFinderEnabled(!!album.face_finder_enabled)
       setMediaFilter(album.media_filter ?? 'none')
@@ -1226,6 +1228,43 @@ export default function OwnerToolbar({ album, photos, ownerToken, userTier, medi
                             showAppToast(message, 'error')
                             setAllowGuestDownloads(!next)
                             onAlbumUpdated({ allow_guest_downloads: !next })
+                          }
+                        }}
+                        className="h-4 w-4"
+                      />
+                    </label>
+
+                    {/* Pro+. The server is the authority — this only decides what the owner is
+                        shown, and a free owner toggling it gets the plan message back rather than a
+                        silent failure. */}
+                    <label className="flex items-center justify-between gap-4 rounded-xl px-3 py-3" style={{ background: '#FDFAF5', border: '1px solid #DDD5C5', cursor: 'pointer' }}>
+                      <span>
+                        <span className="block text-sm font-semibold" style={{ color: '#630826' }}>Remove Hushare branding</span>
+                        <span className="block text-xs" style={{ color: '#7C5C3E' }}>Hides our logo from this album&apos;s header. Pro and Max.</span>
+                      </span>
+                      <input
+                        type="checkbox"
+                        checked={hideBranding}
+                        onChange={async (e) => {
+                          const next = e.target.checked
+                          setHideBranding(next)
+                          onAlbumUpdated({ hide_branding: next })
+                          try {
+                            const res = await fetch('/api/album/branding', {
+                              method: 'POST',
+                              headers: { 'Content-Type': 'application/json' },
+                              body: JSON.stringify({ slug: album.slug, hide_branding: next }),
+                            })
+                            if (!res.ok) {
+                              const body = await res.json().catch(() => ({})) as { error?: string }
+                              showAppToast(body.error ?? 'Could not save', 'error')
+                              setHideBranding(!next)
+                              onAlbumUpdated({ hide_branding: !next })
+                            }
+                          } catch (err) {
+                            showAppToast(err instanceof Error ? err.message : t('common.networkError'), 'error')
+                            setHideBranding(!next)
+                            onAlbumUpdated({ hide_branding: !next })
                           }
                         }}
                         className="h-4 w-4"

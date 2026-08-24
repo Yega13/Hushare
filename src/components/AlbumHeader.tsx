@@ -85,6 +85,14 @@ export default function AlbumHeader({ album, photoCount, isOwner, onAlbumUpdated
   const shadow = hero ? '0 1px 16px rgba(0,0,0,0.55)' : undefined     // legibility over any photo
   const welcome = (album.welcome_message ?? '').trim()
 
+  // Paid albums can remove the Hushare mark. The column and the type have existed since the
+  // beginning and nothing ever read them, so the feature was listed as sold and did not exist.
+  //
+  // Only the brand mark goes. The album's own logo, title and photos are untouched, and the
+  // /statement and legal footers on marketing pages are unaffected — this hides OUR name on
+  // SOMEONE ELSE'S album, which is the thing being paid for, and nothing more.
+  const showBrand = !album.hide_branding
+
   const logo = (
     <Image
       src={useLightLogo ? '/logo/logo-light-transparent.png' : '/logo/logo-dark-transparent.png'}
@@ -285,9 +293,11 @@ export default function AlbumHeader({ album, photoCount, isOwner, onAlbumUpdated
           {/* zIndex 2, above the title block's 1. The title block is a full-width flex child with
               64px of top padding, and that padding lands right on top of this logo — at equal
               z-index the later element won and ate every click, so the logo stopped being a link. */}
-          <Link href="/" aria-label="Hushare home" className="hush-album-logo-link transition hover:opacity-80" style={{ position: 'absolute', top: 16, left: 'clamp(14px, 4vw, 22px)', zIndex: 2, display: 'inline-flex' }}>
-            {logo}
-          </Link>
+          {showBrand && (
+            <Link href="/" aria-label="Hushare home" className="hush-album-logo-link transition hover:opacity-80" style={{ position: 'absolute', top: 16, left: 'clamp(14px, 4vw, 22px)', zIndex: 2, display: 'inline-flex' }}>
+              {logo}
+            </Link>
+          )}
           <div className="hush-container" style={{ position: 'relative', zIndex: 1, textAlign: 'left', paddingInline: 'clamp(14px, 4vw, 22px)', paddingBottom: 'clamp(16px, 3vw, 26px)', paddingTop: 64 }}>
             {content}
           </div>
@@ -302,9 +312,16 @@ export default function AlbumHeader({ album, photoCount, isOwner, onAlbumUpdated
     <>
       <div className="hush-album-header-shell" style={{ borderBottom: `1px solid ${useLightLogo ? 'rgba(255,255,255,0.14)' : 'rgba(0,0,0,0.10)'}`, background: accent }}>
         <div className="hush-container hush-album-header py-6 flex items-center justify-between" style={{ paddingInline: 'clamp(14px, 4vw, 20px)' }}>
-          <Link href="/" className="hush-album-logo-link flex items-center transition hover:opacity-70" aria-label="Hushare home">
-            {logo}
-          </Link>
+          {showBrand ? (
+            <Link href="/" className="hush-album-logo-link flex items-center transition hover:opacity-70" aria-label="Hushare home">
+              {logo}
+            </Link>
+          ) : (
+            /* The title is centred between the mark and the spacer on the right. Removing the mark
+               without leaving its width behind would shove the title off-centre, so the album would
+               look broken rather than unbranded. */
+            <div className="hush-album-header-spacer w-24" aria-hidden="true" />
+          )}
           <div className="hush-album-title-wrap text-center flex-1 px-4">
             {content}
           </div>
