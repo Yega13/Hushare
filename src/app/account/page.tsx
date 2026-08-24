@@ -5,7 +5,6 @@ import Link from 'next/link'
 import HamburgerMenu from '@/components/HamburgerMenu'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
-import { hasAccountAccess } from '@/lib/access'
 import { isAccountAdmin } from '@/lib/auth'
 import { getActiveSubscription } from '@/lib/subscriptions'
 import { formatDate } from '@/lib/utils'
@@ -104,14 +103,36 @@ export default async function AccountPage({ searchParams }: Props) {
     redirect('/login?next=/account')
   }
 
-  // Just back from checkout — poll until the subscription webhook lands, then show the full page.
-  if (!(await hasAccountAccess(user)) && welcome === '1') {
-    return <SubscriptionPolling email={user.email ?? ''} />
+  // ONE subscription lookup, and access is derived from it.
+  //
+  // This used to call hasAccountAccess(user) and then getActiveSubscription(user.id) — the same
+  // query twice on every load of this page. Beyond the wasted round trip, the two could DISAGREE:
+  // the query returns null on a transient error, so a blip on the second call left a paying
+  // customer being told they were on the free plan by a page that had just let them in on the
+  // strength of the first. One read cannot contradict itself.
+  const subscription = await getActiveSubscription(user.id)
+  const isAdmin = isAccountAdmin(user)
+  const hasAccess = isAdmin || subscription !== null
+
+  // Which tier the customer has just paid for, straight from the checkout redirect. Legacy '1'
+  // links — the ones already sitting in browser histories from earlier purchases — say only "a
+  // purchase happened" and are honoured as such.
+  const purchased: 'pro' | 'studio' | null =
+    welcome === 'pro' ? 'pro' : welcome === 'studio' ? 'studio' : null
+  const justPurchased = purchased !== null || welcome === '1'
+
+  // Back from checkout and the webhook has not caught up yet.
+  //
+  // Two different kinds of "not yet", and the second one used to be invisible. No subscription at
+  // all is the obvious case. The other is an UPGRADE: a Pro customer buying Max already passes an
+  // access check on the Pro row they have had for months, so nothing waited, and the page cheerfully
+  // congratulated them on the plan they had just left. Waiting for the tier to actually match what
+  // was bought covers both.
+  if (justPurchased && (!hasAccess || (purchased !== null && subscription?.tier !== purchased))) {
+    return <SubscriptionPolling email={user.email ?? ''} expectTier={purchased} />
   }
   // Everyone signed in gets a dashboard — free accounts see a trimmed version (below).
 
-  const subscription = await getActiveSubscription(user.id)
-  const isAdmin = isAccountAdmin(user)
   const dict = getDictionary(await getServerLocale())
   const tierLabel = subscription
     ? subscription.tier === 'pro' ? 'Hushare Pro' : 'Hushare Max'
@@ -132,6 +153,9 @@ export default async function AccountPage({ searchParams }: Props) {
     ? ['Custom album backgrounds', 'Password protection', 'Custom URLs', '200 MB uploads']
     : ['3 albums', 'Up to 250 items each', 'Live Photo Wall', 'QR code sharing']
   const nextLabel = subscription?.cancel_at_period_end ? dict['acct.accessEnds'] : dict['acct.nextRenewal']
+  // Never guessed. A missing subscription used to fall through to "Max", so a transient database
+  // error could hand a Pro customer a card reading "You're Max now" over the free feature list.
+  const celebrationTier: 'pro' | 'studio' | null = subscription?.tier ?? (isAdmin ? purchased : null)
 
   let admin: ReturnType<typeof createAdminClient>
   try {
@@ -270,9 +294,6 @@ export default async function AccountPage({ searchParams }: Props) {
 
   return (
     <div className="min-h-screen" style={{ background: '#FDFAF5' }}>
-      {/* Reached only when the subscription is live — the polling branch above catches everyone
-          whose payment has not landed yet. */}
-      {welcome === '1' && <WelcomeCelebration />}
       <AccountNav />
       <main className="hush-account-main px-4 py-10 sm:py-14">
         <div className="hush-container hush-account-container">
@@ -538,6 +559,21 @@ export default async function AccountPage({ searchParams }: Props) {
           </div>
         </div>
       </main>
+
+      {/* LAST in the document, deliberately. It renders as fixed overlays so position is unaffected,
+          but it was first, which put a modal ahead of the whole dashboard in tab order — one Tab out
+          of the card landed on the nav and then walked every album control, "Delete album"
+          included. The card traps focus, and this makes the fallback harmless too.
+          `celebrationTier` is the honest answer to "what did they just buy": a real subscription row
+          for a customer, and for an admin — who has account access with no subscription at all — only
+          what they explicitly asked to preview in the URL. It is never inferred, because the way to
+          get that wrong is to tell someone they are on a plan they are not paying for. */}
+      {justPurchased && celebrationTier && (
+        <WelcomeCelebration
+          plan={celebrationTier === 'pro' ? 'Pro' : 'Max'}
+          features={planFeatures}
+        />
+      )}
     </div>
   )
 }

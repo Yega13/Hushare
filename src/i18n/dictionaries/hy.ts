@@ -743,4 +743,13 @@ export const hy: Partial<Record<DictKey, string>> = {
   // FAQ-ի ծավալում/ծալում
   'faq.seeMore': 'Տեսնել ավելին',
   'faq.seeLess': 'Ծալել',
+
+  'welcome.eyebrow': 'Բաժանորդագրությունը հաստատված է',
+  'welcome.headline': 'Այժմ դուք {plan} եք',
+  'welcome.bodyPro': 'Այսուհետ ձեր յուրաքանչյուր ալբոմ ունի Pro-ի ամբողջ հնարավորությունները։',
+  'welcome.bodyMax': 'Հիմա ձերն է այն ամենը, ինչ կարող է Hushare-ը։ Օտեղծեք մի բան, որ արժե հիշել։',
+  'welcome.unlocked': 'Ինչ է հասանելի այժմ',
+  'welcome.cta': 'Սկսել',
+  'welcome.close': 'Փակել',
+  'welcome.thanks': 'Շնորհակալություն Hushare-ին աջակցելու համար։',
 }

@@ -23,6 +23,11 @@ const MORPH = 'hush-photo-morph'
 // travels down into the tile. Mirror image of opening, which is what it should have been.
 const MORPH_OUT = 'hush-photo-morph-out'
 
+// Marks the document while a CLOSE is in flight, so the stylesheet can hold the backdrop dark until
+// the photo is nearly home. Opening wants the opposite and gets the default. Direction is not
+// something CSS can see on its own — the transition looks identical from the outside either way.
+const CLOSING = 'hush-morph-closing'
+
 // The lightbox photo currently on screen. It carries MORPH by default; closing renames it so the
 // pair is matched under the outbound name.
 function lightboxImage(): HTMLElement | null {
@@ -113,6 +118,8 @@ export function morphPhotoClosed(
   // is called, so this has to be in place first.
   const leaving = lightboxImage()
   if (leaving) leaving.style.viewTransitionName = MORPH_OUT
+  const root = document.documentElement
+  root.classList.add(CLOSING)
 
   const transition = doc.startViewTransition(() => {
     flushSync(update)
@@ -123,6 +130,7 @@ export function morphPhotoClosed(
   })
 
   void transition.finished.catch(() => {}).finally(() => {
+    root.classList.remove(CLOSING)
     const img = tileImage(gridRoot, photoId)
     if (img) img.style.viewTransitionName = ''
   })

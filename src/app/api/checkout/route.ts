@@ -56,7 +56,14 @@ export async function POST(req: Request) {
     return NextResponse.redirect(loginUrl, { status: 303, headers: NO_STORE })
   }
 
-  const successUrl = new URL('/account?welcome=1', req.url).toString()
+  // The success URL names the tier that was JUST BOUGHT, not merely "something was bought".
+  //
+  // Without it the account page can only ask "does this person have a subscription?", and for an
+  // upgrade the answer is yes before the purchase has landed — a Pro customer buying Max would be
+  // congratulated on being Pro, using the Pro feature list, because their old row is still the only
+  // one there. Carrying the tier lets the page tell "already had one" apart from "just got this
+  // one" and wait for the row it is actually looking for.
+  const successUrl = new URL(`/account?welcome=${tier}`, req.url).toString()
 
   const discountId =
     plan === 'pro_monthly'

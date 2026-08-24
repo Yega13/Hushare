@@ -983,6 +983,22 @@ body:has(.hush-footer-reveal) > main {
   animation-duration: 180ms;
 }
 
+/* ...but only on the way IN. Closing needs the opposite.
+   180ms against a 280ms travel means the backdrop has fully resolved at 64% of the journey. Opening,
+   that is exactly right: the dark field arrives early and the photo finishes growing into a calm
+   empty screen. Closing, it means the backdrop is GONE while the photo is still a third of the way
+   from home, so the last stretch happens across a fully-lit grid of a hundred-odd thumbnails and the
+   eye simply loses the photo. Same travel, same easing, and it still read as less smooth than
+   opening — because the background, not the photo, was what changed.
+   So closing holds the dark and lets go late: the full travel plus a little, on an ease-IN, so the
+   grid brightens as the photo settles into its tile rather than before it arrives. This is the same
+   mistake as the one above it — a setting shared by both directions that should never have been. */
+html.hush-morph-closing::view-transition-old(root),
+html.hush-morph-closing::view-transition-new(root) {
+  animation-duration: 300ms;
+  animation-timing-function: cubic-bezier(0.7, 0, 0.84, 0);
+}
+
 @media (prefers-reduced-motion: reduce) {
   ::view-transition-group(*),
   ::view-transition-old(*),

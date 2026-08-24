@@ -743,4 +743,13 @@ export const ru: Partial<Record<DictKey, string>> = {
   // Раскрытие/сворачивание FAQ
   'faq.seeMore': 'Показать ещё',
   'faq.seeLess': 'Свернуть',
+
+  'welcome.eyebrow': 'Подписка подтверждена',
+  'welcome.headline': 'Теперь у вас {plan}',
+  'welcome.bodyPro': 'Каждый новый альбом получает весь набор возможностей Pro.',
+  'welcome.bodyMax': 'Теперь вам доступно всё, что умеет Hushare. Создавайте то, что захочется помнить.',
+  'welcome.unlocked': 'Что теперь доступно',
+  'welcome.cta': 'Начать',
+  'welcome.close': 'Закрыть',
+  'welcome.thanks': 'Спасибо, что поддерживаете Hushare.',
 }

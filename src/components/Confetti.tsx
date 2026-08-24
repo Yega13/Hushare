@@ -13,7 +13,9 @@ import { useEffect, useRef } from 'react'
 // on a phone, the whole effect costs one element and no layout work at all. Every particle lives in
 // a single bitmap, so the browser composites one layer instead of reflowing a hundred DOM nodes.
 
-const COLORS = ['#630826', '#A8123C', '#D4AF6A', '#8B6F4E', '#F2E3CE']
+// Chosen to read against the modal's dark wine scrim, which is what is behind them for most of
+// their life. The deepest brand wine was in here first and simply disappeared into it.
+const COLORS = ['#7E1236', '#A8123C', '#D4AF6A', '#8B6F4E', '#F2E3CE']
 
 const DURATION_MS = 2600   // how long particles keep being interesting
 const FADE_MS = 600        // the tail, so nothing ever pops out of existence
@@ -107,6 +109,25 @@ export default function Confetti() {
     size()
     window.addEventListener('resize', size)
 
+    // Hand the memory back the moment the party is over, without unmounting.
+    //
+    // A full-screen backing store is around 14MB at 2x on a large display, and it was being held for
+    // the rest of the session along with a live resize listener that reallocated and cleared all of
+    // it on every resize — which on a phone means every time the URL bar collapses. Zeroing the
+    // canvas frees the buffer; the element itself is inert at 0x0 and costs nothing. Doing this
+    // instead of a `done` state also keeps the component free of a render triggered from inside an
+    // effect, and free of any server/client difference in what it renders.
+    let released = false
+    const release = () => {
+      if (released) return
+      released = true
+      window.removeEventListener('resize', size)
+      canvas.width = 0
+      canvas.height = 0
+      canvas.style.width = '0px'
+      canvas.style.height = '0px'
+    }
+
     const particles = makeParticles(w, h)
     let raf = 0
     let last = performance.now()
@@ -155,6 +176,7 @@ export default function Confetti() {
       // the bottom. No timer to keep in step with the physics.
       if (visible === 0 || elapsed > DURATION_MS + FADE_MS) {
         ctx.clearRect(0, 0, w, h)
+        release()
         return
       }
       raf = requestAnimationFrame(frame)
@@ -163,7 +185,7 @@ export default function Confetti() {
 
     return () => {
       cancelAnimationFrame(raf)
-      window.removeEventListener('resize', size)
+      release()
     }
   }, [])
 

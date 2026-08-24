@@ -763,6 +763,18 @@ export const en = {
   // FAQ expand/collapse control
   'faq.seeMore': 'See more',
   'faq.seeLess': 'See less',
+
+  // The just-paid modal. Kept deliberately free of numbers — the feature list is passed in from the
+  // page, which already computes it, so limits live in exactly one place and a tier change cannot
+  // leave this saying something untrue.
+  'welcome.eyebrow': 'Membership confirmed',
+  'welcome.headline': 'You’re {plan} now',
+  'welcome.bodyPro': 'Every album you make from here carries the full Pro toolkit.',
+  'welcome.bodyMax': 'Everything Hushare can do is now yours. Go and make something worth remembering.',
+  'welcome.unlocked': 'What’s yours now',
+  'welcome.cta': 'Start creating',
+  'welcome.close': 'Close',
+  'welcome.thanks': 'Thank you for backing Hushare.',
 } as const
 
 export type Dict = typeof en
