@@ -236,7 +236,7 @@ export default function AdminErrorTabs(
                           dropped connection is one line rather than ninety-eight. Without this the
                           row would understate the incident as a single failure. */}
                       {(() => {
-                        const ctx = e.context as { failedFiles?: number; parked?: boolean } | null
+                        const ctx = e.context as { failedFiles?: number; parked?: boolean; repeats?: number } | null
                         const n = ctx?.failedFiles
                         return (
                           <>
@@ -247,6 +247,12 @@ export default function AdminErrorTabs(
                                 fails. Saying which is which is the whole difference between "being
                                 handled" and "gave up". */}
                             {ctx?.parked ? <span style={{ color: MUTED }}> · retrying</span> : null}
+                            {/* Repeats of the same incident are coalesced into this row rather than
+                                written as new ones (see api/log/client-error). Showing the count is
+                                what keeps that from hiding how often something happened. */}
+                            {typeof ctx?.repeats === 'number' && ctx.repeats > 1
+                              ? <strong style={{ color: BRAND }}> · ×{ctx.repeats}</strong>
+                              : null}
                           </>
                         )
                       })()}

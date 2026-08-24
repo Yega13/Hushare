@@ -1,0 +1,60 @@
+# Nightly database backup.
+#
+# Supabase's free plan takes no backups at all, and until this existed the only copies were whatever
+# had been made by hand on one laptop. The media lives in R2 and Stream; Postgres holds the rows
+# that give it meaning, so losing it loses every album without losing a single photo.
+#
+# Runs on a schedule only. No push trigger: a backup should happen because time passed, not because
+# somebody edited a file.
+name: Nightly database backup
+
+on:
+  schedule:
+    # 03:15 UTC daily. Deliberately not on the hour — GitHub's scheduler is busiest exactly then,
+    # and a queued run can be delayed by many minutes or dropped entirely.
+    - cron: '15 3 * * *'
+  # So it can be proven to work without waiting a day.
+  workflow_dispatch:
+
+# Least privilege: this job reads the database and writes to R2. It has no business touching the
+# repository, and on a PUBLIC repo a token with write access is a much larger prize than the code.
+permissions:
+  contents: read
+
+concurrency:
+  # Never let two backups overlap — the second would upload a dump the first was still pruning
+  # against, and the retention count would be computed from a moving target.
+  group: nightly-backup
+  cancel-in-progress: false
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      # The dump and upload scripts need `pg` and the S3 client, both already dependencies.
+      - run: npm ci
+
+      - name: Dump the database
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: node scripts/backup-db.mjs
+
+      - name: Upload to R2 and prune old copies
+        env:
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          R2_BACKUP_BUCKET: ${{ secrets.R2_BACKUP_BUCKET }}
+        run: node scripts/backup-upload.mjs
+
+      # DELIBERATELY no actions/upload-artifact step. Artifacts on a public repository can be
+      # downloaded by anyone, and a dump contains every owner token and album password hash — it
+      # would publish precisely what this job exists to protect. The copy in R2 is the copy.
