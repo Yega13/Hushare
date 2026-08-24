@@ -1,6 +1,7 @@
 'use client'
 
 import React, { useState, useEffect, useLayoutEffect, useCallback, useMemo, useRef } from 'react'
+import { morphPhoto, morphPhotoClosed } from '@/components/photo-grid/viewTransition'
 import type { Album, Photo } from '@/types'
 import { DEFAULT_SLIDESHOW_INTERVAL_MS, cssMediaDisplayFilter } from '@/lib/media-display'
 import { MEDIA_AUTHOR_MAX, MEDIA_CAPTION_MAX, SUPPRESS_CLICK_AFTER_REORDER_MS, BTT_UPDATE_EVENT } from '@/lib/constants'
@@ -241,19 +242,38 @@ export default function PhotoGrid({ album, photos, albumPhotoCount, isOwner, slu
   const closeLightbox = useCallback(() => {
     slideshowTimer.clear()
     slideshowTimer.remainingMsRef.current = null
-    clearSlideshow()
-    setFlippedPhotoId(null)
-    setLightboxFlipped(false)
-    setLightbox(null)
+    // Captured before anything clears — afterwards there is no current photo to morph back into.
+    //
+    // viewerPhotos, NOT photos: `lightbox` indexes the VIEWER's list, and the two diverge the moment
+    // a slideshow is running. Indexing the album instead sent the photo flying back into whichever
+    // tile happened to sit at that position — usually the wrong one entirely.
+    const returningTo = lightbox != null ? viewerPhotos[lightbox]?.id : undefined
+    morphPhotoClosed(gridRef.current, returningTo ?? '', () => {
+      // clearSlideshow lives INSIDE the callback with the rest. Left outside, it flushed on its own
+      // and changed viewerPhotos while `lightbox` was still set — so for one commit the lightbox
+      // showed a different photo, remounted on its key, fetched a full-size image nobody asked for,
+      // and that was the frame the browser captured as the thing being closed.
+      clearSlideshow()
+      setFlippedPhotoId(null)
+      setLightboxFlipped(false)
+      setLightbox(null)
+    })
     if (lightboxHistoryRef.current) {
       lightboxHistoryRef.current = false
       window.history.back()
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  }, [lightbox, viewerPhotos, clearSlideshow])
 
   function openLightbox(index: number) {
-    setLightbox(index)
+    const photo = photos[index]
+    // Morph the tapped thumbnail into the full photo. Falls straight through to the plain state
+    // change where the browser cannot do it, which is exactly the hard cut this replaces.
+    morphPhoto(gridRef.current, photo?.id ?? '', () => {
+      setLightbox(index)
+    })
+    // Outside the transition: pushing history inside it would be captured as part of the animation
+    // frame for no reason, and it is not a visual change.
     if (!lightboxHistoryRef.current) {
       window.history.pushState({ hushLightbox: true }, '', window.location.href)
       lightboxHistoryRef.current = true

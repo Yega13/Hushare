@@ -419,7 +419,16 @@ export default function LightboxOverlay({
               alt={current.caption || ''}
               className="block w-full max-h-[min(70vh,760px)] max-w-full object-contain"
               ref={(node) => onMediaNodeChange(node)}
-              style={{ ...mediaZoomStyle(current), transition: 'opacity 0.2s ease', opacity: (current.thumb_url && !lightboxOriginalLoadedIds.has(current.id)) ? 0.7 : 1 }}
+              style={{
+                ...mediaZoomStyle(current),
+                transition: 'opacity 0.2s ease',
+                opacity: (current.thumb_url && !lightboxOriginalLoadedIds.has(current.id)) ? 0.7 : 1,
+                // The other half of the grid→lightbox morph (see photo-grid/viewTransition.ts). The
+                // grid tile carries this name in the OLD state and gives it up; this element claims
+                // it in the NEW one, and the browser animates between the two. Harmless where view
+                // transitions are unsupported — it is simply an unknown property.
+                viewTransitionName: 'hush-photo-morph',
+              }}
               onLoad={(e) => {
                 if (e.currentTarget.src.endsWith(current.url ?? '') || !current.thumb_url) {
                   onSetOriginalLoaded((prev) => {

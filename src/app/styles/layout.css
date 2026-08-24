@@ -900,3 +900,45 @@ body:has(.hush-footer-reveal) > main {
 @media (prefers-reduced-motion: reduce) {
   .hush-curtain-mark { animation: none; }
 }
+
+/* ─── Photo morph: grid tile ⇄ lightbox ─────────────────────────────────────────────────────── */
+/* The browser animates between the two automatically; this only sets the pace.
+   Short, because it sits in front of the most repeated interaction in the product — every guest
+   opening every photo. Anything statelier would be charming twice and tiresome thereafter. */
+::view-transition-old(hush-photo-morph),
+::view-transition-new(hush-photo-morph) {
+  animation-duration: 280ms;
+  animation-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* The GROUP is what actually moves and resizes the photo; old/new above only cross-fade. Setting
+   the duration on those alone left the movement on Chrome's 250ms default, so the fade outlived the
+   travel by 30ms and the whole thing landed slightly out of step. */
+::view-transition-group(hush-photo-morph) {
+  animation-duration: 280ms;
+  animation-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* The lightbox's own entrance is suppressed while a morph is running.
+   .hush-lightbox-media fades and scales the photo in over 300ms, and .hush-modal-pop lifts the
+   whole dialog — both were written for a hard cut, where an entrance is exactly right. During a
+   morph they are a second animation on the same pixels, and worse: the morph captures its
+   destination the instant the DOM updates, which is frame ZERO of those entrances, so it animates
+   the photo to a target ~4% small and 10px low and then snaps. The morph IS the entrance now. */
+html:active-view-transition .hush-lightbox-media,
+html:active-view-transition .hush-modal-pop {
+  animation: none;
+}
+
+/* The rest of the page — grid behind, lightbox backdrop — cross-fades faster than the photo moves,
+   so the eye follows the photo rather than the furniture. */
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation-duration: 180ms;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  ::view-transition-group(*),
+  ::view-transition-old(*),
+  ::view-transition-new(*) { animation: none !important; }
+}

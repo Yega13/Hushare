@@ -87,8 +87,13 @@ function prefersReducedMotion(): boolean {
   return reducedMotion
 }
 
-function useCountUp(target: number, ms = 650): number {
-  const [shown, setShown] = useState(target)
+// `from` is where the roll STARTS on first render — the value at your last visit. Without it the
+// count-up only ever fired when a number happened to change while you were watching, which on a
+// twenty-second poll means almost never: you upload, then open the dashboard, and by the time it
+// renders the number is already correct and there is nothing to animate. Starting from the baseline
+// means the climb IS the delta, played every time the page opens, which is what the figure was for.
+function useCountUp(target: number, from?: number, ms = 900): number {
+  const [shown, setShown] = useState(() => (typeof from === 'number' ? from : target))
   const rafRef = useRef(0)
   // What is on screen RIGHT NOW. A new target arriving mid-roll must continue from where the digits
   // actually are, not from wherever the previous run set out from — otherwise a second update
@@ -135,8 +140,8 @@ function Delta({ n, invert }: { n: number; invert?: boolean }) {
 
 // tabular-nums on the parent keeps the width steady while the digits roll, so nothing beside it
 // twitches as the number climbs.
-function CountUp({ value }: { value: number }) {
-  return <>{useCountUp(value).toLocaleString('en-US')}</>
+function CountUp({ value, from }: { value: number; from?: number }) {
+  return <>{useCountUp(value, from).toLocaleString('en-US')}</>
 }
 
 export default function AdminLiveStats({ initial }: { initial: LiveStats }) {
@@ -206,7 +211,7 @@ export default function AdminLiveStats({ initial }: { initial: LiveStats }) {
             <div key={c.key} style={{ background: CARD, border: `1px solid ${BORDER}`, borderRadius: 12, padding: '12px 14px' }}>
               <div style={{ fontSize: 11, color: MUTED, textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: 600 }}>{c.label}</div>
               <div style={{ fontSize: 22, fontWeight: 700, color: INK, marginTop: 4, fontVariantNumeric: 'tabular-nums' }}>
-                <CountUp value={value} />
+                <CountUp value={value} from={typeof was === 'number' ? was : undefined} />
                 <Delta n={delta} invert={c.invert} />
               </div>
               {c.hint && <div style={{ fontSize: 11, color: MUTED, marginTop: 2 }}>{c.hint}</div>}
