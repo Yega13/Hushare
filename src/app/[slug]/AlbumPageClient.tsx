@@ -1005,19 +1005,30 @@ export default function AlbumPageClient({ initialAlbum = null, initialPhotos, in
 
   if (revealGate) {
     return (
-      <RevealCountdown
-        revealAt={revealGate.revealAt}
-        title={revealGate.title}
-        onUnlocked={() => {
-          fetchGenRef.current++
-          setRevealGate(null)
-          setLoading(true)
-          // The curtain goes up FIRST and the fetch starts behind it, so the album has the length of
-          // the hold to arrive before anyone can see whether it did.
-          setCurtain(true)
-          void fetchAlbum()
-        }}
-      />
+      <>
+        <RevealCountdown
+          revealAt={revealGate.revealAt}
+          title={revealGate.title}
+          onUnlocked={() => {
+            // Raise the curtain over the COUNTDOWN, and only tear the gate down on the next frame.
+            //
+            // Clearing the gate in the same breath meant the skeleton and the curtain mounted
+            // together, and the skeleton won the first paint — so the order on screen was skeleton,
+            // then curtain, then album. Backwards: the curtain exists precisely so that swap is
+            // never seen. Covering first and swapping behind it is what makes it a reveal rather
+            // than a transition played over a loading state.
+            setCurtain(true)
+            requestAnimationFrame(() => {
+              fetchGenRef.current++
+              setRevealGate(null)
+              setLoading(true)
+              void fetchAlbum()
+            })
+          }}
+        />
+        {/* Rendered in THIS branch too, or there is nothing on screen to cover the countdown with. */}
+        {curtain && <RevealCurtain onDone={() => setCurtain(false)} />}
+      </>
     )
   }
 
