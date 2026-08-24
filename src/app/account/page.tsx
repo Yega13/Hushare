@@ -128,7 +128,12 @@ export default async function AccountPage({ searchParams }: Props) {
   // access check on the Pro row they have had for months, so nothing waited, and the page cheerfully
   // congratulated them on the plan they had just left. Waiting for the tier to actually match what
   // was bought covers both.
-  if (justPurchased && (!hasAccess || (purchased !== null && subscription?.tier !== purchased))) {
+  //
+  // Admins are excluded, and not as a convenience. Their access does not come from a subscription
+  // row at all, so there is nothing for the tier check to ever match — waiting on it would pin them
+  // on "confirming your subscription" until the poll gave up, on a page they are entitled to see
+  // immediately.
+  if (justPurchased && !isAdmin && (!hasAccess || (purchased !== null && subscription?.tier !== purchased))) {
     return <SubscriptionPolling email={user.email ?? ''} expectTier={purchased} />
   }
   // Everyone signed in gets a dashboard — free accounts see a trimmed version (below).
