@@ -34,9 +34,9 @@ const FADE_MS = 260       // the last of the panels fading out once they are cle
 const WINE = '#630826'
 
 export default function RevealCurtain({ ready, onDone }: { ready: boolean; onDone: () => void }) {
-  const [phase, setPhase] = useState<'closed' | 'parting' | 'gone'>('closed')
   const [heldLongEnough, setHeldLongEnough] = useState(false)
   const [gaveUpWaiting, setGaveUpWaiting] = useState(false)
+  const [gone, setGone] = useState(false)
   const doneRef = useRef(onDone)
   useEffect(() => { doneRef.current = onDone }, [onDone])
 
@@ -56,20 +56,18 @@ export default function RevealCurtain({ ready, onDone }: { ready: boolean; onDon
     return () => { clearTimeout(floor); clearTimeout(ceiling) }
   }, [])
 
-  // Part once the album is genuinely behind us — or once we have waited long enough that continuing
-  // to wait would be worse than showing a loading state.
+  // DERIVED, not stored. Whether the curtain is open is entirely a function of "have we held the
+  // minimum" and "is the album there (or have we waited too long)" — keeping a phase variable in
+  // step with those was a second source of truth that could only ever disagree with them.
+  const parted = heldLongEnough && (ready || gaveUpWaiting)
+
+  // The tail: once open, fade the panels out and hand back to the parent, which unmounts us.
   useEffect(() => {
-    if (phase !== 'closed') return
-    if (!heldLongEnough) return
-    if (!ready && !gaveUpWaiting) return
-    setPhase('parting')
-    const t2 = setTimeout(() => setPhase('gone'), PART_MS)
-    // The parent unmounts us only after the panels are fully clear, so nothing ever pops.
+    if (!parted) return
+    const t2 = setTimeout(() => setGone(true), PART_MS)
     const t3 = setTimeout(() => doneRef.current(), PART_MS + FADE_MS)
     return () => { clearTimeout(t2); clearTimeout(t3) }
-  }, [phase, ready, heldLongEnough, gaveUpWaiting])
-
-  const parted = phase !== 'closed'
+  }, [parted])
 
   // A CLIP WIPE, not a slide: the panels stay exactly where they are and are cut away from the
   // centre outwards, so the album is uncovered in place rather than having two doors pulled off it.
@@ -87,7 +85,7 @@ export default function RevealCurtain({ ready, onDone }: { ready: boolean; onDon
     background: WINE,
     transition: `clip-path ${PART_MS}ms cubic-bezier(0.65, 0, 0.35, 1), opacity ${FADE_MS}ms linear`,
     willChange: 'clip-path',
-    opacity: phase === 'gone' ? 0 : 1,
+    opacity: gone ? 0 : 1,
   }
 
   return (

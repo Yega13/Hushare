@@ -1065,10 +1065,6 @@ export default function AlbumPageClient({ initialAlbum = null, initialPhotos, in
 
   return (
     <>
-      {/* Above everything, including the fixed background and any sticky bar. Unmounts itself once
-          the panels are clear, so it costs nothing for the rest of the album's life. */}
-      {curtain && <RevealCurtain ready onDone={() => setCurtain(false)} />}
-
       {/* Fixed background image — lives outside <main> so any stacking context on
           <main> cannot trap it. z-index: -10 paints it behind all page content.
           Body background (#FDFAF5, set in global CSS) shows if the image fails to load. */}
@@ -1207,6 +1203,14 @@ export default function AlbumPageClient({ initialAlbum = null, initialPhotos, in
           <AlbumDesigner album={album} photos={photos} onAlbumUpdated={handleAlbumUpdated} onClose={() => { designerOpenRef.current = false; setDesignerOpen(false) }} />
         )}
       </main>
+
+      {/* LAST child in every branch, deliberately.
+          React reconciles by position, so when this sat first here and second in the countdown and
+          skeleton branches, loading the album moved it from index 1 to index 0 — which is an unmount
+          and a remount, not a move. Its state reset and the whole curtain replayed from closed,
+          which is the double-play that made the fix look like it had done nothing. Same slot
+          everywhere means one instance that survives all three renders. */}
+      {curtain && <RevealCurtain ready={!!album && !loading} onDone={() => setCurtain(false)} />}
     </>
   )
 }
