@@ -22,6 +22,16 @@ type Props = {
   current: Photo
   lightboxIndex: number
   viewerPhotos: Photo[]
+  // True when this open was animated by a view transition (see photo-grid/viewTransition.ts). The
+  // morph IS the entrance, so the lightbox's own entrance animations must not be worn at all.
+  //
+  // They were previously applied and then disabled with `animation: none` while the transition ran,
+  // which is worse than doing nothing: `animation: none` CANCELS an animation rather than pausing
+  // it, so the instant the transition ended and the selector stopped matching, the browser created
+  // brand-new ones starting at frame zero — opacity 0, shifted down, scaled small. The lightbox
+  // blinked out and faded back in AFTER the morph had landed perfectly. Not present at all is the
+  // only version of "suppressed" that survives the transition ending.
+  morphed: boolean
 
   // Display state
   slideshowMode: boolean
@@ -92,6 +102,7 @@ export default function LightboxOverlay({
   current,
   lightboxIndex,
   viewerPhotos,
+  morphed,
   slideshowMode,
   slideshowActive,
   slideshowPaused,
@@ -282,7 +293,7 @@ export default function LightboxOverlay({
       )}
 
       <div
-        className={`hush-modal-pop relative z-10 max-w-[min(96vw,1100px)] mx-4 sm:mx-16 flex flex-col items-center gap-4 [&::-webkit-scrollbar]:hidden${slideshowMode ? ' hush-slideshow-stage' : ''}`}
+        className={`${morphed ? '' : 'hush-modal-pop '}relative z-10 max-w-[min(96vw,1100px)] mx-4 sm:mx-16 flex flex-col items-center gap-4 [&::-webkit-scrollbar]:hidden${slideshowMode ? ' hush-slideshow-stage' : ''}`}
         data-scroll-allowed="true"
         style={{
           maxHeight: 'min(95svh, 90vh)',
@@ -321,7 +332,7 @@ export default function LightboxOverlay({
         ) : current.media_type === 'video' && current.stream_uid ? (
           // All videos in the new system are Cloudflare Stream. There is no R2 video fallback.
           <div
-            className={`hush-photo-flip relative${slideshowMode ? '' : ' hush-lightbox-media'}${slideshowFrameClass}`}
+            className={`hush-photo-flip relative${slideshowMode || morphed ? '' : ' hush-lightbox-media'}${slideshowFrameClass}`}
             key={current.id}
             onContextMenu={(e) => e.preventDefault()}
             style={{
@@ -408,7 +419,7 @@ export default function LightboxOverlay({
           </div>
         ) : (
           // Image branch (Branch 4 in old code, now Branch 3 — no native <video> branch exists)
-          <div className={`hush-photo-flip relative w-[min(92vw,1100px)]${slideshowMode ? '' : ' hush-lightbox-media'}${slideshowFrameClass}`} key={current.id} style={slideshowFrameStyle} onContextMenu={(e) => e.preventDefault()}>
+          <div className={`hush-photo-flip relative w-[min(92vw,1100px)]${slideshowMode || morphed ? '' : ' hush-lightbox-media'}${slideshowFrameClass}`} key={current.id} style={slideshowFrameStyle} onContextMenu={(e) => e.preventDefault()}>
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
               src={
@@ -422,7 +433,11 @@ export default function LightboxOverlay({
               style={{
                 ...mediaZoomStyle(current),
                 transition: 'opacity 0.2s ease',
-                opacity: (current.thumb_url && !lightboxOriginalLoadedIds.has(current.id)) ? 0.7 : 1,
+                // Not dimmed on a morph open, for the whole open rather than just while the
+                // transition runs. The CSS override only held until :active-view-transition stopped
+                // matching, at which point this 0.7 took over and the photo dimmed 30% and eased
+                // back — the artifact simply moved from during the morph to after it.
+                opacity: (!morphed && current.thumb_url && !lightboxOriginalLoadedIds.has(current.id)) ? 0.7 : 1,
                 // The other half of the grid→lightbox morph (see photo-grid/viewTransition.ts). The
                 // grid tile carries this name in the OLD state and gives it up; this element claims
                 // it in the NEW one, and the browser animates between the two. Harmless where view

@@ -1,7 +1,7 @@
 'use client'
 
 import React, { useState, useEffect, useLayoutEffect, useCallback, useMemo, useRef } from 'react'
-import { morphPhoto, morphPhotoClosed } from '@/components/photo-grid/viewTransition'
+import { morphPhoto, morphPhotoClosed, supportsViewTransitions } from '@/components/photo-grid/viewTransition'
 import type { Album, Photo } from '@/types'
 import { DEFAULT_SLIDESHOW_INTERVAL_MS, cssMediaDisplayFilter } from '@/lib/media-display'
 import { MEDIA_AUTHOR_MAX, MEDIA_CAPTION_MAX, SUPPRESS_CLICK_AFTER_REORDER_MS, BTT_UPDATE_EVENT } from '@/lib/constants'
@@ -55,6 +55,7 @@ export default function PhotoGrid({ album, photos, albumPhotoCount, isOwner, slu
   const { t } = useT()
   const gridRef = useRef<HTMLDivElement>(null)
   const lightboxHistoryRef = useRef(false)
+  const [openedWithMorph, setOpenedWithMorph] = useState(false)
   const [lightbox, setLightbox] = useState<number | null>(null)
   const [flippedPhotoId, setFlippedPhotoId] = useState<string | null>(null)
   const [deleting, setDeleting] = useState<string | null>(null)
@@ -267,6 +268,10 @@ export default function PhotoGrid({ album, photos, albumPhotoCount, isOwner, slu
 
   function openLightbox(index: number) {
     const photo = photos[index]
+    // Recorded per open, because the answer differs: a morph needs a tile to grow from, so opening
+    // a photo scrolled far out of the grid is a plain cut even on a browser that supports it — and
+    // that open still wants its ordinary entrance animation.
+    setOpenedWithMorph(supportsViewTransitions() && !!photo)
     // Morph the tapped thumbnail into the full photo. Falls straight through to the plain state
     // change where the browser cannot do it, which is exactly the hard cut this replaces.
     morphPhoto(gridRef.current, photo?.id ?? '', () => {
@@ -609,6 +614,7 @@ export default function PhotoGrid({ album, photos, albumPhotoCount, isOwner, slu
         <LightboxOverlay
           current={current}
           lightboxIndex={lightbox ?? 0}
+          morphed={openedWithMorph}
           viewerPhotos={viewerPhotos}
           slideshowMode={slideshowMode}
           slideshowActive={slideshowActive}

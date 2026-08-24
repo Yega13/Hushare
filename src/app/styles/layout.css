@@ -930,28 +930,15 @@ body:has(.hush-footer-reveal) > main {
   animation-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
 }
 
-/* The lightbox's own entrance is suppressed while a morph is running.
-   .hush-lightbox-media fades and scales the photo in over 300ms, and .hush-modal-pop lifts the
-   whole dialog — both were written for a hard cut, where an entrance is exactly right. During a
-   morph they are a second animation on the same pixels, and worse: the morph captures its
-   destination the instant the DOM updates, which is frame ZERO of those entrances, so it animates
-   the photo to a target ~4% small and 10px low and then snaps. The morph IS the entrance now. */
-html:active-view-transition .hush-lightbox-media,
-html:active-view-transition .hush-modal-pop {
-  animation: none;
-}
-
-/* THE PICTURE GLITCH.
-   Opening a photo for the first time, the lightbox shows the THUMBNAIL at opacity 0.7 — a dimmed,
-   low-resolution stand-in — and swaps to the full image when it arrives. That is a good loading
-   state and a terrible morph destination: the tile the photo grows out of is bright and sharp, so
-   the picture visibly dims and softens on the way in and then pops back. The movement was never the
-   problem, which is exactly how it was described.
-   Held at full opacity while a transition is running; the swap to full resolution then happens
-   behind the 0.2s fade already on the element, which is invisible. */
-html:active-view-transition .hush-lightbox-photo {
-  opacity: 1 !important;
-}
+/* NOTE: the lightbox's own entrance animations are NOT suppressed from here.
+   They were, with `animation: none` under html:active-view-transition, and that rule WAS the
+   post-morph glitch. `animation: none` cancels an animation rather than pausing it, so the instant
+   the transition ended and the selector stopped matching, the browser created brand-new ones
+   starting at frame zero — the lightbox blinked out and faded back in after the morph had landed
+   perfectly. The same applied to holding the photo at opacity 1: the override lapsed with the
+   selector and the 0.7 loading dim took over immediately afterwards.
+   Both are now handled where they can actually hold: LightboxOverlay omits the entrance classes
+   and the dim entirely when the open was a morph. Do not reintroduce a rule here. */
 
 /* The rest of the page — grid behind, lightbox backdrop — cross-fades faster than the photo moves,
    so the eye follows the photo rather than the furniture. */
