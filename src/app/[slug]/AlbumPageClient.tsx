@@ -952,7 +952,22 @@ export default function AlbumPageClient({ initialAlbum = null, initialPhotos, in
 
   // ─── Render gates ────────────────────────────────────────────────────────────
 
-  if (loading) return <AlbumSkeleton />
+  // The curtain has to be here TOO — this is the branch that is actually on screen for the whole
+  // unlock. onUnlocked sets loading = true, which lands the very next render right here, above every
+  // other gate. Without the curtain the overlay was unmounted the instant the countdown ended, the
+  // skeleton showed for the entire 1.1-1.3s fetch, and a fresh curtain then mounted and played from
+  // the start — which is exactly what "skeleton, then the animation, then the album" was.
+  //
+  // Three earlier fixes went to the revealGate, !album and main branches. The render never reached
+  // any of them while this one was returning.
+  if (loading) {
+    return (
+      <>
+        <AlbumSkeleton />
+        {curtain && <RevealCurtain ready={false} onDone={() => setCurtain(false)} />}
+      </>
+    )
+  }
 
   if (networkError) {
     return (
@@ -1010,20 +1025,15 @@ export default function AlbumPageClient({ initialAlbum = null, initialPhotos, in
           revealAt={revealGate.revealAt}
           title={revealGate.title}
           onUnlocked={() => {
-            // Raise the curtain over the COUNTDOWN, and only tear the gate down on the next frame.
-            //
-            // Clearing the gate in the same breath meant the skeleton and the curtain mounted
-            // together, and the skeleton won the first paint — so the order on screen was skeleton,
-            // then curtain, then album. Backwards: the curtain exists precisely so that swap is
-            // never seen. Covering first and swapping behind it is what makes it a reveal rather
-            // than a transition played over a loading state.
+            // Nothing to sequence: the curtain is rendered by every branch the render can reach,
+            // so it stays mounted across the whole swap. (This used to defer the gate by one
+            // requestAnimationFrame, which was doubly wrong — rAF runs BEFORE paint, so it never
+            // guaranteed the ordering it was written for.)
             setCurtain(true)
-            requestAnimationFrame(() => {
-              fetchGenRef.current++
-              setRevealGate(null)
-              setLoading(true)
-              void fetchAlbum()
-            })
+            fetchGenRef.current++
+            setRevealGate(null)
+            setLoading(true)
+            void fetchAlbum()
           }}
         />
         {/* Rendered in THIS branch too, or there is nothing on screen to cover the countdown with. */}

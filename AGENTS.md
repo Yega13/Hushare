@@ -26,3 +26,15 @@ WE NEED STRICT JUDGEMENT.
 9. When i send you an error, or we're just fixing something - YOU SHOULD fix it, NOT reclassify it. When we have an error - we NEED to think of permanent solution.
 You CAN spend as much time as you need, check as many times as you need, ask as many questions as you need - just remember - we NEED a PERMANENT fix to that issue.
 IF that's NOT possible then notify me and we'll think of something else.
+
+10. USE AGENTS TO REVIEW YOUR OWN WORK. When you have changed something and it is not behaving as
+expected — especially after ONE failed fix — stop iterating alone and launch a subagent to review it
+with fresh eyes. You are the worst possible reviewer of your own reasoning: once you have a theory
+you will keep finding evidence for it and keep shipping fixes to the wrong thing.
+
+The rule of thumb: **one failed fix is a mistake, two is a signal to get another pair of eyes.** Do
+not spend a third attempt on your own hypothesis.
+
+This applies to bugs, but also to anything shipped that a customer touches — an upload path, a
+payment path, a deletion path. An adversarial review of a change costs minutes; a defect found by a
+paying customer costs their trust, and you may never learn it happened.
