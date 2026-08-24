@@ -1,4 +1,5 @@
 import { notFound } from 'next/navigation'
+import AdminLiveStats from '@/components/AdminLiveStats'
 import Link from 'next/link'
 import Image from 'next/image'
 import type { Metadata } from 'next'
@@ -248,37 +249,44 @@ export default async function AdminPage() {
     { label: 'CPU p99', value: `${workerMetrics.cpuP99} µs`, hint: 'per request' },
   ] : []
 
+  // The counts that change minute to minute are handed to a client component so it can refresh them
+  // and show what has moved since the last visit. Storage figures stay here: they are calls out to
+  // Cloudflare, they change slowly, and polling them would spend a rate limit to watch an hourly
+  // number.
+  const liveInitial = {
+    albums: albumsActive.count ?? 0,
+    photos: imgCount.count ?? 0,
+    videos: vidCount.count ?? 0,
+    users: allUsers.length,
+    subscriptions: subsCount.count ?? 0,
+    openErrors: errors24Res.count ?? 0,
+  }
+
   const cards: { label: string; value: string; hint?: string }[] = [
-    { label: 'Active albums', value: String(albumsActive.count ?? 0), hint: `${albumsRetired.count ?? 0} retired` },
-    { label: 'Photos', value: String(imgCount.count ?? 0) },
-    { label: 'Videos', value: String(vidCount.count ?? 0) },
-    { label: 'Registered users', value: String(allUsers.length) + (allUsers.length >= 200 ? '+' : ''), hint: 'accounts (most albums are anon)' },
-    { label: 'Subscriptions', value: String(subsCount.count ?? 0), hint: 'paid' },
     streamUsage
       ? { label: 'Stream video', value: `${streamUsage.minutes} / ${streamUsage.limit} min`, hint: `${streamUsage.videos} videos stored` }
       : { label: 'Stream video', value: 'n/a', hint: 'CF token missing' },
     r2Usage
       ? { label: 'Photo storage', value: `${r2Usage.gb.toFixed(2)} GB`, hint: `${r2Usage.objects.toLocaleString('en-US')} files · ~$${r2Usage.usd.toFixed(2)}/mo` }
       : { label: 'Photo storage', value: 'n/a', hint: 'add CLOUDFLARE_R2_TOKEN' },
-    { label: 'Open errors', value: String(errors24Res.count ?? 0), hint: (errors24Res.count ?? 0) > 0 ? 'see below ↓' : 'all clear' },
+    { label: 'Retired albums', value: String(albumsRetired.count ?? 0), hint: 'not counted above' },
   ]
 
-  // Long lists scroll INSIDE their card rather than growing the page.
-//
-// The album table fetched only the newest 40 rows, so anything older simply was not there to
-// scroll to -- it looked like a display bug and was a data one. The limits are raised and the
-// tables are capped in height, which is the combination that actually lets you reach an old album:
-// more rows, and somewhere to put them.
-const scrollBox: React.CSSProperties = {
-  overflowX: 'auto',
-  overflowY: 'auto',
-  maxHeight: 460,
-  background: CARD,
-  border: `1px solid ${BORDER}`,
-  borderRadius: 12,
-}
+  // Long lists scroll INSIDE their card rather than growing the page. The album table also used to
+  // fetch only the newest 40 rows, so anything older was not there to scroll to — it looked like a
+  // display bug and was a data one. Raising the limits and capping the height is the combination
+  // that actually lets you reach an old album: more rows, and somewhere to put them.
+  const scrollBox: React.CSSProperties = {
+    overflowX: 'auto',
+    overflowY: 'auto',
+    maxHeight: 460,
+    background: CARD,
+    border: `1px solid ${BORDER}`,
+    borderRadius: 12,
+  }
 
-const th: React.CSSProperties = { textAlign: 'left', padding: '8px 10px', fontSize: 12, color: MUTED, fontWeight: 600, borderBottom: `1px solid ${BORDER}`, whiteSpace: 'nowrap' }
+  // Sticky, so scrolling a long list does not leave you guessing which column is which.
+  const th: React.CSSProperties = { textAlign: 'left', padding: '8px 10px', fontSize: 12, color: MUTED, fontWeight: 600, borderBottom: `1px solid ${BORDER}`, whiteSpace: 'nowrap', position: 'sticky', top: 0, background: CARD, zIndex: 1 }
   const td: React.CSSProperties = { padding: '8px 10px', fontSize: 13, color: INK, borderBottom: `1px solid ${BORDER}`, whiteSpace: 'nowrap' }
 
   return (
@@ -314,6 +322,7 @@ const th: React.CSSProperties = { textAlign: 'left', padding: '8px 10px', fontSi
 
         {/* Overview — headline totals */}
         <h2 id="overview" style={{ fontSize: 15, fontWeight: 700, color: INK, margin: '20px 0 10px', scrollMarginTop: 64 }}>Overview</h2>
+        <AdminLiveStats initial={liveInitial} />
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 12, marginBottom: 28 }}>
           {cards.map((c) => (
             <div key={c.label} style={{ background: CARD, border: `1px solid ${BORDER}`, borderRadius: 12, padding: '14px 16px' }}>
