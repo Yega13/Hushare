@@ -1027,7 +1027,7 @@ export default function AlbumPageClient({ initialAlbum = null, initialPhotos, in
           }}
         />
         {/* Rendered in THIS branch too, or there is nothing on screen to cover the countdown with. */}
-        {curtain && <RevealCurtain onDone={() => setCurtain(false)} />}
+        {curtain && <RevealCurtain ready={false} onDone={() => setCurtain(false)} />}
       </>
     )
   }
@@ -1036,7 +1036,7 @@ export default function AlbumPageClient({ initialAlbum = null, initialPhotos, in
     return (
       <>
         <AlbumSkeleton />
-        {curtain && <RevealCurtain onDone={() => setCurtain(false)} />}
+        {curtain && <RevealCurtain ready={false} onDone={() => setCurtain(false)} />}
       </>
     )
   }
@@ -1067,7 +1067,7 @@ export default function AlbumPageClient({ initialAlbum = null, initialPhotos, in
     <>
       {/* Above everything, including the fixed background and any sticky bar. Unmounts itself once
           the panels are clear, so it costs nothing for the rest of the album's life. */}
-      {curtain && <RevealCurtain onDone={() => setCurtain(false)} />}
+      {curtain && <RevealCurtain ready onDone={() => setCurtain(false)} />}
 
       {/* Fixed background image — lives outside <main> so any stacking context on
           <main> cannot trap it. z-index: -10 paints it behind all page content.

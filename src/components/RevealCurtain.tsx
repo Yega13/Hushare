@@ -20,14 +20,23 @@ import Image from 'next/image'
 // curtain exists precisely so that swap is never seen. The parting is then delayed past the point a
 // fetch normally completes, so what appears behind it is the album rather than a loading state.
 
-const HOLD_MS = 450      // curtain closed while the album loads behind it
-const PART_MS = 1100     // the parting itself
-const FADE_MS = 260      // the last of the panels fading out once they are off-screen
+// The curtain waits for the ALBUM, not for a stopwatch.
+//
+// The first version parted on a fixed 450ms timer, which was a guess — and the measurement says the
+// album fetch takes 1.1-1.3s. So it opened while the album was still loading and revealed the
+// skeleton, which is the exact thing it exists to hide. Timing a cover against work of unknown
+// length can only ever be luck.
+const MIN_HOLD_MS = 500   // never flash: hold at least this long even if the album is already there
+const MAX_HOLD_MS = 5000  // never trap: part regardless, so a failed fetch cannot leave a red screen
+const PART_MS = 1100      // the parting itself
+const FADE_MS = 260       // the last of the panels fading out once they are clear
 
 const WINE = '#630826'
 
-export default function RevealCurtain({ onDone }: { onDone: () => void }) {
+export default function RevealCurtain({ ready, onDone }: { ready: boolean; onDone: () => void }) {
   const [phase, setPhase] = useState<'closed' | 'parting' | 'gone'>('closed')
+  const [heldLongEnough, setHeldLongEnough] = useState(false)
+  const [gaveUpWaiting, setGaveUpWaiting] = useState(false)
   const doneRef = useRef(onDone)
   useEffect(() => { doneRef.current = onDone }, [onDone])
 
@@ -41,12 +50,24 @@ export default function RevealCurtain({ onDone }: { onDone: () => void }) {
       return
     }
 
-    const t1 = setTimeout(() => setPhase('parting'), HOLD_MS)
-    const t2 = setTimeout(() => setPhase('gone'), HOLD_MS + PART_MS)
-    // Unmounted by the parent only after the panels are fully clear, so nothing ever pops.
-    const t3 = setTimeout(() => doneRef.current(), HOLD_MS + PART_MS + FADE_MS)
-    return () => { clearTimeout(t1); clearTimeout(t2); clearTimeout(t3) }
+    // Floor and ceiling only; the actual moment comes from `ready` below.
+    const floor = setTimeout(() => setHeldLongEnough(true), MIN_HOLD_MS)
+    const ceiling = setTimeout(() => setGaveUpWaiting(true), MAX_HOLD_MS)
+    return () => { clearTimeout(floor); clearTimeout(ceiling) }
   }, [])
+
+  // Part once the album is genuinely behind us — or once we have waited long enough that continuing
+  // to wait would be worse than showing a loading state.
+  useEffect(() => {
+    if (phase !== 'closed') return
+    if (!heldLongEnough) return
+    if (!ready && !gaveUpWaiting) return
+    setPhase('parting')
+    const t2 = setTimeout(() => setPhase('gone'), PART_MS)
+    // The parent unmounts us only after the panels are fully clear, so nothing ever pops.
+    const t3 = setTimeout(() => doneRef.current(), PART_MS + FADE_MS)
+    return () => { clearTimeout(t2); clearTimeout(t3) }
+  }, [phase, ready, heldLongEnough, gaveUpWaiting])
 
   const parted = phase !== 'closed'
 
