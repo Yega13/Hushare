@@ -2,6 +2,44 @@ import type { Tier, UploadCaps } from '@/types'
 
 export type MediaKind = 'image' | 'video'
 
+// The formats we accept, and the SINGLE definition of them.
+//
+// These used to live only in lib/cloudflare/r2.ts, which imports the AWS SDK and the Cloudflare
+// context and therefore cannot be imported by the browser at all. So the client had no way to ask
+// the question and simply did not: it accepted anything whose MIME began with "image/", did the
+// full decode-compress-thumbnail pipeline, and only found out at presign that the server would not
+// take it. On 2026-08-23 a photographer lost that work on 113 MB files -- almost certainly TIFFs,
+// which no browser can decode either, so every fallback in the pipeline failed too and the upload
+// died with "File type not allowed" after the waiting was already spent.
+//
+// Kept here because this module is dependency-free and safe on both sides. r2.ts re-exports these
+// so every existing server import keeps working, and the two sides can no longer drift.
+export const ALLOWED_IMAGE_TYPES = new Set([
+  'image/jpeg',
+  'image/jpg',
+  'image/png',
+  'image/gif',
+  'image/webp',
+  'image/heic',
+  'image/heif',
+])
+
+export const ALLOWED_VIDEO_TYPES = new Set([
+  'video/mp4',
+  'video/quicktime',
+  'video/webm',
+  'video/ogg',
+  'video/x-m4v',
+])
+
+export function isAllowedImage(mimeType: string): boolean {
+  return ALLOWED_IMAGE_TYPES.has(mimeType.toLowerCase())
+}
+
+export function isAllowedVideo(mimeType: string): boolean {
+  return ALLOWED_VIDEO_TYPES.has(mimeType.toLowerCase())
+}
+
 const MB = 1024 * 1024
 const GB = 1024 * MB
 

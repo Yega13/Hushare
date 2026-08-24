@@ -2,23 +2,10 @@ import { S3Client, PutObjectCommand, GetObjectCommand } from '@aws-sdk/client-s3
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner'
 import { getCloudflareContext } from '@opennextjs/cloudflare'
 
-export const ALLOWED_IMAGE_TYPES = new Set([
-  'image/jpeg',
-  'image/jpg',
-  'image/png',
-  'image/gif',
-  'image/webp',
-  'image/heic',
-  'image/heif',
-])
-
-export const ALLOWED_VIDEO_TYPES = new Set([
-  'video/mp4',
-  'video/quicktime',
-  'video/webm',
-  'video/ogg',
-  'video/x-m4v',
-])
+// Re-exported from lib/media so the browser and the server cannot disagree about what we accept.
+// This file imports the AWS SDK and the Cloudflare context, so it can never be imported client-side
+// -- which is exactly how the client ended up with no check at all.
+export { ALLOWED_IMAGE_TYPES, ALLOWED_VIDEO_TYPES, isAllowedImage, isAllowedVideo } from '@/lib/media'
 
 export const MIME_TO_EXTENSIONS: Record<string, string[]> = {
   'image/jpeg': ['jpg', 'jpeg'],
@@ -33,14 +20,6 @@ export const MIME_TO_EXTENSIONS: Record<string, string[]> = {
   'video/webm': ['webm'],
   'video/ogg': ['ogg'],
   'video/x-m4v': ['m4v'],
-}
-
-export function isAllowedImage(mimeType: string): boolean {
-  return ALLOWED_IMAGE_TYPES.has(mimeType.toLowerCase())
-}
-
-export function isAllowedVideo(mimeType: string): boolean {
-  return ALLOWED_VIDEO_TYPES.has(mimeType.toLowerCase())
 }
 
 export function safeExtForMime(mimeType: string, clientExt: string): string {

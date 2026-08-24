@@ -7,7 +7,7 @@ import { stripExifFromJpeg, jpegOrientation, stripMetadataFromPng, stripMetadata
 import { snapshotFileRobust, readFileRobust, isFileReadFailure } from '@/lib/file-read'
 import { showAppToast } from '@/components/AppToast'
 import { useT } from '@/i18n/LocaleProvider'
-import { detectKind, uploadCapsForTier, tooLargeMessage, generateVideoPoster } from '@/lib/media'
+import { detectKind, uploadCapsForTier, tooLargeMessage, generateVideoPoster, isAllowedImage } from '@/lib/media'
 import {
   UPLOAD_CONCURRENCY_MOBILE,
   UPLOAD_CONCURRENCY_DESKTOP,
@@ -478,9 +478,21 @@ async function processImageInner(file: File): Promise<ProcessedImage> {
     // the time we reach here (snapshotFiles tried them), but the <img> pipeline succeeds.
     const viaImg = await processViaImgElement(file)
     if (viaImg) return viaImg
-    // Truly undecodable AND unreadable — upload untouched (the server validates the type); a JPEG
-    // still gets its lossless metadata strip. May still fail at PUT if bytes are unreadable, but
-    // there's nothing more we can do here.
+    // Undecodable AND a format the server will not accept. Every conversion route has already
+    // failed, so there is nothing left to turn it into -- uploading would spend the bytes and then
+    // be refused at presign with "File type not allowed", which is what happened to 113 MB TIFFs on
+    // 2026-08-23. Say so now, before any of that work.
+    //
+    // "Unsupported" prefix deliberately: three classifiers read it to tell a decision the product
+    // made on purpose from something that broke, so this lands as a refusal rather than an error.
+    // No MIME type in the text -- /admin groups by exact message and a per-file value would scatter
+    // one problem across a column of single rows.
+    if (!isAllowedImage(mimeType)) {
+      throw new Error('Unsupported image format. Please upload JPEG, PNG, HEIC, WebP or GIF.')
+    }
+    // Truly undecodable but a supported type — upload untouched (the server validates the type); a
+    // JPEG still gets its lossless metadata strip. May still fail at PUT if bytes are unreadable,
+    // but there's nothing more we can do here.
     if (mimeType === 'image/jpeg' || mimeType === 'image/jpg') {
       try {
         return { blob: await strippedJpegBlob(file), thumbBlob: null, mimeType: 'image/jpeg', name: file.name, width: null, height: null }
@@ -541,6 +553,14 @@ async function processImageInner(file: File): Promise<ProcessedImage> {
         width: bitmap.width,
         height: bitmap.height,
       }
+    }
+
+    // Decoded fine, but the format itself is one the server will not store (AVIF and BMP both
+    // reach here, and a small one skips the resize branch above that would have re-encoded it).
+    // The pixels are already in hand, so convert rather than refuse.
+    if (!isAllowedImage(mimeType)) {
+      const main = await scaleAndEncode(bitmap, MAX_IMG_DIM, 'image/jpeg', MAIN_QUALITY)
+      return { blob: main.blob, thumbBlob, mimeType: 'image/jpeg', name: file.name.replace(/\.[^.]+$/, '.jpg'), width: main.width, height: main.height }
     }
 
     // Small PNG/WebP: pixels are kept exactly as-is, but the metadata chunks come out. Both formats
@@ -1072,6 +1092,7 @@ async function putImageWithRelay(
   signal?: AbortSignal,
 ): Promise<{ key: string; publicUrl: string }> {
   let directFailed = false
+  let lastDirectErr: unknown
   if (!shouldUseRelayFirst()) {
     try {
       await putWithRetry(presignedUrl, body, relay.contentType, onProgress, signal)
@@ -1080,6 +1101,7 @@ async function putImageWithRelay(
       if (e instanceof DOMException && e.name === 'AbortError') throw e
       if (e instanceof HttpError) throw e
       directFailed = true
+      lastDirectErr = e
     }
   }
   try {
@@ -1098,7 +1120,16 @@ async function putImageWithRelay(
     // Both the direct path AND the relay failed on a pure network-level basis — a rarer, more
     // serious case than a single blocked domain. Thrown pre-formatted (rather than pattern-matched
     // in friendlyUploadError) since this message is already the final, user-facing text.
-    throw new Error("Couldn't upload after trying multiple connection methods. Check that you're connected to the internet, then tap Retry.")
+    //
+    // The two underlying failures ride along as data, NOT in the message. On 2026-08-23 this
+    // message appeared 23 times for one photographer and said nothing about WHY both routes died:
+    // a stalled transfer, a dropped connection and a request that outlived its deadline all arrive
+    // here looking identical, and they need completely different fixes. The message stays fixed so
+    // /admin still groups the incident into one row; the causes travel in context, where they can
+    // be read without fragmenting the grouping.
+    const why = new Error("Couldn't upload after trying multiple connection methods. Check that you're connected to the internet, then tap Retry.")
+    const cause = (x: unknown) => (x instanceof Error ? `${x.name}: ${x.message}` : String(x)).slice(0, 80)
+    throw Object.assign(why, { directCause: directFailed ? cause(lastDirectErr) : 'skipped', relayCause: cause(e) })
   }
 }
 
@@ -2002,7 +2033,7 @@ export default function UploadZone({ album, onPhotosUploaded }: Props) {
     // viewport, 98 rows in the admin dashboard, and 98 counts against the error-alert threshold —
     // three different surfaces all saying one thing 98 times. Failures are collected here and
     // summarised once the batch settles.
-    const batchFailures: { msg: string; kind: string; sizeMB: number; status?: number; parked: boolean; waitedMs?: number }[] = []
+    const batchFailures: { msg: string; kind: string; sizeMB: number; status?: number; parked: boolean; waitedMs?: number; directCause?: string; relayCause?: string }[] = []
     // Which reasons have already been shown to the user in THIS batch. A toast per file turned one
     // dropped connection into a wall of identical messages; a single toast at the end of the batch
     // said nothing until everything had finished failing, which on a long queue is a minute of
@@ -2077,6 +2108,10 @@ export default function UploadZone({ album, onPhotosUploaded }: Props) {
             // is deduplicated by reason so the same failure is never said twice.
             batchFailures.push({
               msg: e instanceof Error ? e.message : String(e),
+              // Set only by the both-routes-failed path, so the admin row can say which stage died
+              // and how, without that detail changing the message it groups on.
+              directCause: (e as { directCause?: string })?.directCause,
+              relayCause: (e as { relayCause?: string })?.relayCause,
               kind: kind === 'video' ? 'upload:video' : 'upload:image',
               sizeMB: Math.round(entry.file.size / 1024 / 1024),
               status: e instanceof HttpError ? e.status : undefined,
@@ -2136,6 +2171,8 @@ export default function UploadZone({ album, onPhotosUploaded }: Props) {
           status: sample.status,
           ...(sample.parked ? { parked: true } : {}),
           ...(sample.waitedMs !== undefined ? { waitedSeconds: Math.round(sample.waitedMs / 1000) } : {}),
+          ...(sample.directCause ? { directCause: sample.directCause } : {}),
+          ...(sample.relayCause ? { relayCause: sample.relayCause } : {}),
         })
       }
     }

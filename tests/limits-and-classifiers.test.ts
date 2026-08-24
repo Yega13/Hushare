@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import {
-  uploadCapsForTier, albumMediaCapForTier, formatCapSize, tooLargeMessage,
+  uploadCapsForTier, albumMediaCapForTier, formatCapSize, tooLargeMessage, isAllowedImage, isAllowedVideo,
   FREE_VIDEO_BYTES, PRO_VIDEO_BYTES, STUDIO_VIDEO_BYTES,
 } from '@/lib/media'
 import { looksLikeStaleDeploy, looksLikeDomCorruption, isForeignError } from '@/lib/report-error'
@@ -44,6 +44,39 @@ describe('formatCapSize', () => {
   it('never renders a gigabyte cap as four thousand megabytes', () => {
     // The reason this function exists: "4096 MB" does not read as a generous limit.
     expect(formatCapSize(STUDIO_VIDEO_BYTES)).not.toContain('4096')
+  })
+})
+
+describe('accepted formats', () => {
+  // These lists used to live only in lib/cloudflare/r2.ts, which imports the AWS SDK and so cannot
+  // be imported by a browser at all. The client therefore never asked the question: it accepted
+  // anything beginning "image/", ran the whole decode-compress-thumbnail pipeline, and learned at
+  // presign that the server would not take it. A photographer lost that work on 113 MB TIFFs.
+  // They now live in lib/media, which both sides import, and these tests pin the contract.
+  it('accepts what the pipeline can actually produce', () => {
+    for (const t of ['image/jpeg', 'image/png', 'image/webp', 'image/gif', 'image/heic', 'image/heif']) {
+      expect(isAllowedImage(t)).toBe(true)
+    }
+    for (const t of ['video/mp4', 'video/quicktime', 'video/webm']) {
+      expect(isAllowedVideo(t)).toBe(true)
+    }
+  })
+
+  it('refuses formats no browser can decode, so they are caught before the upload not after', () => {
+    // TIFF is the one that cost a customer real time. DNG/BMP/SVG are the same class of mistake.
+    for (const t of ['image/tiff', 'image/x-adobe-dng', 'image/bmp', 'image/svg+xml', '']) {
+      expect(isAllowedImage(t)).toBe(false)
+    }
+  })
+
+  it('is case-insensitive, because browsers are not consistent about it', () => {
+    expect(isAllowedImage('IMAGE/JPEG')).toBe(true)
+    expect(isAllowedVideo('VIDEO/MP4')).toBe(true)
+  })
+
+  it('never lets a video type pass as an image, or the reverse', () => {
+    expect(isAllowedImage('video/mp4')).toBe(false)
+    expect(isAllowedVideo('image/jpeg')).toBe(false)
   })
 })
 
