@@ -417,7 +417,7 @@ export default function LightboxOverlay({
                   : (current.url ?? undefined)
               }
               alt={current.caption || ''}
-              className="block w-full max-h-[min(70vh,760px)] max-w-full object-contain"
+              className="hush-lightbox-photo block w-full max-h-[min(70vh,760px)] max-w-full object-contain"
               ref={(node) => onMediaNodeChange(node)}
               style={{
                 ...mediaZoomStyle(current),
