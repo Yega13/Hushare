@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useRef } from 'react'
+import { reportClientError } from '@/lib/report-error'
 import { showAppToast } from '@/components/AppToast'
 import type { Album, Photo } from '@/types'
 
@@ -97,6 +98,7 @@ export function useZipDownload(photos: Photo[], album: Pick<Album, 'id' | 'title
       // Stream videos have no R2 file — only images (storage_backend !== 'stream') are downloadable.
       const downloadable = all.filter((p) => p.storage_backend !== 'stream')
       if (downloadable.length === 0) {
+        reportClientError({ level: 'warn', source: 'download:empty', message: 'Download requested but nothing was downloadable', albumId: album.id })
         showAppToast('No downloadable photos in this album.', 'error')
         return
       }
@@ -106,6 +108,13 @@ export function useZipDownload(photos: Photo[], album: Pick<Album, 'id' | 'title
       if (downloadable.length <= BATCH_SIZE) {
         const failed = await zipAndSave(downloadable, `${title}.zip`, 0, downloadable.length)
         if (failed > 0 && !abortRef.current) {
+          // Downloads were entirely silent: a guest could lose part of an album and nobody would
+          // ever know. Uploads have been reported since the beginning; the other half of the
+          // product's job had no instrumentation at all, so "is anything broken?" could only ever
+          // be answered about half the system.
+          reportClientError({ level: 'error', source: 'download:zip', message: 'Some photos could not be added to the download', albumId: album.id, context: {
+            failed, total: downloadable.length,
+          } })
           showAppToast(`${downloadable.length - failed} of ${downloadable.length} photos added (${failed} failed).`, 'error')
         }
         return
@@ -123,6 +132,11 @@ export function useZipDownload(photos: Photo[], album: Pick<Album, 'id' | 'title
         base += parts[i].length
       }
       if (!abortRef.current) {
+        if (failedTotal > 0) {
+          reportClientError({ level: 'error', source: 'download:zip', message: 'Some photos could not be added to the download', albumId: album.id, context: {
+            failed: failedTotal, total: downloadable.length, parts: parts.length,
+          } })
+        }
         showAppToast(
           failedTotal > 0
             ? `Downloaded ${downloadable.length - failedTotal} of ${downloadable.length} across ${parts.length} files (${failedTotal} failed).`

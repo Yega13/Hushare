@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { reportServerError } from '@/lib/report-server-error'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { timingSafeEqual } from '@/lib/timing-safe'
 import { cookieNameForAlbum, verifyAccessToken } from '@/lib/album-password'
@@ -56,6 +57,7 @@ export async function GET(req: Request) {
     .maybeSingle<PhotoRow>()
 
   if (photoErr) {
+    reportServerError('download-photo', 'DB error (500)')
     return NextResponse.json({ error: 'DB error' }, { status: 500, headers: NO_STORE })
   }
   if (!photo) {
@@ -122,6 +124,7 @@ export async function GET(req: Request) {
     // headers for client-side fetch() to be able to read the response body for ZIP assembly.
     const r2Res = await fetch(signedUrl)
     if (!r2Res.ok || !r2Res.body) {
+      reportServerError('download-photo', 'Asset unavailable (502)')
       return NextResponse.json({ error: 'Asset unavailable' }, { status: 502, headers: NO_STORE })
     }
     return new Response(r2Res.body, {

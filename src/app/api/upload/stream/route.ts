@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { reportServerError } from '@/lib/report-server-error'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { isAllowedVideo } from '@/lib/cloudflare/r2'
 import { createStreamUpload } from '@/lib/cloudflare/stream'
@@ -142,6 +143,7 @@ export async function POST(req: Request) {
     tier = await getUserTierById(album.user_id)
   } catch (e) {
     console.error('[stream] getUserTierById failed:', e instanceof Error ? e.message : String(e))
+    reportServerError('stream', 'Service temporarily unavailable (503)')
     return NextResponse.json({ error: 'Service temporarily unavailable' }, { status: 503, headers: NO_STORE })
   }
 
@@ -163,6 +165,7 @@ export async function POST(req: Request) {
     ;({ uploadUrl, streamUid, iframeUrl, thumbnailUrl } = await createStreamUpload(fileSize, safeName, maxDurationSeconds))
   } catch (e) {
     console.error('[stream] createStreamUpload failed:', e instanceof Error ? e.message : String(e))
+    reportServerError('stream', 'Failed to initiate video upload (502)')
     return NextResponse.json({ error: 'Failed to initiate video upload' }, { status: 502, headers: NO_STORE })
   }
 
@@ -174,6 +177,7 @@ export async function POST(req: Request) {
     !uploadUrl.startsWith('https://upload.cloudflarestream.com/')
   ) {
     console.error('[stream] Cloudflare returned unexpected uploadUrl origin:', uploadUrl.slice(0, 80))
+    reportServerError('stream', 'Failed to initiate video upload (502)')
     return NextResponse.json({ error: 'Failed to initiate video upload' }, { status: 502, headers: NO_STORE })
   }
 
@@ -188,6 +192,7 @@ export async function POST(req: Request) {
     .insert({ stream_uid: streamUid, album_id: albumId, upload_url: uploadUrl })
   if (pendingErr) {
     console.error('[stream] pending_stream_uploads insert failed:', pendingErr.message)
+    reportServerError('stream', 'Failed to initiate video upload (502)')
     return NextResponse.json({ error: 'Failed to initiate video upload' }, { status: 502, headers: NO_STORE })
   }
 

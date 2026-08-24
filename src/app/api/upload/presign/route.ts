@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { reportServerError } from '@/lib/report-server-error'
 import { createPresignedPut, r2PublicUrl } from '@/lib/cloudflare/r2'
 import { authorizeImageUpload, deriveImageKey } from '@/lib/server/image-upload-authorization'
 import { forbidCrossSiteRequest } from '@/lib/request-security'
@@ -76,6 +77,7 @@ export async function POST(req: Request) {
     publicUrl = r2PublicUrl(key)
   } catch (e) {
     console.error('[presign] presign/r2url failed:', e instanceof Error ? e.message : String(e))
+    reportServerError('presign', 'Could not generate upload URL (502)')
     return NextResponse.json({ error: 'Could not generate upload URL' }, { status: 502, headers: NO_STORE })
   }
 

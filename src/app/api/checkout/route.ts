@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { reportServerError } from '@/lib/report-server-error'
 import { createClient } from '@/lib/supabase/server'
 import { createCheckout, productIdForPlan } from '@/lib/polar'
 import { forbidCrossSiteRequest } from '@/lib/request-security'
@@ -80,6 +81,7 @@ export async function POST(req: Request) {
       '| productId:', productId,
       '| discountId:', discountId ?? 'none',
     )
+    reportServerError('checkout', 'Could not start checkout. Please try again. (502)')
     return NextResponse.json(
       { error: 'Could not start checkout. Please try again.' },
       { status: 502, headers: NO_STORE },

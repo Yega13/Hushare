@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { reportServerError } from '@/lib/report-server-error'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { checkRateLimit, clientIpKey } from '@/lib/rate-limit'
 import { forbidCrossSiteRequest } from '@/lib/request-security'
@@ -213,6 +214,7 @@ export async function POST(req: Request) {
     .replace(/\/+$/, '')
   if (!r2Host) {
     console.error('[photos/create] R2_PUBLIC_HOST not set')
+    reportServerError('photos-create', 'Server configuration error (500)')
     return NextResponse.json({ error: 'Server configuration error' }, { status: 500, headers: NO_STORE })
   }
 
@@ -232,6 +234,7 @@ export async function POST(req: Request) {
 
   if (albumError) {
     console.error('[photos/create] album lookup failed:', albumError.message)
+    reportServerError('photos-create', 'Service error (500)')
     return NextResponse.json({ error: 'Service error' }, { status: 500, headers: NO_STORE })
   }
   if (!album) {
@@ -365,6 +368,7 @@ export async function POST(req: Request) {
     const { data, error } = await admin.from('photos').select('stream_uid').eq('album_id', albumId).in('stream_uid', incomingUids)
     if (error) {
       console.error('[photos/create] stream dedup query failed:', error.message)
+      reportServerError('photos-create', 'Failed to process photos (500)')
       return NextResponse.json({ error: 'Failed to process photos' }, { status: 500, headers: NO_STORE })
     }
     for (const r of data) existingUids.add(r.stream_uid)
@@ -443,6 +447,7 @@ export async function POST(req: Request) {
       .select('stream_uid')
     if (consumeErr) {
       console.error('[photos/create] pending_stream_uploads consume failed:', consumeErr.message)
+      reportServerError('photos-create', 'Failed to process photos (500)')
       return NextResponse.json({ error: 'Failed to process photos' }, { status: 500, headers: NO_STORE })
     }
     const verified = new Set((consumed ?? []).map((r: { stream_uid: string }) => r.stream_uid))
@@ -481,6 +486,7 @@ export async function POST(req: Request) {
       .select('id')
     if (error) {
       console.error('[photos/create] r2 upsert failed:', error.message)
+      reportServerError('photos-create', 'Failed to save photos (500)')
       return NextResponse.json({ error: 'Failed to save photos' }, { status: 500, headers: NO_STORE })
     }
     insertedImages += (data ?? []).length
@@ -493,6 +499,7 @@ export async function POST(req: Request) {
       .select('id')
     if (error) {
       console.error('[photos/create] stream upsert failed:', error.message)
+      reportServerError('photos-create', 'Failed to save photos (500)')
       return NextResponse.json({ error: 'Failed to save photos' }, { status: 500, headers: NO_STORE })
     }
     insertedVideos += (data ?? []).length

@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { reportServerError } from '@/lib/report-server-error'
 import { randomUUID } from 'node:crypto'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { verifyWebhookSignature, tierFromProduct, getCustomerEmail } from '@/lib/polar'
@@ -87,7 +88,14 @@ export async function POST(req: Request) {
   }
   if (!userId) {
     console.error('[polar/webhook] could not resolve a user for subscription:', sub.id)
-    return NextResponse.json({ ok: true, error: 'no_user_resolved' }, { headers: NO_STORE })
+    // 500, not 200 — same reasoning as the unknown-product branch below. A 200 tells Polar the
+    // event is handled and it stops retrying, so a customer who paid gets nothing and the only
+    // trace is a log line. Failing loudly lets Polar's retry schedule cover a transient lookup
+    // problem, and puts the permanent ones in front of someone.
+    reportServerError('polar-webhook', 'Could not resolve a user for a paid subscription', {
+      context: { event: event.type, subscription: sub.id },
+    })
+    return NextResponse.json({ error: 'no_user_resolved' }, { status: 500, headers: NO_STORE })
   }
 
   const tierMatch = tierFromProduct(sub.product_id)
@@ -98,6 +106,9 @@ export async function POST(req: Request) {
     // nobody reads. Failing loudly lets Polar's own retry schedule cover the configuration gap
     // while it is fixed, which is exactly what that retry exists for.
     console.error('[polar/webhook] unknown product_id (check POLAR_PRODUCT_* secrets):', sub.product_id)
+    reportServerError('polar-webhook', 'Unknown Polar product — a payment could not be applied', {
+      context: { productId: sub.product_id, event: event.type },
+    })
     return NextResponse.json({ error: 'unknown_product' }, { status: 500, headers: NO_STORE })
   }
 
@@ -147,6 +158,7 @@ export async function POST(req: Request) {
 
   if (error) {
     console.error('[polar/webhook] write failed:', error.message, 'event=', event.type)
+    reportServerError('polar-webhook', 'Subscription write failed', { context: { event: event.type, reason: error.message.slice(0, 120) } })
     return NextResponse.json({ error: 'DB write failed' }, { status: 500, headers: NO_STORE })
   }
 
