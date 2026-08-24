@@ -19,7 +19,7 @@ const MORPH = 'hush-photo-morph'
 // object-fit: cover crops it to exactly what the tile was showing, then un-crops as it grows.
 // Closing shown the same way meant the NEW was the tile's SQUARE thumbnail displayed in the wide
 // lightbox box — cover scaled it up to fill, so the picture visibly zoomed IN before shrinking away.
-// Closing therefore shows the OLD, the full photo already on screen, and simply cropn as it
+// Closing therefore shows the OLD, the full photo already on screen, and simply crops as it
 // travels down into the tile. Mirror image of opening, which is what it should have been.
 const MORPH_OUT = 'hush-photo-morph-out'
 

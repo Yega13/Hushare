@@ -15,6 +15,7 @@ import DeleteAlbumButton from './DeleteAlbumButton'
 import RenameAlbumButton from './RenameAlbumButton'
 import SignOutButton from './SignOutButton'
 import SubscriptionPolling from './SubscriptionPolling'
+import WelcomeCelebration from './WelcomeCelebration'
 import LanguageSwitcherFlags from '@/components/LanguageSwitcherFlags'
 import { getServerLocale } from '@/i18n/server'
 import { getDictionary } from '@/i18n/get-dictionary'
@@ -269,6 +270,9 @@ export default async function AccountPage({ searchParams }: Props) {
 
   return (
     <div className="min-h-screen" style={{ background: '#FDFAF5' }}>
+      {/* Reached only when the subscription is live — the polling branch above catches everyone
+          whose payment has not landed yet. */}
+      {welcome === '1' && <WelcomeCelebration />}
       <AccountNav />
       <main className="hush-account-main px-4 py-10 sm:py-14">
         <div className="hush-container hush-account-container">
