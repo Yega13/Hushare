@@ -900,3 +900,37 @@ body:has(.hush-footer-reveal) > main {
 @media (prefers-reduced-motion: reduce) {
   .hush-curtain-mark { animation: none; }
 }
+
+/* ─── Photo grid: reveal on scroll ──────────────────────────────────────────────────────────── */
+/* Tiles rise and fade in as they reach the viewport, so a long album unrolls rather than arriving
+   as a wall.
+
+   Gated behind .hush-grid-reveal, which JavaScript adds to the grid. Without JS the class is never
+   applied, so every tile is simply visible — the failure mode is "no animation", never "no photos".
+
+   Keyed on data-revealed rather than a class because React OWNS className on these tiles (it is a
+   template string that changes with reorder state) and would wipe anything added imperatively on
+   the next render. React only patches attributes it renders, so a data- attribute it knows nothing
+   about survives every re-render — which is what makes this safe on a grid that re-renders often.
+
+   The !important is deliberate and load-bearing: PhotoTile sets opacity INLINE (it dims to 0.58
+   while dragging), and an inline style beats a class. This is the one property that has to win, and
+   it stops applying the moment data-revealed lands — at which point the inline opacity takes over
+   and the transition below animates the change. */
+.hush-grid-reveal [data-photo-id]:not([data-revealed]) {
+  opacity: 0 !important;
+  transform: translateY(14px);
+}
+
+.hush-grid-reveal [data-photo-id] {
+  transition: opacity 560ms ease-out, transform 560ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* Asked for less motion: the photos are simply there. */
+@media (prefers-reduced-motion: reduce) {
+  .hush-grid-reveal [data-photo-id]:not([data-revealed]) {
+    opacity: 1 !important;
+    transform: none;
+  }
+  .hush-grid-reveal [data-photo-id] { transition: none; }
+}
