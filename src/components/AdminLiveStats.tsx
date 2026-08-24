@@ -67,6 +67,60 @@ function baselineSnapshot(): Partial<LiveStats> | null {
 // Nothing to subscribe to: localStorage is not read again after mount.
 const subscribeNever = () => () => {}
 
+// Count TO a number rather than snapping to it.
+//
+// These refresh on their own every twenty seconds, and a figure that silently rewrites itself is
+// easy to miss entirely — which defeats the point of making them live. Rolling to the new value
+// draws the eye to the thing that moved without anything flashing or jumping.
+//
+// requestAnimationFrame rather than a CSS transition because there is no CSS property here to
+// transition: the thing changing is text content, and only JavaScript can interpolate that.
+
+// Read once. It is a user preference, not a live signal, and calling matchMedia inside the hook
+// meant touching the DOM on every render of every card.
+let reducedMotion: boolean | undefined
+function prefersReducedMotion(): boolean {
+  if (reducedMotion === undefined) {
+    reducedMotion = typeof window !== 'undefined'
+      && window.matchMedia('(prefers-reduced-motion: reduce)').matches
+  }
+  return reducedMotion
+}
+
+function useCountUp(target: number, ms = 650): number {
+  const [shown, setShown] = useState(target)
+  const rafRef = useRef(0)
+  // What is on screen RIGHT NOW. A new target arriving mid-roll must continue from where the digits
+  // actually are, not from wherever the previous run set out from — otherwise a second update
+  // during the first animation makes the number jump backwards before climbing again.
+  const shownRef = useRef(target)
+  useEffect(() => { shownRef.current = shown }, [shown])
+
+  const reduced = prefersReducedMotion()
+
+  useEffect(() => {
+    // Asked for less motion: the value is returned directly below, so there is nothing to animate
+    // and nothing to set here.
+    if (reduced) return
+    const from = shownRef.current
+    if (from === target) return
+
+    const started = performance.now()
+    const tick = (now: number) => {
+      const p = Math.min(1, (now - started) / ms)
+      // ease-out cubic: quick off the mark, gentle into the new value, so it settles rather than
+      // stopping dead on the last frame.
+      const eased = 1 - Math.pow(1 - p, 3)
+      setShown(Math.round(from + (target - from) * eased))
+      if (p < 1) rafRef.current = requestAnimationFrame(tick)
+    }
+    rafRef.current = requestAnimationFrame(tick)
+    return () => cancelAnimationFrame(rafRef.current)
+  }, [target, ms, reduced])
+
+  return reduced ? target : shown
+}
+
 function Delta({ n, invert }: { n: number; invert?: boolean }) {
   if (!Number.isFinite(n) || n === 0) return null
   // `invert` is for counts where going UP is bad (open errors). Colour follows meaning, not
@@ -77,6 +131,12 @@ function Delta({ n, invert }: { n: number; invert?: boolean }) {
       {n > 0 ? '+' : ''}{n.toLocaleString('en-US')}
     </span>
   )
+}
+
+// tabular-nums on the parent keeps the width steady while the digits roll, so nothing beside it
+// twitches as the number climbs.
+function CountUp({ value }: { value: number }) {
+  return <>{useCountUp(value).toLocaleString('en-US')}</>
 }
 
 export default function AdminLiveStats({ initial }: { initial: LiveStats }) {
@@ -146,7 +206,7 @@ export default function AdminLiveStats({ initial }: { initial: LiveStats }) {
             <div key={c.key} style={{ background: CARD, border: `1px solid ${BORDER}`, borderRadius: 12, padding: '12px 14px' }}>
               <div style={{ fontSize: 11, color: MUTED, textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: 600 }}>{c.label}</div>
               <div style={{ fontSize: 22, fontWeight: 700, color: INK, marginTop: 4, fontVariantNumeric: 'tabular-nums' }}>
-                {value.toLocaleString('en-US')}
+                <CountUp value={value} />
                 <Delta n={delta} invert={c.invert} />
               </div>
               {c.hint && <div style={{ fontSize: 11, color: MUTED, marginTop: 2 }}>{c.hint}</div>}

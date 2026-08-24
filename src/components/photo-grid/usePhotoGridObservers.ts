@@ -58,39 +58,9 @@ export function usePhotoGridObservers(
     )
     grid.querySelectorAll<HTMLElement>('[data-photo-id]').forEach((tile) => preloadObserver.observe(tile))
 
-    // Reveal tiles as they reach the viewport, so a long album unrolls instead of arriving as a
-    // wall. The class is what ARMS the CSS — without it every tile is plainly visible, so a
-    // failure anywhere in here degrades to "no animation" rather than "no photos".
-    grid.classList.add('hush-grid-reveal')
-
-    // A SEPARATE observer from the preloader above, on purpose. That one runs 2000px early to warm
-    // thumbnails; revealing that far outside the viewport would mean every tile had already
-    // finished animating before it was ever on screen. This one fires just before the edge.
-    const revealObserver = new IntersectionObserver(
-      (entries) => {
-        for (const entry of entries) {
-          if (!entry.isIntersecting) continue
-          const tile = entry.target as HTMLElement
-          // A data attribute, not a class: React owns className on these tiles and would wipe it on
-          // the next render. It patches only the attributes it renders, so this one survives.
-          tile.dataset.revealed = '1'
-          revealObserver.unobserve(entry.target)
-        }
-      },
-      { rootMargin: '80px' },
-    )
-    grid.querySelectorAll<HTMLElement>('[data-photo-id]').forEach((tile) => {
-      // Already revealed on a previous run (this effect re-runs whenever photos are added). Leaving
-      // it observed would be harmless but pointless; re-hiding it would make the whole grid flash
-      // every time someone uploads.
-      if (tile.dataset.revealed) return
-      revealObserver.observe(tile)
-    })
-
     return () => {
       resizeObserver.disconnect()
       preloadObserver.disconnect()
-      revealObserver.disconnect()
       window.removeEventListener('resize', measureTiles)
     }
     // Depend on photo IDs, NOT the full photos array. A photo UPDATE (caption change,
