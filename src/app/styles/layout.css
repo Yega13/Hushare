@@ -905,10 +905,26 @@ body:has(.hush-footer-reveal) > main {
 /* The browser animates between the two automatically; this only sets the pace.
    Short, because it sits in front of the most repeated interaction in the product — every guest
    opening every photo. Anything statelier would be charming twice and tiresome thereafter. */
+/* NO CROSS-FADE — one photo moves, rather than two dissolving into each other.
+   By default the browser fades the old snapshot out while fading the new one in, so for the whole
+   280ms BOTH are on screen, offset and semi-transparent. On a photograph that reads as a doubled,
+   ghosted copy of itself, which is exactly what it was reported as.
+   Killing both animations and pinning the opacities leaves only the new image, carried by the group
+   below, which is the "this thumbnail IS that photo" effect the morph is for. Cancelling here is
+   safe in a way it was NOT on the lightbox: these pseudo-elements exist only while the transition
+   runs, so there is no "after" for a cancelled animation to snap back into. */
+::view-transition-old(hush-photo-morph) {
+  animation: none;
+  opacity: 0;
+}
+
+::view-transition-new(hush-photo-morph) {
+  animation: none;
+  opacity: 1;
+}
+
 ::view-transition-old(hush-photo-morph),
 ::view-transition-new(hush-photo-morph) {
-  animation-duration: 280ms;
-  animation-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
 
   /* THE SQUASH FIX.
      The grid tile is object-fit: cover — a square crop of the photo. The lightbox is
