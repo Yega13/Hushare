@@ -125,9 +125,9 @@ export default async function AdminPage() {
     admin.from('photos').select('id', { count: 'exact', head: true }).eq('media_type', 'video'),
     admin.from('subscriptions').select('id', { count: 'exact', head: true }),
     admin.from('albums').select('id, slug, custom_slug, title, user_id, created_at, retired_at')
-      .order('created_at', { ascending: false }).limit(40).returns<AlbumRow[]>(),
+      .order('created_at', { ascending: false }).limit(300).returns<AlbumRow[]>(),
     admin.from('subscriptions').select('user_id, tier, status, current_period_end, created_at')
-      .order('created_at', { ascending: false }).limit(30),
+      .order('created_at', { ascending: false }).limit(200),
     getStreamUsage(),
     getR2Usage(),
     admin.auth.admin.listUsers({ page: 1, perPage: 200 }),
@@ -263,7 +263,22 @@ export default async function AdminPage() {
     { label: 'Open errors', value: String(errors24Res.count ?? 0), hint: (errors24Res.count ?? 0) > 0 ? 'see below ↓' : 'all clear' },
   ]
 
-  const th: React.CSSProperties = { textAlign: 'left', padding: '8px 10px', fontSize: 12, color: MUTED, fontWeight: 600, borderBottom: `1px solid ${BORDER}`, whiteSpace: 'nowrap' }
+  // Long lists scroll INSIDE their card rather than growing the page.
+//
+// The album table fetched only the newest 40 rows, so anything older simply was not there to
+// scroll to -- it looked like a display bug and was a data one. The limits are raised and the
+// tables are capped in height, which is the combination that actually lets you reach an old album:
+// more rows, and somewhere to put them.
+const scrollBox: React.CSSProperties = {
+  overflowX: 'auto',
+  overflowY: 'auto',
+  maxHeight: 460,
+  background: CARD,
+  border: `1px solid ${BORDER}`,
+  borderRadius: 12,
+}
+
+const th: React.CSSProperties = { textAlign: 'left', padding: '8px 10px', fontSize: 12, color: MUTED, fontWeight: 600, borderBottom: `1px solid ${BORDER}`, whiteSpace: 'nowrap' }
   const td: React.CSSProperties = { padding: '8px 10px', fontSize: 13, color: INK, borderBottom: `1px solid ${BORDER}`, whiteSpace: 'nowrap' }
 
   return (
@@ -449,7 +464,7 @@ export default async function AdminPage() {
 
         {/* Recent albums */}
         <h2 id="albums" style={{ fontSize: 15, fontWeight: 700, color: INK, margin: '0 0 10px', scrollMarginTop: 64 }}>Recent albums</h2>
-        <div style={{ overflowX: 'auto', background: CARD, border: `1px solid ${BORDER}`, borderRadius: 12, marginBottom: 28 }}>
+        <div style={{ ...scrollBox, marginBottom: 28 }}>
           <table style={{ borderCollapse: 'collapse', width: '100%', minWidth: 640 }}>
             <thead><tr><th style={th}>Created</th><th style={th}>Title</th><th style={th}>Owner</th><th style={th}>Photos</th><th style={th}>Videos</th><th style={th}></th></tr></thead>
             <tbody>
@@ -481,7 +496,7 @@ export default async function AdminPage() {
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: 20 }}>
           <div>
             <h2 style={{ fontSize: 15, fontWeight: 700, color: INK, margin: '0 0 10px' }}>Recent signups</h2>
-            <div style={{ overflowX: 'auto', background: CARD, border: `1px solid ${BORDER}`, borderRadius: 12 }}>
+            <div style={scrollBox}>
               <table style={{ borderCollapse: 'collapse', width: '100%' }}>
                 <thead><tr><th style={th}>Joined</th><th style={th}>Email</th></tr></thead>
                 <tbody>
@@ -495,7 +510,7 @@ export default async function AdminPage() {
           </div>
           <div>
             <h2 style={{ fontSize: 15, fontWeight: 700, color: INK, margin: '0 0 10px' }}>Subscriptions</h2>
-            <div style={{ overflowX: 'auto', background: CARD, border: `1px solid ${BORDER}`, borderRadius: 12 }}>
+            <div style={scrollBox}>
               <table style={{ borderCollapse: 'collapse', width: '100%' }}>
                 <thead><tr><th style={th}>Email</th><th style={th}>Tier</th><th style={th}>Status</th></tr></thead>
                 <tbody>
