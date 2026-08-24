@@ -64,7 +64,14 @@ function touchActivity(admin: ReturnType<typeof createAdminClient>, albumId: str
   const ageMs = Date.now() - new Date(lastActivityAt).getTime()
   if (Number.isFinite(ageMs) && ageMs <= 60 * 60 * 1000) return
   const p = admin.from('albums')
-    .update({ last_activity_at: new Date().toISOString() })
+    // last_notification_at is cleared alongside, or an album that comes back to life carries its
+    // old warning forever. notify-expiry only ever warns an album whose last_notification_at is
+    // NULL, and retire-albums now requires one that is at least 30 days old — so an album warned at
+    // day 335, revived by its owner, and then quiet again for another year would be deleted on the
+    // strength of a warning sent a year earlier, and could never be warned again. Clearing it here
+    // means returning to an album genuinely resets the clock, which is what an owner would assume
+    // "we email you 30 days before" means.
+    .update({ last_activity_at: new Date().toISOString(), last_notification_at: null })
     .eq('id', albumId)
     .then(({ error }) => { if (error) console.error('[album-access] activity touch failed:', error.message) })
   try { getCloudflareContext().ctx.waitUntil(p as unknown as Promise<unknown>) } catch { void p }

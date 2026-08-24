@@ -124,7 +124,10 @@ export default async function AdminPage() {
     admin.from('albums').select('id', { count: 'exact', head: true }).not('retired_at', 'is', null),
     admin.from('photos').select('id', { count: 'exact', head: true }).eq('media_type', 'image'),
     admin.from('photos').select('id', { count: 'exact', head: true }).eq('media_type', 'video'),
-    admin.from('subscriptions').select('id', { count: 'exact', head: true }),
+    // ACTIVE only, matching /api/admin/stats. They disagreed, so the first live poll 20s after load
+    // dropped the card from "all rows" to "active" and rendered the difference as a red delta that
+    // had not happened.
+    admin.from('subscriptions').select('id', { count: 'exact', head: true }).eq('status', 'active'),
     admin.from('albums').select('id, slug, custom_slug, title, user_id, created_at, retired_at')
       .order('created_at', { ascending: false }).limit(300).returns<AlbumRow[]>(),
     admin.from('subscriptions').select('user_id, tier, status, current_period_end, created_at')
@@ -257,7 +260,10 @@ export default async function AdminPage() {
     albums: albumsActive.count ?? 0,
     photos: imgCount.count ?? 0,
     videos: vidCount.count ?? 0,
-    users: allUsers.length,
+    // listUsers is capped at perPage: 200, so allUsers.length silently plateaus there while the
+    // stats route returns the true total — another phantom jump on the first poll. The old card
+    // carried a "200+" suffix admitting the cap; the live one has no way to.
+    users: (usersRes.data as { total?: number } | null)?.total ?? allUsers.length,
     subscriptions: subsCount.count ?? 0,
     openErrors: errors24Res.count ?? 0,
   }

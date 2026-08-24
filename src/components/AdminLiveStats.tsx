@@ -93,7 +93,11 @@ function prefersReducedMotion(): boolean {
 // renders the number is already correct and there is nothing to animate. Starting from the baseline
 // means the climb IS the delta, played every time the page opens, which is what the figure was for.
 function useCountUp(target: number, from?: number, ms = 900): number {
-  const [shown, setShown] = useState(() => (typeof from === 'number' ? from : target))
+  // Starts AT the target, not at the baseline. useSyncExternalStore returns the SERVER snapshot for
+  // the hydration render, so `from` is undefined on render #1 and a lazy initialiser would lock the
+  // value in before the baseline ever arrives — which is exactly why the climb never played. The
+  // effect below opens from `from` on its first run instead, once it exists.
+  const [shown, setShown] = useState(target)
   const rafRef = useRef(0)
   // What is on screen RIGHT NOW. A new target arriving mid-roll must continue from where the digits
   // actually are, not from wherever the previous run set out from — otherwise a second update
@@ -103,12 +107,16 @@ function useCountUp(target: number, from?: number, ms = 900): number {
 
   const reduced = prefersReducedMotion()
 
+  // First run opens from the last-visit baseline; later runs continue from whatever is on screen.
+  const firstRun = useRef(true)
+
   useEffect(() => {
     // Asked for less motion: the value is returned directly below, so there is nothing to animate
     // and nothing to set here.
     if (reduced) return
-    const from = shownRef.current
-    if (from === target) return
+    const origin = firstRun.current && typeof from === 'number' ? from : shownRef.current
+    firstRun.current = false
+    if (origin === target) return
 
     const started = performance.now()
     const tick = (now: number) => {
@@ -116,12 +124,12 @@ function useCountUp(target: number, from?: number, ms = 900): number {
       // ease-out cubic: quick off the mark, gentle into the new value, so it settles rather than
       // stopping dead on the last frame.
       const eased = 1 - Math.pow(1 - p, 3)
-      setShown(Math.round(from + (target - from) * eased))
+      setShown(Math.round(origin + (target - origin) * eased))
       if (p < 1) rafRef.current = requestAnimationFrame(tick)
     }
     rafRef.current = requestAnimationFrame(tick)
     return () => cancelAnimationFrame(rafRef.current)
-  }, [target, ms, reduced])
+  }, [target, ms, reduced, from])
 
   return reduced ? target : shown
 }

@@ -1075,6 +1075,12 @@ export default function AlbumPageClient({ initialAlbum = null, initialPhotos, in
 
   return (
     <>
+      {/* Everything above the curtain is wrapped in ONE fragment so this branch has the same two
+          children as the gate branches. React reconciles fragment children by POSITION, and the
+          curtain previously sat at index 1 in the gate branches and index 2 here — which is an
+          unmount and a remount, not a move. Its timers reset, and if the 5s ceiling had already
+          parted the panels, a slow album landing mid-parting snapped them shut over it. */}
+      <>
       {/* Fixed background image — lives outside <main> so any stacking context on
           <main> cannot trap it. z-index: -10 paints it behind all page content.
           Body background (#FDFAF5, set in global CSS) shows if the image fails to load. */}
@@ -1220,6 +1226,7 @@ export default function AlbumPageClient({ initialAlbum = null, initialPhotos, in
           and a remount, not a move. Its state reset and the whole curtain replayed from closed,
           which is the double-play that made the fix look like it had done nothing. Same slot
           everywhere means one instance that survives all three renders. */}
+      </>
       {curtain && <RevealCurtain ready={!!album && !loading} onDone={() => setCurtain(false)} />}
     </>
   )

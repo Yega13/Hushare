@@ -126,13 +126,16 @@ export async function POST(req: Request) {
     current_period_end: sub.current_period_end,
     cancel_at_period_end: sub.cancel_at_period_end ?? false,
     updated_at: new Date().toISOString(),
+    // Polar's own clock, filled in below when the event carries one. Declared here so the object's
+    // type admits it — the DB trigger owns updated_at, this column is the one we control.
+    polar_modified_at: null as string | null,
   }
 
   const { data: existing } = await admin
     .from('subscriptions')
-    .select('id, updated_at')
+    .select('id, polar_modified_at')
     .eq('polar_subscription_id', sub.id)
-    .maybeSingle<{ id: string; updated_at: string | null }>()
+    .maybeSingle<{ id: string; polar_modified_at: string | null }>()
 
   // Ignore an event that is OLDER than what we have already applied.
   //
@@ -141,16 +144,21 @@ export async function POST(req: Request) {
   // a fresh `active` cuts off a customer who is paying, and a stale `active` after a `canceled`
   // grants access to someone who is not. Both are silent.
   //
-  // Compared against the subscription's own modified_at from Polar rather than our clock, because
-  // ours only records when WE processed it, which is the thing being reordered.
+  // Compared against POLAR's clock on both sides, in a column of its own.
+  //
+  // This first read subscriptions.updated_at, which cannot work: a BEFORE UPDATE trigger overwrites
+  // that with now() on every write, so the comparison was against OUR processing time. Polar emits
+  // bursts — an update, then a cancellation a second later — and we take seconds to process the
+  // first, so the second arrived "older" than our own stamp and was discarded with a 200. Polar
+  // then never retries. The guard was dropping real cancellations rather than stale duplicates.
   const eventAt = sub.modified_at ? Date.parse(sub.modified_at) : NaN
-  const appliedAt = existing?.updated_at ? Date.parse(existing.updated_at) : NaN
+  const appliedAt = existing?.polar_modified_at ? Date.parse(existing.polar_modified_at) : NaN
   if (existing && Number.isFinite(eventAt) && Number.isFinite(appliedAt) && eventAt < appliedAt) {
-    console.warn('[polar/webhook] ignoring out-of-order event', event.type, sub.id, sub.modified_at, '<', existing.updated_at)
+    console.warn('[polar/webhook] ignoring out-of-order event', event.type, sub.id, sub.modified_at, '<', existing.polar_modified_at)
     return NextResponse.json({ ok: true, skipped: 'stale_event' }, { headers: NO_STORE })
   }
-  // Stamp what the EVENT says, so the comparison above works next time.
-  if (Number.isFinite(eventAt)) fields.updated_at = new Date(eventAt).toISOString()
+  // Their timestamp, in their column, so the comparison above means something next time.
+  if (Number.isFinite(eventAt)) fields.polar_modified_at = new Date(eventAt).toISOString()
 
   const { error } = existing
     ? await admin.from('subscriptions').update(fields).eq('polar_subscription_id', sub.id)

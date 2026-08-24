@@ -586,8 +586,14 @@ async function processImageInner(file: File): Promise<ProcessedImage> {
     try {
       raw = new Uint8Array(await readFileRobust(file))
     } catch {
-      const main = await scaleAndEncode(bitmap, MAX_IMG_DIM, mimeType === 'image/png' ? 'image/png' : 'image/webp', MAIN_QUALITY)
-      return { blob: main.blob, thumbBlob, mimeType, name: file.name, width: main.width, height: main.height }
+      const want = mimeType === 'image/png' ? 'image/png' : 'image/webp'
+      const main = await scaleAndEncode(bitmap, MAX_IMG_DIM, want, MAIN_QUALITY)
+      // Label what came OUT, not what was asked for — the same canvas-falls-back-to-PNG problem
+      // handled in the resize branch above, which this path was left out of. iOS 15/16 cannot encode
+      // WebP, so a small WebP here would be stored as PNG bytes under a .webp name.
+      const actual = main.blob.type && isAllowedImage(main.blob.type) ? main.blob.type : want
+      const ext = actual === 'image/png' ? '.png' : actual === 'image/webp' ? '.webp' : '.jpg'
+      return { blob: main.blob, thumbBlob, mimeType: actual, name: file.name.replace(/\.[^.]+$/, ext), width: main.width, height: main.height }
     }
     const cleaned = mimeType === 'image/png' ? stripMetadataFromPng(raw) : stripMetadataFromWebp(raw)
     const blob = cleaned.length === raw.length

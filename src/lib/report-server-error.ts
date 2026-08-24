@@ -21,23 +21,35 @@ export function reportServerError(
 ): void {
   try {
     const admin = createAdminClient()
+    // Through the SAME coalescing the client path uses, not a raw insert.
+    //
+    // A raw insert reintroduced on the server exactly the problem coalescing was built to solve: a
+    // broken presign during an event writes one row per failed request, unbounded, hammering the
+    // database hardest at the worst possible moment and turning one incident into a hundred rows.
+    // The RPC merges repeats within five minutes and counts them instead.
     void admin
-      .from('error_events')
-      .insert({
-        level: 'error',
-        // Prefixed so the admin panel can tell at a glance which side of the wire failed, and so a
-        // server source can never collide with a client one.
-        source: `server:${source}`.slice(0, 60),
-        message: String(message).slice(0, 500),
-        album_id: opts.albumId ?? null,
-        context: opts.context ?? null,
-        // No user-agent: this is our own runtime, not a visitor's device. Leaving it null keeps the
-        // admin's device column honest rather than filling it with something meaningless.
-        ua: null,
+      .rpc('coalesce_error_event', {
+        p_level: 'error',
+        p_source: `server:${source}`.slice(0, 60),
+        p_message: String(message).slice(0, 500),
+        p_album_id: opts.albumId ?? null,
+        p_context: opts.context ?? {},
+        p_ua: null,
       })
       .then(({ error }) => {
-        if (error) console.error('[report-server-error] insert failed:', error.message)
+        if (!error) return
+        console.error('[report-server-error] coalesce failed, inserting directly:', error.message)
+        // Never lose a report because the coalescing failed.
+        void admin.from('error_events').insert({
+          level: 'error',
+          source: `server:${source}`.slice(0, 60),
+          message: String(message).slice(0, 500),
+          album_id: opts.albumId ?? null,
+          context: opts.context ?? null,
+          ua: null,
+        }).then(({ error: e2 }) => { if (e2) console.error('[report-server-error] insert failed:', e2.message) })
       })
+
   } catch (e) {
     console.error('[report-server-error] threw:', e instanceof Error ? e.message : String(e))
   }
