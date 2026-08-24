@@ -111,6 +111,44 @@ function markFor(row: ErrorRow, seenBefore: Set<string>, liveBuild: string): Mar
   return seenBefore.has(row.message) ? MARKS.regressed : MARKS.fresh
 }
 
+// WHERE in the system a report came from.
+//
+// Everything reports now — uploads, downloads, server routes, payments, and any uncaught error
+// anywhere in the app — but `source` alone is a string like "server:presign" or "unhandledrejection"
+// and you have to know the codebase to read it. One word per row answers "which part of the product
+// is unhappy" before you read anything else.
+//
+// Derived from the source, never stored: a new source added tomorrow lands in the right bucket
+// without anyone remembering to label it, and the worst case for something unrecognised is "App"
+// rather than a blank.
+const AREAS: { test: (source: string) => boolean; label: string; bg: string; fg: string }[] = [
+  { test: s => s.startsWith('server:polar') || s.startsWith('server:checkout'), label: 'Payment', bg: '#F3EAF7', fg: '#5B2E70' },
+  { test: s => s.startsWith('server:'), label: 'Server', bg: '#EDE9F6', fg: '#3F3A6B' },
+  { test: s => s.startsWith('upload') || s === 'save' || s === 'album-full', label: 'Upload', bg: '#EAF1F8', fg: '#1B4F86' },
+  { test: s => s.startsWith('download'), label: 'Download', bg: '#E9F3EC', fg: '#2E6B3E' },
+]
+
+function areaFor(source: string): { label: string; bg: string; fg: string } {
+  const hit = AREAS.find(a => a.test(source))
+  // Everything else is the app itself — window.onerror, unhandledrejection, the error boundaries.
+  return hit ?? { label: 'App', bg: '#F3EEE4', fg: '#7A6A58' }
+}
+
+function AreaChip({ source }: { source: string }) {
+  const a = areaFor(source)
+  return (
+    <span
+      title={`Reported by: ${source}`}
+      style={{
+        display: 'inline-block', fontSize: 10.5, fontWeight: 700, letterSpacing: '0.03em',
+        background: a.bg, color: a.fg, borderRadius: 6, padding: '2px 7px', whiteSpace: 'nowrap',
+      }}
+    >
+      {a.label}
+    </span>
+  )
+}
+
 function MarkChip({ mark }: { mark: Mark }) {
   return (
     <span
@@ -222,12 +260,13 @@ export default function AdminErrorTabs(
             </div>
           )}
           <div style={{ overflowX: 'auto', background: CARD, border: `1px solid ${BORDER}`, borderRadius: 12 }}>
-            <table style={{ borderCollapse: 'collapse', width: '100%', minWidth: 780 }}>
-              <thead><tr><th style={th}></th><th style={th}>When</th><th style={th}>Source</th><th style={th}>Message</th><th style={th}>Device</th></tr></thead>
+            <table style={{ borderCollapse: 'collapse', width: '100%', minWidth: 860 }}>
+              <thead><tr><th style={th}></th><th style={th}>Area</th><th style={th}>When</th><th style={th}>Source</th><th style={th}>Message</th><th style={th}>Device</th></tr></thead>
               <tbody>
                 {shown.map((e, i) => (
                   <tr key={i}>
                     <td style={td}><MarkChip mark={markFor(e, seen, buildId)} /></td>
+                    <td style={td}><AreaChip source={e.source} /></td>
                     <td style={td}>{fmt(e.created_at, isHydrated)}</td>
                     <td style={td}>{e.source}</td>
                     <td style={{ ...td, whiteSpace: 'normal', maxWidth: 320 }}>
