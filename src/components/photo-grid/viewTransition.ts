@@ -12,6 +12,22 @@ import { flushSync } from 'react-dom'
 // nobody loses anything, and there is nothing to rebuild for those browsers.
 
 const MORPH = 'hush-photo-morph'
+// Closing uses a DIFFERENT name so the two directions can be styled independently.
+//
+// With the cross-fade killed, exactly one snapshot is visible — and which one has to differ. Opening
+// shows the NEW (the full lightbox photo): the group starts at the tile's small square, so
+// object-fit: cover crops it to exactly what the tile was showing, then un-crops as it grows.
+// Closing shown the same way meant the NEW was the tile's SQUARE thumbnail displayed in the wide
+// lightbox box — cover scaled it up to fill, so the picture visibly zoomed IN before shrinking away.
+// Closing therefore shows the OLD, the full photo already on screen, and simply cropn as it
+// travels down into the tile. Mirror image of opening, which is what it should have been.
+const MORPH_OUT = 'hush-photo-morph-out'
+
+// The lightbox photo currently on screen. It carries MORPH by default; closing renames it so the
+// pair is matched under the outbound name.
+function lightboxImage(): HTMLElement | null {
+  return document.querySelector<HTMLElement>('.hush-lightbox-photo')
+}
 
 type WithVT = Document & {
   startViewTransition?: (cb: () => void) => { finished: Promise<void> }
@@ -93,12 +109,17 @@ export function morphPhotoClosed(
     return
   }
 
+  // Renamed before the transition begins — the OLD state is captured the instant startViewTransition
+  // is called, so this has to be in place first.
+  const leaving = lightboxImage()
+  if (leaving) leaving.style.viewTransitionName = MORPH_OUT
+
   const transition = doc.startViewTransition(() => {
     flushSync(update)
     // Looked up AFTER the update: on the way out the destination tile may only exist once the
     // lightbox has gone, and on the way in it may have been re-rendered since.
     const img = tileImage(gridRoot, photoId)
-    if (img) img.style.viewTransitionName = MORPH
+    if (img) img.style.viewTransitionName = MORPH_OUT
   })
 
   void transition.finished.catch(() => {}).finally(() => {

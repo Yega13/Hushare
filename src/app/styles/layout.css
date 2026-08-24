@@ -913,6 +913,9 @@ body:has(.hush-footer-reveal) > main {
    below, which is the "this thumbnail IS that photo" effect the morph is for. Cancelling here is
    safe in a way it was NOT on the lightbox: these pseudo-elements exist only while the transition
    runs, so there is no "after" for a cancelled animation to snap back into. */
+/* OPENING shows the NEW snapshot — the full lightbox photo. The group starts at the tile's small
+   square, so object-fit: cover crops it to exactly what the tile was showing, then un-crops as it
+   grows. */
 ::view-transition-old(hush-photo-morph) {
   animation: none;
   opacity: 0;
@@ -923,8 +926,24 @@ body:has(.hush-footer-reveal) > main {
   opacity: 1;
 }
 
+/* CLOSING shows the OLD one instead — the full photo already on screen, cropping in as it travels
+   down into the tile. Shown the other way round, the visible snapshot was the tile's SQUARE
+   thumbnail displayed in the wide lightbox box, and cover scaled it up to fill: the picture zoomed
+   IN before shrinking away, which is not the mirror of opening and did not feel like one. */
+::view-transition-old(hush-photo-morph-out) {
+  animation: none;
+  opacity: 1;
+}
+
+::view-transition-new(hush-photo-morph-out) {
+  animation: none;
+  opacity: 0;
+}
+
 ::view-transition-old(hush-photo-morph),
-::view-transition-new(hush-photo-morph) {
+::view-transition-new(hush-photo-morph),
+::view-transition-old(hush-photo-morph-out),
+::view-transition-new(hush-photo-morph-out) {
 
   /* THE SQUASH FIX.
      The grid tile is object-fit: cover — a square crop of the photo. The lightbox is
@@ -941,7 +960,8 @@ body:has(.hush-footer-reveal) > main {
 /* The GROUP is what actually moves and resizes the photo; old/new above only cross-fade. Setting
    the duration on those alone left the movement on Chrome's 250ms default, so the fade outlived the
    travel by 30ms and the whole thing landed slightly out of step. */
-::view-transition-group(hush-photo-morph) {
+::view-transition-group(hush-photo-morph),
+::view-transition-group(hush-photo-morph-out) {
   animation-duration: 280ms;
   animation-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
 }
