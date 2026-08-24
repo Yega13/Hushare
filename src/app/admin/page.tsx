@@ -134,7 +134,10 @@ export default async function AdminPage() {
       .order('created_at', { ascending: false }).limit(200),
     getStreamUsage(),
     getR2Usage(),
-    admin.auth.admin.listUsers({ page: 1, perPage: 200 }),
+    // 500, not 200. This one result feeds the signups list, the growth counts and the email lookup
+    // for the albums table, so the page cap is the real ceiling on all three. At 33 users there is
+    // plenty of head-room; past 500 this needs a paged query rather than a bigger number.
+    admin.auth.admin.listUsers({ page: 1, perPage: 500 }),
     // Deliberately NOT windowed to 24h. It used to be, while the tab it points at listed everything
     // unresolved — so the card said 0 and the tab said 4, both labelled "errors". One definition:
     // an error is open until it is cleared.
@@ -189,9 +192,13 @@ export default async function AdminPage() {
     }
   }
 
+  // Every registered user, newest first — not the newest 15.
+  //
+  // The cap made sense when the table grew the page; it now scrolls inside its own card, so the
+  // only thing the slice achieved was hiding the other users behind a scrollbar that had nothing
+  // left to scroll to. Bounded by the listUsers page below rather than by an arbitrary number.
   const recentSignups = [...allUsers]
     .sort((a, b) => (b.created_at ?? '').localeCompare(a.created_at ?? ''))
-    .slice(0, 15)
 
   // ── Growth: new users/albums/uploads over the last 7 and 30 days, plus 7-day active albums.
   // Cheap head-counts; user growth is derived from the already-fetched listUsers result (no extra
