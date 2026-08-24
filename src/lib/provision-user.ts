@@ -13,7 +13,22 @@ export async function findOrCreateUserByEmail(email: string): Promise<string | n
 
   const admin = createAdminClient()
 
-  // Look for an existing user (listUsers is paginated; scan until found or exhausted).
+  // One indexed lookup against auth.users (see 20260824_find_user_by_email.sql).
+  //
+  // The pagination below is a HARD CEILING of 25 x 200 = 5,000 users, and passing it does not
+  // degrade, it breaks: an existing customer is not found, createUser fails on the duplicate email,
+  // this returns null, and the Polar webhook then answers 200 so Polar never retries -- a real
+  // payment taken for nothing, invisibly. It is also 25 round trips on the checkout path.
+  //
+  // The scan is kept only as a fallback for the case where the function is missing (a database
+  // restored from before this migration), so a deploy order mistake degrades instead of failing.
+  {
+    const { data, error } = await admin.rpc('find_user_id_by_email', { p_email: normalized })
+    if (!error && typeof data === 'string' && data) return data
+    if (error) console.error('[provision] find_user_id_by_email rpc failed, falling back to scan:', error.message)
+  }
+
+  // Fallback: paginated scan (listUsers is paginated; scan until found or exhausted).
   for (let page = 1; page <= 25; page++) {
     const { data, error } = await admin.auth.admin.listUsers({ page, perPage: 200 })
     if (error) {

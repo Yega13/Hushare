@@ -46,76 +46,34 @@ export async function POST(req: Request) {
 
   const admin = createAdminClient()
 
-  // Coalesce a repeat of the SAME incident instead of writing another row.
+  // One atomic statement: find the matching recent row and increment it, or insert.
   //
   // The uploader already groups a batch's failures into one report per reason. What it cannot group
-  // is across batches, and the recovery path produces a great many tiny ones: a file parks, the
+  // is across batches, and the recovery path produces a great many tiny ones -- a file parks,
   // auto-resume retries it alone, that batch of one fails and reports on its own. One photographer
-  // having one bad evening on 2026-08-22 produced over a hundred rows this way, which made a single
-  // recurring problem look like a hundred separate disasters and buried the two rows that mattered.
+  // having one bad evening produced over a hundred rows, which made a single recurring problem look
+  // like a hundred separate disasters and buried the two rows that mattered.
   //
-  // Same level, source, message and album inside a five-minute window is the same story. The first
-  // row stands and its `repeats` counter goes up, so nothing is lost -- the count is visible, the
-  // timeline is not shredded, and the table stops growing linearly with how badly one upload went.
-  //
-  // Deliberately keyed on the MESSAGE, which is why every message in the upload path is written to
-  // be stable: per-file numbers live in context precisely so they cannot fragment this.
-  const since = new Date(Date.now() - 5 * 60 * 1000).toISOString()
-  let q = admin
-    .from('error_events')
-    .select('id, context')
-    .eq('level', level)
-    .eq('source', source)
-    .eq('message', message)
-    .is('resolved_at', null)
-    .gte('created_at', since)
-  // Matched on album too, so two different albums hitting the same problem stay two stories. `.eq`
-  // cannot express NULL in PostgREST, hence the branch rather than a ternary inside the filter.
-  q = albumId ? q.eq('album_id', albumId) : q.is('album_id', null)
-
-  const { data: recent } = await q
-    .order('created_at', { ascending: false })
-    .limit(1)
-    .returns<{ id: string; context: Record<string, unknown> | null }[]>()
-
-  const prior = recent?.[0]
-  if (prior) {
-    const priorCtx = (prior.context ?? {}) as Record<string, unknown>
-    const repeats = typeof priorCtx.repeats === 'number' ? priorCtx.repeats : 1
-    const incoming = (context ?? {}) as Record<string, unknown>
-
-    // Merge rather than discard. The first version of this kept only the FIRST report's context,
-    // which quietly threw away every later one -- including directCause/relayCause, the fields
-    // added the day before precisely to explain a failure that is stable by design and therefore
-    // coalesces every single time. One sample and a count is not the same as knowing.
-    //
-    // Only keys the stored row is MISSING are adopted, so the first occurrence stays the sample
-    // and a later report cannot rewrite history; but a diagnostic that only some occurrences carry
-    // still survives instead of being lost to whichever one happened to arrive first.
-    const merged: Record<string, unknown> = { ...priorCtx }
-    for (const [k, v] of Object.entries(incoming)) {
-      if (merged[k] === undefined && v !== undefined && v !== null) merged[k] = v
-    }
-    merged.repeats = repeats + 1
-    // The row keeps its original created_at so the timeline is not shredded, which means nothing
-    // otherwise says an old-looking row is still happening RIGHT NOW.
-    merged.lastSeen = new Date().toISOString()
-    // One incident across several devices is a different problem from one device failing
-    // repeatedly, and collapsing rows hides the difference. A flag is enough to tell them apart
-    // without letting context grow with every reporter.
-    if (ua && typeof priorCtx.firstUa === 'string' && priorCtx.firstUa !== ua) merged.multiDevice = true
-    else if (ua && priorCtx.firstUa === undefined) merged.firstUa = ua.slice(0, 80)
-
-    const { error } = await admin
-      .from('error_events')
-      .update({ context: merged })
-      .eq('id', prior.id)
-    if (error) console.error('[client-error] repeat update failed:', error.message)
-    return new NextResponse(null, { status: 204, headers: NO_STORE })
+  // Done in the database rather than as SELECT-then-UPDATE here, because that pattern loses
+  // increments: at an event many guests in one album hit the same failure within milliseconds, both
+  // read the same counter, and both write the same value. Since the count is now the only surviving
+  // record of an incident's size, undercounting it is not cosmetic. See
+  // 20260824_coalesce_error_event.sql for the merge rules.
+  const { error } = await admin.rpc('coalesce_error_event', {
+    p_level: level,
+    p_source: source,
+    p_message: message,
+    p_album_id: albumId,
+    p_context: context ?? {},
+    p_ua: ua,
+  })
+  if (error) {
+    // Never lose the report because the coalescing failed -- fall back to a plain insert.
+    console.error('[client-error] coalesce rpc failed, inserting directly:', error.message)
+    const { error: insErr } = await admin.from('error_events')
+      .insert({ level, source, message, album_id: albumId, context, ua })
+    if (insErr) console.error('[client-error] insert failed:', insErr.message)
   }
-
-  const { error } = await admin.from('error_events').insert({ level, source, message, album_id: albumId, context, ua })
-  if (error) console.error('[client-error] insert failed:', error.message)
 
   // Probabilistic prune (1%) so the table self-bounds without a dedicated cron dependency.
   if (Math.random() < 0.01) void admin.rpc('prune_error_events')

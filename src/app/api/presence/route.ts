@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { checkRateLimit, clientIpKey } from '@/lib/rate-limit'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { forbidCrossSiteRequest } from '@/lib/request-security'
 
@@ -12,6 +13,14 @@ const NO_STORE = { 'Cache-Control': 'no-store' }
 export async function POST(req: Request) {
   const csrf = forbidCrossSiteRequest(req)
   if (csrf) return csrf
+
+  // forbidCrossSiteRequest above is CSRF protection, not authentication — Origin is trivially set
+  // by anything that is not a browser. Every request upserts a row keyed by a CLIENT-CHOSEN id, and
+  // cleanup only removes rows older than 10 minutes, so an unlimited caller could hold tens of
+  // thousands of rows in active_sessions and inflate the live-user counter at the same time.
+  // failOpen: presence is cosmetic, and a limiter blip must not break the page it decorates.
+  const rl = await checkRateLimit(clientIpKey(req, 'presence'), 60, 120, { failOpen: true })
+  if (!rl.ok) return NextResponse.json({ ok: true, throttled: true }, { headers: NO_STORE })
 
   const body = await req.json().catch(() => null) as { id?: unknown; path?: unknown } | null
   const id = typeof body?.id === 'string' ? body.id.slice(0, 64) : ''

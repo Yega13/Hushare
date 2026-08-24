@@ -95,7 +95,7 @@ export function continueBibIndex(albumId: string, depth: number): void {
     return
   }
   const site = (process.env.NEXT_PUBLIC_SITE_URL ?? 'https://hushare.space').replace(/\/+$/, '')
-  const secret = process.env.SUPABASE_SERVICE_ROLE_KEY ?? ''
+  const secret = process.env.ALBUM_RETIREMENT_SECRET ?? ''
   if (!secret) return
 
   const p = fetch(`${site}/api/album/bib-index-run`, {

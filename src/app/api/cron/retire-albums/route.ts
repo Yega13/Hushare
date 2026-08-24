@@ -20,6 +20,10 @@ const NO_STORE = { 'Cache-Control': 'no-store' }
 // retention period four times shorter than the one actually enforced. If this number ever changes
 // again, grep for "1 year of inactivity" and change all of them in the same commit.
 const RETIRE_AFTER_DAYS = 365
+// Must mirror notify-expiry. The owner is warned this many days before the album expires, and it is
+// not eligible for deletion until that long has actually passed since the warning was sent —
+// otherwise "30 days' notice" would mean "a warning, then possibly deletion the same night".
+const WARN_BEFORE_DAYS = 30
 const BATCH_SIZE = 25
 
 type RetirementCandidate = {
@@ -53,11 +57,24 @@ export async function POST(req: Request) {
   // Piggyback the daily run to prune the admin error log (keeps 30 days). Best-effort.
   void admin.rpc('prune_error_events')
 
+  // A WARNING MUST HAVE BEEN SENT, and it must have had time to be acted on.
+  //
+  // This is the guarantee the privacy policy makes -- 30 days' notice before an inactive album is
+  // removed -- and nothing enforced it. The query only checked the 365-day cutoff, so any album the
+  // warning cron had missed (a failed send, or a backlog that pushed it out of its window) was
+  // deleted with every photo in it having told the owner nothing.
+  //
+  // Requiring last_notification_at makes the two crons interlock: an album cannot be deleted until
+  // it has been warned, so the worst a warning backlog can now do is DELAY a deletion. That is the
+  // right direction to fail in.
+  const warnedBefore = new Date(Date.now() - WARN_BEFORE_DAYS * 24 * 60 * 60 * 1000).toISOString()
   const { data: candidates, error } = await admin
     .from('albums')
     .select('id, slug, user_id, background_theme, last_activity_at')
     .is('retired_at', null)
     .lt('last_activity_at', cutoff)
+    .not('last_notification_at', 'is', null)
+    .lt('last_notification_at', warnedBefore)
     .order('last_activity_at', { ascending: true })
     .limit(BATCH_SIZE)
     .returns<RetirementCandidate[]>()

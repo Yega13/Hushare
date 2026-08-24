@@ -19,6 +19,9 @@ type PolarSubscription = {
   current_period_end: string | null
   cancel_at_period_end?: boolean
   ended_at?: string | null
+  // When Polar last changed this subscription. Used to reject a retried event that arrives after a
+  // newer one — our own updated_at only records when WE processed it, which is what gets reordered.
+  modified_at?: string | null
   // Some events embed the customer (with email); if absent we fetch it by customer_id.
   customer?: { email?: string | null } | null
   metadata?: { userId?: string; tier?: string; cycle?: string }
@@ -116,9 +119,27 @@ export async function POST(req: Request) {
 
   const { data: existing } = await admin
     .from('subscriptions')
-    .select('id')
+    .select('id, updated_at')
     .eq('polar_subscription_id', sub.id)
-    .maybeSingle<{ id: string }>()
+    .maybeSingle<{ id: string; updated_at: string | null }>()
+
+  // Ignore an event that is OLDER than what we have already applied.
+  //
+  // Polar retries failed deliveries, so a retried event can arrive after a newer one. Without an
+  // ordering check the write was last-writer-wins on arrival order: a stale `canceled` landing after
+  // a fresh `active` cuts off a customer who is paying, and a stale `active` after a `canceled`
+  // grants access to someone who is not. Both are silent.
+  //
+  // Compared against the subscription's own modified_at from Polar rather than our clock, because
+  // ours only records when WE processed it, which is the thing being reordered.
+  const eventAt = sub.modified_at ? Date.parse(sub.modified_at) : NaN
+  const appliedAt = existing?.updated_at ? Date.parse(existing.updated_at) : NaN
+  if (existing && Number.isFinite(eventAt) && Number.isFinite(appliedAt) && eventAt < appliedAt) {
+    console.warn('[polar/webhook] ignoring out-of-order event', event.type, sub.id, sub.modified_at, '<', existing.updated_at)
+    return NextResponse.json({ ok: true, skipped: 'stale_event' }, { headers: NO_STORE })
+  }
+  // Stamp what the EVENT says, so the comparison above works next time.
+  if (Number.isFinite(eventAt)) fields.updated_at = new Date(eventAt).toISOString()
 
   const { error } = existing
     ? await admin.from('subscriptions').update(fields).eq('polar_subscription_id', sub.id)

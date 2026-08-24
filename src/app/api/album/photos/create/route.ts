@@ -289,6 +289,22 @@ export async function POST(req: Request) {
     ? Math.min(album.media_cap_override, MAX_MEDIA_CAP_OVERRIDE)
     : null
 
+  // A FAILED COUNT DISABLES THE CAP, deliberately — but it must not do so silently.
+  //
+  // Every branch below is gated on `!countErr && photoCount != null`, so a transient Postgres error
+  // means no cap is enforced and the upload proceeds. That is the right way round: this cap bounds
+  // cost, and letting a few extra photos through during a database blip is a far smaller harm than
+  // blocking every guest at an event from uploading anything. But it was invisible, so a limiter
+  // that had quietly stopped working looked identical to one that was passing.
+  //
+  // Note also that the count is read ONCE and up to MAX_PHOTOS_PER_CALL rows are then inserted, so
+  // concurrent uploads at a busy event can overshoot the cap by roughly (concurrent requests x
+  // batch size). Enforcing exactly would need a database-level constraint; the overshoot is bounded
+  // and cheap, the constraint is not.
+  if (countErr) {
+    console.error('[photos/create] media cap NOT enforced — count failed for album', albumId, ':', countErr.message)
+  }
+
   let warning: string | undefined
   if (capOverride != null) {
     if (!countErr && photoCount != null && photoCount >= capOverride) {

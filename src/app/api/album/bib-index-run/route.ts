@@ -14,7 +14,15 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 // our own Worker rather than a browser — the secret is what authorises it.
 export async function POST(req: Request) {
   const body = await req.json().catch(() => null) as { albumId?: unknown; depth?: unknown; secret?: unknown } | null
-  const expected = process.env.SUPABASE_SERVICE_ROLE_KEY ?? ''
+  // ALBUM_RETIREMENT_SECRET, not the service-role key.
+  //
+  // This is a dedicated internal-call secret, and every other cron/internal route already uses it.
+  // This one authenticated with SUPABASE_SERVICE_ROLE_KEY — the master database credential, full
+  // RLS bypass on every table — sent in the JSON BODY of a public HTTPS POST, on every link of the
+  // bib-sweep chain. Guessing it is infeasible, but any body logging, WAF sample, proxy capture or
+  // error handler that echoes a request would hand over the entire database. A secret whose only
+  // job is to say "this call came from us" should never be the one that can read everything.
+  const expected = process.env.ALBUM_RETIREMENT_SECRET ?? ''
 
   if (!expected || typeof body?.secret !== 'string' || !timingSafeEqual(body.secret, expected)) {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403, headers: NO_STORE })

@@ -520,8 +520,18 @@ async function processImageInner(file: File): Promise<ProcessedImage> {
         : mimeType === 'image/webp' ? 'image/webp'
         : 'image/jpeg'
       const main = await scaleAndEncode(bitmap, MAX_IMG_DIM, outMime, MAIN_QUALITY)
-      const name = outMime === 'image/jpeg' ? file.name.replace(/\.[^.]+$/, '.jpg') : file.name
-      return { blob: main.blob, thumbBlob, mimeType: outMime, name, width: main.width, height: main.height }
+      // Label the bytes we ACTUALLY produced, not the ones we asked for.
+      //
+      // Per the HTML spec both toBlob and toDataURL silently fall back to image/png when the engine
+      // cannot encode the requested type. iOS 15 and 16 Safari have no canvas WebP encoder (that
+      // arrived in 17), so a WebP from those phones came out as PNG bytes uploaded with
+      // Content-Type: image/webp under a .webp key — several times larger than intended and
+      // mislabelled in storage forever. <img> sniffs the real format so the grid hides it; a guest
+      // who downloads the file gets something that is not what its name claims.
+      const actualMime = main.blob.type && isAllowedImage(main.blob.type) ? main.blob.type : outMime
+      const ext = actualMime === 'image/png' ? '.png' : actualMime === 'image/webp' ? '.webp' : '.jpg'
+      const name = file.name.replace(/\.[^.]+$/, ext)
+      return { blob: main.blob, thumbBlob, mimeType: actualMime, name, width: main.width, height: main.height }
     }
 
     if (mimeType === 'image/jpeg' || mimeType === 'image/jpg') {

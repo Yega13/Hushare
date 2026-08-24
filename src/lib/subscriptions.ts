@@ -143,21 +143,36 @@ const PAID_GRACE_MS = 365 * 24 * 60 * 60 * 1000
 export async function getPaidRetentionUntil(userId: string | null | undefined): Promise<Date | null> {
   if (!userId) return null
   const admin = createAdminClient()
-  const { data: sub, error } = await admin
+  // ALL rows, not the newest one.
+  //
+  // The two functions above deliberately scan every row, with a comment explaining that a user can
+  // have several (a resubscribe, or a bulk Polar sync) and that the newest must never be trusted
+  // alone. This one trusted it anyway. admin/sync-polar inserts rows with created_at set to the
+  // sync time in whatever order Polar returned them, so the newest-CREATED row can easily carry an
+  // OLDER current_period_end than a sibling. The retention window is then computed short and
+  // retire-albums deletes a paying customer's albums up to a year early.
+  //
+  // This is the last check before permanent deletion, so it takes the furthest-future end date any
+  // row claims.
+  const { data: subs, error } = await admin
     .from('subscriptions')
     .select('current_period_end')
     .eq('user_id', userId)
     .order('created_at', { ascending: false })
-    .limit(1)
-    .maybeSingle<{ current_period_end: string | null }>()
+    .limit(20)
+    .returns<{ current_period_end: string | null }[]>()
   if (error) {
     // On uncertainty, protect the album (return a far-future date) — never delete on a failed check.
     console.error('[subscriptions] getPaidRetentionUntil query failed:', error.message)
     return new Date(Date.now() + PAID_GRACE_MS)
   }
-  if (!sub) return null // no subscription history → pure free tier
-  if (sub.current_period_end) return new Date(new Date(sub.current_period_end).getTime() + PAID_GRACE_MS)
-  // Had a subscription row but no recorded period end — be conservative, grant grace from now.
+  if (!subs || subs.length === 0) return null // no subscription history → pure free tier
+
+  const ends = subs
+    .map(s => (s.current_period_end ? new Date(s.current_period_end).getTime() : NaN))
+    .filter(t => Number.isFinite(t))
+  if (ends.length > 0) return new Date(Math.max(...ends) + PAID_GRACE_MS)
+  // Had subscription rows but none recorded a period end — be conservative, grant grace from now.
   return new Date(Date.now() + PAID_GRACE_MS)
 }
 

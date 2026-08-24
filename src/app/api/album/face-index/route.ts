@@ -1,4 +1,6 @@
 import { NextResponse } from 'next/server'
+import { cookies } from 'next/headers'
+import { ALBUM_GATE_COLS, gateAllowsContribution } from '@/lib/server/album-access'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { ensureCollection, indexPhotoFaces } from '@/lib/rekognition'
 import { forbidCrossSiteRequest } from '@/lib/request-security'
@@ -30,10 +32,13 @@ async function resolveAlbum(slug: string) {
   const admin = createAdminClient()
   const { data: album } = await admin
     .from('albums')
-    .select('id, user_id, face_finder_enabled')
+    .select(`id, user_id, face_finder_enabled, ${ALBUM_GATE_COLS}`)
     .or(`slug.eq.${slug},custom_slug.eq.${slug}`)
     .is('retired_at', null)
-    .maybeSingle<{ id: string; user_id: string | null; face_finder_enabled: boolean }>()
+    .maybeSingle<{
+      id: string; user_id: string | null; face_finder_enabled: boolean
+      owner_token: string; password_hash: string | null; reveal_at: string | null
+    }>()
   return { admin, album }
 }
 
@@ -66,6 +71,17 @@ export async function GET(req: Request) {
   if (!await faceFinderAvailable(album)) {
     return NextResponse.json({ error: 'Face Finder is not enabled for this album' }, { status: 403, headers: NO_STORE })
   }
+
+  // The album's password / reveal gate applies HERE too.
+  //
+  // This returned every unindexed photo id and the album's exact photo count after checking only
+  // that the slug existed and Face Finder was on. For a PASSWORD-PROTECTED album that is precisely
+  // the metadata the password withholds, and for a pre-reveal album it leaks the count before the
+  // reveal. The photos RLS policy (album_is_open) exists to stop anonymous reads of protected
+  // albums; reaching for the admin client here stepped around that model instead of implementing
+  // it. Every other read path gates on exactly this.
+  const gate = await gateAllowsContribution(album, await cookies())
+  if (!gate.ok) return NextResponse.json({ error: gate.error }, { status: 403, headers: NO_STORE })
 
   try {
     // ensureCollection hits AWS Rekognition — surface its error instead of letting an

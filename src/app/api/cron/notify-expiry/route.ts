@@ -11,7 +11,7 @@ const NO_STORE = { 'Cache-Control': 'no-store' }
 // warned 30 days before (i.e. once the album has been inactive 335–365 days) so they can download first.
 const RETIRE_AFTER_DAYS = 365
 const WARN_BEFORE_DAYS = 30
-const WARN_AFTER_DAYS = RETIRE_AFTER_DAYS - WARN_BEFORE_DAYS  // 60
+const WARN_AFTER_DAYS = RETIRE_AFTER_DAYS - WARN_BEFORE_DAYS  // 335
 const BATCH_SIZE = 50
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL ?? 'https://hushare.space'
 
@@ -41,7 +41,6 @@ export async function POST(req: Request) {
   }
 
   const now = Date.now()
-  const warnCutoffOld = new Date(now - RETIRE_AFTER_DAYS * 24 * 60 * 60 * 1000).toISOString()
   const warnCutoffNew = new Date(now - WARN_AFTER_DAYS * 24 * 60 * 60 * 1000).toISOString()
 
   const admin = createAdminClient()
@@ -52,7 +51,15 @@ export async function POST(req: Request) {
     .is('last_notification_at', null)  // only notify once
     .not('user_id', 'is', null)
     .lt('last_activity_at', warnCutoffNew)
-    .gt('last_activity_at', warnCutoffOld)
+    // NO lower bound. It used to require last_activity_at > (now - 365d), so once inflow exceeded
+    // BATCH_SIZE per day the backlog grew and an album that waited past 365 days of inactivity
+    // dropped out of this query FOREVER -- and retire-albums, which only checked the 365-day
+    // cutoff, then deleted it having warned nobody. 50 free albums going quiet in a day is an
+    // ordinary number at this growth rate, so that was reachable, not theoretical.
+    //
+    // Ordering oldest-first (below) means the most at-risk albums are always warned first, and
+    // retire-albums now refuses to delete anything unwarned, so a backlog delays deletion instead
+    // of skipping the warning.
     .order('last_activity_at', { ascending: true })
     .limit(BATCH_SIZE)
     .returns<ExpiryCandidate[]>()
