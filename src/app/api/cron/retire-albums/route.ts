@@ -24,7 +24,11 @@ const RETIRE_AFTER_DAYS = 365
 // not eligible for deletion until that long has actually passed since the warning was sent —
 // otherwise "30 days' notice" would mean "a warning, then possibly deletion the same night".
 const WARN_BEFORE_DAYS = 30
-const BATCH_SIZE = 25
+// Raised from 25. At 30+ new albums a week the old rate could not drain the queue, so albums that
+// had passed their retention date simply accumulated -- storage paid for indefinitely. Ordered
+// oldest-first, so whatever the cap is, the longest-expired go first. Deletion is now gated on a
+// warning having been sent, so a backlog delays rather than skips.
+const BATCH_SIZE = 100
 
 type RetirementCandidate = {
   id: string

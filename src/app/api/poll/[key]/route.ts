@@ -22,7 +22,12 @@ async function tally(pollKey: string): Promise<{ tallies: Record<string, number>
   return { tallies, total }
 }
 
-export async function GET(_req: Request, { params }: { params: Promise<{ key: string }> }): Promise<Response> {
+export async function GET(req: Request, { params }: { params: Promise<{ key: string }> }): Promise<Response> {
+  // tally() reads every vote row for the poll on each call, and this was the one public GET with no
+  // limit in front of it. failOpen: a poll is decoration, and a limiter blip must not break a page.
+  const rl = await checkRateLimit(clientIpKey(req, 'poll_read'), 60, 120, { failOpen: true })
+  if (!rl.ok) return NextResponse.json({ error: 'Too many requests' }, { status: 429, headers: NO_STORE })
+
   const { key } = await params
   const poll = getPoll(key)
   if (!poll) return NextResponse.json({ error: 'Unknown poll' }, { status: 404, headers: NO_STORE })

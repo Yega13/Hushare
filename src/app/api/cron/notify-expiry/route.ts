@@ -12,7 +12,10 @@ const NO_STORE = { 'Cache-Control': 'no-store' }
 const RETIRE_AFTER_DAYS = 365
 const WARN_BEFORE_DAYS = 30
 const WARN_AFTER_DAYS = RETIRE_AFTER_DAYS - WARN_BEFORE_DAYS  // 335
-const BATCH_SIZE = 50
+// Raised from 50, and kept comfortably ahead of retire-albums' rate so the warning queue drains
+// faster than the deletion queue consumes it -- otherwise the interlock turns into a permanent
+// backlog rather than a safety net.
+const BATCH_SIZE = 200
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL ?? 'https://hushare.space'
 
 type ExpiryCandidate = {

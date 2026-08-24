@@ -22,6 +22,17 @@ type AdminDb = ReturnType<typeof createAdminClient>
 
 async function findUserByEmail(admin: AdminDb, email: string) {
   const normalized = email.trim().toLowerCase()
+
+  // Same 5,000-user ceiling that was silently dropping payments in provision-user: 25 pages x 200
+  // and then give up. Here the consequence is smaller -- support simply cannot find a customer --
+  // but it is the same cliff, and it arrives without warning. One indexed lookup instead.
+  const { data: id, error: rpcErr } = await admin.rpc('find_user_id_by_email', { p_email: normalized })
+  if (!rpcErr && typeof id === 'string' && id) {
+    const { data } = await admin.auth.admin.getUserById(id)
+    if (data?.user) return data.user
+  }
+
+  // Fallback for a database restored from before that migration.
   for (let page = 1; page <= 25; page++) {
     const { data, error } = await admin.auth.admin.listUsers({ page, perPage: 200 })
     if (error) break
