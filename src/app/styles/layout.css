@@ -871,3 +871,32 @@ body:has(.hush-footer-reveal) > main {
     filter: none;
   }
 }
+
+/* ─── Reveal curtain ────────────────────────────────────────────────────────────────────────── */
+/* The mark on a scheduled album's curtain.
+   It sits there for as long as the album takes to load — measured at 1.1-1.3s, and up to five
+   seconds if a fetch is slow. Perfectly still, that reads as a page that has crashed rather than one
+   that is about to open, which is exactly what it was reported as. It arrives, and then it breathes,
+   so the screen is never once static. */
+@keyframes hush-curtain-in {
+  from { opacity: 0; transform: scale(0.94); }
+  to   { opacity: 1; transform: scale(1); }
+}
+
+@keyframes hush-curtain-breathe {
+  0%, 100% { transform: scale(1); }
+  50%      { transform: scale(1.035); }
+}
+
+.hush-curtain-mark {
+  /* The fade-in runs once; the breathe then loops behind it. Listed in this order so the entrance
+     wins the first 520ms and the loop takes over cleanly afterwards. */
+  animation:
+    hush-curtain-in 520ms cubic-bezier(0.22, 1, 0.36, 1) both,
+    hush-curtain-breathe 2600ms ease-in-out 520ms infinite;
+}
+
+/* Asked for less motion: the mark is simply present. The wait is still there, but nothing moves. */
+@media (prefers-reduced-motion: reduce) {
+  .hush-curtain-mark { animation: none; }
+}

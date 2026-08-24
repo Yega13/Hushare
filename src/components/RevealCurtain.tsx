@@ -28,7 +28,7 @@ import Image from 'next/image'
 // length can only ever be luck.
 const MIN_HOLD_MS = 500   // never flash: hold at least this long even if the album is already there
 const MAX_HOLD_MS = 5000  // never trap: part regardless, so a failed fetch cannot leave a red screen
-const PART_MS = 1100      // the parting itself
+const PART_MS = 900       // the parting itself — tightened; the wait before it is already long
 const FADE_MS = 260       // the last of the panels fading out once they are clear
 
 const WINE = '#630826'
@@ -106,6 +106,10 @@ export default function RevealCurtain({ ready, onDone }: { ready: boolean; onDon
 
       {/* The mark sits on the seam and leaves early — it belongs to the closed state, and holding it
           while the panels travel would drag the eye away from what is being revealed. */}
+      {/* Two layers on purpose. The OUTER one owns the exit (a plain opacity transition), the inner
+          one owns the entrance and the breathing (CSS keyframes). Putting both on one element means
+          the transition and the animation fight over `transform`, and the animation always wins —
+          so the exit would never play. */}
       <div
         style={{
           position: 'absolute',
@@ -114,20 +118,19 @@ export default function RevealCurtain({ ready, onDone }: { ready: boolean; onDon
           alignItems: 'center',
           justifyContent: 'center',
           opacity: parted ? 0 : 1,
-          // A whisper of scale as it goes, so the mark recedes rather than simply switching off.
-          // Nothing slides any more, so a large movement here would be the only thing travelling.
-          transform: parted ? 'scale(1.04)' : 'scale(1)',
-          transition: `opacity 300ms ease-out, transform ${PART_MS}ms cubic-bezier(0.65, 0, 0.35, 1)`,
+          transition: 'opacity 320ms ease-out',
         }}
       >
-        <Image
-          src="/logo/logo-light-transparent.png"
-          alt=""
-          width={618}
-          height={146}
-          priority
-          style={{ width: 'min(46vw, 260px)', height: 'auto' }}
-        />
+        <div className={parted ? undefined : 'hush-curtain-mark'} style={{ display: 'inline-flex' }}>
+          <Image
+            src="/logo/logo-light-transparent.png"
+            alt=""
+            width={618}
+            height={146}
+            priority
+            style={{ width: 'min(46vw, 260px)', height: 'auto' }}
+          />
+        </div>
       </div>
     </div>
   )
