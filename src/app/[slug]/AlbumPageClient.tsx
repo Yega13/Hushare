@@ -10,6 +10,7 @@ import type { Album, Photo, Tier } from '@/types'
 import AlbumSkeleton from '@/components/AlbumSkeleton'
 import PasswordGate from '@/components/PasswordGate'
 import RevealCountdown from '@/components/RevealCountdown'
+import RevealCurtain from '@/components/RevealCurtain'
 import PhotoGrid from '@/components/PhotoGrid'
 import AlbumHeader from '@/components/AlbumHeader'
 import GuestActionsBar from '@/components/GuestActionsBar'
@@ -100,6 +101,10 @@ export default function AlbumPageClient({ initialAlbum = null, initialPhotos, in
   const [revealGate, setRevealGate] = useState<{
     revealAt: string; slug: string; title: string
   } | null>(initialGate?.type === 'reveal' ? { revealAt: initialGate.revealAt, slug: initialGate.slug, title: initialGate.title } : null)
+  // Raised the instant a scheduled album unlocks, and lowered by the curtain itself once its panels
+  // are fully off-screen. Kept HERE rather than inside RevealCountdown because that component
+  // unmounts the moment the gate clears — the curtain has to outlive it to cover the swap.
+  const [curtain, setCurtain] = useState(false)
 
 
   // Owner
@@ -1007,13 +1012,23 @@ export default function AlbumPageClient({ initialAlbum = null, initialPhotos, in
           fetchGenRef.current++
           setRevealGate(null)
           setLoading(true)
+          // The curtain goes up FIRST and the fetch starts behind it, so the album has the length of
+          // the hold to arrive before anyone can see whether it did.
+          setCurtain(true)
           void fetchAlbum()
         }}
       />
     )
   }
 
-  if (!album) return <AlbumSkeleton />
+  if (!album) {
+    return (
+      <>
+        <AlbumSkeleton />
+        {curtain && <RevealCurtain onDone={() => setCurtain(false)} />}
+      </>
+    )
+  }
 
   // ─── Main render ─────────────────────────────────────────────────────────────
 
@@ -1039,6 +1054,10 @@ export default function AlbumPageClient({ initialAlbum = null, initialPhotos, in
 
   return (
     <>
+      {/* Above everything, including the fixed background and any sticky bar. Unmounts itself once
+          the panels are clear, so it costs nothing for the rest of the album's life. */}
+      {curtain && <RevealCurtain onDone={() => setCurtain(false)} />}
+
       {/* Fixed background image — lives outside <main> so any stacking context on
           <main> cannot trap it. z-index: -10 paints it behind all page content.
           Body background (#FDFAF5, set in global CSS) shows if the image fails to load. */}
