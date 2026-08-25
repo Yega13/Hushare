@@ -70,16 +70,25 @@ export default function SiteFooter() {
   // exactly how much of the sticky footer is uncovered, and hands it to CSS as --hush-reveal.
   // See the note in layout.css for why this is not `animation-timeline: view()`.
   useEffect(() => {
-    if (!reveal) return
     const el = footerRef.current
+    if (!el) return
     // The var is written on the CHILD, not on the footer. Custom properties inherit, but the
     // stylesheet declares `--hush-reveal: 1` on `.hush-footer-reveal > *`, and a child's own
     // declaration beats an inherited one -- setting it on the parent would be silently ignored.
-    const inner = el?.firstElementChild as HTMLElement | null
-    if (!el || !inner) return
-    // Skipped entirely rather than animated-then-overridden, so a reader who asked for less motion
-    // costs nothing per frame.
-    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return
+    const inner = el.firstElementChild as HTMLElement | null
+
+    // TWO CONSUMERS, ONE MEASUREMENT.
+    //
+    // The blur reveal wants a 0-1 progress and runs only on the marketing routes that have it. The
+    // site header wants a yes/no — it steps out of the way once the footer starts to show — and
+    // that applies wherever a footer exists at all. Both are the same number, so it is computed
+    // once here rather than measured a second time somewhere else, which is how two answers to one
+    // question start disagreeing.
+    const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    // The blur is skipped entirely for a reader who asked for less motion, so it costs nothing per
+    // frame. The header still gets out of the way — that is a layout state, not an animation, and
+    // the transition on it is disabled separately in CSS.
+    const wantsReveal = reveal && !!inner && !reduced
 
     let raf = 0
     const paint = () => {
@@ -97,7 +106,10 @@ export default function SiteFooter() {
       // correct and depend on no assumption about the page's structure.
       const remaining = document.documentElement.scrollHeight - window.innerHeight - window.scrollY
       const uncovered = 1 - Math.min(1, Math.max(0, remaining / height))
-      inner.style.setProperty('--hush-reveal', uncovered.toFixed(3))
+      if (wantsReveal && inner) inner.style.setProperty('--hush-reveal', uncovered.toFixed(3))
+      // A small threshold, not `> 0`: a page whose content is barely taller than the viewport sits
+      // at a hair above zero permanently, and the header would flicker for the whole scroll.
+      document.body.classList.toggle('hush-footer-showing', uncovered > 0.04)
     }
     // Coalesced to one write per frame. A scroll event can fire many times between paints, and
     // each write here costs a style recalc on a blurred, full-width box -- the one thing worth
@@ -111,6 +123,9 @@ export default function SiteFooter() {
       window.removeEventListener('scroll', schedule)
       window.removeEventListener('resize', schedule)
       if (raf) cancelAnimationFrame(raf)
+      // Leaving this behind would hide the header on the next page, which may have no footer at all
+      // and therefore nothing that could ever bring it back.
+      document.body.classList.remove('hush-footer-showing')
     }
   }, [reveal, normalizedPathname])
 

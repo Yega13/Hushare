@@ -1005,26 +1005,34 @@ html.hush-morph-closing::view-transition-new(root) {
   ::view-transition-new(*) { animation: none !important; }
 }
 
-/* The sticky nav steps out of the way while you read down — see ScrollHideNav.tsx.
-   The transform is on the nav itself rather than a wrapper because the bar already carries
-   backdrop-filter, which has established a containing block here since the day it was added;
-   animating transform on the same element changes nothing about how it composites.
-   will-change is deliberately NOT set: this moves at most twice per scroll direction, and a
-   permanent extra layer on a bar that is on screen for the whole session costs more than it saves. */
+/* The sticky header steps out of the way once the footer starts to show.
+   NOT on scroll direction, which is what this did first and which is worse here: a bar that comes
+   and goes as you move is something to keep track of, and this site is mostly reading. It now stays
+   put for the whole page and only leaves at the very bottom, where the footer wants the room and
+   there is nothing above to navigate back to.
+   PURE CSS, with no component of its own. SiteFooter already measures how far the page's bottom
+   edge has risen past the viewport — the same number that drives the frosted reveal — so it sets one
+   class on <body> and the stylesheet does the rest. A second scroll listener measuring the same
+   thing is how two answers to one question start disagreeing.
+   It therefore applies to every page with a footer and to none without: albums, the live wall,
+   collections and /admin render no footer, so nothing here can ever move their header.
+   The transform is on the bar itself, which already carries backdrop-filter and so has established
+   a containing block since the day that was added — animating transform on the same element changes
+   nothing about how it composites. No will-change: this moves twice per visit, and a permanent extra
+   layer on a bar that is on screen the whole session costs more than it saves. */
 .hush-nav {
   transition: transform 260ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 
-.hush-nav-hidden {
+body.hush-footer-showing .hush-nav {
   /* 101% so the border-bottom clears the top edge too — at 100% a 1px line stays visible. */
   transform: translateY(-101%);
 }
 
 @media (prefers-reduced-motion: reduce) {
+  /* The header still gets out of the footer's way — that is a layout state, not decoration — but it
+     does so instantly rather than sliding. */
   .hush-nav { transition: none; }
-  /* Belt and braces: the component already refuses to run under reduced motion, but if the class
-     is ever applied by something else, the bar stays put rather than vanishing. */
-  .hush-nav-hidden { transform: none; }
 }
 
 /* Words rising into place on the home headline — see WordReveal.tsx.
