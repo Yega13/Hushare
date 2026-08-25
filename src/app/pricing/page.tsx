@@ -9,7 +9,11 @@ import HamburgerMenu from '@/components/HamburgerMenu'
 import CheckoutResumer from '@/components/CheckoutResumer'
 import FaqList from '@/components/FaqList'
 import { getServerLocale } from '@/i18n/server'
-import { getDictionary } from '@/i18n/get-dictionary'
+import { getDictionary, interpolate } from '@/i18n/get-dictionary'
+import {
+  albumMediaCapForTier, albumCountLimitForTier, uploadCapsForTier, formatCapSize,
+  ANON_ALBUM_MEDIA, ANON_ALBUM_LIMIT,
+} from '@/lib/media'
 import type { DictKey } from '@/i18n/dictionaries/en'
 import type { PlanKey } from '@/lib/polar'
 
@@ -302,7 +306,31 @@ const INK   = { color: '#630826' } as const
 
 export default async function PricingPage() {
   const dict = getDictionary(await getServerLocale())
-  const tt = (k: string) => dict[k as DictKey]
+  // Every number in the copy comes from the constants the API routes check against, so a limit
+  // cannot be changed in code and left stale on the page that sells it.
+  const planNumbers = {
+    freeItems: albumMediaCapForTier('free').toLocaleString('en-US'),
+    proItems: albumMediaCapForTier('pro').toLocaleString('en-US'),
+    maxItems: albumMediaCapForTier('studio').toLocaleString('en-US'),
+    anonItems: String(ANON_ALBUM_MEDIA),
+    freeAlbums: String(albumCountLimitForTier('free')),
+    proAlbums: String(albumCountLimitForTier('pro')),
+    maxAlbums: String(albumCountLimitForTier('studio')),
+    anonAlbums: String(ANON_ALBUM_LIMIT),
+    freePhoto: formatCapSize(uploadCapsForTier('free').image),
+    freeVideo: formatCapSize(uploadCapsForTier('free').video),
+    proPhoto: formatCapSize(uploadCapsForTier('pro').image),
+    proVideo: formatCapSize(uploadCapsForTier('pro').video),
+    maxVideo: formatCapSize(uploadCapsForTier('studio').video),
+    // Bare numbers as well as formatted ones. Russian and Armenian write the unit themselves
+    // ("МБ", "ՄԲ"), so those sentences need the figure without an English "MB" welded to it.
+    freePhoto_n: String(Math.round(uploadCapsForTier('free').image / (1024 * 1024))),
+    freeVideo_n: String(Math.round(uploadCapsForTier('free').video / (1024 * 1024))),
+    proPhoto_n: String(Math.round(uploadCapsForTier('pro').image / (1024 * 1024))),
+    proVideo_n: String(Math.round(uploadCapsForTier('pro').video / (1024 * 1024 * 1024))),
+    maxVideo_n: String(Math.round(uploadCapsForTier('studio').video / (1024 * 1024 * 1024))),
+  }
+  const tt = (k: string) => interpolate(dict[k as DictKey] ?? k, planNumbers)
   const localizedTiers = tiers.map((tier) => {
     const key = tier.name.toLowerCase()
     return {
