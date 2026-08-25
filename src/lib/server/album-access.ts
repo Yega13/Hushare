@@ -202,6 +202,15 @@ export async function resolveAlbum(
     album: {
       ...publicAlbum,
       password_protected: !!_pw,
+      // The ALBUM'S plan, not the viewer's.
+      //
+      // The owner toolbar used to ask /api/me/tier — the plan of whoever is looking. Owner links are
+      // shareable, so that is a different question, and after the gates were corrected to check
+      // album.user_id the two could disagree outright: an admin opening a free owner's album saw no
+      // PRO marks at all while the server refused every one of those features. It also meant the
+      // owner of a free album could never see the marks if they happened to be signed in elsewhere.
+      // Reveals nothing new — media_caps already states the tier exactly.
+      plan: ownerTier,
       // RE-CHECKED HERE, not just when it was switched on.
       //
       // hide_branding was gated only at write time, and nothing ever looked at it again: subscribe

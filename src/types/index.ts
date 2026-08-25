@@ -99,6 +99,8 @@ export type Album = {
   // accepted them — /api/upload/presign has always sized the cap by album.user_id. Sending the
   // server's own answer down with the album is what keeps the two ends from disagreeing again.
   media_caps: UploadCaps;
+  /** The ALBUM OWNER'S plan — what the server gates on. Not the viewer's. */
+  plan?: Tier;
   last_activity_at: string;
   last_notification_at: string | null;
   created_at: string;

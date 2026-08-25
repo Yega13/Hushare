@@ -143,11 +143,20 @@ export default function AlbumPageClient({ initialAlbum = null, initialPhotos, in
   const pendingLeaveHrefRef = useRef<string | null>(null)
 
   // Display state — consumed by Phase 7–9 components
-  // null = NOT YET KNOWN, which is a genuinely different state from 'free' and has to be modelled
-  // as one. Starting at 'free' meant the toolbar rendered a verdict it had not received: a paying
-  // owner watched PRO and MAX badges sit on their own features for the length of one /api/me/tier
-  // round trip. Nothing renders a negative answer until the answer exists.
-  const [userTier, setUserTier] = useState<Tier | null>(null)
+  // The ALBUM'S plan, derived from the album rather than stored beside it.
+  //
+  // This was /api/me/tier — the plan of whoever is looking — and that is a different question.
+  // Owner links are shareable, and the server gates on album.user_id, so the two could disagree
+  // outright: an admin opening a free owner's album saw no PRO marks while every one of those
+  // features was refused, and an admin could never see the marks at all on any album.
+  //
+  // Derived rather than held in state because the album is already replaced on refetch and on a
+  // settings broadcast — a copy would be a second source of truth that could only ever fall behind
+  // it. `null` is still a real state, meaning the album has not arrived, and nothing renders a
+  // negative answer until it has: that is what stopped a paying owner watching PRO badges sit on
+  // their own features for the length of a request.
+  const userTier: Tier | null = album?.plan ?? null
+
   const [mediaRadiusMax, setMediaRadiusMax] = useState(144)
   const [forceGlobalRadius, setForceGlobalRadius] = useState(false)
   const [slideshowRequestId, setSlideshowRequestId] = useState(0)
@@ -363,13 +372,6 @@ export default function AlbumPageClient({ initialAlbum = null, initialPhotos, in
         // "sometimes owner, sometimes guest" flakiness. On a guest URL this is harmless (gated by
         // ownerTokenInUrl in effectiveIsOwner).
         if (result.isOwner) setIsOwner(true)
-        if (result.isOwner) {
-          // Non-blocking — page renders before tier resolves
-          fetch('/api/me/tier', { cache: 'no-store' })
-            .then(r => r.ok ? r.json() : Promise.reject())
-            .then((j: { tier?: Tier }) => { if (!isCancelled() && j.tier) setUserTier(j.tier) })
-            .catch(() => {})
-        }
       } catch {
         // Auth failure = guest view, no action needed
       }
@@ -500,7 +502,6 @@ export default function AlbumPageClient({ initialAlbum = null, initialPhotos, in
     prevGuestDownloadsRef.current = null
     // Reset display state that persists across navigations
     setArrangeMode(false)
-    setUserTier(null)
     setForceGlobalRadius(false)
     setSlideshowRequestId(0)
     setMediaRadiusMax(144)
