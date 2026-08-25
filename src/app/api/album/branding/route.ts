@@ -32,8 +32,17 @@ export async function POST(req: Request) {
   const access = await verifyOwnerViaCookieWithRateLimit(req, slug.trim())
   if (!access.ok) return NextResponse.json({ error: access.error }, { status: access.status, headers: NO_STORE })
 
+  // The tier checked is the ALBUM OWNER'S, not the caller's.
+  //
+  // It used to be access.userId — whoever is holding the owner link right now. Owner links are
+  // shareable by design, so that asked "is the person clicking this a subscriber?" rather than "is
+  // this album on a paid plan?". One Pro account could collect owner links from free users and mint
+  // this feature on albums it does not own, without limit — and, until the read-time check added
+  // alongside this, permanently. Every other gate in the codebase already asks about
+  // album.user_id: upload authorization, Stream, face search and Collections all do.
   // A guest album has no account behind it, so there is nothing to check a plan against.
-  if (!access.userId) {
+  const ownerId = access.album.user_id
+  if (!ownerId) {
     return NextResponse.json({ error: 'Sign in to change branding' }, { status: 401, headers: NO_STORE })
   }
 
@@ -41,7 +50,7 @@ export async function POST(req: Request) {
   // leave an album permanently unbranded with its owner unable to undo it — punishing someone for
   // cancelling by taking away a choice rather than a feature.
   if (hide) {
-    const tier = await getUserTierById(access.userId)
+    const tier = await getUserTierById(ownerId)
     if (tier === 'free') {
       return NextResponse.json(
         { error: 'Removing Hushare branding requires a Pro or Max plan' },

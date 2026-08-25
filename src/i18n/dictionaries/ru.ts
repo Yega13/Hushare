@@ -752,4 +752,16 @@ export const ru: Partial<Record<DictKey, string>> = {
   'welcome.cta': 'Начать',
   'welcome.close': 'Закрыть',
   'welcome.thanks': 'Спасибо, что поддерживаете Hushare.',
+
+  'plan.albums': '{n} альбомов',
+  'plan.perAlbum': '{n} фото и видео в альбоме',
+  'plan.uploads': 'Фото до {photo}, видео до {video}',
+  'plan.customUrl': 'Собственная ссылка на альбом',
+  'plan.noBranding': 'Без брендинга Hushare',
+  'plan.faceFinder': 'Face Finder — гости находят свои фото',
+  'plan.collections': 'Коллекции — много альбомов, одна ссылка',
+  'plan.password': 'Защита паролем',
+  'plan.photoWall': 'Живая фотостена',
+  'plan.qr': 'Поделиться по QR-коду',
+  'plan.everything': 'Всё включено',
 }

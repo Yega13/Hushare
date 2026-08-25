@@ -202,6 +202,15 @@ export async function resolveAlbum(
     album: {
       ...publicAlbum,
       password_protected: !!_pw,
+      // RE-CHECKED HERE, not just when it was switched on.
+      //
+      // hide_branding was gated only at write time, and nothing ever looked at it again: subscribe
+      // for one month at the intro price, remove the mark from every album, cancel, and it stayed
+      // gone forever. The FAQ tells customers paid extras are removed when a plan lapses, so this
+      // was also a promise the code did not keep. Face Finder and Collections already re-check the
+      // owner's tier on every request; this now does the same, and it is free — ownerTier is
+      // already in hand for the upload caps.
+      hide_branding: album.hide_branding && ownerTier !== 'free',
       media_caps: uploadCapsForTier(ownerTier),
     } as unknown as Album,
   }

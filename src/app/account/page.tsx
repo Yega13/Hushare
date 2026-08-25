@@ -7,6 +7,7 @@ import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { isAccountAdmin } from '@/lib/auth'
 import { getActiveSubscription } from '@/lib/subscriptions'
+import { planFeatures } from '@/lib/plan-features'
 import { formatDate } from '@/lib/utils'
 import CollectionActions from './CollectionActions'
 import CreateCollectionButton from './CreateCollectionButton'
@@ -17,7 +18,7 @@ import SubscriptionPolling from './SubscriptionPolling'
 import WelcomeCelebration from './WelcomeCelebration'
 import LanguageSwitcherFlags from '@/components/LanguageSwitcherFlags'
 import { getServerLocale } from '@/i18n/server'
-import { getDictionary } from '@/i18n/get-dictionary'
+import { getDictionary, interpolate } from '@/i18n/get-dictionary'
 import { LANGUAGE_UI_ENABLED } from '@/i18n/config'
 
 async function AccountNav() {
@@ -138,7 +139,8 @@ export default async function AccountPage({ searchParams }: Props) {
   }
   // Everyone signed in gets a dashboard — free accounts see a trimmed version (below).
 
-  const dict = getDictionary(await getServerLocale())
+  const locale = await getServerLocale()
+  const dict = getDictionary(locale)
   const tierLabel = subscription
     ? subscription.tier === 'pro' ? 'Hushare Pro' : 'Hushare Max'
     : null
@@ -150,13 +152,22 @@ export default async function AccountPage({ searchParams }: Props) {
   const isFree = !subscription && !isAdmin
   const planName = isAdmin ? 'Hushare Admin' : tierLabel ?? 'Hushare Free'
   const isStudio = isAdmin || subscription?.tier === 'studio'
-  const planFeatures = isAdmin
-    ? ['Everything enabled', 'Max Collections', 'Custom album backgrounds', 'Password protection', 'Custom URLs', '200 MB uploads']
-    : isStudio
-    ? ['Max Collections', 'Custom album backgrounds', 'Password protection', 'Custom URLs', '200 MB uploads']
-    : subscription
-    ? ['Custom album backgrounds', 'Password protection', 'Custom URLs', '200 MB uploads']
-    : ['3 albums', 'Up to 250 items each', 'Live Photo Wall', 'QR code sharing']
+  // Built from the limits the server enforces, and translated — see src/lib/plan-features.ts. The
+  // hand-written lists that used to sit here had drifted from the code and from each other: this one
+  // still quoted a 250-item cap that stopped being real a long time ago, and the paid lists
+  // advertised password protection, which every free album has always had.
+  const numberFormat = new Intl.NumberFormat(locale)
+  const renderFeatures = (features: ReturnType<typeof planFeatures>) =>
+    features.map((f) =>
+      interpolate(
+        dict[f.key] ?? f.key,
+        f.vars &&
+          Object.fromEntries(
+            Object.entries(f.vars).map(([k, v]) => [k, typeof v === 'number' ? numberFormat.format(v) : v]),
+          ),
+      ),
+    )
+  const planFeatureList = renderFeatures(planFeatures(subscription?.tier ?? 'free', isAdmin))
   const nextLabel = subscription?.cancel_at_period_end ? dict['acct.accessEnds'] : dict['acct.nextRenewal']
   // Never guessed. A missing subscription used to fall through to "Max", so a transient database
   // error could hand a Pro customer a card reading "You're Max now" over the free feature list.
@@ -374,7 +385,7 @@ export default async function AccountPage({ searchParams }: Props) {
               </dl>
 
               <div className="flex flex-wrap gap-2">
-                {planFeatures.map((feature) => (
+                {planFeatureList.map((feature) => (
                   <span key={feature} className="rounded-full px-3 py-1 text-xs" style={{ background: '#F5F0E8', color: '#5C4A3C', border: '1px solid #E8E0D2' }}>
                     {feature}
                   </span>
@@ -576,7 +587,10 @@ export default async function AccountPage({ searchParams }: Props) {
       {justPurchased && celebrationTier && (
         <WelcomeCelebration
           plan={celebrationTier === 'pro' ? 'Pro' : 'Max'}
-          features={planFeatures}
+          // The list for the plan BEING CELEBRATED, not for whoever is looking. Passing the viewer's
+          // own list meant an admin previewing the Pro card saw the admin feature set under a "Pro"
+          // headline — the Max-only Collections line included.
+          features={renderFeatures(planFeatures(celebrationTier))}
         />
       )}
     </div>

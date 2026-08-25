@@ -752,4 +752,16 @@ export const hy: Partial<Record<DictKey, string>> = {
   'welcome.cta': 'Սկսել',
   'welcome.close': 'Փակել',
   'welcome.thanks': 'Շնորհակալություն Hushare-ին աջակցելու համար։',
+
+  'plan.albums': '{n} ալբոմ',
+  'plan.perAlbum': '{n} լուսանկար և տեսանյութ մեկ ալբոմում',
+  'plan.uploads': 'Мինչև {photo} լուսանկար, մինչև {video} տեսանյութ',
+  'plan.customUrl': 'Ձեր սեփական հղումը',
+  'plan.noBranding': 'Առանց Hushare-ի նշանի',
+  'plan.faceFinder': 'Face Finder — հյուրերը գտնում են իրենց լուսանկարները',
+  'plan.collections': 'Հավաքածուներ — շատ ալբոմ, մեկ հղում',
+  'plan.password': 'Գաղտնաբառով պաշտպանություն',
+  'plan.photoWall': 'Ուղիղ լուսանկարային պատ',
+  'plan.qr': 'QR կոդով կիսմում',
+  'plan.everything': 'Ամեն ինչ միացված է',
 }

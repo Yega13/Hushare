@@ -14,6 +14,7 @@ import AdminSyncPolarButton from '@/components/AdminSyncPolarButton'
 import AdminPublishStatement from '@/components/AdminPublishStatement'
 import AdminLiveUsers from '@/components/AdminLiveUsers'
 import AdminGrowthChart from '@/components/AdminGrowthChart'
+import AdminWeekdayBars from '@/components/AdminWeekdayBars'
 import AdminAreaChartLazy from '@/components/AdminAreaChartLazy'
 import { getTrafficAnalytics } from '@/lib/cf-analytics'
 import AdminSupportLookup from '@/components/AdminSupportLookup'
@@ -24,6 +25,11 @@ export const dynamic = 'force-dynamic'
 export const metadata: Metadata = { title: 'Admin', robots: { index: false, follow: false } }
 
 const INK = '#2A211C'
+// Where the owner is. Weekday and day-of-week figures are only meaningful in a real timezone, and
+// UTC is not the one anybody here lives in — at UTC+4 a UTC weekday files the first four hours of
+// every local day under the day before, which is where an event running past midnight lands.
+const OWNER_TZ = 'Asia/Yerevan'
+
 const BRAND = '#630826'
 const MUTED = '#8A7A66'
 const CARD = '#FFFFFF'
@@ -204,8 +210,13 @@ export default async function AdminPage() {
   // Cheap head-counts; user growth is derived from the already-fetched listUsers result (no extra
   // auth call). Note: newUsers counts are bounded by the 200-user listUsers page — fine at current
   // scale; revisit with a dedicated created_at query once registrations exceed a few hundred.
-  const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString()
-  const monthAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString()
+  // One clock read for every window on this page. Three separate Date.now() calls could, in
+  // principle, straddle a midnight and give windows that disagree with each other by a day — and
+  // each one is separately flagged as impure in a render path.
+  const nowMs = Date.now()
+  const DAY_MS = 24 * 60 * 60 * 1000
+  const weekAgo = new Date(nowMs - 7 * DAY_MS).toISOString()
+  const monthAgo = new Date(nowMs - 30 * DAY_MS).toISOString()
   const [newAlbums7d, newAlbums30d, newUploads7d, newUploads30d, activeAlbums7d] = await Promise.all([
     admin.from('albums').select('id', { count: 'exact', head: true }).gte('created_at', weekAgo),
     admin.from('albums').select('id', { count: 'exact', head: true }).gte('created_at', monthAgo),
@@ -231,6 +242,44 @@ export default async function AdminPage() {
     const d = (u.created_at ?? '').slice(0, 10)
     if (d) signupByDay.set(d, (signupByDay.get(d) ?? 0) + 1)
   }
+  // ── Which DAYS OF THE WEEK are busy, over twelve weeks.
+  //
+  // Twelve, not the two the chart above uses: fourteen days gives two samples per weekday, so a
+  // single wedding would make Saturday look like a pattern.
+  //
+  // Bucketed in OWNER_TZ rather than UTC. The owner is at UTC+4, so a UTC weekday puts the first
+  // four hours of every local day on the day before — an event running past midnight is filed under
+  // the wrong day, and that is exactly the signal this chart exists to show. Against live data the
+  // difference is not academic: Monday uploads move by 300 between the two.
+  const WEEKDAY_DAYS = 84
+  const { data: weekdayRaw } = await admin.rpc('admin_weekday_series', {
+    p_days: WEEKDAY_DAYS,
+    p_tz: OWNER_TZ,
+  })
+  // 0 = Sunday from Postgres; the week reads better starting on Monday.
+  const MONDAY_FIRST = [1, 2, 3, 4, 5, 6, 0]
+  const WEEKDAY_NAMES: Record<number, string> = {
+    0: 'Sunday', 1: 'Monday', 2: 'Tuesday', 3: 'Wednesday', 4: 'Thursday', 5: 'Friday', 6: 'Saturday',
+  }
+  const weekdayRows = (weekdayRaw ?? []) as { dow: number; albums: number | string; uploads: number | string }[]
+  const byDow = new Map(weekdayRows.map((r) => [Number(r.dow), r]))
+
+  // Signups are counted here rather than in SQL because the users list is already in memory — but
+  // in the SAME timezone as the query above, or the three charts would disagree with each other.
+  const signupCutoff = nowMs - WEEKDAY_DAYS * DAY_MS
+  const signupDow = new Map<number, number>()
+  for (const u of allUsers) {
+    const t = u.created_at ? Date.parse(u.created_at) : NaN
+    if (!Number.isFinite(t) || t < signupCutoff) continue
+    // 'en-US' + an explicit timeZone: the weekday must not depend on where this code happens to run.
+    const name = new Date(t).toLocaleDateString('en-US', { weekday: 'long', timeZone: OWNER_TZ })
+    const dow = Number(Object.keys(WEEKDAY_NAMES).find((k) => WEEKDAY_NAMES[Number(k)] === name) ?? -1)
+    if (dow >= 0) signupDow.set(dow, (signupDow.get(dow) ?? 0) + 1)
+  }
+  const weekdaySignups = MONDAY_FIRST.map((d) => ({ name: WEEKDAY_NAMES[d], value: signupDow.get(d) ?? 0 }))
+  const weekdayAlbums = MONDAY_FIRST.map((d) => ({ name: WEEKDAY_NAMES[d], value: Number(byDow.get(d)?.albums ?? 0) }))
+  const weekdayUploads = MONDAY_FIRST.map((d) => ({ name: WEEKDAY_NAMES[d], value: Number(byDow.get(d)?.uploads ?? 0) }))
+
   const albumsPts = series.map((s) => ({ day: s.day, value: Number(s.albums) }))
   const uploadsPts = series.map((s) => ({ day: s.day, value: Number(s.uploads) }))
   const signupsPts = series.map((s) => ({ day: s.day, value: signupByDay.get(s.day) ?? 0 }))
@@ -370,6 +419,18 @@ export default async function AdminPage() {
           <AdminAreaChartLazy label="Signups / day" points={signupsPts} color="#1F5136" unit="users" />
           <AdminAreaChartLazy label="New albums / day" points={albumsPts} color={BRAND} unit="albums" />
           <AdminAreaChartLazy label="Uploads / day" points={uploadsPts} color="#B4531F" unit="items" />
+        </div>
+
+        <h2 style={{ fontSize: 15, fontWeight: 700, color: INK, margin: '20px 0 4px' }}>
+          Busiest days of the week
+        </h2>
+        <p style={{ fontSize: 11.5, color: '#8A7A66', margin: '0 0 10px' }}>
+          Last {WEEKDAY_DAYS} days, counted in {OWNER_TZ.replace('_', ' ')} local time.
+        </p>
+        <div style={{ display: 'grid', gap: 12, gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))' }}>
+          <AdminWeekdayBars label="Signups" days={weekdaySignups} color="#1F5136" unit="users" />
+          <AdminWeekdayBars label="New albums" days={weekdayAlbums} color={BRAND} unit="albums" />
+          <AdminWeekdayBars label="Uploads" days={weekdayUploads} color="#B4531F" unit="items" />
         </div>
 
         {/* Traffic & performance — Cloudflare worker metrics + product events */}

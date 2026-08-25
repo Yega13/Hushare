@@ -775,6 +775,21 @@ export const en = {
   'welcome.cta': 'Start creating',
   'welcome.close': 'Close',
   'welcome.thanks': 'Thank you for backing Hushare.',
+
+  // Plan feature lines. Numbers are interpolated from the limits the server actually enforces —
+  // see src/lib/plan-features.ts — so a cap can never be changed in code and left stale in a
+  // translation.
+  'plan.albums': '{n} albums',
+  'plan.perAlbum': '{n} photos & videos per album',
+  'plan.uploads': 'Photos up to {photo}, videos up to {video}',
+  'plan.customUrl': 'Your own album link',
+  'plan.noBranding': 'No Hushare branding',
+  'plan.faceFinder': 'Face Finder — guests find their own photos',
+  'plan.collections': 'Collections — many albums, one link',
+  'plan.password': 'Password protection',
+  'plan.photoWall': 'Live Photo Wall',
+  'plan.qr': 'QR code sharing',
+  'plan.everything': 'Everything enabled',
 } as const
 
 export type Dict = typeof en
