@@ -47,7 +47,11 @@ export const FREE_IMAGE_BYTES = 25 * MB
 // Free video is capped at 50 MB (~30-60s phone clip) — enough for guest "moments" while
 // bounding Cloudflare Stream storage/delivery cost on the free tier. Larger HD video is a paid
 // perk (Pro 1 GB, Studio 4 GB). This matches the number the home + pricing pages advertise.
-export const FREE_VIDEO_BYTES = 50 * MB
+// 200 MB, not 50. An ordinary phone clip is 60-100 MB, so a 50 MB cap did not refuse "large" video
+// — it refused video. One iPhone user was turned away 18 times in a single session by it. Photos and
+// videos share the same per-album allowance, so a generous per-file size costs nothing extra: an
+// album full of video is an album that ran out of items sooner.
+export const FREE_VIDEO_BYTES = 200 * MB
 export const PRO_IMAGE_BYTES = 200 * MB
 export const PRO_VIDEO_BYTES = 1 * GB
 export const STUDIO_VIDEO_BYTES = 4 * GB
@@ -104,15 +108,51 @@ export const ANON_ALBUM_MEDIA = 250   // album owned by a guest (no account)
 // A real holiday or small event now finishes inside the free tier, and registering is a 4x jump
 // rather than a rounding error. Photos are cheap in R2 (no egress); video is the cost driver and
 // shares this cap deliberately, so a video-heavy album still stops early.
-export const FREE_ALBUM_MEDIA = 1000  // registered free account
+export const FREE_ALBUM_MEDIA = 500   // registered free account
+
+// What free albums used to get, kept for the ones that already have it.
+//
+// ONE SHARED ALLOWANCE for photos and videos, not two. A separate video count was considered and
+// dropped: across the whole library video is 1.4% of everything (132 of 9,490) and the most any one
+// album has ever held is 22, so a second number would have existed to govern a case that has never
+// occurred — at the cost of a second number to explain on the pricing page.
+export const LEGACY_FREE_ALBUM_MEDIA = 1000
+
+// Albums created before this keep the old allowance, for as long as they exist.
+//
+// Lowering a limit is not like raising one: somewhere out there is an album at 700 items whose owner
+// arranged a wedding around it, and taking 200 photos' worth of room away from them retroactively
+// would be indefensible whatever the pricing page now says. Five albums are already over 500 and the
+// largest holds 985.
+//
+// The date attaches to the ALBUM, not the owner: a new album made tomorrow by someone who has had an
+// account for months gets today's allowance, because that is what "created before" means.
+export const GRANDFATHER_FREE_BEFORE = Date.parse('2026-08-25T00:00:00Z')
 export const PRO_ALBUM_MEDIA = 3000
 export const STUDIO_ALBUM_MEDIA = 10_000
 
-// Cap for a REGISTERED owner by tier. Guest albums use ANON_ALBUM_MEDIA directly (see photos/create).
+// Cap for a REGISTERED owner by tier — what a plan gives TODAY. Guest albums use ANON_ALBUM_MEDIA
+// directly (see photos/create). Use this for anything that describes the plan: pricing, the account
+// dashboard, the celebration card.
 export function albumMediaCapForTier(tier: Tier): number {
   if (tier === 'studio') return STUDIO_ALBUM_MEDIA
   if (tier === 'pro') return PRO_ALBUM_MEDIA
   return FREE_ALBUM_MEDIA
+}
+
+// Cap for ONE PARTICULAR album, which is what enforcement must use.
+//
+// Only free albums differ, and only by age. Paid tiers have never had their allowance reduced, so
+// there is nothing to grandfather there and no reason for a date to enter into it.
+export function albumMediaCapForAlbum(tier: Tier, createdAt: string | null | undefined): number {
+  const now = albumMediaCapForTier(tier)
+  if (tier !== 'free') return now
+  const created = createdAt ? Date.parse(createdAt) : NaN
+  // An unreadable date grandfathers. created_at is NOT NULL so this should be unreachable, but the
+  // two ways of being wrong are not equal: giving an album room it should not have costs a little
+  // storage, while wrongly shrinking one takes space away from something a person already built.
+  if (!Number.isFinite(created) || created < GRANDFATHER_FREE_BEFORE) return LEGACY_FREE_ALBUM_MEDIA
+  return now
 }
 
 // Max number of albums a user can own, by tier. Anon (no account) is a separate soft cap — kept

@@ -1,8 +1,11 @@
 import { describe, it, expect } from 'vitest'
 import {
-  uploadCapsForTier, albumMediaCapForTier, formatCapSize, tooLargeMessage, isAllowedImage, isAllowedVideo,
+  uploadCapsForTier, albumMediaCapForTier, albumMediaCapForAlbum, formatCapSize, tooLargeMessage,
+  isAllowedImage, isAllowedVideo,
   FREE_VIDEO_BYTES, PRO_VIDEO_BYTES, STUDIO_VIDEO_BYTES,
+  FREE_ALBUM_MEDIA, LEGACY_FREE_ALBUM_MEDIA,
 } from '@/lib/media'
+import * as mediaModule from '@/lib/media'
 import { looksLikeStaleDeploy, looksLikeDomCorruption, isForeignError } from '@/lib/report-error'
 import { validateCustomSlug } from '@/lib/custom-slug'
 
@@ -27,10 +30,18 @@ describe('upload caps by tier', () => {
     expect(albumMediaCapForTier('studio')).toBeGreaterThan(albumMediaCapForTier('pro'))
   })
 
-  it('free video allowance is smaller than one modern phone clip — documented, not accidental', () => {
-    // ~30s of 1080p is 60-100MB. This assertion exists so that if the free cap is ever raised,
-    // whoever does it sees WHY it was 50MB and that events are the case it constrains.
-    expect(FREE_VIDEO_BYTES).toBe(50 * 1024 * 1024)
+  it('free video allowance fits a modern phone clip — raised deliberately from 50MB', () => {
+    // This assertion used to pin the cap at 50MB so that anyone raising it would see why it was set
+    // there. It worked: the reason turned out not to survive contact with the data. ~30s of 1080p is
+    // 60-100MB, so 50MB did not limit "large" video — it refused video outright, and one iPhone user
+    // was turned away 18 times in a single session by it.
+    //
+    // Raised to 200MB on 2026-08-25, with the cost concern answered a different way: photos and
+    // videos draw on ONE shared per-album allowance, so an album full of video is an album that runs
+    // out of items sooner. A generous per-file size costs nothing extra when the total is bounded.
+    expect(FREE_VIDEO_BYTES).toBe(200 * 1024 * 1024)
+    // Still below Pro, or the paid tier would not be buying anything.
+    expect(FREE_VIDEO_BYTES).toBeLessThan(PRO_VIDEO_BYTES)
   })
 })
 
@@ -96,7 +107,7 @@ describe('tooLargeMessage', () => {
 
   it('states the cap and, for video, what to do about it', () => {
     const v = tooLargeMessage('video', FREE_VIDEO_BYTES)
-    expect(v).toContain('50 MB')
+    expect(v).toContain(formatCapSize(FREE_VIDEO_BYTES))
     expect(v).toMatch(/trim/i)          // a guest cannot upgrade someone else's album; trimming is their only route
     expect(tooLargeMessage('image', 25 * 1024 * 1024)).toContain('25 MB')
   })
@@ -185,5 +196,63 @@ describe('custom slug validation', () => {
   it('rejects empty and over-long values', () => {
     expect(validateCustomSlug('').ok).toBe(false)
     expect(validateCustomSlug('a'.repeat(200)).ok).toBe(false)
+  })
+})
+
+// ── Lowering the free allowance, without taking room from albums that already have it ────────────
+//
+// Raising a limit is safe; lowering one is not. Somewhere there is an album at 700 items whose owner
+// arranged a wedding around it, and shrinking it retroactively would be indefensible whatever the
+// pricing page now says. Five albums were already over 500 when this changed and the largest held
+// 985, so this is not hypothetical.
+describe('free album allowance and grandfathering', () => {
+  const OLD = '2026-08-01T12:00:00Z'   // before the cutoff
+  const NEW = '2026-08-26T12:00:00Z'   // after it
+
+  it('gives new free albums the reduced allowance', () => {
+    expect(albumMediaCapForAlbum('free', NEW)).toBe(FREE_ALBUM_MEDIA)
+    expect(FREE_ALBUM_MEDIA).toBe(500)
+  })
+
+  it('leaves albums made before the change on the old allowance', () => {
+    expect(albumMediaCapForAlbum('free', OLD)).toBe(LEGACY_FREE_ALBUM_MEDIA)
+    expect(LEGACY_FREE_ALBUM_MEDIA).toBe(1000)
+  })
+
+  it('attaches the allowance to the ALBUM, not the owner', () => {
+    // The same owner making a new album tomorrow gets today's allowance — that is what "created
+    // before" means, and it is what was agreed.
+    expect(albumMediaCapForAlbum('free', OLD)).toBeGreaterThan(albumMediaCapForAlbum('free', NEW))
+  })
+
+  it('never grandfathers a paid tier — their allowance was never reduced', () => {
+    for (const when of [OLD, NEW]) {
+      expect(albumMediaCapForAlbum('pro', when)).toBe(albumMediaCapForTier('pro'))
+      expect(albumMediaCapForAlbum('studio', when)).toBe(albumMediaCapForTier('studio'))
+    }
+  })
+
+  it('errs toward the larger allowance when the date is unreadable', () => {
+    // The two ways of being wrong are not equal: too much room costs a little storage, too little
+    // takes space away from something a person already built.
+    expect(albumMediaCapForAlbum('free', null)).toBe(LEGACY_FREE_ALBUM_MEDIA)
+    expect(albumMediaCapForAlbum('free', 'not a date')).toBe(LEGACY_FREE_ALBUM_MEDIA)
+  })
+
+  it('accepts an ordinary phone clip on the free plan', () => {
+    // A 50MB cap did not refuse "large" video, it refused video: phone clips are 60-100MB, and one
+    // iPhone user was turned away 18 times in a single session by it.
+    const free = uploadCapsForTier('free')
+    expect(free.video).toBeGreaterThanOrEqual(100 * 1024 * 1024)
+    expect(free.video).toBeLessThanOrEqual(uploadCapsForTier('pro').video)
+  })
+
+  it('keeps photos and videos in ONE shared allowance', () => {
+    // No separate video count exists, deliberately: video is 1.4% of the library and the most any
+    // album has held is 22, so a second number would govern a case that has never happened.
+    const media = mediaModule as Record<string, unknown>
+    for (const key of Object.keys(media)) {
+      expect(key, `${key} looks like a separate video-count cap`).not.toMatch(/VIDEO_COUNT|MAX_VIDEOS|VIDEO_LIMIT/)
+    }
   })
 })

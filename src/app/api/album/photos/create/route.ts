@@ -9,7 +9,7 @@ import { queueAlbumChangedBroadcast, runAfterResponse } from '@/lib/broadcast'
 import { track } from '@/lib/analytics'
 import { timingSafeEqual } from '@/lib/timing-safe'
 import { getUserTierById } from '@/lib/subscriptions'
-import { albumMediaCapForTier, ANON_ALBUM_MEDIA } from '@/lib/media'
+import { albumMediaCapForAlbum, ANON_ALBUM_MEDIA } from '@/lib/media'
 import { gateAllowsContribution } from '@/lib/server/album-access'
 import { queueBibIndex } from '@/lib/server/bib-index'
 import { cookies } from 'next/headers'
@@ -337,7 +337,9 @@ export async function POST(req: Request) {
       }
     } else {
       const tier = await getUserTierById(album.user_id)
-      const cap = albumMediaCapForTier(tier)
+      // The ALBUM's cap, not the plan's: free albums created before the allowance was lowered keep
+      // the old one for as long as they exist.
+      const cap = albumMediaCapForAlbum(tier, album.created_at)
       if (photoCount >= cap) {
         const nudge = tier === 'studio' ? '' : ' Upgrade your plan for more space.'
         return NextResponse.json(
