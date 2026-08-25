@@ -241,6 +241,8 @@ export type AlbumGateRow = {
   owner_token: string
   password_hash: string | null
   reveal_at: string | null
+  /** The account that owns this album, when it has one. See the signed-in branch below. */
+  user_id?: string | null
 }
 
 // Columns a caller must select for gateAllowsContribution to work. Keeps the two in step.
@@ -261,10 +263,29 @@ export type ContributionRefusal =
 export async function gateAllowsContribution(
   album: AlbumGateRow,
   cookieStore: CookieStore,
+  /**
+   * The signed-in account, when the caller knows it.
+   *
+   * THE ACCOUNT IS STRONGER PROOF THAN THE COOKIE, and until now it was not accepted at all. A
+   * paying customer created an album, uploaded four photos while it was still open — anyone may add
+   * to an open album, so no ownership was ever demanded — then set a password from another tab. The
+   * next 163 uploads were refused: the owner cookie had never been set in the tab she was uploading
+   * from, and the gate had no other way to recognise her. She was signed in, on her own album, the
+   * whole time.
+   *
+   * The owner cookie proves possession of a link that is meant to be shareable. A session proves
+   * who someone is. Refusing the owner of an album because a cookie is missing from one tab is the
+   * gate asking the weaker question.
+   */
+  signedInUserId?: string | null,
 ): Promise<{ ok: true } | { ok: false; error: string; reason: ContributionRefusal }> {
   const ownerCookie = (cookieStore.get(`hushare_owner_${album.id}`)?.value ?? '').trim()
   const ownerPresent = ownerCookie.length > 0
   if (ownerPresent && timingSafeEqual(ownerCookie, album.owner_token)) return { ok: true }
+
+  // Signed in AS the album's owner. Both sides must be real strings — a null album.user_id (a guest
+  // album) must never match a null session.
+  if (signedInUserId && album.user_id && signedInUserId === album.user_id) return { ok: true }
 
   if (album.reveal_at && new Date(album.reveal_at) > new Date()) {
     return { ok: false, error: 'This album has not been revealed yet', reason: 'not-revealed' }

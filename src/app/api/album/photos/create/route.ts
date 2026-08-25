@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { reportServerError } from '@/lib/report-server-error'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { createClient } from '@/lib/supabase/server'
 import { checkRateLimit, clientIpKey } from '@/lib/rate-limit'
 import { forbidCrossSiteRequest } from '@/lib/request-security'
 import { sendPhotoNotificationEmail } from '@/lib/email'
@@ -256,7 +257,19 @@ export async function POST(req: Request) {
   // deliberate: the alternative is changing the shared helper's signature, which three working
   // routes depend on. Both use the same owner cookie against the same owner_token via the same
   // timing-safe compare, so they cannot disagree unless one is edited alone — do not do that.
-  const uploadGate = await gateAllowsContribution(album, await cookies())
+  // The signed-in account, so the owner of an album is recognised as its owner even when the owner
+  // cookie was never set in the tab they happen to be using. Never throws into the upload path —
+  // a session lookup that fails simply means "not signed in", and the cookie check still applies.
+  let signedInUserId: string | null = null
+  try {
+    const supabase = await createClient()
+    const { data: { user } } = await supabase.auth.getUser()
+    signedInUserId = user?.id ?? null
+  } catch {
+    signedInUserId = null
+  }
+
+  const uploadGate = await gateAllowsContribution(album, await cookies(), signedInUserId)
   if (!uploadGate.ok) {
     // Recorded server-side with the REASON. The guest-facing message stays one sentence — a person
     // being refused does not want a taxonomy — but /admin now gets the distinction, so the next time
