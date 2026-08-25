@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { reportServerError } from '@/lib/report-server-error'
 import { createClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { createCheckout, productIdForPlan } from '@/lib/polar'
 import { forbidCrossSiteRequest } from '@/lib/request-security'
 import { checkRateLimit, clientIpKey } from '@/lib/rate-limit'
@@ -65,8 +66,35 @@ export async function POST(req: Request) {
   // one" and wait for the row it is actually looking for.
   const successUrl = new URL(`/account?welcome=${tier}`, req.url).toString()
 
-  const discountId =
-    plan === 'pro_monthly'
+  // "First month $1.99 — applies once per account" is a promise this code now keeps itself.
+  //
+  // The discount used to be attached to every monthly checkout unconditionally, which left the
+  // once-per-account part entirely to how the discount object happens to be configured in Polar.
+  // If that is set to unlimited redemptions — and nothing here could tell — then subscribe, cancel,
+  // resubscribe is $1.99 forever, and the page saying otherwise is simply untrue.
+  //
+  // Anyone who has EVER had a subscription row has had their first month. Not "active": a customer
+  // who cancelled has still already taken the intro price once, and this is the only reading that
+  // matches what the pricing page says.
+  //
+  // Fails toward NOT discounting. A lookup that errors returns null, which withholds the offer
+  // rather than granting it — the wrong side of this is giving a discount away forever, and someone
+  // who was owed one will say so, whereas a repeated discount is silent.
+  let hasSubscribedBefore = true
+  try {
+    const admin = createAdminClient()
+    const { count, error } = await admin
+      .from('subscriptions')
+      .select('id', { count: 'exact', head: true })
+      .eq('user_id', user.id)
+    hasSubscribedBefore = error ? true : (count ?? 0) > 0
+  } catch (err) {
+    console.error('[checkout] intro-discount eligibility lookup failed:', err)
+  }
+
+  const discountId = hasSubscribedBefore
+    ? undefined
+    : plan === 'pro_monthly'
       ? process.env.POLAR_DISCOUNT_PRO_FIRST_MONTH
       : plan === 'studio_monthly'
         ? process.env.POLAR_DISCOUNT_STUDIO_FIRST_MONTH
