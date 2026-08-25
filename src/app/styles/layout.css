@@ -1070,3 +1070,34 @@ body.hush-page-preloading .hush-word {
 @media (prefers-reduced-motion: reduce) {
   .hush-word { animation: none; will-change: auto; }
 }
+
+/* One-tap account, mobile only — see HamburgerMenu.tsx.
+   Sits beside the hamburger rather than inside the menu, because reaching your own albums from a
+   phone should not be open-the-menu-then-tap. Rendered only when the hamburger is, so it can never
+   appear next to the desktop nav links, which already carry a full account link of their own. */
+.hush-account-tap {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  /* Pushed right so it sits WITH the hamburger rather than between the logo and it. The nav is
+     justify-between, so a third child otherwise gets its own share of the space and the icon ends
+     up floating in the middle of the bar, belonging to neither side. */
+  margin-left: auto;
+  margin-right: 6px;
+  border-radius: 999px;
+  color: #630826;
+  /* 40px square with the icon at 22px: the tap target stays comfortably above the 44px-ish minimum
+     once the nav's own padding is counted, while the mark itself stays quiet next to the logo. */
+  flex: none;
+}
+
+.hush-account-tap svg {
+  width: 22px;
+  height: 22px;
+}
+
+.hush-account-tap:active {
+  background: rgba(99, 8, 38, 0.08);
+}

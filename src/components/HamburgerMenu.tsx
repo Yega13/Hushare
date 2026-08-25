@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { CircleUserRound } from 'lucide-react'
 import { createPortal } from 'react-dom'
 import Image from 'next/image'
 import Link from 'next/link'
@@ -104,6 +105,21 @@ export default function HamburgerMenu({ children }: { children: React.ReactNode 
         <div className="hush-nav-links hush-hamburger-desktop">
           {children}
         </div>
+      )}
+
+      {/* One tap to the account, on mobile only.
+          Previously this lived only inside the menu, so reaching your own albums from a phone was
+          open-the-menu-then-tap — two gestures for the thing an owner comes back for.
+
+          A PLAIN LINK with no auth state, deliberately. AccountNavLink subscribes to Supabase auth,
+          and it is already mounted inside the overlay on mobile (children render there); a second
+          copy in the bar would mean two subscriptions per page, which is exactly what the note above
+          exists to prevent. /account already redirects a signed-out visitor to /login, so a stateless
+          link lands everyone in the right place and costs nothing to render. */}
+      {isMobile && (
+        <Link href="/account" className="hush-account-tap" aria-label={t('nav.account')}>
+          <CircleUserRound aria-hidden="true" />
+        </Link>
       )}
 
       {/* Hamburger button — always in DOM so CSS can show/hide without CLS */}
