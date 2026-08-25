@@ -148,13 +148,16 @@ export const en = {
   'pricing.free.f4': 'Photos up to 25 MB · videos up to 50 MB',
   'pricing.free.f5': 'Album auto-retires after 1 year of inactivity',
   'pricing.free.f6': 'Create up to 3 albums (2 as a guest)',
+  // Moved down from Pro. It was sold as a paid feature and gated nowhere — api/album/password
+  // has never had a tier check, so every free album could always do this.
+  'pricing.free.f7': 'Password-protect your albums',
   'pricing.pro.tagline': 'For people who keep coming back',
   'pricing.pro.annual': '$40 / year — save 2 months',
   'pricing.pro.promo': 'First month $1.99',
   'pricing.pro.renew': 'Intro offer: $1.99 first month, then $4/month. Auto-renews until cancelled.',
   'pricing.pro.cta': 'Get Pro',
   'pricing.pro.f1': 'Everything in Free, plus —',
-  'pricing.pro.f2': 'Password-protect your albums',
+  'pricing.pro.f2': 'Remove Hushare branding from your albums',
   'pricing.pro.f3': 'Custom album URLs (e.g. hushare.space/anna-and-david)',
   'pricing.pro.f4': 'No inactivity expiry — albums live as long as you subscribe',
   'pricing.pro.f5': 'HD video — large uploads up to 1 GB (Free: 50 MB)',

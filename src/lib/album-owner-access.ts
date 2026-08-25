@@ -3,6 +3,8 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { createClient } from '@/lib/supabase/server'
 import { timingSafeEqual } from '@/lib/timing-safe'
 import { checkRateLimit, clientIpKey } from '@/lib/rate-limit'
+import { getUserTier } from '@/lib/subscriptions'
+import { albumCountLimitForTier } from '@/lib/media'
 
 // Allowlist of columns that callers may request beyond the base set.
 // Never pass caller-supplied column names directly into .select() — SQL injection vector.
@@ -85,6 +87,31 @@ async function claimAlbumIfNeeded<T extends AlbumOwnerBase>(album: T): Promise<{
 
   if (user && !album.user_id) {
     const admin = createAdminClient()
+
+    // The plan's album cap applies HERE too, not only in api/album/create.
+    //
+    // Creating while signed out and signing in afterwards is a completely normal path, and it was
+    // also a way around the cap: album/create checks the limit only for requests that arrive
+    // authenticated, so albums made anonymously and then claimed were never counted against
+    // anything. Enough of them and a free account holds any number of albums.
+    //
+    // Over the limit, the album is simply LEFT ANONYMOUS rather than refused. Nothing is lost or
+    // broken — it still opens, still takes photos, and the owner link still works exactly as it did
+    // a second earlier. Claiming is a convenience, not the thing that makes an album function, so
+    // declining it quietly is the behaviour that costs the person least.
+    const tier = await getUserTier(user)
+    const cap = albumCountLimitForTier(tier)
+    const { count } = await admin
+      .from('albums').select('id', { count: 'exact', head: true })
+      .eq('user_id', user.id).is('retired_at', null)
+
+    if ((count ?? 0) >= cap) {
+      console.info(
+        `[album-owner-access] not claiming album ${album.id} for user ${user.id}: at the ${tier} cap of ${cap}`,
+      )
+      return { album, userId: user.id }
+    }
+
     await admin.from('albums').update({ user_id: user.id }).eq('id', album.id).is('user_id', null)
     album = { ...album, user_id: user.id }
     console.info(`[album-owner-access] claimed album ${album.id} for user ${user.id}`)

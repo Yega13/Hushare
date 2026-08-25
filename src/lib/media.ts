@@ -118,6 +118,18 @@ export function albumMediaCapForTier(tier: Tier): number {
 // Max number of albums a user can own, by tier. Anon (no account) is a separate soft cap — kept
 // BELOW the free registered cap so signing in always unlocks more.
 export const ANON_ALBUM_LIMIT = 2
+// The BACKSTOP behind that soft cap, per IP per day.
+//
+// ANON_ALBUM_LIMIT is a per-device cookie listing the albums you made — good UX, because deleting an
+// album frees its slot, but it is self-reported: simply not sending the cookie made the cap vanish,
+// leaving only a 30/hour rate limit, so one script could open 720 albums a day. Deliberately set far
+// above what a person could ever want (the honest path stops at 2 with an invitation to register),
+// so it is invisible to real use and only ever bites automation.
+//
+// Per IP per DAY rather than a lifetime total: a venue's wifi or a mobile carrier's CGNAT puts many
+// unrelated people behind one address, and a permanent counter would eventually lock all of them
+// out for something a stranger did months ago.
+export const ANON_ALBUM_DAILY_IP_LIMIT = 10
 export const FREE_ALBUM_LIMIT = 3
 export const PRO_ALBUM_LIMIT = 15
 export const STUDIO_ALBUM_LIMIT = 50

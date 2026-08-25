@@ -90,6 +90,7 @@ const tiers: Tier[] = [
       'Photos up to 25 MB · videos up to 50 MB',
       'Album auto-retires after 1 year of inactivity',
       'Create up to 3 albums (2 as a guest)',
+      'Password-protect your albums',
     ],
   },
   {
@@ -106,7 +107,7 @@ const tiers: Tier[] = [
     highlight: true,
     features: [
       'Everything in Free, plus -',
-      'Password-protect your albums',
+      'Remove Hushare branding from your albums',
       'Custom album URLs (e.g. hushare.space/anna-and-david)',
       'No inactivity expiry - albums live as long as you subscribe',
       'HD video - large uploads up to 1 GB (Free: 50 MB)',

@@ -5,7 +5,7 @@ import { createClient } from '@/lib/supabase/server'
 import { checkRateLimit, clientIpKey } from '@/lib/rate-limit'
 import { forbidCrossSiteRequest } from '@/lib/request-security'
 import { getUserTier } from '@/lib/subscriptions'
-import { albumCountLimitForTier, ANON_ALBUM_LIMIT } from '@/lib/media'
+import { albumCountLimitForTier, ANON_ALBUM_LIMIT, ANON_ALBUM_DAILY_IP_LIMIT } from '@/lib/media'
 import { track } from '@/lib/analytics'
 
 export const runtime = 'nodejs'
@@ -114,6 +114,17 @@ export async function POST(req: Request) {
       // their slot (mirrors the registered path, which also ignores retired albums).
       const { data: alive } = await admin.from('albums').select('id').in('id', priorIds).is('user_id', null).is('retired_at', null)
       anonLiveIds = (alive ?? []).map((r) => r.id as string)
+    }
+    // The cookie above is a nudge and can simply be withheld. This cannot: it is counted server
+    // side, per IP, and it is what actually stands between the album table and a script.
+    const anonRl = await checkRateLimit(
+      clientIpKey(req, 'anon_album_day'), 86400, ANON_ALBUM_DAILY_IP_LIMIT, { failOpen: false },
+    )
+    if (!anonRl.ok) {
+      return NextResponse.json(
+        { error: "You've created a lot of albums from this connection today. Register on Hushare — it's free — to keep going." },
+        { status: 429, headers: { 'Retry-After': String(anonRl.retryAfterSeconds), ...NO_STORE } },
+      )
     }
     if (anonLiveIds.length >= ANON_ALBUM_LIMIT) {
       return NextResponse.json(
