@@ -1004,3 +1004,25 @@ html.hush-morph-closing::view-transition-new(root) {
   ::view-transition-old(*),
   ::view-transition-new(*) { animation: none !important; }
 }
+
+/* The sticky nav steps out of the way while you read down — see ScrollHideNav.tsx.
+   The transform is on the nav itself rather than a wrapper because the bar already carries
+   backdrop-filter, which has established a containing block here since the day it was added;
+   animating transform on the same element changes nothing about how it composites.
+   will-change is deliberately NOT set: this moves at most twice per scroll direction, and a
+   permanent extra layer on a bar that is on screen for the whole session costs more than it saves. */
+.hush-nav {
+  transition: transform 260ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.hush-nav-hidden {
+  /* 101% so the border-bottom clears the top edge too — at 100% a 1px line stays visible. */
+  transform: translateY(-101%);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hush-nav { transition: none; }
+  /* Belt and braces: the component already refuses to run under reduced motion, but if the class
+     is ever applied by something else, the bar stays put rather than vanishing. */
+  .hush-nav-hidden { transform: none; }
+}

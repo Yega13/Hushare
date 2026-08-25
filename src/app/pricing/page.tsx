@@ -1,4 +1,5 @@
 import EngagementBeacon from '@/components/EngagementBeacon'
+import ScrollHideNav from '@/components/ScrollHideNav'
 import type { Metadata } from 'next'
 import Image from 'next/image'
 import Link from 'next/link'
@@ -325,6 +326,7 @@ export default async function PricingPage() {
       style={{ background: '#FDFAF5', fontFamily: 'var(--font-sans)' }}
     >
       <EngagementBeacon page="pricing" />
+      <ScrollHideNav />
       <CheckoutResumer />
 
       <script
