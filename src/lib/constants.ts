@@ -52,3 +52,20 @@ export const BTT_UPDATE_EVENT = "btt-update";
 
 export const MEDIA_CAPTION_MAX = 30;
 export const MEDIA_AUTHOR_MAX = 16;
+
+// How many photos the ZIP download fetches at once.
+//
+// This was a single value of 16, chosen for "typical home broadband" — and a phone is not that. A
+// guest on an iPhone asked for a 16-photo album whose images average 2.5MB, so all sixteen started
+// at once, roughly 35MB of blobs in flight on a handset, and every single one of them failed. The
+// report read "16 of 16", which is the signature of a batch that went out together rather than of
+// sixteen independent accidents.
+//
+// Downloads are the half of this product that had no instrumentation for its whole life, so nobody
+// had ever seen this happen before it was reported.
+export const DOWNLOAD_CONCURRENCY_MOBILE = 4;
+export const DOWNLOAD_CONCURRENCY_DESKTOP = 16;
+
+// Each photo gets more than one go before it is given up on. A single dropped connection on venue
+// wifi should not silently remove a photo from somebody's album download.
+export const DOWNLOAD_ATTEMPTS = 3;
