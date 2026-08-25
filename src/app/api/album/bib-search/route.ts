@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { verifyOwnerViaCookieWithRateLimit } from '@/lib/album-owner-access'
+import { refuseBelowTier } from '@/lib/require-tier'
 import { forbidCrossSiteRequest } from '@/lib/request-security'
 import { queueAlbumSettingsBroadcast } from '@/lib/broadcast'
 import { queueBibIndex } from '@/lib/server/bib-index'
@@ -50,6 +51,12 @@ export async function POST(req: Request) {
 
   const access = await verifyOwnerViaCookieWithRateLimit(req, slug.trim())
   if (!access.ok) return NextResponse.json({ error: access.error }, { status: access.status, headers: NO_STORE })
+
+  // Bib number search is a paid feature — checked against the ALBUM OWNER'S plan, never the
+  // caller's. Owner links are shareable, so asking about whoever is holding one would let a
+  // single subscriber mint this on albums belonging to strangers.
+  const refusal = await refuseBelowTier(access.album.user_id, 'studio', 'Bib number search')
+  if (refusal) return refusal
 
   const patch: { bib_search_enabled: boolean; bib_min?: number | null; bib_max?: number | null } =
     { bib_search_enabled: enabled }

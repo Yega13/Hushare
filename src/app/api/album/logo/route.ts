@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { verifyOwnerViaCookieWithRateLimit } from '@/lib/album-owner-access'
+import { refuseBelowTier } from '@/lib/require-tier'
 import { forbidCrossSiteRequest } from '@/lib/request-security'
 import { queueAlbumSettingsBroadcast } from '@/lib/broadcast'
 import { deleteR2ObjectByPublicUrl, isOwnAlbumAsset } from '@/lib/cloudflare/r2'
@@ -61,6 +62,12 @@ export async function POST(req: Request) {
 
   const access = await verifyOwnerViaCookieWithRateLimit<LogoAlbum>(req, slug.trim(), 'logo_url')
   if (!access.ok) return NextResponse.json({ error: access.error }, { status: access.status, headers: NO_STORE })
+
+  // A custom album logo is a paid feature — checked against the ALBUM OWNER'S plan, never the
+  // caller's. Owner links are shareable, so asking about whoever is holding one would let a
+  // single subscriber mint this on albums belonging to strangers.
+  const refusal = await refuseBelowTier(access.album.user_id, 'pro', 'A custom album logo')
+  if (refusal) return refusal
 
   // Ownership is known only now, so the album-scoped check has to happen here. The prefix check
   // above rejects wrong-host and wrong-folder URLs cheaply; this one rejects another album's asset.

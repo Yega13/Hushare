@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { verifyOwnerViaCookieWithRateLimit } from '@/lib/album-owner-access'
+import { refuseBelowTier } from '@/lib/require-tier'
 import { forbidCrossSiteRequest } from '@/lib/request-security'
 import { queueAlbumSettingsBroadcast } from '@/lib/broadcast'
 import { deleteR2ObjectByPublicUrl, isOwnAlbumAsset } from '@/lib/cloudflare/r2'
@@ -72,6 +73,12 @@ export async function POST(req: Request) {
 
   const access = await verifyOwnerViaCookieWithRateLimit<SponsorAlbum>(req, slug.trim(), 'sponsor_logos')
   if (!access.ok) return NextResponse.json({ error: access.error }, { status: access.status, headers: NO_STORE })
+
+  // Sponsor logos is a paid feature — checked against the ALBUM OWNER'S plan, never the
+  // caller's. Owner links are shareable, so asking about whoever is holding one would let a
+  // single subscriber mint this on albums belonging to strangers.
+  const refusal = await refuseBelowTier(access.album.user_id, 'studio', 'Sponsor logos')
+  if (refusal) return refusal
 
   // Ownership is known only now. Every entry is checked, not just the first: the route diffs the
   // old list against the new one and deletes whatever disappeared, so a single foreign URL smuggled

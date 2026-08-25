@@ -93,4 +93,31 @@ describe('plan features describe what is actually gated', () => {
       }
     }
   })
+
+  it('has no gaps in the pricing feature keys', () => {
+    // The pricing page renders features BY POSITION — `tt(\`pricing.\${tier}.f\${i + 1}\`)` — so a
+    // key that is missing from the middle of the run renders the literal string "pricing.pro.f7" on
+    // a public page. Nothing throws; it just says that to a customer. A gap is the only way to get
+    // there, so a gap is what this checks.
+    for (const [name, dict] of [['en', en], ['ru', ru], ['hy', hy]] as const) {
+      // A LITERAL regex, not one built from a template string. The first version of this test used
+      // new RegExp(`^pricing\.${tier}\.f(\d+)$`) — inside a template literal `\d` collapses to a
+      // plain "d", so the pattern matched nothing, every tier hit the `continue` below, and the test
+      // passed while checking absolutely nothing. A test that cannot fail is worse than no test,
+      // because it is counted as coverage.
+      const KEY = /^pricing\.(free|pro|max)\.f(\d+)$/
+      for (const tier of ['free', 'pro', 'max']) {
+        const nums = Object.keys(dict)
+          .map((k) => KEY.exec(k))
+          .filter((m): m is RegExpExecArray => m !== null && m[1] === tier)
+          .map((m) => Number(m[2]))
+          .sort((a, b) => a - b)
+        if (nums.length === 0) continue // ru/hy only override some keys; English is the source
+        expect(nums[0], `${name}.${tier} should start at f1`).toBe(1)
+        for (let i = 0; i < nums.length; i++) {
+          expect(nums[i], `${name}.${tier} has a gap before f${nums[i]}`).toBe(i + 1)
+        }
+      }
+    }
+  })
 })

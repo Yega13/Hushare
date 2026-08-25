@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { verifyOwnerViaCookieWithRateLimit } from '@/lib/album-owner-access'
+import { refuseBelowTier } from '@/lib/require-tier'
 import { forbidCrossSiteRequest } from '@/lib/request-security'
 import { queueAlbumSettingsBroadcast } from '@/lib/broadcast'
 import { normalizeSlideshowMotion } from '@/lib/slideshow-motion'
@@ -110,6 +111,17 @@ export async function POST(req: Request) {
 
   const access = await verifyOwnerViaCookieWithRateLimit(req, body.slug.trim())
   if (!access.ok) return NextResponse.json({ error: access.error }, { status: access.status, headers: NO_STORE })
+
+  // Moderation is gated per FIELD, not per route. Everything else this endpoint sets — slideshow
+  // speed, autoplay, grid columns — is free, and refusing the whole request would take those away
+  // from a free owner who happened to change two settings at once.
+  //
+  // Only turning it ON is checked. Turning it off must always work: a lapsed subscription must never
+  // leave an album holding photos for approval that its owner can no longer reach.
+  if (updates.require_approval === true) {
+    const refusal = await refuseBelowTier(access.album.user_id, 'pro', 'Photo moderation')
+    if (refusal) return refusal
+  }
 
   const admin = createAdminClient()
   const { error } = await admin.from('albums').update(updates).eq('id', access.album.id)
