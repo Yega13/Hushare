@@ -18,6 +18,9 @@ import AdminWeekdayBars from '@/components/AdminWeekdayBars'
 import AdminBreakdown from '@/components/AdminBreakdown'
 import AdminClockHeatmap from '@/components/AdminClockHeatmap'
 import AdminFunnel from '@/components/AdminFunnel'
+import AdminUsers, { type UserRow, type Cohort } from '@/components/AdminUsers'
+import { isSubActive } from '@/lib/subscriptions'
+import { albumCountLimitForTier, albumMediaCapForTier } from '@/lib/media'
 import AdminAreaChartLazy from '@/components/AdminAreaChartLazy'
 import { getTrafficAnalytics } from '@/lib/cf-analytics'
 import AdminSupportLookup from '@/components/AdminSupportLookup'
@@ -206,9 +209,6 @@ export default async function AdminPage() {
   // The cap made sense when the table grew the page; it now scrolls inside its own card, so the
   // only thing the slice achieved was hiding the other users behind a scrollbar that had nothing
   // left to scroll to. Bounded by the listUsers page below rather than by an arbitrary number.
-  const recentSignups = [...allUsers]
-    .sort((a, b) => (b.created_at ?? '').localeCompare(a.created_at ?? ''))
-
   // ── Growth: new users/albums/uploads over the last 7 and 30 days, plus 7-day active albums.
   // Cheap head-counts; user growth is derived from the already-fetched listUsers result (no extra
   // auth call). Note: newUsers counts are bounded by the 200-user listUsers page — fine at current
@@ -229,6 +229,52 @@ export default async function AdminPage() {
   ])
   const newUsers7d = allUsers.filter((u) => (u.created_at ?? '') >= weekAgo).length
   const newUsers30d = allUsers.filter((u) => (u.created_at ?? '') >= monthAgo).length
+
+  // ── Users: who they are and whether they are still here ──
+  //
+  // The two functions aggregate DB-side so this page never pulls every album and photo row in to
+  // count them. Tier is joined on HERE rather than in SQL: whether a subscription counts as active
+  // is a real rule with a grace window and several statuses, and writing it a second time in
+  // Postgres would leave two versions of it to drift apart quietly. isSubActive is that one rule.
+  const [{ data: userRowsRaw }, { data: cohortRaw }] = await Promise.all([
+    admin.rpc('admin_user_overview', { p_limit: 300 }),
+    admin.rpc('admin_user_cohorts', { p_months: 6 }),
+  ])
+
+  const tierByUser = new Map<string, 'pro' | 'studio'>()
+  for (const sub of subs) {
+    const row = sub as { user_id?: string | null; tier?: string; status?: string; current_period_end?: string | null }
+    if (!row.user_id || !row.tier) continue
+    if (!isSubActive({ status: String(row.status ?? ''), current_period_end: row.current_period_end ?? null })) continue
+    // A user can hold several rows; the higher tier wins, exactly as getActiveSubscription decides.
+    if (row.tier === 'studio') tierByUser.set(row.user_id, 'studio')
+    else if (!tierByUser.has(row.user_id)) tierByUser.set(row.user_id, 'pro')
+  }
+
+  const userRows: UserRow[] = ((userRowsRaw ?? []) as Record<string, unknown>[]).map((r) => {
+    const id = String(r.user_id ?? '')
+    const tier = tierByUser.get(id) ?? 'free'
+    return {
+      id,
+      email: String(r.email ?? ''),
+      joined: r.created_at ? fmt(String(r.created_at)) : '—',
+      lastSignIn: r.last_sign_in_at ? String(r.last_sign_in_at) : null,
+      lastActive: r.last_active ? String(r.last_active) : null,
+      albums: Number(r.albums ?? 0),
+      media: Number(r.media ?? 0),
+      tier,
+      // The caps the SERVER enforces, so "at album limit" means the same thing here as it does to
+      // the person who just hit it.
+      albumCap: albumCountLimitForTier(tier),
+      mediaCap: albumMediaCapForTier(tier),
+    }
+  })
+
+  const cohorts: Cohort[] = ((cohortRaw ?? []) as Record<string, unknown>[]).map((r) => ({
+    month: String(r.month ?? '').slice(0, 7),
+    signups: Number(r.signups ?? 0),
+    stillActive: Number(r.still_active ?? 0),
+  })).filter((c) => c.month)
 
   const growthCards: { label: string; value: string; hint?: string }[] = [
     { label: 'New users', value: String(newUsers7d), hint: `${newUsers30d} in 30d` },
@@ -613,23 +659,13 @@ export default async function AdminPage() {
           </table>
         </div>
 
-        {/* Two columns: signups + subscriptions */}
         <h2 id="users" style={{ fontSize: 15, fontWeight: 700, color: INK, margin: '0 0 10px', scrollMarginTop: 64 }}>Users &amp; subscriptions</h2>
+        {/* Replaced a two-column list of joined-date and email, which could not answer a single
+            question worth asking about a customer. */}
+        <div style={{ marginBottom: 20 }}>
+          <AdminUsers users={userRows} cohorts={cohorts} />
+        </div>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: 20 }}>
-          <div>
-            <h2 style={{ fontSize: 15, fontWeight: 700, color: INK, margin: '0 0 10px' }}>Recent signups</h2>
-            <div style={scrollBox}>
-              <table style={{ borderCollapse: 'collapse', width: '100%' }}>
-                <thead><tr><th style={th}>Joined</th><th style={th}>Email</th></tr></thead>
-                <tbody>
-                  {recentSignups.length === 0 && <tr><td style={td} colSpan={2}>No registered users yet.</td></tr>}
-                  {recentSignups.map((u) => (
-                    <tr key={u.id}><td style={td}>{u.created_at ? fmt(u.created_at) : '—'}</td><td style={{ ...td, whiteSpace: 'normal' }}>{u.email ?? '(no email)'}</td></tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
           <div>
             <h2 style={{ fontSize: 15, fontWeight: 700, color: INK, margin: '0 0 10px' }}>Subscriptions</h2>
             <div style={scrollBox}>
