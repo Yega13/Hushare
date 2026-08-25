@@ -246,22 +246,45 @@ export type AlbumGateRow = {
 // Columns a caller must select for gateAllowsContribution to work. Keeps the two in step.
 export const ALBUM_GATE_COLS = 'owner_token, password_hash, reveal_at'
 
+// The `reason` is not decoration. A real customer had 163 uploads refused with "Enter the album
+// password before adding photos" after four had gone through minutes earlier, on the same device,
+// and it was impossible to say WHY: the message is identical whether the owner cookie was never
+// sent, was sent and did not match, or the password token was missing or stale. Three different
+// faults, one sentence. It is the same lesson the ZIP download taught with `catch { failed++ }`.
+export type ContributionRefusal =
+  | 'not-revealed'
+  | 'owner-cookie-absent'      // no owner cookie at all — a guest, or one that was never set
+  | 'owner-cookie-mismatch'    // an owner cookie that is not this album's token — stale or wrong album
+  | 'password-cookie-absent'
+  | 'password-cookie-stale'    // present but no longer verifies — password changed since unlocking
+
 export async function gateAllowsContribution(
   album: AlbumGateRow,
   cookieStore: CookieStore,
-): Promise<{ ok: true } | { ok: false; error: string }> {
+): Promise<{ ok: true } | { ok: false; error: string; reason: ContributionRefusal }> {
   const ownerCookie = (cookieStore.get(`hushare_owner_${album.id}`)?.value ?? '').trim()
-  if (ownerCookie.length > 0 && timingSafeEqual(ownerCookie, album.owner_token)) return { ok: true }
+  const ownerPresent = ownerCookie.length > 0
+  if (ownerPresent && timingSafeEqual(ownerCookie, album.owner_token)) return { ok: true }
 
   if (album.reveal_at && new Date(album.reveal_at) > new Date()) {
-    return { ok: false, error: 'This album has not been revealed yet' }
+    return { ok: false, error: 'This album has not been revealed yet', reason: 'not-revealed' }
   }
   if (album.password_hash) {
     const pwCookie = cookieStore.get(`hushare_pw_${album.id}`)?.value ?? ''
     const unlocked = pwCookie.length > 0
       ? await verifyAccessToken(pwCookie, album.password_hash, album.id)
       : false
-    if (!unlocked) return { ok: false, error: 'Enter the album password before adding photos' }
+    if (!unlocked) {
+      return {
+        ok: false,
+        error: 'Enter the album password before adding photos',
+        // Which of the two it is decides everything: absent means they never unlocked on this
+        // device, stale means the password was changed underneath someone who had.
+        reason: pwCookie.length > 0
+          ? 'password-cookie-stale'
+          : ownerPresent ? 'owner-cookie-mismatch' : 'password-cookie-absent',
+      }
+    }
   }
   return { ok: true }
 }

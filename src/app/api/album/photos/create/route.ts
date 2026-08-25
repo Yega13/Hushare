@@ -258,6 +258,13 @@ export async function POST(req: Request) {
   // timing-safe compare, so they cannot disagree unless one is edited alone — do not do that.
   const uploadGate = await gateAllowsContribution(album, await cookies())
   if (!uploadGate.ok) {
+    // Recorded server-side with the REASON. The guest-facing message stays one sentence — a person
+    // being refused does not want a taxonomy — but /admin now gets the distinction, so the next time
+    // somebody loses a hundred and sixty uploads it takes a glance rather than a database session.
+    reportServerError('upload-gate', `Contribution refused: ${uploadGate.reason}`, {
+      albumId,
+      context: { reason: uploadGate.reason, locked: !!album.password_hash },
+    })
     return NextResponse.json({ error: uploadGate.error }, { status: 403, headers: NO_STORE })
   }
 
