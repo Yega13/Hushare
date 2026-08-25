@@ -159,6 +159,28 @@ export default function LightboxOverlay({
   // Resetting per video means each new video starts on its poster (unless autoplay), which also
   // keeps it swipeable (it's our <img>, not the touch-swallowing iframe).
   const [videoStarted, setVideoStarted] = React.useState(false)
+  // Keep the playing photo in the middle of the strip.
+  //
+  // Without this the active thumbnail simply scrolls out of view a few slides into any album with
+  // more than a handful of photos, and the strip stops being a position indicator at all — which is
+  // the only thing it is for.
+  const stripRef = React.useRef<HTMLDivElement | null>(null)
+  React.useEffect(() => {
+    if (!slideshowMode) return
+    const strip = stripRef.current
+    if (!strip) return
+    const thumb = strip.children[lightboxIndex] as HTMLElement | undefined
+    if (!thumb) return
+    // scrollTo on the CONTAINER, never scrollIntoView on the child. scrollIntoView walks up and
+    // scrolls every scrollable ancestor it finds, and this strip lives inside a fixed full-screen
+    // overlay — it would drag the album page behind it to a different place, which the guest would
+    // discover only on closing the slideshow.
+    strip.scrollTo({
+      left: thumb.offsetLeft - (strip.clientWidth - thumb.clientWidth) / 2,
+      behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth',
+    })
+  }, [lightboxIndex, slideshowMode])
+
   React.useEffect(() => {
     setVideoStarted(slideshowMode ? !slideshowPaused : videoAutoplay)
   }, [current.id, videoAutoplay, slideshowMode, slideshowPaused])
@@ -586,15 +608,24 @@ export default function LightboxOverlay({
         {!slideshowMode && <p className="text-sm" style={{ color: '#8AB585' }}>{lightboxIndex + 1} / {viewerPhotos.length}</p>}
 
         {slideshowMode && viewerPhotos.length > 1 && (
-          <div className="hush-slideshow-strip" data-scroll-allowed="true" onClick={(e) => e.stopPropagation()}>
+          <div ref={stripRef} className="hush-slideshow-strip" data-scroll-allowed="true" onClick={(e) => e.stopPropagation()}>
             {viewerPhotos.map((photo, index) => {
               const isActive = index === lightboxIndex
+              // Distance from the current slide, capped. The strip reads as a carousel rather than
+              // a row: the photo playing is full size and its neighbours fall away by how far they
+              // are from it, so the eye is told where it is without having to find a border.
+              //
+              // Measured in INDEX, not pixels. Pixel distance would need a scroll listener and a
+              // measurement per thumbnail per frame, and it would disagree with itself mid-scroll —
+              // whereas the number that actually matters is "how many photos away is this".
+              const distance = Math.min(3, Math.abs(index - lightboxIndex))
               const thumbSrc = photo.media_type === 'video' ? photo.stream_thumbnail_url || photo.poster_url || '' : (photo.thumb_url || photo.url)
               return (
                 <button
                   key={photo.id}
                   type="button"
                   className={`hush-slideshow-thumb${isActive ? ' is-active' : ''}`}
+                  style={{ ['--hush-d' as string]: String(distance) }}
                   onClick={() => onThumbnailClick(index)}
                   aria-label={t('lb.openSlide', { n: index + 1 })}
                 >
