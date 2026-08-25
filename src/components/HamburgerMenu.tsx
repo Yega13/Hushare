@@ -2,6 +2,7 @@
 
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { CircleUserRound } from 'lucide-react'
+import { useAccountAvatar } from '@/lib/use-account-avatar'
 import { createPortal } from 'react-dom'
 import Image from 'next/image'
 import Link from 'next/link'
@@ -97,6 +98,9 @@ export default function HamburgerMenu({ children }: { children: React.ReactNode 
     </div>
   )
 
+  // Only asked for on mobile, where the compact button is the thing that shows it.
+  const avatarUrl = useAccountAvatar(isMobile)
+
   return (
     <>
       {/* Desktop nav links — only rendered when not mobile, so stateful
@@ -118,7 +122,15 @@ export default function HamburgerMenu({ children }: { children: React.ReactNode 
           link lands everyone in the right place and costs nothing to render. */}
       {isMobile && (
         <Link href="/account" className="hush-account-tap" aria-label={t('nav.account')}>
-          <CircleUserRound aria-hidden="true" />
+          {/* The picture when there is one. Shares its lookup with AccountNavLink — the two make one
+              request between them, not one each. Still no auth subscription here: the hook resolves
+              to null when nobody is signed in, which is the same generic mark as before. */}
+          {avatarUrl ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={avatarUrl} alt="" style={{ width: 26, height: 26, borderRadius: '50%', objectFit: 'cover' }} />
+          ) : (
+            <CircleUserRound aria-hidden="true" />
+          )}
         </Link>
       )}
 

@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { CircleUserRound } from 'lucide-react'
+import { useAccountAvatar } from '@/lib/use-account-avatar'
 import { createClient } from '@/lib/supabase/client'
 import { useT } from '@/i18n/LocaleProvider'
 
@@ -43,6 +44,10 @@ export default function AccountNavLink() {
     return () => { cancelled = true; sub.subscription.unsubscribe() }
   }, [supabase])
 
+  // Asked for only once signed in, and shared with the compact mobile button so the two of them
+  // make one request between them rather than one each.
+  const avatarUrl = useAccountAvatar(state === 'signed-in')
+
   if (state === 'loading') {
     return (
       <span className={linkClass} aria-hidden="true" style={{ color: 'transparent' }}>
@@ -63,7 +68,18 @@ export default function AccountNavLink() {
   return (
     <Link href="/account" className={`${linkClass} hush-account-nav-link`} style={linkStyle} aria-label={t('nav.account')}>
       <span className="hush-account-label-full">{t('nav.account')}</span>
-      <CircleUserRound className="hush-account-icon" aria-hidden="true" />
+      {avatarUrl ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          src={avatarUrl}
+          alt=""
+          className="hush-account-icon"
+          style={{ borderRadius: '50%', objectFit: 'cover' }}
+          aria-hidden="true"
+        />
+      ) : (
+        <CircleUserRound className="hush-account-icon" aria-hidden="true" />
+      )}
     </Link>
   )
 }

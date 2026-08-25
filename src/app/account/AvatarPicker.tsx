@@ -3,6 +3,8 @@
 import { useRef, useState } from 'react'
 import { CircleUserRound, Loader2 } from 'lucide-react'
 import { showAppToast } from '@/components/AppToast'
+import { snapshotFileRobust } from '@/lib/file-read'
+import { clearAvatarCache } from '@/lib/use-account-avatar'
 
 // Your picture, on your own account.
 //
@@ -18,8 +20,26 @@ import { showAppToast } from '@/components/AppToast'
 const DISPLAY_PX = 512
 const MAX_SOURCE_BYTES = 12 * 1024 * 1024
 
+// Decoding a picked file is not reliable the first time, and this codebase already knew that.
+//
+// A File from an <input> is a REFERENCE to something on disk, and on Windows and on phones that
+// reference can go stale between the pick and the read — the same NotReadableError that
+// snapshotFileRobust was written for on the upload path. It shows up as "the source image could not
+// be decoded" and it goes away when you try again, which is exactly what happened here.
+//
+// So: take a stable in-memory copy first, then decode. And decode twice before giving up, because
+// the copy removes one cause of failure and not every cause.
+async function decodeSquare(file: File): Promise<ImageBitmap> {
+  const stable = (await snapshotFileRobust(file)) ?? file
+  try {
+    return await createImageBitmap(stable)
+  } catch {
+    return await createImageBitmap(stable)
+  }
+}
+
 async function squareThumbnail(file: File): Promise<Blob> {
-  const bitmap = await createImageBitmap(file)
+  const bitmap = await decodeSquare(file)
   try {
     // Centre crop to a square first, so a portrait photo becomes a face rather than a letterboxed
     // strip with two grey bars.
@@ -85,9 +105,20 @@ export default function AvatarPicker({
       if (!save.ok) throw new Error((await save.json().catch(() => ({}))).error ?? 'Could not save')
 
       setUrl(publicUrl)
+      clearAvatarCache()
       showAppToast('Picture updated.', 'success')
     } catch (e) {
-      showAppToast(e instanceof Error ? e.message : 'Could not update your picture.', 'error')
+      // A browser's own decode message ("The source image could not be decoded") is not a sentence
+      // to show a person. Our own API messages are written for people and are passed through; a
+      // DOMException is translated into something that says what to do about it.
+      const raw = e instanceof Error ? e.message : ''
+      const isDecode = e instanceof DOMException || /decode|source image|not be read/i.test(raw)
+      showAppToast(
+        isDecode
+          ? 'That picture could not be opened. Try another one, or a screenshot of it.'
+          : raw || 'Could not update your picture.',
+        'error',
+      )
     } finally {
       setBusy(false)
       // Cleared so choosing the SAME file again still fires a change event.
@@ -105,6 +136,7 @@ export default function AvatarPicker({
       })
       if (!res.ok) throw new Error('Could not remove')
       setUrl(null)
+      clearAvatarCache()
       showAppToast('Picture removed.', 'success')
     } catch {
       showAppToast('Could not remove your picture.', 'error')
