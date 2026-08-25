@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import WordReveal, { wordCount } from '@/components/WordReveal'
 import type { PointerEvent } from 'react'
 import { useRouter } from 'next/navigation'
 import Image from 'next/image'
@@ -89,8 +90,12 @@ export default function HomeHeroInteractive() {
           className="hush-home-title text-[#FDFAF5] lg:text-[#630826] [text-shadow:0_2px_18px_rgba(0,0,0,0.35)] lg:[text-shadow:none]"
           style={{ fontFamily: 'var(--font-serif)', fontSize: 'clamp(2rem, 7vw, 5.4rem)', lineHeight: 1.05, fontWeight: 700, marginBottom: '1.25rem' }}
         >
-          {t('home.title.line1')}<br />
-          <em className="text-[#F3E0BC] lg:text-[#7C4A2D]">{t('home.title.line2')}</em>
+          {/* The second line continues the first line's count, so the stagger reads as one
+              sentence arriving rather than two lines each starting over. */}
+          <WordReveal text={t('home.title.line1')} /><br />
+          <em className="text-[#F3E0BC] lg:text-[#7C4A2D]">
+            <WordReveal text={t('home.title.line2')} startIndex={wordCount(t('home.title.line1'))} />
+          </em>
         </h1>
         <p
           className="hush-home-copy text-base sm:text-lg leading-relaxed mb-8 sm:mb-10 text-[#FBF4E4] lg:text-[#6B5A4E] [text-shadow:0_1px_10px_rgba(0,0,0,0.35)] lg:[text-shadow:none]"

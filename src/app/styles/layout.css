@@ -1026,3 +1026,39 @@ html.hush-morph-closing::view-transition-new(root) {
      is ever applied by something else, the bar stays put rather than vanishing. */
   .hush-nav-hidden { transform: none; }
 }
+
+/* Words rising into place on the home headline — see WordReveal.tsx.
+   BACKWARDS, not BOTH. Before its delay a word borrows the `from` frame; afterwards it returns to
+   its natural style. So a word that never animates is simply a visible word — where `both` would
+   leave the headline permanently at opacity 0 if anything at all went wrong with the animation. */
+.hush-word {
+  display: inline-block;
+  animation: hush-word-rise 620ms cubic-bezier(0.22, 1, 0.36, 1) backwards;
+  animation-delay: calc(var(--hush-word-i, 0) * 70ms);
+  /* The words carry the page's first paint, so they must not be a compositing surprise: one
+     transform and one opacity, both cheap, and no filter or shadow in the animation. */
+  will-change: transform, opacity;
+}
+
+@keyframes hush-word-rise {
+  from { opacity: 0; transform: translateY(0.42em); }
+  to   { opacity: 1; transform: none; }
+}
+
+/* Held while the opening preloader is up.
+   On a first visit the brand preloader covers the whole viewport for 1.5s — the words were rising
+   behind an opaque sheet, so the one visitor who has never seen this page was the only one who
+   never saw the effect. PAUSED, not `animation: none`: none CANCELS, and a cancelled animation
+   restarts from frame zero the instant the selector stops matching, which is the exact trap the
+   lightbox morph fell into. Pausing holds frame zero and resumes properly when the class goes.
+   Pure CSS, so the animation keeps needing no JavaScript at all. */
+body.hush-page-preloading .hush-word {
+  animation-play-state: paused;
+}
+
+/* Reduced motion gets the headline immediately, with no stagger at all. `animation: none` cancels
+   rather than pauses, so with fill-mode backwards the words fall back to their natural style —
+   which is exactly what is wanted here. */
+@media (prefers-reduced-motion: reduce) {
+  .hush-word { animation: none; will-change: auto; }
+}
