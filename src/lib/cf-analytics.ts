@@ -29,6 +29,8 @@ export type Breakdown = { label: string; count: number; cc?: string }
 export type ClockPoint = { weekday: number; hour: number; count: number }
 /** One step of the upload path, as a count of FILES. */
 export type FunnelStep = { step: string; files: number }
+/** Median upload throughput in KB/s, from finished batches. */
+export type Throughput = { medianKbps: number; batches: number }
 /** How long a page held people, and how far down they got. */
 export type PageEngagement = { page: string; views: number; medianDwell: number; avgScroll: number; activePct: number }
 export type TrafficAnalytics = {
@@ -43,6 +45,7 @@ export type TrafficAnalytics = {
   devices: Breakdown[]
   clock: ClockPoint[]
   funnel: FunnelStep[]
+  throughput: Throughput
   engagement: PageEngagement[]
   friction: Breakdown[]
   errors: string[]
@@ -76,6 +79,22 @@ async function aeSql(accountId: string, token: string, sql: string): Promise<{ r
 // The median is computed here, from weights, rather than asked of the database: quantileWeighted is
 // the same bet that CONCAT lost, and losing it again would silently blank a panel. A weighted median
 // over at most a few thousand buckets is nothing to do in JS, and it is exact.
+// Weighted median of upload throughput. A mean would be dominated by whoever has fibre.
+function foldThroughput(rows: Record<string, unknown>[]): Throughput {
+  const buckets = rows
+    .map((r) => ({ kbps: Math.round(Number(r.kbps ?? 0)), n: Math.round(Number(r.n ?? 0)) }))
+    .filter((b) => b.kbps > 0 && b.n > 0)
+    .sort((a, b) => a.kbps - b.kbps)
+  const total = buckets.reduce((sum, b) => sum + b.n, 0)
+  if (total === 0) return { medianKbps: 0, batches: 0 }
+  let seen = 0
+  for (const b of buckets) {
+    seen += b.n
+    if (seen >= total / 2) return { medianKbps: b.kbps, batches: total }
+  }
+  return { medianKbps: 0, batches: total }
+}
+
 function foldEngagement(rows: Record<string, unknown>[]): PageEngagement[] {
   const byPage = new Map<string, { views: number; active: number; scrollW: number; dwells: { d: number; n: number }[] }>()
   for (const r of rows) {
@@ -115,7 +134,7 @@ function foldEngagement(rows: Record<string, unknown>[]): PageEngagement[] {
 
 export async function getTrafficAnalytics(): Promise<TrafficAnalytics> {
   const c = creds()
-  if (!c) return { configured: false, workerMetrics: null, eventTotals: [], topAlbums: [], viewsPerDay: [], countries: [], cities: [], referrers: [], devices: [], clock: [], funnel: [], engagement: [], friction: [], errors: [] }
+  if (!c) return { configured: false, workerMetrics: null, eventTotals: [], topAlbums: [], viewsPerDay: [], countries: [], cities: [], referrers: [], devices: [], clock: [], funnel: [], throughput: { medianKbps: 0, batches: 0 }, engagement: [], friction: [], errors: [] }
   const errors: string[] = []
 
   // ── Worker metrics via GraphQL (requests / errors / CPU percentiles, last 24h) ──
@@ -155,7 +174,7 @@ export async function getTrafficAnalytics(): Promise<TrafficAnalytics> {
   // change slowly, and a week of a low-traffic product is too few rows to say anything. blob7-12 and
   // double3-4 are only populated on events that had a real visitor behind them, so the `!= ''`
   // filters also exclude cron and webhook rows, which have no location by definition.
-  const [totalsRes, topRes, viewsRes, countryRes, cityRes, refRes, devRes, clockRes, funnelRes, engRes, fricRes] = await Promise.all([
+  const [totalsRes, topRes, viewsRes, countryRes, cityRes, refRes, devRes, clockRes, funnelRes, thruRes, engRes, fricRes] = await Promise.all([
     aeSql(c.accountId, c.token, `SELECT blob1 AS event, sum(_sample_interval) AS n FROM Hushare_events WHERE timestamp > NOW() - INTERVAL '7' DAY GROUP BY event ORDER BY n DESC`),
     aeSql(c.accountId, c.token, `SELECT blob2 AS album, sum(_sample_interval) AS views FROM Hushare_events WHERE blob1 = 'album_viewed' AND blob2 != '' AND timestamp > NOW() - INTERVAL '7' DAY GROUP BY album ORDER BY views DESC LIMIT 12`),
     aeSql(c.accountId, c.token, `SELECT toStartOfInterval(timestamp, INTERVAL '1' DAY) AS day, sum(_sample_interval) AS views FROM Hushare_events WHERE blob1 = 'album_viewed' AND timestamp > NOW() - INTERVAL '14' DAY GROUP BY day ORDER BY day`),
@@ -167,6 +186,10 @@ export async function getTrafficAnalytics(): Promise<TrafficAnalytics> {
     // double1 is a FILE count, so this sums files rather than beacons — "300 of 340 chosen photos
     // arrived" is the useful sentence, not "42 batches happened".
     aeSql(c.accountId, c.token, `SELECT blob6 AS step, sum(double1 * _sample_interval) AS files FROM Hushare_events WHERE blob1 = 'upload_funnel' AND blob6 != '' AND timestamp > NOW() - INTERVAL '30' DAY GROUP BY step`),
+    // A weighted histogram of KB/s, folded into a median in JS — same reason the dwell median is
+    // computed there: quantile functions are the bet that CONCAT already lost against this SQL
+    // subset, and losing it again would silently blank the panel.
+    aeSql(c.accountId, c.token, `SELECT double2 AS kbps, sum(_sample_interval) AS n FROM Hushare_events WHERE blob1 = 'upload_funnel' AND blob6 = 'done' AND double2 > 0 AND timestamp > NOW() - INTERVAL '30' DAY GROUP BY kbps ORDER BY n DESC LIMIT 2000`),
     // MEDIAN dwell, not mean: one abandoned tab left open for twenty minutes drags an average far
     // enough to make a page look loved when nobody stayed.
     aeSql(c.accountId, c.token, `SELECT blob5 AS page, blob6 AS act, double1 AS dwell, sum(_sample_interval) AS n, sum(double2 * _sample_interval) AS scrollw FROM Hushare_events WHERE blob1 = 'page_engaged' AND blob5 != '' AND timestamp > NOW() - INTERVAL '30' DAY GROUP BY page, act, dwell ORDER BY n DESC LIMIT 4000`),
@@ -180,7 +203,7 @@ export async function getTrafficAnalytics(): Promise<TrafficAnalytics> {
   const topAlbums = topRes.rows.map((r) => ({ albumId: String(r.album ?? ''), views: num(r.views) })).filter((a) => a.albumId)
   const viewsPerDay = viewsRes.rows.map((r) => ({ day: String(r.day ?? '').slice(0, 10), value: num(r.views) }))
 
-  for (const [name, res] of [['countries', countryRes], ['cities', cityRes], ['referrers', refRes], ['devices', devRes], ['clock', clockRes], ['funnel', funnelRes], ['engagement', engRes], ['friction', fricRes]] as const) {
+  for (const [name, res] of [['countries', countryRes], ['cities', cityRes], ['referrers', refRes], ['devices', devRes], ['clock', clockRes], ['funnel', funnelRes], ['throughput', thruRes], ['engagement', engRes], ['friction', fricRes]] as const) {
     if (res.error) errors.push(`${name}: ${res.error}`)
   }
   const cities = cityRes.rows
@@ -209,6 +232,7 @@ export async function getTrafficAnalytics(): Promise<TrafficAnalytics> {
       step,
       files: num(funnelRes.rows.find((r) => String(r.step ?? '') === step)?.files),
     })),
+    throughput: foldThroughput(thruRes.rows),
     engagement: foldEngagement(engRes.rows),
     friction: fricRes.rows
       .map((r) => ({ label: `${String(r.page ?? '')} — ${String(r.detail ?? '')}`.trim(), count: num(r.n) }))

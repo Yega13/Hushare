@@ -501,7 +501,7 @@ export default async function AdminPage() {
           because nothing seems to happen never produces an error, they just leave.
         </p>
         <div style={{ marginBottom: 12 }}>
-          <AdminFunnel funnel={analytics.funnel} engagement={analytics.engagement} color={BRAND} />
+          <AdminFunnel funnel={analytics.funnel} engagement={analytics.engagement} throughput={analytics.throughput} color={BRAND} />
         </div>
         <div style={{ display: 'grid', gap: 12, gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', marginBottom: 12 }}>
           <AdminBreakdown

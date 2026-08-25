@@ -80,6 +80,8 @@ export async function POST(req: Request) {
             albumId: albumId(upload.albumId),
             step: step as 'picked' | 'started' | 'done' | 'failed',
             count: int(upload.count, 0, 10_000),
+            // Capped at 1 GB/s, which no real connection reaches — a bound, not a claim.
+            kbps: int(upload.kbps, 0, 1_000_000),
             source: 'guest',
           },
           visitor,

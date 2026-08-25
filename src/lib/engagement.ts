@@ -157,10 +157,21 @@ export function trackUploadStep(
   step: 'picked' | 'started' | 'done' | 'failed',
   count: number,
   albumId?: string | null,
+  /**
+   * Throughput in KB/s for a finished batch. Answers the question nobody could answer before —
+   * "is it slow because of my connection, or because of us?" — with a number instead of a feeling.
+   * Sent only on `done`, where both the bytes and the elapsed time are actually known.
+   */
+  kbps?: number,
 ): void {
   if (typeof window === 'undefined') return
   try {
-    const body = JSON.stringify({ upload: { step, count: Math.max(0, Math.round(count)), albumId: albumId ?? null } })
+    const body = JSON.stringify({ upload: {
+      step,
+      count: Math.max(0, Math.round(count)),
+      albumId: albumId ?? null,
+      ...(kbps != null && Number.isFinite(kbps) ? { kbps: Math.max(0, Math.round(kbps)) } : {}),
+    } })
     const blob = new Blob([body], { type: 'application/json' })
     if (!navigator.sendBeacon?.(ENDPOINT, blob)) {
       void fetch(ENDPOINT, { method: 'POST', body: blob, keepalive: true }).catch(() => {})

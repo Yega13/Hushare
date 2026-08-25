@@ -1,4 +1,4 @@
-import type { FunnelStep, PageEngagement } from '@/lib/cf-analytics'
+import type { FunnelStep, PageEngagement, Throughput } from '@/lib/cf-analytics'
 
 // The upload path as a rate, and how long each page held people.
 //
@@ -18,8 +18,8 @@ const LABELS: Record<string, string> = {
 }
 
 export default function AdminFunnel({
-  funnel, engagement, color,
-}: { funnel: FunnelStep[]; engagement: PageEngagement[]; color: string }) {
+  funnel, engagement, throughput, color,
+}: { funnel: FunnelStep[]; engagement: PageEngagement[]; throughput: Throughput; color: string }) {
   const picked = funnel.find((f) => f.step === 'picked')?.files ?? 0
   const done = funnel.find((f) => f.step === 'done')?.files ?? 0
   const top = Math.max(1, ...funnel.filter((f) => f.step !== 'failed').map((f) => f.files))
@@ -34,6 +34,21 @@ export default function AdminFunnel({
             {picked > 0 ? `${Math.round((done / picked) * 100)}% arrive` : 'no uploads yet'}
           </div>
         </div>
+
+        {/* Throughput, so "uploads feel slow" stops being a feeling. The same complaint fits a slow
+            connection, a slow phone and a slow server, and those are three different fixes — this
+            says which. Median, because a mean would be whoever has fibre. */}
+        {throughput.batches > 0 && (
+          <p style={{ fontSize: 11.5, color: '#8A7A66', margin: '0 0 10px', fontVariantNumeric: 'tabular-nums' }}>
+            Typical speed{' '}
+            <strong style={{ color: '#2A211C' }}>
+              {throughput.medianKbps >= 1024
+                ? `${(throughput.medianKbps / 1024).toFixed(1)} MB/s`
+                : `${throughput.medianKbps.toLocaleString('en-US')} KB/s`}
+            </strong>{' '}
+            across {throughput.batches.toLocaleString('en-US')} batches
+          </p>
+        )}
 
         {!anyData ? (
           <div style={{ fontSize: 12, color: '#A5977F', padding: '10px 0' }}>nothing recorded yet</div>

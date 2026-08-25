@@ -1274,9 +1274,34 @@ const SNAPSHOT_CONCURRENCY = 4
 // is what turns an OOM into a non-event, and is honest about the rest.
 const SNAPSHOT_TOTAL_BUDGET = 200 * 1024 * 1024
 
-async function snapshotFiles(files: File[]): Promise<File[]> {
-  const out = new Array<File>(files.length)
+// Snapshot in batches and hand each one over the moment it is ready.
+//
+// This used to snapshot the WHOLE selection before a single byte went out — `addFiles(await
+// snapshotFiles(files))`. Picking sixty photos on a phone meant reading up to 200MB out of device
+// storage, four at a time, while the progress bar sat at zero and the network did nothing at all.
+// The upload was not slow; it had not started.
+//
+// Now reading and uploading overlap: the first batch is on the wire while the rest are still being
+// read. Batched rather than one-at-a-time so the uploader always has a queue to work through — it
+// runs 6 concurrent on mobile, and feeding it single files would leave five lanes idle.
+const SNAPSHOT_BATCH = 8
+
+async function snapshotFilesStreaming(files: File[], onBatch: (batch: File[]) => void): Promise<void> {
+  // The budget spans the whole selection, not each batch, so the memory ceiling is unchanged.
   let budgetLeft = SNAPSHOT_TOTAL_BUDGET
+  for (let start = 0; start < files.length; start += SNAPSHOT_BATCH) {
+    const slice = files.slice(start, start + SNAPSHOT_BATCH)
+    const out = await snapshotBatch(slice, () => budgetLeft, (n) => { budgetLeft = n })
+    onBatch(out)
+  }
+}
+
+async function snapshotBatch(
+  files: File[],
+  getBudget: () => number,
+  setBudget: (n: number) => void,
+): Promise<File[]> {
+  const out = new Array<File>(files.length)
   let next = 0
   const worker = async () => {
     while (next < files.length) {
@@ -1287,15 +1312,15 @@ async function snapshotFiles(files: File[]): Promise<File[]> {
       if (f.size > SNAPSHOT_MAX_BYTES) { out[i] = f; continue }
       // Past the budget, keep the original reference. Claimed BEFORE the await so concurrent
       // workers cannot each see the same remaining budget and all decide they fit.
-      if (f.size > budgetLeft) { out[i] = f; continue }
-      budgetLeft -= f.size
+      if (f.size > getBudget()) { out[i] = f; continue }
+      setBudget(getBudget() - f.size)
       // Robust snapshot (retries + FileReader fallback) into an in-memory File — this is what
       // makes every downstream read (decode, EXIF, upload) immune to the reference going stale.
       // Falls back to the original reference only if the bytes are truly unreadable.
       const snapshot = await snapshotFileRobust(f)
       // Hand the budget back when the copy was never made, so one unreadable file does not cost
       // the files behind it their protection.
-      if (!snapshot) budgetLeft += f.size
+      if (!snapshot) setBudget(getBudget() + f.size)
       out[i] = snapshot ?? f
     }
   }
@@ -2007,6 +2032,11 @@ export default function UploadZone({ album, onPhotosUploaded }: Props) {
   const startUploads = useCallback(async (toUpload: FileEntry[]) => {
     if (toUpload.length === 0) return
     trackUploadStep('started', toUpload.length, album.id)
+    // Bytes and clock for this batch, so the throughput reported at the end is a measurement rather
+    // than an impression. "Uploads feel slow" fits a slow connection, a slow phone and a slow server
+    // equally well, and those are three completely different fixes.
+    const batchStartedAt = Date.now()
+    const batchBytes = toUpload.reduce((n, e) => n + (e.file?.size ?? 0), 0)
     activeBatchCountRef.current++
     setIsUploading(true)
 
@@ -2213,7 +2243,14 @@ export default function UploadZone({ album, onPhotosUploaded }: Props) {
     // Both halves of the outcome, so the dashboard shows a RATE rather than a count. media_uploaded
     // already recorded successes; without the failures beside them a bad night and a quiet night
     // produce the same shape.
-    trackUploadStep('done', savedCount, album.id)
+    const elapsedMs = Date.now() - batchStartedAt
+    // Only when something actually landed and enough time passed to divide by: a 200ms batch of one
+    // cached thumbnail would report a throughput no real upload could reach and drag the median with
+    // it.
+    const kbps = savedCount > 0 && elapsedMs > 500
+      ? Math.round((batchBytes / 1024) / (elapsedMs / 1000))
+      : undefined
+    trackUploadStep('done', savedCount, album.id, kbps)
     const lost = Math.max(0, toUpload.length - savedCount)
     if (lost > 0) trackUploadStep('failed', lost, album.id)
 
@@ -2268,7 +2305,7 @@ export default function UploadZone({ album, onPhotosUploaded }: Props) {
     // finally, so a throw mid-snapshot still leaves the control usable rather than stuck holding a
     // selection it cannot re-pick.
     try {
-      addFiles(await snapshotFiles(files))
+      await snapshotFilesStreaming(files, addFiles)
     } finally {
       input.value = ''  // allow re-selecting the same file after an error
     }
@@ -2278,7 +2315,7 @@ export default function UploadZone({ album, onPhotosUploaded }: Props) {
     e.preventDefault()
     setIsDragging(false)
     const files = Array.from(e.dataTransfer.files)
-    addFiles(await snapshotFiles(files))
+    await snapshotFilesStreaming(files, addFiles)
   }, [addFiles])
 
   const handleDragOver = useCallback((e: React.DragEvent) => {

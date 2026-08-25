@@ -39,7 +39,7 @@ export type AnalyticsEvent =
   | { name: 'page_engaged'; page: string; albumId?: string | null; dwellSeconds: number; scrollPct: number; active: boolean }
   // The upload path, step by step. media_uploaded already recorded successes; a success rate needs
   // the denominator, and abandoning after picking files looked identical to never trying.
-  | { name: 'upload_funnel'; albumId?: string | null; step: 'picked' | 'started' | 'done' | 'failed'; count: number; source?: UploadSource }
+  | { name: 'upload_funnel'; albumId?: string | null; step: 'picked' | 'started' | 'done' | 'failed'; count: number; kbps?: number; source?: UploadSource }
   // Someone hammering the same spot, or tapping something that does nothing. This is the closest a
   // product gets to hearing a person swear at it.
   | { name: 'friction'; page: string; albumId?: string | null; kind: 'rage' | 'dead'; label: string }
@@ -109,7 +109,10 @@ function shape(e: AnalyticsEvent): { blobs: string[]; doubles: number[] } {
       // visitor context and shape() must always return exactly two — see the note below.
       return { blobs: [e.name, s(e.albumId), '', '', s(e.page), e.active ? 'active' : 'passive'], doubles: [e.dwellSeconds, e.scrollPct] }
     case 'upload_funnel':
-      return { blobs: [e.name, s(e.albumId), '', '', s(e.source ?? 'unknown'), e.step], doubles: [e.count, 0] }
+      // double2 carries KB/s on a finished batch. "Uploads feel slow" is unanswerable without it:
+      // the same complaint fits a slow connection, a slow phone and a slow server, and those are
+      // three completely different fixes.
+      return { blobs: [e.name, s(e.albumId), '', '', s(e.source ?? 'unknown'), e.step], doubles: [e.count, e.kbps ?? 0] }
     case 'friction':
       // kind and label share blob6 as `kind:label`. blob4 and blob5 already mean tier and source
       // everywhere else, and quietly redefining a column per event type is how a dashboard starts
