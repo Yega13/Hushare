@@ -6,6 +6,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { resolveAlbum, fetchAuthorizedPhotos } from '@/lib/server/album-access'
 import { track } from '@/lib/analytics'
 import { getVisitorContext } from '@/lib/visitor-context'
+import EngagementBeacon from '@/components/EngagementBeacon'
 import { getServerLocale } from '@/i18n/server'
 import { getDictionary } from '@/i18n/get-dictionary'
 import AlbumPageClient from './AlbumPageClient'
@@ -222,6 +223,9 @@ export default async function AlbumPage({ params, searchParams }: Props) {
   return (
     <>
       <OwnerHashFlag />
+      {/* Measures how long this album held the visitor and whether it fought them. The album id
+          travels with it so a specific album's engagement can be read, not just the average. */}
+      <EngagementBeacon page="album" albumId={resolved.album.id} />
       <AlbumPageClient initialAlbum={resolved.album} initialPhotos={initialPhotos} initialTotal={initialTotal} />
     </>
   )

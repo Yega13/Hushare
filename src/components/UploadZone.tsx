@@ -5,6 +5,7 @@ import * as tus from 'tus-js-client'
 import type { Album } from '@/types'
 import { stripExifFromJpeg, jpegOrientation, stripMetadataFromPng, stripMetadataFromWebp } from '@/lib/exif'
 import { snapshotFileRobust, readFileRobust, isFileReadFailure } from '@/lib/file-read'
+import { trackUploadStep } from '@/lib/engagement'
 import { showAppToast } from '@/components/AppToast'
 import { useT } from '@/i18n/LocaleProvider'
 import { detectKind, uploadCapsForTier, tooLargeMessage, generateVideoPoster, isAllowedImage } from '@/lib/media'
@@ -2005,6 +2006,7 @@ export default function UploadZone({ album, onPhotosUploaded }: Props) {
 
   const startUploads = useCallback(async (toUpload: FileEntry[]) => {
     if (toUpload.length === 0) return
+    trackUploadStep('started', toUpload.length, album.id)
     activeBatchCountRef.current++
     setIsUploading(true)
 
@@ -2208,6 +2210,13 @@ export default function UploadZone({ album, onPhotosUploaded }: Props) {
     const savedCount = await saver.finish()
     flushProgress()
 
+    // Both halves of the outcome, so the dashboard shows a RATE rather than a count. media_uploaded
+    // already recorded successes; without the failures beside them a bad night and a quiet night
+    // produce the same shape.
+    trackUploadStep('done', savedCount, album.id)
+    const lost = Math.max(0, toUpload.length - savedCount)
+    if (lost > 0) trackUploadStep('failed', lost, album.id)
+
     // Decrement before onPhotosUploaded so if the parent unmounts UploadZone
     // the queued setState call is already the final one
     activeBatchCountRef.current--
@@ -2220,6 +2229,9 @@ export default function UploadZone({ album, onPhotosUploaded }: Props) {
 
   const addFiles = useCallback((files: File[]) => {
     const valid = files.filter(f => detectKind(f) !== null)
+    // Counted even when nothing is valid: someone who picks five files the product refuses is a
+    // person who tried and got nothing, and that is exactly the case worth being able to see.
+    trackUploadStep('picked', files.length, album.id)
     if (valid.length === 0) return
     const newEntries: FileEntry[] = valid.map(f => ({
       id: crypto.randomUUID(),
@@ -2233,7 +2245,7 @@ export default function UploadZone({ album, onPhotosUploaded }: Props) {
     }))
     setEntries(prev => [...prev, ...newEntries])
     void startUploads(newEntries)
-  }, [startUploads])
+  }, [startUploads, album.id])
 
   const handleInputChange = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
     const input = e.target

@@ -33,6 +33,16 @@ export type AnalyticsEvent =
   // Support-chat turn. blob5 = outcome, blob6 = the visitor's question (PII-redacted, truncated).
   // Never logged for crisis/welfare turns — we don't store self-harm disclosures.
   | { name: 'support_chat'; question?: string; outcome: 'answered' | 'handoff' }
+  // ── Engagement, reported by the browser when a page is hidden ──
+  // How long a page held someone, how far down they got, and whether they touched anything at all.
+  // Answers "where do they linger" — which nothing in the product could say before.
+  | { name: 'page_engaged'; page: string; albumId?: string | null; dwellSeconds: number; scrollPct: number; active: boolean }
+  // The upload path, step by step. media_uploaded already recorded successes; a success rate needs
+  // the denominator, and abandoning after picking files looked identical to never trying.
+  | { name: 'upload_funnel'; albumId?: string | null; step: 'picked' | 'started' | 'done' | 'failed'; count: number; source?: UploadSource }
+  // Someone hammering the same spot, or tapping something that does nothing. This is the closest a
+  // product gets to hearing a person swear at it.
+  | { name: 'friction'; page: string; albumId?: string | null; kind: 'rage' | 'dead'; label: string }
 
 // ── Fixed positional column schema (keep stable — queries reference these positions) ──
 //   index1 = event name         (sampling key; groups adaptive sampling per event type)
@@ -62,6 +72,12 @@ function s(v: string | null | undefined): string {
   return v == null ? '' : String(v).slice(0, 256)
 }
 
+// INVARIANT: every branch returns exactly 6 blobs and exactly 2 doubles.
+//
+// The visitor context is appended after this, so it lands on blob7-12 and double3-4 for every event
+// type. Return a third double from any branch here and the visitor's hour silently becomes double4
+// for that event alone — the clock query would then read a weekday as an hour and draw a chart that
+// looks completely reasonable and is entirely wrong.
 function shape(e: AnalyticsEvent): { blobs: string[]; doubles: number[] } {
   switch (e.name) {
     case 'album_created':
@@ -88,6 +104,17 @@ function shape(e: AnalyticsEvent): { blobs: string[]; doubles: number[] } {
       return { blobs: [e.name, '', '', '', '', ''], doubles: [1, 0] }
     case 'support_chat':
       return { blobs: [e.name, '', '', '', e.outcome, s(e.question)], doubles: [1, e.question ? e.question.length : 0] }
+    case 'page_engaged':
+      // 'active' vs 'passive' rather than a click COUNT, because doubles 3 and 4 belong to the
+      // visitor context and shape() must always return exactly two — see the note below.
+      return { blobs: [e.name, s(e.albumId), '', '', s(e.page), e.active ? 'active' : 'passive'], doubles: [e.dwellSeconds, e.scrollPct] }
+    case 'upload_funnel':
+      return { blobs: [e.name, s(e.albumId), '', '', s(e.source ?? 'unknown'), e.step], doubles: [e.count, 0] }
+    case 'friction':
+      // kind and label share blob6 as `kind:label`. blob4 and blob5 already mean tier and source
+      // everywhere else, and quietly redefining a column per event type is how a dashboard starts
+      // reporting one thing under the name of another.
+      return { blobs: [e.name, s(e.albumId), '', '', s(e.page), `${e.kind}:${s(e.label)}`], doubles: [1, 0] }
   }
 }
 

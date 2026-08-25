@@ -17,6 +17,7 @@ import AdminGrowthChart from '@/components/AdminGrowthChart'
 import AdminWeekdayBars from '@/components/AdminWeekdayBars'
 import AdminBreakdown from '@/components/AdminBreakdown'
 import AdminClockHeatmap from '@/components/AdminClockHeatmap'
+import AdminFunnel from '@/components/AdminFunnel'
 import AdminAreaChartLazy from '@/components/AdminAreaChartLazy'
 import { getTrafficAnalytics } from '@/lib/cf-analytics'
 import AdminSupportLookup from '@/components/AdminSupportLookup'
@@ -438,6 +439,25 @@ export default async function AdminPage() {
         </div>
         <div style={{ marginBottom: 12 }}>
           <AdminClockHeatmap points={analytics.clock} color={BRAND} />
+        </div>
+
+        <h2 id="friction" style={{ fontSize: 15, fontWeight: 700, color: INK, margin: '20px 0 4px', scrollMarginTop: 64 }}>
+          What is hard for them
+        </h2>
+        <p style={{ fontSize: 11.5, color: '#8A7A66', margin: '0 0 10px' }}>
+          Errors say what BROKE. These say what was hard — a guest tapping the same button four times
+          because nothing seems to happen never produces an error, they just leave.
+        </p>
+        <div style={{ marginBottom: 12 }}>
+          <AdminFunnel funnel={analytics.funnel} engagement={analytics.engagement} color={BRAND} />
+        </div>
+        <div style={{ display: 'grid', gap: 12, gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', marginBottom: 12 }}>
+          <AdminBreakdown
+            title="Repeated taps on the same spot"
+            rows={analytics.friction}
+            color="#9B2C2C"
+            empty="nobody has hammered anything — good"
+          />
         </div>
 
         <h2 style={{ fontSize: 15, fontWeight: 700, color: INK, margin: '20px 0 4px' }}>

@@ -26,6 +26,10 @@ export type DayPoint = { day: string; value: number }
 export type Breakdown = { label: string; count: number }
 /** Views by visitor-LOCAL hour and weekday. hour 0-23, weekday 0=Sun. */
 export type ClockPoint = { weekday: number; hour: number; count: number }
+/** One step of the upload path, as a count of FILES. */
+export type FunnelStep = { step: string; files: number }
+/** How long a page held people, and how far down they got. */
+export type PageEngagement = { page: string; views: number; medianDwell: number; avgScroll: number; activePct: number }
 export type TrafficAnalytics = {
   configured: boolean
   workerMetrics: WorkerMetrics
@@ -37,6 +41,9 @@ export type TrafficAnalytics = {
   referrers: Breakdown[]
   devices: Breakdown[]
   clock: ClockPoint[]
+  funnel: FunnelStep[]
+  engagement: PageEngagement[]
+  friction: Breakdown[]
   errors: string[]
 }
 
@@ -65,7 +72,7 @@ async function aeSql(accountId: string, token: string, sql: string): Promise<{ r
 
 export async function getTrafficAnalytics(): Promise<TrafficAnalytics> {
   const c = creds()
-  if (!c) return { configured: false, workerMetrics: null, eventTotals: [], topAlbums: [], viewsPerDay: [], countries: [], cities: [], referrers: [], devices: [], clock: [], errors: [] }
+  if (!c) return { configured: false, workerMetrics: null, eventTotals: [], topAlbums: [], viewsPerDay: [], countries: [], cities: [], referrers: [], devices: [], clock: [], funnel: [], engagement: [], friction: [], errors: [] }
   const errors: string[] = []
 
   // ── Worker metrics via GraphQL (requests / errors / CPU percentiles, last 24h) ──
@@ -105,7 +112,7 @@ export async function getTrafficAnalytics(): Promise<TrafficAnalytics> {
   // change slowly, and a week of a low-traffic product is too few rows to say anything. blob7-12 and
   // double3-4 are only populated on events that had a real visitor behind them, so the `!= ''`
   // filters also exclude cron and webhook rows, which have no location by definition.
-  const [totalsRes, topRes, viewsRes, countryRes, cityRes, refRes, devRes, clockRes] = await Promise.all([
+  const [totalsRes, topRes, viewsRes, countryRes, cityRes, refRes, devRes, clockRes, funnelRes, engRes, fricRes] = await Promise.all([
     aeSql(c.accountId, c.token, `SELECT blob1 AS event, sum(_sample_interval) AS n FROM Hushare_events WHERE timestamp > NOW() - INTERVAL '7' DAY GROUP BY event ORDER BY n DESC`),
     aeSql(c.accountId, c.token, `SELECT blob2 AS album, sum(_sample_interval) AS views FROM Hushare_events WHERE blob1 = 'album_viewed' AND blob2 != '' AND timestamp > NOW() - INTERVAL '7' DAY GROUP BY album ORDER BY views DESC LIMIT 12`),
     aeSql(c.accountId, c.token, `SELECT toStartOfInterval(timestamp, INTERVAL '1' DAY) AS day, sum(_sample_interval) AS views FROM Hushare_events WHERE blob1 = 'album_viewed' AND timestamp > NOW() - INTERVAL '14' DAY GROUP BY day ORDER BY day`),
@@ -114,6 +121,13 @@ export async function getTrafficAnalytics(): Promise<TrafficAnalytics> {
     aeSql(c.accountId, c.token, `SELECT blob10 AS k, sum(_sample_interval) AS n FROM Hushare_events WHERE blob1 = 'album_viewed' AND blob10 != '' AND timestamp > NOW() - INTERVAL '30' DAY GROUP BY k ORDER BY n DESC LIMIT 10`),
     aeSql(c.accountId, c.token, `SELECT blob12 AS k, sum(_sample_interval) AS n FROM Hushare_events WHERE blob1 = 'album_viewed' AND blob12 != '' AND timestamp > NOW() - INTERVAL '30' DAY GROUP BY k ORDER BY n DESC LIMIT 6`),
     aeSql(c.accountId, c.token, `SELECT double4 AS wd, double3 AS hr, sum(_sample_interval) AS n FROM Hushare_events WHERE blob1 = 'album_viewed' AND double3 >= 0 AND timestamp > NOW() - INTERVAL '30' DAY GROUP BY wd, hr`),
+    // double1 is a FILE count, so this sums files rather than beacons — "300 of 340 chosen photos
+    // arrived" is the useful sentence, not "42 batches happened".
+    aeSql(c.accountId, c.token, `SELECT blob6 AS step, sum(double1 * _sample_interval) AS files FROM Hushare_events WHERE blob1 = 'upload_funnel' AND blob6 != '' AND timestamp > NOW() - INTERVAL '30' DAY GROUP BY step`),
+    // MEDIAN dwell, not mean: one abandoned tab left open for twenty minutes drags an average far
+    // enough to make a page look loved when nobody stayed.
+    aeSql(c.accountId, c.token, `SELECT blob5 AS page, sum(_sample_interval) AS views, quantileWeighted(0.5)(double1, _sample_interval) AS dwell, sum(double2 * _sample_interval) / sum(_sample_interval) AS scroll, sum(if(blob6 = 'active', _sample_interval, 0)) / sum(_sample_interval) AS act FROM Hushare_events WHERE blob1 = 'page_engaged' AND blob5 != '' AND timestamp > NOW() - INTERVAL '30' DAY GROUP BY page ORDER BY views DESC LIMIT 12`),
+    aeSql(c.accountId, c.token, `SELECT concat(blob5, ' — ', blob6) AS k, sum(_sample_interval) AS n FROM Hushare_events WHERE blob1 = 'friction' AND blob6 != '' AND timestamp > NOW() - INTERVAL '30' DAY GROUP BY k ORDER BY n DESC LIMIT 12`),
   ])
   if (totalsRes.error) errors.push('events: ' + totalsRes.error)
   if (topRes.error) errors.push('topAlbums: ' + topRes.error)
@@ -123,7 +137,7 @@ export async function getTrafficAnalytics(): Promise<TrafficAnalytics> {
   const topAlbums = topRes.rows.map((r) => ({ albumId: String(r.album ?? ''), views: num(r.views) })).filter((a) => a.albumId)
   const viewsPerDay = viewsRes.rows.map((r) => ({ day: String(r.day ?? '').slice(0, 10), value: num(r.views) }))
 
-  for (const [name, res] of [['countries', countryRes], ['cities', cityRes], ['referrers', refRes], ['devices', devRes], ['clock', clockRes]] as const) {
+  for (const [name, res] of [['countries', countryRes], ['cities', cityRes], ['referrers', refRes], ['devices', devRes], ['clock', clockRes], ['funnel', funnelRes], ['engagement', engRes], ['friction', fricRes]] as const) {
     if (res.error) errors.push(`${name}: ${res.error}`)
   }
   const breakdown = (rows: Record<string, unknown>[]): Breakdown[] =>
@@ -139,6 +153,19 @@ export async function getTrafficAnalytics(): Promise<TrafficAnalytics> {
     referrers: breakdown(refRes.rows),
     devices: breakdown(devRes.rows),
     clock,
+    // Fixed order, because a funnel that reorders itself by size is not a funnel.
+    funnel: (['picked', 'started', 'done', 'failed'] as const).map((step) => ({
+      step,
+      files: num(funnelRes.rows.find((r) => String(r.step ?? '') === step)?.files),
+    })),
+    engagement: engRes.rows.map((r) => ({
+      page: String(r.page ?? ''),
+      views: num(r.views),
+      medianDwell: num(r.dwell),
+      avgScroll: num(r.scroll),
+      activePct: Math.round(Number(r.act ?? 0) * 100),
+    })).filter((e) => e.page),
+    friction: breakdown(fricRes.rows),
     errors,
   }
 }

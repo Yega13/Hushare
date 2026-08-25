@@ -1,3 +1,4 @@
+import EngagementBeacon from '@/components/EngagementBeacon'
 import Image from 'next/image'
 import ReactDOM from 'react-dom'
 import Link from 'next/link'
@@ -29,6 +30,7 @@ export default async function HomePage() {
   }))
   return (
     <main style={{ background: '#FDFAF5', fontFamily: 'var(--font-sans)' }} className="min-h-screen">
+      <EngagementBeacon page="home" />
 
       <nav
         className="hush-nav sticky top-0 z-50 flex items-center justify-between"

@@ -1,3 +1,4 @@
+import EngagementBeacon from '@/components/EngagementBeacon'
 import type { Metadata } from 'next'
 import Image from 'next/image'
 import Link from 'next/link'
@@ -321,6 +322,7 @@ export default async function PricingPage() {
       className="min-h-screen"
       style={{ background: '#FDFAF5', fontFamily: 'var(--font-sans)' }}
     >
+      <EngagementBeacon page="pricing" />
       <CheckoutResumer />
 
       <script
