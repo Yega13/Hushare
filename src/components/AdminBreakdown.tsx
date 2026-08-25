@@ -6,7 +6,9 @@
 // Server-rendered: there is no interaction here, so shipping JavaScript for it would be waste on a
 // page that already carries several charts.
 
-export type BreakdownRow = { label: string; count: number }
+import { flagSrc } from '@/lib/country-names'
+
+export type BreakdownRow = { label: string; count: number; cc?: string }
 
 export default function AdminBreakdown({
   title, rows, color, empty = 'nothing recorded yet',
@@ -42,8 +44,26 @@ export default function AdminBreakdown({
                   background: color, opacity: 0.14, borderRadius: 6,
                 }}
               />
-              <span style={{ position: 'relative', fontSize: 12.5, color: '#2A211C', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                {r.label}
+              <span style={{ position: 'relative', display: 'flex', alignItems: 'center', gap: 7, minWidth: 0, fontSize: 12.5, color: '#2A211C' }}>
+                {/* A real flag image, not an emoji. Windows ships no regional-indicator glyphs, so
+                    emoji flags render as the very two-letter codes this replaces — the language
+                    switcher reached the same conclusion. Self-hosted because the site's CSP is
+                    `img-src 'self'`, and because an admin page should not tell a CDN which
+                    countries its owner is looking at. Rendered only when we actually have the file,
+                    so a territory without one shows a name rather than a broken image. */}
+                {r.cc && flagSrc(r.cc) && (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={flagSrc(r.cc) as string}
+                    alt=""
+                    width={20}
+                    height={14}
+                    loading="lazy"
+                    decoding="async"
+                    style={{ width: 20, height: 14, objectFit: 'cover', borderRadius: 2, boxShadow: '0 0 0 1px rgba(0,0,0,0.15)', flex: 'none' }}
+                  />
+                )}
+                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.label}</span>
               </span>
               <span style={{ position: 'relative', fontSize: 12, fontWeight: 600, color: '#5C4A3C', fontVariantNumeric: 'tabular-nums' }}>
                 {r.count.toLocaleString('en-US')}
