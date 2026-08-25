@@ -162,7 +162,7 @@ const billingFaq = [
   },
   {
     q: 'What happens to my free albums if I cancel Pro or Max?',
-    a: 'Nothing changes for guests. Your albums are kept for a full year after you cancel, then revert to Free behaviour - the password and custom URL are removed, the album becomes accessible by its original random link, and the 3-month inactivity rule applies from then.',
+    a: 'Nothing changes for guests. Your albums are kept for a full year after you cancel, then revert to Free behaviour: Hushare branding returns and the free album allowance applies, with the 1-year inactivity rule from then. Your password and custom URL keep working - password protection is free for everyone, and we do not break a link that may already be printed on a sign.',
   },
   {
     q: 'What do Max Collections do?',
