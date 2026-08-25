@@ -283,14 +283,6 @@ export default async function AdminPage() {
     { label: 'Active albums', value: String(activeAlbums7d.count ?? 0), hint: 'touched in 7d' },
   ]
 
-  // ── Growth charts: daily new albums/uploads (aggregated DB-side) + signups (from the users page).
-  const { data: growthRaw } = await admin.rpc('admin_growth_series', { p_days: 14 })
-  const series = (growthRaw ?? []) as { day: string; albums: number | string; uploads: number | string }[]
-  const signupByDay = new Map<string, number>()
-  for (const u of allUsers) {
-    const d = (u.created_at ?? '').slice(0, 10)
-    if (d) signupByDay.set(d, (signupByDay.get(d) ?? 0) + 1)
-  }
   // ── Which DAYS OF THE WEEK are busy, over twelve weeks.
   //
   // Twelve, not the two the chart above uses: fourteen days gives two samples per weekday, so a
@@ -301,10 +293,24 @@ export default async function AdminPage() {
   // the wrong day, and that is exactly the signal this chart exists to show. Against live data the
   // difference is not academic: Monday uploads move by 300 between the two.
   const WEEKDAY_DAYS = 84
-  const { data: weekdayRaw } = await admin.rpc('admin_weekday_series', {
-    p_days: WEEKDAY_DAYS,
-    p_tz: OWNER_TZ,
-  })
+  // These two, the traffic analytics, and the user overview are all INDEPENDENT, and they were
+  // being awaited one after another: four sequential round trips, each a few hundred milliseconds,
+  // before the page could render a single pixel. That is what put the root loading spinner on screen
+  // for long enough to look stuck. Issued together they cost the slowest one rather than the sum.
+  const [{ data: growthRaw }, { data: weekdayRaw }, analytics] = await Promise.all([
+    admin.rpc('admin_growth_series', { p_days: 14 }),
+    admin.rpc('admin_weekday_series', { p_days: WEEKDAY_DAYS, p_tz: OWNER_TZ }),
+    getTrafficAnalytics(),
+  ])
+
+  // ── Growth charts: daily new albums/uploads (aggregated DB-side) + signups (from the users page).
+  // Issued with the weekday series below — see the note there.
+  const series = (growthRaw ?? []) as { day: string; albums: number | string; uploads: number | string }[]
+  const signupByDay = new Map<string, number>()
+  for (const u of allUsers) {
+    const d = (u.created_at ?? '').slice(0, 10)
+    if (d) signupByDay.set(d, (signupByDay.get(d) ?? 0) + 1)
+  }
   // 0 = Sunday from Postgres; the week reads better starting on Monday.
   const MONDAY_FIRST = [1, 2, 3, 4, 5, 6, 0]
   const WEEKDAY_NAMES: Record<number, string> = {
@@ -335,7 +341,7 @@ export default async function AdminPage() {
 
   // ── Cloudflare analytics: worker perf (GraphQL) + product events (Analytics Engine). All optional —
   // each is null when the token/query is unavailable, so the section just shows what it can.
-  const analytics = await getTrafficAnalytics()
+  // analytics is fetched above, alongside the growth series.
   const analyticsOn = analytics.configured
   const workerMetrics = analytics.workerMetrics
   const eventTotals = analytics.eventTotals

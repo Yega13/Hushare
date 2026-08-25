@@ -45,6 +45,7 @@ import {
 } from '@/components/owner-toolbar/api'
 import { accordionButton, btnBase, inputStyle, sectionTitle, settingsSectionStyle } from '@/components/owner-toolbar/styles'
 import type { CollectionSummary, SettingsSection } from '@/components/owner-toolbar/types'
+import PlanBadge from '@/components/PlanBadge'
 
 type Props = {
   album: Album
@@ -710,7 +711,7 @@ export default function OwnerToolbar({ album, photos, ownerToken, userTier, medi
           title={t('ot.liveWallTitle')}
         >
           <MonitorPlay className="w-4 h-4" style={{ color: '#7C5C3E' }} />
-          {t('ot.liveWall')}
+          {t('ot.liveWall')} <PlanBadge need="studio" tier={userTier} />
         </button>
 
         <button
@@ -1144,7 +1145,9 @@ export default function OwnerToolbar({ album, photos, ownerToken, userTier, medi
                   <div className="px-4 pb-4 space-y-3">
                     <label className="flex items-center justify-between gap-4 rounded-xl px-3 py-3" style={{ background: '#FDFAF5', border: '1px solid #DDD5C5', cursor: 'pointer' }}>
                       <span>
-                        <span className="block text-sm font-semibold" style={{ color: '#630826' }}>{t('ot.requireApproval')}</span>
+                        <span className="block text-sm font-semibold" style={{ color: '#630826' }}>
+                          {t('ot.requireApproval')} <PlanBadge need="pro" tier={userTier} />
+                        </span>
                         <span className="block text-xs" style={{ color: '#7C5C3E' }}>{t('ot.requireApprovalSub')}</span>
                       </span>
                       <input
@@ -1305,7 +1308,7 @@ export default function OwnerToolbar({ album, photos, ownerToken, userTier, medi
                       <span>
                         <span className="flex items-center gap-2 text-sm font-semibold" style={{ color: '#630826' }}>
                           <Search className="w-4 h-4" />
-                          {t('ot.bibSearch')}
+                          {t('ot.bibSearch')} <PlanBadge need="studio" tier={userTier} />
                         </span>
                         <span className="block text-xs" style={{ color: '#7C5C3E' }}>{t('ot.bibSearchSub')}</span>
                       </span>
@@ -1402,14 +1405,16 @@ export default function OwnerToolbar({ album, photos, ownerToken, userTier, medi
               <section style={settingsSectionStyle}>
                 <button type="button" className="hush-motion" style={accordionButton} onClick={() => toggleSection('password')}>
                   {album.password_protected ? (
-                    <Lock className="w-4 h-4" style={{ color: showLockedCustomize ? '#A89880' : '#630826' }} />
+                    <Lock className="w-4 h-4" style={{ color: '#630826' }} />
                   ) : (
-                    <LockOpen className="w-4 h-4" style={{ color: showLockedCustomize ? '#A89880' : '#7C5C3E' }} />
+                    <LockOpen className="w-4 h-4" style={{ color: '#7C5C3E' }} />
                   )}
                   <span style={sectionTitle}>{t('ot.password')}</span>
-                  {showLockedCustomize && <span className="ml-auto text-[10px] font-semibold uppercase" style={{ color: '#7C4A2D', letterSpacing: '0.06em' }}>Pro</span>}
+                  {/* No badge and no lock: password protection is free, and always has been —
+                      api/album/password has never carried a tier check. Charging for it in the UI
+                      while the server gave it away was the same contradiction the pricing page had. */}
                   <ChevronDown
-                    className={showLockedCustomize ? 'w-4 h-4 transition-transform' : 'ml-auto w-4 h-4 transition-transform'}
+                    className="ml-auto w-4 h-4 transition-transform" 
                     style={{ color: '#A89880', transform: openSection === 'password' ? 'rotate(180deg)' : 'rotate(0deg)' }}
                   />
                 </button>
@@ -1426,7 +1431,7 @@ export default function OwnerToolbar({ album, photos, ownerToken, userTier, medi
                       onChange={(e) => setPasswordInput(e.target.value)}
                       placeholder={album.password_protected ? t('ot.newPassword') : t('ot.passwordPlaceholder')}
                       maxLength={128}
-                      disabled={!canCustomize}
+                      disabled={false}
                       autoComplete="new-password"
                       autoCorrect="off"
                       autoCapitalize="none"
@@ -1435,7 +1440,7 @@ export default function OwnerToolbar({ album, photos, ownerToken, userTier, medi
                       className="w-full rounded-lg px-3 py-2 text-sm focus:outline-none disabled:cursor-not-allowed disabled:opacity-60"
                       style={inputStyle}
                       onKeyDown={(e) => {
-                        if (e.key === 'Enter' && canCustomize && !passwordSaving && passwordInput) void savePassword('set')
+                        if (e.key === 'Enter' && !passwordSaving && passwordInput) void savePassword('set')
                       }}
                     />
                     {passwordError && <p className="text-xs mt-2" style={{ color: '#C0392B' }}>{passwordError}</p>}
@@ -1443,7 +1448,7 @@ export default function OwnerToolbar({ album, photos, ownerToken, userTier, medi
                     <div className="flex items-center gap-2 mt-3">
                       <button
                         onClick={() => void savePassword('set')}
-                        disabled={!canCustomize || passwordSaving || !passwordInput}
+                        disabled={passwordSaving || !passwordInput}
                         className="hush-press flex-1 text-sm font-semibold rounded-lg py-2 transition hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed"
                         style={{ background: '#630826', color: '#FDFAF5' }}
                       >
@@ -1452,7 +1457,7 @@ export default function OwnerToolbar({ album, photos, ownerToken, userTier, medi
                       {album.password_protected && (
                         <button
                           onClick={() => void savePassword('clear')}
-                          disabled={!canCustomize || passwordSaving}
+                          disabled={passwordSaving}
                           className="hush-press text-sm rounded-lg py-2 px-3 transition hover:opacity-90 disabled:opacity-50"
                           style={{ background: '#F5F0E8', color: '#7C5C3E', border: '1px solid #DDD5C5' }}
                         >
@@ -1534,6 +1539,7 @@ export default function OwnerToolbar({ album, photos, ownerToken, userTier, medi
                 <button type="button" className="hush-motion" style={accordionButton} onClick={() => toggleSection('reveal')}>
                   <Clock className="w-4 h-4" style={{ color: revealIsFuture ? '#630826' : '#7C5C3E' }} />
                   <span style={sectionTitle}>{t('ot.delayedReveal')}</span>
+                  <PlanBadge need="pro" tier={userTier} className="ml-auto" />
                   {revealIsFuture && (
                     <span
                       className="ml-auto text-[10px] font-semibold uppercase tracking-wide px-1.5 py-0.5 rounded-full"

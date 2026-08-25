@@ -118,8 +118,12 @@ export default async function AccountPage({ searchParams }: Props) {
   // Which tier the customer has just paid for, straight from the checkout redirect. Legacy '1'
   // links — the ones already sitting in browser histories from earlier purchases — say only "a
   // purchase happened" and are honoured as such.
+  // 'max' is what the checkout now sends and what a person would type; 'studio' is the internal
+  // column value and is still accepted so links from earlier checkouts keep working.
   const purchased: 'pro' | 'studio' | null =
-    welcome === 'pro' ? 'pro' : welcome === 'studio' ? 'studio' : null
+    welcome === 'pro' ? 'pro'
+      : welcome === 'max' || welcome === 'studio' ? 'studio'
+        : null
   const justPurchased = purchased !== null || welcome === '1'
 
   // Back from checkout and the webhook has not caught up yet.

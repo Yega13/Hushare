@@ -64,7 +64,10 @@ export async function POST(req: Request) {
   // congratulated on being Pro, using the Pro feature list, because their old row is still the only
   // one there. Carrying the tier lets the page tell "already had one" apart from "just got this
   // one" and wait for the row it is actually looking for.
-  const successUrl = new URL(`/account?welcome=${tier}`, req.url).toString()
+  // `max`, not `studio`. The tier column has said 'studio' since before the plan was named, and
+  // that internal word has no business in a URL a customer sees. The page accepts both, so links
+  // already sitting in a browser history from an earlier checkout still work.
+  const successUrl = new URL(`/account?welcome=${tier === 'studio' ? 'max' : tier}`, req.url).toString()
 
   // "First month $1.99 — applies once per account" is a promise this code now keeps itself.
   //

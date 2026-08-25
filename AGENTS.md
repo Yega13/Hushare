@@ -32,6 +32,8 @@ expected — especially after ONE failed fix — stop iterating alone and launch
 with fresh eyes. You are the worst possible reviewer of your own reasoning: once you have a theory
 you will keep finding evidence for it and keep shipping fixes to the wrong thing.
 
+11. if you fixed some error or warning in the website that is in admin page's panel, you should clean it, so you can notice if something's new is off.
+
 The rule of thumb: **one failed fix is a mistake, two is a signal to get another pair of eyes.** Do
 not spend a third attempt on your own hypothesis.
 
