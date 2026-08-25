@@ -214,6 +214,20 @@ export const en: PrivacyContent = {
               Kept for 90 days.
             </li>
             <li>
+              <strong style={INK}>Where and when a page was opened</strong> -
+              when an album page is opened we record the country, city and
+              region Cloudflare works out from the connection, the kind of
+              device (phone, tablet or computer), the site that linked you here
+              if there was one, and the hour and day of the week in{' '}
+              <em>your</em> local time. We do this so we know which countries to
+              support and when people actually use Hushare. It is stored as
+              counts of groups, never as a trail: there is no identifier that
+              survives the page load, so nothing here can be linked back to you,
+              joined to your account, or used to follow you from one visit to
+              the next. We do not store your IP address as part of this. Kept
+              for 90 days.
+            </li>
+            <li>
               <strong style={INK}>Google (Gmail)</strong> - our support inbox. If
               you email us, report something, or ask the assistant for a human,
               that message is stored in a Google mailbox.

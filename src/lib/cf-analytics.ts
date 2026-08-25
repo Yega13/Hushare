@@ -20,12 +20,23 @@ export type WorkerMetrics = { requests: number; errors: number; cpuP50: number; 
 export type EventTotal = { event: string; count: number }
 export type TopAlbum = { albumId: string; views: number }
 export type DayPoint = { day: string; value: number }
+// Who the visitors are — aggregate only, and deliberately so. Every row here describes a group
+// ("Yerevan, Sunday 21:00, from Instagram, on a phone"), never a person: no identifier is collected
+// that survives a page load, so there is nothing to follow anyone with. See visitor-context.ts.
+export type Breakdown = { label: string; count: number }
+/** Views by visitor-LOCAL hour and weekday. hour 0-23, weekday 0=Sun. */
+export type ClockPoint = { weekday: number; hour: number; count: number }
 export type TrafficAnalytics = {
   configured: boolean
   workerMetrics: WorkerMetrics
   eventTotals: EventTotal[]
   topAlbums: TopAlbum[]
   viewsPerDay: DayPoint[]
+  countries: Breakdown[]
+  cities: Breakdown[]
+  referrers: Breakdown[]
+  devices: Breakdown[]
+  clock: ClockPoint[]
   errors: string[]
 }
 
@@ -54,7 +65,7 @@ async function aeSql(accountId: string, token: string, sql: string): Promise<{ r
 
 export async function getTrafficAnalytics(): Promise<TrafficAnalytics> {
   const c = creds()
-  if (!c) return { configured: false, workerMetrics: null, eventTotals: [], topAlbums: [], viewsPerDay: [], errors: [] }
+  if (!c) return { configured: false, workerMetrics: null, eventTotals: [], topAlbums: [], viewsPerDay: [], countries: [], cities: [], referrers: [], devices: [], clock: [], errors: [] }
   const errors: string[] = []
 
   // ── Worker metrics via GraphQL (requests / errors / CPU percentiles, last 24h) ──
@@ -90,10 +101,19 @@ export async function getTrafficAnalytics(): Promise<TrafficAnalytics> {
   }
 
   // ── Product events via Analytics Engine SQL ──
-  const [totalsRes, topRes, viewsRes] = await Promise.all([
+  // 30 days for the WHO queries rather than the 7 the counters use: geography and arrival channel
+  // change slowly, and a week of a low-traffic product is too few rows to say anything. blob7-12 and
+  // double3-4 are only populated on events that had a real visitor behind them, so the `!= ''`
+  // filters also exclude cron and webhook rows, which have no location by definition.
+  const [totalsRes, topRes, viewsRes, countryRes, cityRes, refRes, devRes, clockRes] = await Promise.all([
     aeSql(c.accountId, c.token, `SELECT blob1 AS event, sum(_sample_interval) AS n FROM Hushare_events WHERE timestamp > NOW() - INTERVAL '7' DAY GROUP BY event ORDER BY n DESC`),
     aeSql(c.accountId, c.token, `SELECT blob2 AS album, sum(_sample_interval) AS views FROM Hushare_events WHERE blob1 = 'album_viewed' AND blob2 != '' AND timestamp > NOW() - INTERVAL '7' DAY GROUP BY album ORDER BY views DESC LIMIT 12`),
     aeSql(c.accountId, c.token, `SELECT toStartOfInterval(timestamp, INTERVAL '1' DAY) AS day, sum(_sample_interval) AS views FROM Hushare_events WHERE blob1 = 'album_viewed' AND timestamp > NOW() - INTERVAL '14' DAY GROUP BY day ORDER BY day`),
+    aeSql(c.accountId, c.token, `SELECT blob7 AS k, sum(_sample_interval) AS n FROM Hushare_events WHERE blob1 = 'album_viewed' AND blob7 != '' AND timestamp > NOW() - INTERVAL '30' DAY GROUP BY k ORDER BY n DESC LIMIT 15`),
+    aeSql(c.accountId, c.token, `SELECT concat(blob8, ', ', blob7) AS k, sum(_sample_interval) AS n FROM Hushare_events WHERE blob1 = 'album_viewed' AND blob8 != '' AND timestamp > NOW() - INTERVAL '30' DAY GROUP BY k ORDER BY n DESC LIMIT 15`),
+    aeSql(c.accountId, c.token, `SELECT blob10 AS k, sum(_sample_interval) AS n FROM Hushare_events WHERE blob1 = 'album_viewed' AND blob10 != '' AND timestamp > NOW() - INTERVAL '30' DAY GROUP BY k ORDER BY n DESC LIMIT 10`),
+    aeSql(c.accountId, c.token, `SELECT blob12 AS k, sum(_sample_interval) AS n FROM Hushare_events WHERE blob1 = 'album_viewed' AND blob12 != '' AND timestamp > NOW() - INTERVAL '30' DAY GROUP BY k ORDER BY n DESC LIMIT 6`),
+    aeSql(c.accountId, c.token, `SELECT double4 AS wd, double3 AS hr, sum(_sample_interval) AS n FROM Hushare_events WHERE blob1 = 'album_viewed' AND double3 >= 0 AND timestamp > NOW() - INTERVAL '30' DAY GROUP BY wd, hr`),
   ])
   if (totalsRes.error) errors.push('events: ' + totalsRes.error)
   if (topRes.error) errors.push('topAlbums: ' + topRes.error)
@@ -103,5 +123,22 @@ export async function getTrafficAnalytics(): Promise<TrafficAnalytics> {
   const topAlbums = topRes.rows.map((r) => ({ albumId: String(r.album ?? ''), views: num(r.views) })).filter((a) => a.albumId)
   const viewsPerDay = viewsRes.rows.map((r) => ({ day: String(r.day ?? '').slice(0, 10), value: num(r.views) }))
 
-  return { configured: true, workerMetrics, eventTotals, topAlbums, viewsPerDay, errors }
+  for (const [name, res] of [['countries', countryRes], ['cities', cityRes], ['referrers', refRes], ['devices', devRes], ['clock', clockRes]] as const) {
+    if (res.error) errors.push(`${name}: ${res.error}`)
+  }
+  const breakdown = (rows: Record<string, unknown>[]): Breakdown[] =>
+    rows.map((r) => ({ label: String(r.k ?? '').trim(), count: num(r.n) })).filter((b) => b.label && b.label !== ',')
+  const clock = clockRes.rows
+    .map((r) => ({ weekday: num(r.wd), hour: num(r.hr), count: num(r.n) }))
+    .filter((p) => p.hour >= 0 && p.hour <= 23 && p.weekday >= 0 && p.weekday <= 6)
+
+  return {
+    configured: true, workerMetrics, eventTotals, topAlbums, viewsPerDay,
+    countries: breakdown(countryRes.rows),
+    cities: breakdown(cityRes.rows),
+    referrers: breakdown(refRes.rows),
+    devices: breakdown(devRes.rows),
+    clock,
+    errors,
+  }
 }

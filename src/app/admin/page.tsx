@@ -15,6 +15,8 @@ import AdminPublishStatement from '@/components/AdminPublishStatement'
 import AdminLiveUsers from '@/components/AdminLiveUsers'
 import AdminGrowthChart from '@/components/AdminGrowthChart'
 import AdminWeekdayBars from '@/components/AdminWeekdayBars'
+import AdminBreakdown from '@/components/AdminBreakdown'
+import AdminClockHeatmap from '@/components/AdminClockHeatmap'
 import AdminAreaChartLazy from '@/components/AdminAreaChartLazy'
 import { getTrafficAnalytics } from '@/lib/cf-analytics'
 import AdminSupportLookup from '@/components/AdminSupportLookup'
@@ -419,6 +421,23 @@ export default async function AdminPage() {
           <AdminAreaChartLazy label="Signups / day" points={signupsPts} color="#1F5136" unit="users" />
           <AdminAreaChartLazy label="New albums / day" points={albumsPts} color={BRAND} unit="albums" />
           <AdminAreaChartLazy label="Uploads / day" points={uploadsPts} color="#B4531F" unit="items" />
+        </div>
+
+        <h2 id="people" style={{ fontSize: 15, fontWeight: 700, color: INK, margin: '20px 0 4px', scrollMarginTop: 64 }}>
+          Who is visiting
+        </h2>
+        <p style={{ fontSize: 11.5, color: '#8A7A66', margin: '0 0 10px' }}>
+          Last 30 days of album views. Aggregate only — no visitor is identified or followed between
+          visits; every figure describes a group.
+        </p>
+        <div style={{ display: 'grid', gap: 12, gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', marginBottom: 12 }}>
+          <AdminBreakdown title="Countries" rows={analytics.countries} color="#1F5136" />
+          <AdminBreakdown title="Cities" rows={analytics.cities} color="#21458c" />
+          <AdminBreakdown title="How they arrived" rows={analytics.referrers} color={BRAND} empty="no referrer data yet" />
+          <AdminBreakdown title="Device" rows={analytics.devices} color="#B4531F" />
+        </div>
+        <div style={{ marginBottom: 12 }}>
+          <AdminClockHeatmap points={analytics.clock} color={BRAND} />
         </div>
 
         <h2 style={{ fontSize: 15, fontWeight: 700, color: INK, margin: '20px 0 4px' }}>

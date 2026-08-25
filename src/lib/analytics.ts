@@ -1,4 +1,5 @@
 import { getCloudflareContext } from '@opennextjs/cloudflare'
+import type { VisitorContext } from '@/lib/visitor-context'
 
 // Minimal local type — avoids importing @cloudflare/workers-types globally (it conflicts with DOM types).
 type AnalyticsEngineDataset = {
@@ -43,6 +44,19 @@ export type AnalyticsEvent =
 //   blob6  = detail             (mediaType | download kind | billing cycle)
 //   double1 = count             (magnitude: items uploaded/deleted, else 1)
 //   double2 = value             (bytes for uploads, match count for face search, else 0)
+//
+// ── Visitor context, APPENDED (positions 7+ / 3+ are new; everything above keeps its place) ──
+// Added at the end on purpose. Existing dashboard queries address columns by position, so inserting
+// anywhere earlier would silently re-point every one of them at the wrong data — the kind of break
+// that shows up as plausible-looking numbers rather than an error.
+//   blob7  = country ISO-2      (edge-resolved; '' when unavailable)
+//   blob8  = city
+//   blob9  = region
+//   blob10 = referrer class     (direct | search | social | qr | internal | other)
+//   blob11 = referrer host
+//   blob12 = device             (mobile | tablet | desktop | bot | unknown)
+//   double3 = visitor-local hour     0-23, -1 unknown  (THEIR clock, not the server's)
+//   double4 = visitor-local weekday  0=Sun … 6=Sat, -1 unknown
 
 function s(v: string | null | undefined): string {
   return v == null ? '' : String(v).slice(0, 256)
@@ -84,11 +98,19 @@ function shape(e: AnalyticsEvent): { blobs: string[]; doubles: number[] } {
  * swallows every error (missing binding in `next dev`, context unavailable, etc.) so a
  * telemetry failure can NEVER break — or even slow — the request that emitted it.
  */
-export function track(event: AnalyticsEvent): void {
+export function track(event: AnalyticsEvent, visitor?: VisitorContext): void {
   try {
     const ds = (getCloudflareContext()?.env as AnalyticsEnv | undefined)?.ANALYTICS
     if (!ds) return // dev / binding not provisioned yet → silent no-op
     const { blobs, doubles } = shape(event)
+    // Optional, because most events are emitted from places that have no request to read — a cron
+    // retiring an album, a webhook confirming a payment. Those write empty columns rather than
+    // inventing a location, so a query for "where do views come from" is never quietly polluted by
+    // rows that had no visitor at all.
+    if (visitor) {
+      blobs.push(visitor.country, visitor.city, visitor.region, visitor.refClass, visitor.refHost, visitor.device)
+      doubles.push(visitor.hour, visitor.weekday)
+    }
     ds.writeDataPoint({ indexes: [event.name], blobs, doubles })
   } catch {
     // Analytics must never throw into the request path.

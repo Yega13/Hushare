@@ -46,6 +46,7 @@ export default function GuestActionsBar({ album, photos, shareUrl, onOpenSlidesh
   const [shareOpen, setShareOpen] = useState(false)
   const [copied, setCopied] = useState(false)
   const [qrDataUrl, setQrDataUrl] = useState('')
+  const qrUrl = `${shareUrl}${shareUrl.includes('?') ? '&' : '?'}s=qr`
   const shareRef = useRef<HTMLDivElement>(null)
   const isNarrow = useIsNarrow()
   const [supabaseClient] = useState(() => createClient())
@@ -77,11 +78,17 @@ export default function GuestActionsBar({ album, photos, shareUrl, onOpenSlidesh
   useEffect(() => {
     let cancelled = false
     import('qrcode').then(({ default: QRCode }) => {
-      QRCode.toDataURL(shareUrl, { width: 300, margin: 2, color: { dark: qrForegroundColor(album.accent_color), light: '#FFFFFF' } })
+      // The QR encodes a marked URL; the link people copy stays clean.
+      //
+      // A scan and a typed address are identical in a referrer — both empty — so without this the
+      // single most important channel for this product is invisible. Only the QR gets the marker:
+      // putting it on the copied link too would show a human "?s=link" every time they shared an
+      // album, and a slightly uglier URL is a real cost against a slightly better chart.
+      QRCode.toDataURL(qrUrl, { width: 300, margin: 2, color: { dark: qrForegroundColor(album.accent_color), light: '#FFFFFF' } })
         .then((url) => { if (!cancelled) setQrDataUrl(url) })
     })
     return () => { cancelled = true }
-  }, [shareUrl, album.accent_color])
+  }, [qrUrl, album.accent_color])
 
   // Desktop dropdown closes on outside-click (it lives inside shareRef). The mobile panel is
   // portaled to <body> and closes via its backdrop, so the shareRef listener is desktop-only.

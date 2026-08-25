@@ -5,6 +5,7 @@ import type { Photo } from '@/types'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { resolveAlbum, fetchAuthorizedPhotos } from '@/lib/server/album-access'
 import { track } from '@/lib/analytics'
+import { getVisitorContext } from '@/lib/visitor-context'
 import { getServerLocale } from '@/i18n/server'
 import { getDictionary } from '@/i18n/get-dictionary'
 import AlbumPageClient from './AlbumPageClient'
@@ -12,7 +13,10 @@ import AlbumPageClient from './AlbumPageClient'
 export const runtime = 'nodejs'
 export const revalidate = 0
 
-type Props = { params: Promise<{ slug: string }> }
+// `s` marks how the visitor arrived when a referrer cannot say. A printed QR code and a typed URL
+// both arrive with no referrer at all, and for a product whose distribution IS a code on a sign at
+// an event, telling those apart matters more than almost anything else here.
+type Props = { params: Promise<{ slug: string }>; searchParams: Promise<{ s?: string }> }
 
 type AlbumMeta = {
   id: string
@@ -155,7 +159,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 // interactivity (owner upgrade via #owner=, realtime, uploads). The server cannot read the #owner=
 // URL fragment, so it resolves as a guest (wantsOwner=false): gated albums render their gate here
 // and the owner upgrades client-side exactly as before.
-export default async function AlbumPage({ params }: Props) {
+export default async function AlbumPage({ params, searchParams }: Props) {
   const { slug } = await params
   const cookieStore = await cookies()
   const resolved = await resolveAlbum(slug, false, cookieStore)
@@ -191,7 +195,15 @@ export default async function AlbumPage({ params }: Props) {
   // synchronous + non-blocking and track() swallows all errors), so it never affects the render.
   // The server can't read the #owner= fragment, so views are recorded as guest — which is what the
   // overwhelming majority are; a rare owner reload counting is acceptable noise for a views metric.
-  track({ name: 'album_viewed', albumId: resolved.album.id, source: 'guest' })
+  // Now carries WHERE and WHEN. Every one of these fields already arrived with the request —
+  // Cloudflare resolves country, city, region and the visitor's timezone at the edge — and all of it
+  // was being discarded, which is why "where are our users" had no answer. Still fire-and-forget:
+  // getVisitorContext never throws and track() swallows everything, so telemetry cannot break a page.
+  const arrivedVia = (await searchParams)?.s ?? null
+  track(
+    { name: 'album_viewed', albumId: resolved.album.id, source: 'guest' },
+    await getVisitorContext(arrivedVia),
+  )
 
   // Open / already-unlocked — fetch photos server-side so they land in the initial HTML.
   let initialPhotos: Photo[] = []
