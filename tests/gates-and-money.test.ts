@@ -203,12 +203,12 @@ describe('gateAllowsContribution recognises the signed-in owner', () => {
   }
 
   it('lets the owner upload to their own locked album with no cookies at all', async () => {
-    const withPassword = { ...locked, password_hash: await hashPassword('hunter2', ALBUM_ID) }
+    const withPassword = { ...locked, password_hash: await hashPassword('hunter2') }
     expect((await gateAllowsContribution(withPassword, cookies(), OWNER_ID)).ok).toBe(true)
   })
 
   it('still refuses a signed-in stranger', async () => {
-    const withPassword = { ...locked, password_hash: await hashPassword('hunter2', ALBUM_ID) }
+    const withPassword = { ...locked, password_hash: await hashPassword('hunter2') }
     const other = '99999999-8888-4777-8666-555555555555'
     expect((await gateAllowsContribution(withPassword, cookies(), other)).ok).toBe(false)
   })
@@ -216,13 +216,13 @@ describe('gateAllowsContribution recognises the signed-in owner', () => {
   it('never lets a signed-out visitor through on a guest album', async () => {
     // Both sides null must not be treated as a match — that would open every guest album to
     // everyone the moment it had a password.
-    const guestAlbum = { ...locked, user_id: null, password_hash: await hashPassword('hunter2', ALBUM_ID) }
+    const guestAlbum = { ...locked, user_id: null, password_hash: await hashPassword('hunter2') }
     expect((await gateAllowsContribution(guestAlbum, cookies(), null)).ok).toBe(false)
     expect((await gateAllowsContribution(guestAlbum, cookies(), undefined)).ok).toBe(false)
   })
 
   it('says WHICH credential was missing', async () => {
-    const withPassword = { ...locked, password_hash: await hashPassword('hunter2', ALBUM_ID) }
+    const withPassword = { ...locked, password_hash: await hashPassword('hunter2') }
     const refused = await gateAllowsContribution(withPassword, cookies(), null)
     expect(refused.ok).toBe(false)
     if (!refused.ok) expect(refused.reason).toBe('password-cookie-absent')

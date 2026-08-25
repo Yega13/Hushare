@@ -16,6 +16,7 @@ import RenameAlbumButton from './RenameAlbumButton'
 import SignOutButton from './SignOutButton'
 import SubscriptionPolling from './SubscriptionPolling'
 import WelcomeCelebration from './WelcomeCelebration'
+import AvatarPicker from './AvatarPicker'
 import LanguageSwitcherFlags from '@/components/LanguageSwitcherFlags'
 import { getServerLocale } from '@/i18n/server'
 import { getDictionary, interpolate } from '@/i18n/get-dictionary'
@@ -113,6 +114,13 @@ export default async function AccountPage({ searchParams }: Props) {
   // strength of the first. One read cannot contradict itself.
   const subscription = await getActiveSubscription(user.id)
   const isAdmin = isAccountAdmin(user)
+
+  // The account's picture. Its own table rather than auth user_metadata, which the account holder
+  // can write directly through the client SDK — see the profiles migration.
+  const profileAdmin = createAdminClient()
+  const { data: profile } = await profileAdmin
+    .from('profiles').select('avatar_url').eq('user_id', user.id).maybeSingle<{ avatar_url: string | null }>()
+  const avatarUrl = profile?.avatar_url ?? null
   const hasAccess = isAdmin || subscription !== null
 
   // Which tier the customer has just paid for, straight from the checkout redirect. Legacy '1'
@@ -332,6 +340,9 @@ export default async function AccountPage({ searchParams }: Props) {
                 <p className="text-sm break-all" style={{ color: '#5C4A3C' }}>
                   {dict['acct.signedInAs']} <strong>{user.email}</strong>
                 </p>
+                <div style={{ marginTop: 18 }}>
+                  <AvatarPicker initialUrl={avatarUrl} email={user.email ?? ''} />
+                </div>
               </div>
               <div className="rounded-xl px-4 py-3" style={{ background: '#F5F0E8', border: '1px solid #DDD5C5' }}>
                 <p className="text-xs uppercase tracking-wide mb-1" style={{ color: '#8B6F4E' }}>{dict['acct.currentAccess']}</p>
