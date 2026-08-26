@@ -495,9 +495,33 @@ export default function PhotoGrid({ album, photos, albumPhotoCount, isOwner, slu
 
   if (photos.length === 0) {
     return (
-      <div className="text-center py-20" style={{ color: '#A89880' }}>
-        <p className="text-lg">{t('pg.empty')}</p>
-        <p className="text-sm mt-1">{t('pg.emptySub')}</p>
+      // ON ITS OWN SURFACE, because an album's background is a photograph.
+      //
+      // This was pale grey text sitting directly on whatever image the owner chose, which on a
+      // bright one is close to invisible — and it is the FIRST thing every guest sees, since an
+      // album at an event is empty until somebody uploads. The one screen whose entire job is to
+      // say "add something" was the one screen you could not read.
+      //
+      // The same card treatment the rest of the page already uses, so it belongs rather than
+      // floats.
+      <div className="flex justify-center py-14 px-4">
+        <div
+          className="text-center rounded-2xl px-8 py-10 w-full"
+          style={{
+            maxWidth: 420,
+            background: 'rgba(253, 250, 245, 0.92)',
+            border: '1px solid rgba(221, 213, 197, 0.9)',
+            boxShadow: '0 4px 24px rgba(99, 8, 38, 0.08)',
+            // Keeps it readable over a busy photograph without hiding the photograph.
+            backdropFilter: 'blur(8px)',
+            WebkitBackdropFilter: 'blur(8px)',
+          }}
+        >
+          <p className="text-lg" style={{ color: '#630826', fontFamily: 'var(--font-serif)', fontWeight: 700 }}>
+            {t('pg.empty')}
+          </p>
+          <p className="text-sm mt-2" style={{ color: '#5C4A3C' }}>{t('pg.emptySub')}</p>
+        </div>
       </div>
     )
   }
