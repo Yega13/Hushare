@@ -1283,7 +1283,7 @@ export default function OwnerToolbar({ album, photos, ownerToken, userTier, medi
                         <span className="flex items-center gap-2 text-sm font-semibold" style={{ color: '#630826' }}>
                           <ScanFace className="w-4 h-4" />
                           {t('ot.faceFinder')}
-                          {showLockedCollections && <span className="text-[10px] font-semibold uppercase" style={{ color: '#7C4A2D', letterSpacing: '0.06em' }}>Max</span>}
+                          <PlanBadge need="studio" tier={userTier} />
                         </span>
                         <span className="block text-xs" style={{ color: '#7C5C3E' }}>{t('ot.faceFinderSub')}</span>
                       </span>
@@ -1350,9 +1350,9 @@ export default function OwnerToolbar({ album, photos, ownerToken, userTier, medi
                 <button type="button" className="hush-motion" style={accordionButton} onClick={() => toggleSection('customUrl')}>
                   <Link2 className="w-4 h-4" style={{ color: showLockedCustomize ? '#A89880' : '#7C5C3E' }} />
                   <span style={sectionTitle}>{t('ot.customUrl')}</span>
-                  {showLockedCustomize && <span className="ml-auto text-[10px] font-semibold uppercase" style={{ color: '#7C4A2D', letterSpacing: '0.06em' }}>Pro</span>}
+                  <PlanBadge need="pro" tier={userTier} />
                   <ChevronDown
-                    className={showLockedCustomize ? 'w-4 h-4 transition-transform' : 'ml-auto w-4 h-4 transition-transform'}
+                    className="ml-auto w-4 h-4 transition-transform"
                     style={{ color: '#A89880', transform: openSection === 'customUrl' ? 'rotate(180deg)' : 'rotate(0deg)' }}
                   />
                 </button>
@@ -1476,9 +1476,9 @@ export default function OwnerToolbar({ album, photos, ownerToken, userTier, medi
                 <button type="button" className="hush-motion" style={accordionButton} onClick={() => toggleSection('collection')}>
                   <FolderPlus className="w-4 h-4" style={{ color: showLockedCollections ? '#A89880' : '#7C5C3E' }} />
                   <span style={sectionTitle}>{t('ot.collections')}</span>
-                  {showLockedCollections && <span className="ml-auto text-[10px] font-semibold uppercase" style={{ color: '#7C4A2D', letterSpacing: '0.06em' }}>Max</span>}
+                  <PlanBadge need="studio" tier={userTier} />
                   <ChevronDown
-                    className={showLockedCollections ? 'w-4 h-4 transition-transform' : 'ml-auto w-4 h-4 transition-transform'}
+                    className="ml-auto w-4 h-4 transition-transform"
                     style={{ color: '#A89880', transform: openSection === 'collection' ? 'rotate(180deg)' : 'rotate(0deg)' }}
                   />
                 </button>
@@ -1541,17 +1541,17 @@ export default function OwnerToolbar({ album, photos, ownerToken, userTier, medi
                 <button type="button" className="hush-motion" style={accordionButton} onClick={() => toggleSection('reveal')}>
                   <Clock className="w-4 h-4" style={{ color: revealIsFuture ? '#630826' : '#7C5C3E' }} />
                   <span style={sectionTitle}>{t('ot.delayedReveal')}</span>
-                  <PlanBadge need="pro" tier={userTier} className="ml-auto" />
+                  <PlanBadge need="pro" tier={userTier} />
                   {revealIsFuture && (
                     <span
-                      className="ml-auto text-[10px] font-semibold uppercase tracking-wide px-1.5 py-0.5 rounded-full"
+                      className="text-[10px] font-semibold uppercase tracking-wide px-1.5 py-0.5 rounded-full"
                       style={{ background: 'rgba(99,8,38,0.10)', color: '#630826' }}
                     >
                       {t('ot.active')}
                     </span>
                   )}
                   <ChevronDown
-                    className={`${revealIsFuture ? '' : 'ml-auto'} w-4 h-4 transition-transform`}
+                    className="ml-auto w-4 h-4 transition-transform"
                     style={{ color: '#A89880', transform: openSection === 'reveal' ? 'rotate(180deg)' : 'rotate(0deg)' }}
                   />
                 </button>
