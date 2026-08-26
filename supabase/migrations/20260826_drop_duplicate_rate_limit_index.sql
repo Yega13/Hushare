@@ -1,0 +1,21 @@
+-- Drop one of two IDENTICAL indexes on the hottest table in the product.
+--
+-- rate_limit_events carries both of these, on exactly the same columns in the same order:
+--   idx_rate_limit_events_key_created   btree (key, created_at)
+--   rate_limit_events_key_created_at    btree (key, created_at)
+--
+-- Postgres will happily maintain both. Every INSERT into this table — and there is one per rate
+-- limit check, four per upload, tens of thousands per event — writes two index entries where one
+-- would do, and both are kept in cache and vacuumed. The read side gains nothing: the planner picks
+-- one and the other has never served a query it could not.
+--
+-- Keeping `rate_limit_events_key_created_at`, which is the one the planner is currently choosing
+-- (confirmed with EXPLAIN ANALYZE on the busiest live key: Index Only Scan, 3 buffer hits, 1.8ms).
+--
+-- This is not the E7 fix. E7 is about the NUMBER OF ROUND TRIPS to Supabase per request, which is
+-- network latency and unaffected by indexes. It is simply free, safe and on the same path — worth
+-- taking on its own while the real fix is designed.
+--
+-- Idempotent — safe to re-run.
+
+drop index if exists public.idx_rate_limit_events_key_created;
