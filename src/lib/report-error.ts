@@ -163,8 +163,14 @@ export async function isStaleDocument(): Promise<boolean> {
 // Matching is deliberately explicit and narrow: anything unrecognised is kept. Silently dropping
 // one real report is far worse than keeping one junk row.
 // Identifiers that exist only in injected code. Safe to match anywhere in a message.
+// _AutofillCallbackHandler is iOS Safari's own password-autofill bridge. It is injected into the
+// page by the browser, and when Safari tears it down mid-interaction its own script throws
+// "ReferenceError: Can't find variable: _AutofillCallbackHandler" — on our page, through our
+// window.onerror, naming a global this codebase has never referenced. Seen 2026-08-26 from
+// iPhone OS 26.5. Nothing to fix and nothing we could fix; it is the same class as the wallet and
+// reader-mode shims already listed here.
 const FOREIGN_INJECTED_RE =
-  /\b(?:__firefox__|__gCrWeb|tronWeb|tronLink|evmAsk|webkit\.messageHandlers)\b/
+  /\b(?:__firefox__|__gCrWeb|_AutofillCallbackHandler|tronWeb|tronLink|evmAsk|webkit\.messageHandlers)\b/
 
 // Wallet globals whose names are also ordinary words. "Backpack" and "phantom" are a plausible
 // album title and a plausible filename, and our messages routinely quote both — so matching these
