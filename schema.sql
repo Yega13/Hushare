@@ -219,44 +219,6 @@ create table if not exists public.statements (
 );
 alter table public.statements enable row level security;
 
--- ─── studio_credit_ledger ───
-create table if not exists public.studio_credit_ledger (
-  id uuid default gen_random_uuid() not null,
-  user_id uuid not null,
-  delta integer not null,
-  reason text not null,
-  meta jsonb,
-  balance_after integer not null,
-  created_at timestamp with time zone default now() not null,
-  primary key (id)
-);
-alter table public.studio_credit_ledger enable row level security;
-
--- ─── studio_credits ───
-create table if not exists public.studio_credits (
-  user_id uuid not null,
-  balance integer default 0 not null,
-  last_grant_month text,
-  created_at timestamp with time zone default now() not null,
-  updated_at timestamp with time zone default now() not null,
-  primary key (user_id)
-);
-alter table public.studio_credits enable row level security;
-
--- ─── studio_generations ───
-create table if not exists public.studio_generations (
-  id uuid default gen_random_uuid() not null,
-  user_id uuid not null,
-  style_id text not null,
-  status text default 'done'::text not null,
-  output_url text,
-  credits_spent integer default 1 not null,
-  error text,
-  created_at timestamp with time zone default now() not null,
-  primary key (id)
-);
-alter table public.studio_generations enable row level security;
-
 -- ─── subscriptions ───
 create table if not exists public.subscriptions (
   id text default gen_random_uuid() not null,
@@ -315,8 +277,6 @@ create unique index if not exists poll_votes_unique ON public.poll_votes USING b
 create index if not exists rate_limit_events_key_created_at ON public.rate_limit_events USING btree (key, created_at);
 create index if not exists statements_published_idx ON public.statements USING btree (published_at DESC);
 create unique index if not exists statements_slug_key ON public.statements USING btree (slug);
-create index if not exists studio_credit_ledger_user_idx ON public.studio_credit_ledger USING btree (user_id, created_at DESC);
-create index if not exists studio_generations_user_idx ON public.studio_generations USING btree (user_id, created_at DESC);
 create unique index if not exists subscriptions_polar_subscription_id_key ON public.subscriptions USING btree (polar_subscription_id);
 create index if not exists subscriptions_renewal_window_idx ON public.subscriptions USING btree (current_period_end) WHERE ((status = 'active'::text) AND (cancel_at_period_end = false));
 create index if not exists subscriptions_user_id_idx ON public.subscriptions USING btree (user_id);

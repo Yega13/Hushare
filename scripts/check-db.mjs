@@ -48,8 +48,11 @@ const MUST_DENY_ANON = [
   'photos', 'active_sessions', 'schema_migrations', 'profiles',
   'albums', 'collections', 'collection_albums', 'subscriptions', 'statements',
   'error_events', 'pending_stream_uploads', 'poll_votes', 'rate_limit_events',
-  'studio_credits', 'studio_credit_ledger', 'studio_generations', 'system_state',
+  'system_state',
 ]
+// studio_credits / studio_credit_ledger / studio_generations were removed on 2026-08-26 — see
+// supabase/migrations/20260826_drop_hushare_studio.sql. The Max TIER is still internally named
+// 'studio'; that is unrelated and stays.
 
 const client = new pg.Client({ connectionString: connectionString('check-db'), ssl: { rejectUnauthorized: false } })
 await client.connect()
