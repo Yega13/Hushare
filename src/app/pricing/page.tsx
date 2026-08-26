@@ -9,6 +9,7 @@ import CheckoutResumer from '@/components/CheckoutResumer'
 import FaqList from '@/components/FaqList'
 import { getServerLocale } from '@/i18n/server'
 import { getDictionary, interpolate } from '@/i18n/get-dictionary'
+import { en } from '@/i18n/dictionaries/en'
 import {
   albumMediaCapForTier, albumCountLimitForTier, uploadCapsForTier, formatCapSize,
   ANON_ALBUM_MEDIA, ANON_ALBUM_LIMIT,
@@ -150,52 +151,21 @@ const tiers: Tier[] = [
   },
 ]
 
-const billingFaq = [
-  {
-    q: 'Do I need a Hushare account for Pro or Max?',
-    a: 'Yes - paid plans need a free Hushare account so we can attach your subscription to a stable identity (and so you can manage or cancel it anytime). Sign in with your email at the top of any page; no password needed, just a magic link. Your account is free forever; only Pro and Max cost money.',
-  },
-  {
-    q: 'Why does Free not need an account?',
-    a: 'Free albums are designed for the moment - share a link, everyone adds photos, done. We do not want sign-up to be a barrier for one-off events. Pro and Max need an account because subscriptions need to belong to someone.',
-  },
-  {
-    q: 'What happens to my free albums if I cancel Pro or Max?',
-    a: 'Nothing changes for guests. Your albums are kept for a full year after you cancel, then revert to Free behaviour: Hushare branding returns and the free album allowance applies, with the 1-year inactivity rule from then. Your password and custom URL keep working - password protection is free for everyone, and we do not break a link that may already be printed on a sign.',
-  },
-  {
-    q: 'What do Max Collections do?',
-    a: 'Collections are Max-only pages that group several albums under one public /c/... link. They are built for photographers, planners, and families who need to present or manage related albums together instead of sending many separate links.',
-  },
-  {
-    q: 'Can I recover a lost owner link?',
-    a: 'Contact support with the album name, approximate creation date, and any details that help us verify ownership. Owner links control album management, so recovery is handled carefully instead of automatically exposing private tokens.',
-  },
-  {
-    q: 'Can I try Pro before I pay?',
-    a: 'There is no separate no-card trial right now. Monthly plans have a first-month intro price, then renew at the standard rate from month two. You can cancel anytime from your account.',
-  },
-  {
-    q: 'How do you handle refunds?',
-    a: "Refunds are handled by support, not automatically in the app. Email husharesupport@gmail.com with your account email and we'll review it manually within two business days.",
-  },
-  {
-    q: 'Do you offer annual pricing?',
-    a: 'Yes - Pro is $40/year and Max is $100/year, both with two months free compared to paying month-by-month. Choose annual at checkout. Want to lock it in before launch? Email us and we\'ll honour the annual price for your first year.',
-  },
-  {
-    q: 'Is there a first-month discount?',
-    a: 'Yes - Pro is $1.99 for the first month, then $4/month after. Max is $6.99 for the first month, then $10/month. The discount applies once per account, on monthly plans, and renews at the standard rate from month two.',
-  },
-  {
-    q: 'Which currencies do you accept?',
-    a: 'USD for now. We may add local currency pricing later if demand is strong enough, but the current checkout is USD.',
-  },
-  {
-    q: 'Is there a discount for non-profits or weddings?',
-    a: 'Registered non-profits can contact support for a manual Max discount. For one-off weddings, a single month of Pro usually covers it; we do not currently offer a wedding-specific discount.',
-  },
-]
+// ONE SOURCE FOR BOTH COPIES OF THIS FAQ.
+//
+// This used to be a hand-typed duplicate of the strings the page actually renders, kept here only
+// because the JSON-LD is built at module scope where `dict` does not exist. The two drifted, and
+// the copy that drifted is the one nobody looks at: the cancellation answer was corrected in the
+// dictionary and this block went on serving the old, wrong wording to search engines. Reading the
+// English dictionary directly costs nothing and removes the second place to forget.
+//
+// English on purpose — structured data is emitted once, for the canonical page.
+const PRICING_FAQ_COUNT = Object.keys(en).filter((k) => /^pricing\.faq\.q\d+$/.test(k)).length
+
+const billingFaq = Array.from({ length: PRICING_FAQ_COUNT }, (_, i) => ({
+  q: en[`pricing.faq.q${i + 1}` as keyof typeof en] as string,
+  a: en[`pricing.faq.a${i + 1}` as keyof typeof en] as string,
+}))
 
 const jsonLd = {
   '@context': 'https://schema.org',
@@ -343,7 +313,7 @@ export default async function PricingPage() {
       features: tier.features.map((_, i) => tt(`pricing.${key}.f${i + 1}`)),
     }
   })
-  const pricingFaq = Array.from({ length: 11 }, (_, i) => ({
+  const pricingFaq = Array.from({ length: PRICING_FAQ_COUNT }, (_, i) => ({
     q: tt(`pricing.faq.q${i + 1}`),
     a: tt(`pricing.faq.a${i + 1}`),
   }))

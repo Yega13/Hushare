@@ -112,7 +112,7 @@ export async function POST(req: Request) {
 
     // Paid-grace: a currently-free owner who USED to pay keeps their albums for 1 year after
     // their subscription lapsed. Skip (without resetting activity) so that once grace expires the
-    // 90-day inactivity rule applies from the real last-activity date on a later scan.
+    // 365-day inactivity rule applies from the real last-activity date on a later scan.
     try {
       const paidUntil = await getPaidRetentionUntil(album.user_id)
       if (paidUntil && paidUntil > new Date()) {

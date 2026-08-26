@@ -14,12 +14,21 @@ import { execSync } from "node:child_process";
 // The git SHA is the honest identifier (it names the exact code), with a timestamp fallback so a
 // build in a tree without git still produces SOMETHING unique instead of throwing and failing the
 // whole build. stdio silences git's own stderr on that path.
+//
+// A BUILD STAMP IS APPENDED, and it is not decoration. Two deploys of the same commit are two
+// different builds with different hashed chunk filenames — the assets of the first stop existing
+// when the second lands. Treating them as one build made the stale-deploy reload in
+// src/lib/report-error.ts think it had already recovered from a build it had never seen, so the
+// second deploy of a commit left open tabs dead with no recovery left. Caught on a real iPhone
+// session that sat through several deploys in one morning.
 const BUILD_ID = (() => {
+  const stamp = Date.now().toString(36);
   try {
-    return execSync("git rev-parse --short HEAD", { stdio: ["ignore", "pipe", "ignore"] })
-      .toString().trim() || `t${Date.now().toString(36)}`;
+    const sha = execSync("git rev-parse --short HEAD", { stdio: ["ignore", "pipe", "ignore"] })
+      .toString().trim();
+    return sha ? `${sha}-${stamp}` : `t${stamp}`;
   } catch {
-    return `t${Date.now().toString(36)}`;
+    return `t${stamp}`;
   }
 })();
 

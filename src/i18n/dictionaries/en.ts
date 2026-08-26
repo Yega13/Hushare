@@ -186,7 +186,7 @@ export const en = {
   'pricing.faq.q2': 'Why does Free not need an account?',
   'pricing.faq.a2': 'Free albums are designed for the moment — share a link, everyone adds photos, done. We do not want sign-up to be a barrier for one-off events. Pro and Max need an account because subscriptions need to belong to someone.',
   'pricing.faq.q3': 'What happens to my free albums if I cancel Pro or Max?',
-  'pricing.faq.a3': 'Nothing changes for guests. Your albums are kept for a full year after you cancel, then revert to Free behaviour: Hushare branding returns and the free album allowance applies, with the 1-year inactivity rule from then. Your password and custom URL keep working — password protection is free for everyone, and we do not break a link that may already be printed on a sign.',
+  'pricing.faq.a3': 'Nothing changes for guests, and two separate things happen on two separate clocks. Paid features run to the end of the period you have already paid for — after that the Hushare mark comes back and the free allowance applies. Your albums themselves are kept for a full year after you cancel, and only then does the 1-year inactivity rule start counting. Your password and custom URL keep working the whole time — password protection is free for everyone, and we do not break a link that may already be printed on a sign.',
   'pricing.faq.q4': 'What do Max Collections do?',
   'pricing.faq.a4': 'Collections are Max-only pages that group several albums under one public /c/… link. They are built for photographers, planners, and families who need to present or manage related albums together instead of sending many separate links.',
   'pricing.faq.q5': 'Can I recover a lost owner link?',

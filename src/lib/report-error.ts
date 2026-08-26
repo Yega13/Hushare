@@ -34,27 +34,48 @@ export type ReportInput = {
 // white screen. Caught in the wild the first day error reporting went live.
 //
 // The page is simply stale, so reloading once fixes it completely. The sessionStorage flag means a
-// genuinely broken chunk can't put the browser in a reload loop: second time we let the error
-// surface normally instead.
+// genuinely broken chunk can't put the browser in a reload loop: within one build, the second time
+// we let the error surface normally instead.
 const CHUNK_RE = /Loading chunk|ChunkLoadError|Failed to load chunk|error loading dynamically imported module/i
-const RELOAD_FLAG = 'hush-chunk-reloaded'
+
+// ONE RELOAD PER BUILD, not one per tab for the life of the tab.
+//
+// The flag used to be a bare key, set once and never cleared. That made the recovery single-use
+// forever: a tab that had already survived one deploy got NO recovery from the next one, and the
+// chunk error surfaced as a dead page and a red row in /admin instead. Two of those arrived from
+// one iPhone on 2026-08-26, from a session that sat open through several deploys in a morning —
+// the mechanism was working exactly as written, and what was written was wrong.
+//
+// Keying on the build restores the loop protection it was actually there for — a genuinely broken
+// chunk in THIS build still reloads at most once, then surfaces — while letting each new build
+// earn its own attempt, which is the only case where a reload was ever going to help. Bounded by
+// the number of deploys a tab lives through, so it can never spin.
+const BUILD = process.env.NEXT_PUBLIC_BUILD_ID ?? 'unknown'
+const RELOAD_FLAG = `hush-chunk-reloaded:${BUILD}`
 
 export function looksLikeStaleDeploy(message: string): boolean {
   return CHUNK_RE.test(message)
 }
 
-// Reload at most once per tab. Shared by both recovery paths (a thrown chunk error, and the
+// Reload at most once PER BUILD. Shared by both recovery paths (a thrown chunk error, and the
 // watchdog below) so between them they can never bounce a browser in a loop.
 export function reloadOnceForStaleDeploy(): boolean {
   try {
     if (sessionStorage.getItem(RELOAD_FLAG)) return false
+    // Drop the previous build's flag as we go. Without this a tab that lives through many deploys
+    // slowly fills its own sessionStorage with dead keys — harmless individually, but it is our
+    // rubbish and there is no other moment that would ever clear it.
+    for (let i = sessionStorage.length - 1; i >= 0; i--) {
+      const key = sessionStorage.key(i)
+      if (key && key.startsWith('hush-chunk-reloaded:') && key !== RELOAD_FLAG) sessionStorage.removeItem(key)
+    }
     sessionStorage.setItem(RELOAD_FLAG, '1')
   } catch { return false }
   window.location.reload()
   return true
 }
 
-// Is the one-shot reload still available in this tab? Asked BEFORE reporting, to decide whether a
+// Is this build's one-shot reload still available? Asked BEFORE reporting, to decide whether a
 // chunk failure is an incident or a deploy doing what deploys do. Deliberately only reads the flag
 // — consuming it here would spend the recovery on a log line.
 function staleReloadStillAvailable(): boolean {

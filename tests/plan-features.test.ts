@@ -126,6 +126,32 @@ describe('plan features describe what is actually gated', () => {
   })
 })
 
+describe('the pricing FAQ has a question and an answer for every number it counts', () => {
+  // src/app/pricing/page.tsx counts the q keys and then indexes BOTH q and a by that count — once
+  // for the visible list, once for the FAQPage structured data. A missing or out-of-order answer
+  // would put `undefined` into the JSON-LD that search engines read, silently. The two used to be
+  // separate hand-typed lists and drifted; deriving them from one source moved the risk here.
+  // A LITERAL regex, matching both prefixes at once. Built from a template string it would have
+  // been `\d` inside a template literal, which collapses to a plain "d" and matches nothing — the
+  // exact trap documented further down this file, and the first draft of this test walked straight
+  // into it. The `toBeGreaterThan(0)` below is what caught it, which is why that line is there.
+  const KEY = /^pricing\.faq\.(q|a)(\d+)$/
+  const num = (prefix: 'q' | 'a') =>
+    Object.keys(en)
+      .map((k) => KEY.exec(k))
+      .filter((m): m is RegExpExecArray => m !== null && m[1] === prefix)
+      .map((m) => Number(m[2]))
+      .sort((a, b) => a - b)
+
+  it('numbers questions and answers 1..n with no gaps', () => {
+    const qs = num('q')
+    const as = num('a')
+    expect(qs.length, 'no pricing.faq.q keys found').toBeGreaterThan(0)
+    expect(as, 'every question needs an answer with the same number').toEqual(qs)
+    qs.forEach((n, i) => expect(n, `gap before pricing.faq.q${n}`).toBe(i + 1))
+  })
+})
+
 // ─────────────────────────────────────────────────────────────────────────────────────────────────
 // The lists above are only honest while they track the gates the SERVER enforces, and the gates
 // move. The live photo wall was ungated when planFeatures was written, so it was listed as a free
