@@ -376,7 +376,12 @@ export default function AlbumPageClient({ initialAlbum = null, initialPhotos, in
     const knownTotal = totalRef.current
     const full = async () => {
       const r = await fetchPhotos(albumId)
-      if (stillActive()) { applyWindowRefresh(r); lastFullFetchAt.current = Date.now() }
+      if (!stillActive()) return
+      applyWindowRefresh(r)
+      // Credited ONLY on a fetch that actually returned something. fetchPhotos yields an empty
+      // result on any non-ok response, and recording that as "this viewer has the whole truth"
+      // would suppress the next reconcile on the strength of a request that failed.
+      if (r.photos.length > 0 || r.total === 0) lastFullFetchAt.current = Date.now()
     }
 
     // Reconcile on a clock. A delta cannot see a caption edit, a display-filter change or a face
@@ -410,24 +415,49 @@ export default function AlbumPageClient({ initialAlbum = null, initialPhotos, in
     // awaits above. A delete arriving mid-flight is applied by its own full refetch; writing a
     // pre-await array back over that would reinstate the deleted photo with nothing left to
     // correct it. Every other setPhotos in this file is written this way for the same reason.
-    let mergedLength = 0
+    //
+    // NOTHING IS READ BACK OUT OF THE UPDATER. The first version assigned the merged length to an
+    // outer variable from inside here and compared it below, which does not work: React computes an
+    // updater eagerly only when the fiber has no pending lanes, so on a BUSY page — the only page
+    // this optimisation was written for — the variable was still 0 when it was read, the check
+    // always failed, and every delta became a delta request PLUS a full request. Two round trips
+    // where the old code made one. It would have passed every test and evaporated at a wedding.
+    // It also breaks React's purity contract: an interrupted render can run an updater that never
+    // commits. The invariant is checked in an effect on settled state instead — see below.
     setPhotos(prev => {
       const have = new Set(prev.map((p: Photo) => p.id))
       // `since` uses >= so a shared millisecond cannot drop a photo, which means the newest row
       // already held usually comes back. Dedup by id, here.
       const added = incoming.filter(p => !have.has(p.id))
-      const next = added.length > 0 ? [...prev, ...added] : prev
-      mergedLength = next.length
-      return next
+      return added.length > 0 ? [...prev, ...added] : prev
     })
     setTotal(total)
-
-    // The disagreement check, which is now a genuine invariant rather than a hopeful one: the
-    // viewer holds the whole album, so its length must equal the server's count. Anything else
-    // means something was missed — a lost ping, or a row committed behind our watermark — and the
-    // only honest answer is to fetch the lot.
-    if (mergedLength !== total) return full()
   }, [fetchPhotos, applyWindowRefresh, isRecentlyDeleted])
+
+  // THE INVARIANT, checked on state that has actually committed.
+  //
+  // A viewer holding a whole in-window album must have exactly `total` photos. Anything else means
+  // something was missed — a lost broadcast, or a row that committed behind the delta's watermark.
+  // Reading `photos` and `total` here rather than computing them inside a state updater is what
+  // makes this sound under concurrent rendering, and it covers EVERY writer of the list rather than
+  // just the delta path.
+  //
+  // Guarded on albumId so it cannot fire against the previous album mid-navigation, and it never
+  // runs while a fetch is already in flight for this reason.
+  const reconcilingRef = useRef(false)
+  useEffect(() => {
+    const albumId = album?.id
+    if (!albumId || loading) return
+    if (total <= 0 || total > ALBUM_FIRST_WINDOW) return
+    if (photos.length === total) return
+    if (reconcilingRef.current) return
+    reconcilingRef.current = true
+    let alive = true
+    void fetchPhotos(albumId)
+      .then(r => { if (alive) applyWindowRefresh(r) })
+      .finally(() => { reconcilingRef.current = false })
+    return () => { alive = false }
+  }, [album?.id, photos.length, total, loading, fetchPhotos, applyWindowRefresh])
 
   // ─── fetchAlbum ─────────────────────────────────────────────────────────────
 
