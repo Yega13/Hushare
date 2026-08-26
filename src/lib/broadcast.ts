@@ -48,24 +48,9 @@ export function queueAlbumSettingsBroadcast(albumId: string, payload: Record<str
   queue(postBroadcast(`album-settings-${albumId}`, 'album_settings', payload))
 }
 
-// Ping every viewer that this album's photos changed.
-//
-// `kind` exists so the client can avoid re-downloading the whole album for the common case.
-//
-//   'added'   — new uploads, and ONLY new uploads. Nothing existing moved or disappeared, so a
-//               viewer can ask for just the rows newer than the ones it holds.
-//   'changed' — a delete, a hide, or a reorder. These rewrite or remove rows the viewer already
-//               has, and no "what is new" query can express that, so the viewer refetches.
-//
-// The split is worth having because the two are nothing alike in frequency: uploads are the bursty
-// event (300 guests at a wedding), while deletes and reorders are one owner tapping occasionally.
-//
-// DEFAULTS TO THE SAFE ANSWER IN BOTH DIRECTIONS, which matters because a deploy leaves old clients
-// talking to a new server and vice versa. An old client ignores the payload and refetches, as it
-// always did. A new client that receives no `kind` treats it as 'changed' and refetches. Nobody
-// ends up doing the cheap thing when the expensive thing was required.
-export function queueAlbumChangedBroadcast(albumId: string, kind: 'added' | 'changed' = 'changed'): void {
-  queue(postBroadcast(`album:${albumId}`, 'changed', { kind }))
+// Ping every viewer that this album's photos changed (new uploads). Clients debounce-refetch.
+export function queueAlbumChangedBroadcast(albumId: string): void {
+  queue(postBroadcast(`album:${albumId}`, 'changed', {}))
 }
 
 // Run any best-effort async work past the response (e.g. notification emails) with the same

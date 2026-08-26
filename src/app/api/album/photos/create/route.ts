@@ -574,10 +574,7 @@ export async function POST(req: Request) {
 
   // Live-update ping to everyone viewing this album (Broadcast — scales where postgres_changes
   // dropped events under burst). waitUntil keeps it alive past the response so it isn't cancelled.
-  // 'added': uploads only ever APPEND. Nothing a viewer already holds moved or disappeared, so
-  // they can fetch just what is newer instead of the whole album. This is the one caller that
-  // can say that — every other broadcast site rewrites or removes existing rows.
-  if (inserted > 0) queueAlbumChangedBroadcast(albumId, 'added')
+  if (inserted > 0) queueAlbumChangedBroadcast(albumId)
 
   // Race albums: read bib numbers off the new photos so guests can search by number. Runs AFTER
   // the response (waitUntil) — OCR is ~1s/photo and nothing is waiting on it, so it must never

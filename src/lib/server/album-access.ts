@@ -346,7 +346,7 @@ export const ALBUM_PAGE_SIZE = 2000
 export async function fetchAuthorizedPhotos(
   albumId: string,
   cookieStore: CookieStore,
-  opts: { recentLimit?: number; offset?: number; limit?: number; since?: string } = {},
+  opts: { recentLimit?: number; offset?: number; limit?: number } = {},
 ): Promise<PhotosResult> {
   if (!UUID_RE.test(albumId)) return { kind: 'invalid' }
 
@@ -386,17 +386,6 @@ export async function fetchAuthorizedPhotos(
 
   let query = admin.from('photos').select(PHOTO_SELECT_COLS).eq('album_id', albumId)
   if (!isOwner) query = query.eq('hidden', false)
-  // DELTA: only rows at least as new as what the caller already holds.
-  //
-  // Applied BEFORE the ordering below, so a delta comes back in the album's own order and can be
-  // appended without re-sorting. New uploads carry a null sort_order and sort last (nullsFirst is
-  // false), so "append what is newer" produces exactly the order a full fetch would have.
-  //
-  // `gte`, not `gt`, on purpose: two photos saved in the same batch can share a created_at to the
-  // millisecond, and `gt` would silently skip one of them forever. The overlap re-sends a row the
-  // caller already has, which costs one row and is deduplicated by id on arrival — the right way
-  // round for a trade between a wasted row and a lost photo.
-  if (opts.since) query = query.gte('created_at', opts.since)
   // recentLimit (the live wall): fetch only the newest N — the wall shows a bounded window, so
   // pulling the whole album on every refetch is pure waste on the always-on display device.
   query = recent
@@ -417,12 +406,7 @@ export async function fetchAuthorizedPhotos(
   // (the common small-album case). Only a full page (maybe more) or the wall needs a HEAD count.
   const got = photos?.length ?? 0
   let total: number
-  // A DELTA MUST NEVER TAKE THIS SHORTCUT. The optimisation reads "fewer rows than a full page
-  // means we reached the end", which is only true when the query saw the whole album. Under
-  // `since` it sees a handful of new photos, so the shortcut would report a 2,000-photo album as
-  // having 3 — and `total` is what the client uses to decide whether it is missing anything, so a
-  // wrong total would turn the self-heal check into the thing that breaks the album.
-  if (!recent && !opts.since && got < limit) {
+  if (!recent && got < limit) {
     total = offset + got
   } else {
     let countQuery = admin.from('photos').select('id', { count: 'exact', head: true }).eq('album_id', albumId)
