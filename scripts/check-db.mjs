@@ -74,6 +74,32 @@ const anonGrants = (await client.query(
    where table_schema='public' and grantee='anon' and privilege_type='SELECT'`
 )).rows.map((r) => r.table_name)
 
+// FUNCTIONS, which are the ones that keep getting missed — twice now, one at a time.
+//
+// Postgres grants EXECUTE on every new function to PUBLIC, so a SECURITY DEFINER function is
+// world-callable through PostgREST the moment it is created unless somebody remembers to revoke.
+// batch_set_sort_order sat like that: SECURITY DEFINER, an UPDATE, reachable with the publishable
+// key that ships in every page. Anyone could rewrite the photo order of any album.
+//
+// Read from the raw ACL, NOT has_function_privilege(): that returns true for anon whether the
+// grant is direct or inherited from PUBLIC, so it cannot tell "granted" from "left at the default",
+// and a revoke aimed at anon alone looks like it worked while changing nothing. A default-granted
+// function shows an entry with an EMPTY grantee -- `=X/owner` -- which is how PUBLIC is spelled.
+const publicExecutable = (await client.query(
+  `select p.proname, p.prosecdef
+     from pg_proc p
+    where p.pronamespace = 'public'::regnamespace
+      and p.prokind = 'f'
+      and (
+        p.proacl is null
+        or exists (
+          select 1 from aclexplode(p.proacl) a
+          where a.privilege_type = 'EXECUTE' and (a.grantee = 0 or a.grantee = 'anon'::regrole)
+        )
+      )
+    order by p.proname`
+)).rows
+
 await client.end()
 
 const missing = []
@@ -90,6 +116,19 @@ const exposed = MUST_DENY_ANON.filter((t) => anonGrants.includes(t))
 if (exposed.length) {
   console.error('[check-db] SECURITY DRIFT - these tables are readable with the PUBLIC anon key:')
   for (const t of exposed) console.error(`  !! ${t} - revoke select on ${t} from anon`)
+  process.exit(1)
+}
+
+// No allowlist on purpose. Nothing in this product needs a function callable straight from the
+// browser -- every RPC goes through the service-role client after a server-side check -- so the
+// correct number is zero, and "zero" is a rule that cannot rot the way a list of exceptions does.
+if (publicExecutable.length) {
+  console.error('[check-db] SECURITY DRIFT - these functions are callable with the PUBLIC anon key:')
+  for (const f of publicExecutable) {
+    console.error(`  !! ${f.proname}()${f.prosecdef ? ' [SECURITY DEFINER - bypasses RLS]' : ''}`)
+  }
+  console.error('  Fix: revoke execute on function public.<name>(<args>) from public;')
+  console.error('  (from PUBLIC, not from anon - see supabase/migrations/20260826_revoke_function_execute_public.sql)')
   process.exit(1)
 }
 
