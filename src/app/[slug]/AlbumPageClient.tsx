@@ -263,12 +263,25 @@ export default function AlbumPageClient({ initialAlbum = null, initialPhotos, in
   // (admin client, server-side access check) rather than the anon client. The anon client can only
   // read photos of OPEN albums (RLS), so gated albums — and the owner's own view of them — came
   // back empty. The route returns photos when the caller is owner, an unlocked guest, or open.
-  const fetchPage = useCallback(async (albumId: string, offset: number, limit: number): Promise<{ photos: Photo[]; total: number }> => {
+  // NULL MEANS "ASK AGAIN LATER", NOT "THE ALBUM IS EMPTY".
+  //
+  // This used to return `{ photos: [], total: 0 }` on any failure, and every caller treated that as
+  // a real answer: applyWindowRefresh saw 0 <= ALBUM_FIRST_WINDOW and did setPhotos([]), so one bad
+  // response BLANKED the guest's album until the next ping.
+  //
+  // That is not hypothetical at an event. This route allows 600 requests a minute per
+  // cf-connecting-ip, and 300 guests on venue wifi share one — so the moment the limit is reached
+  // the punishment is every screen in the room going empty at once, which is the worst possible
+  // moment for it and looks exactly like the product losing the photos.
+  //
+  // Failing to refresh is invisible. Blanking is a catastrophe. So a failure now returns null and
+  // callers keep what they already have.
+  const fetchPage = useCallback(async (albumId: string, offset: number, limit: number): Promise<{ photos: Photo[]; total: number } | null> => {
     try {
       const res = await fetch(`/api/album/photos?albumId=${encodeURIComponent(albumId)}&offset=${offset}&limit=${limit}`, { cache: 'no-store' })
       if (!res.ok) {
         console.error('[AlbumPageClient] fetchPage failed', res.status)
-        return { photos: [], total: 0 }
+        return null
       }
       const json = await res.json() as { photos?: Photo[]; total?: number }
       // Drop any photo the user just deleted — guards against a stale/racing refetch reinstating it.
@@ -276,7 +289,7 @@ export default function AlbumPageClient({ initialAlbum = null, initialPhotos, in
       return { photos: list, total: typeof json.total === 'number' ? json.total : list.length }
     } catch (e) {
       console.error('[AlbumPageClient] fetchPage error', e)
-      return { photos: [], total: 0 }
+      return null
     }
   }, [isRecentlyDeleted])
 
@@ -293,6 +306,8 @@ export default function AlbumPageClient({ initialAlbum = null, initialPhotos, in
     setLoadingMore(true)
     try {
       const r = await fetchPage(albumId, photosLenRef.current, LOAD_MORE_PAGE)
+      // Same rule: a failed page must not rewrite the total to 0 and make the album look empty.
+      if (!r) return
       setTotal(r.total)
       setPhotos(prev => {
         const have = new Set(prev.map(p => p.id))
@@ -319,7 +334,9 @@ export default function AlbumPageClient({ initialAlbum = null, initialPhotos, in
 
   // Apply a first-window refetch (realtime). Small album (fits the window) → plain replace, exactly
   // the pre-pagination behaviour. Big album → merge so the already-loaded tail survives the refresh.
-  const applyWindowRefresh = useCallback((r: { photos: Photo[]; total: number }) => {
+  const applyWindowRefresh = useCallback((r: { photos: Photo[]; total: number } | null) => {
+    // A failed fetch is not an empty album — see fetchPage. Keep what is on screen.
+    if (!r) return
     setTotal(r.total)
     setPhotos(prev => (r.total <= ALBUM_FIRST_WINDOW ? r.photos : mergeWindow(prev, r.photos)))
   }, [])
@@ -442,8 +459,13 @@ export default function AlbumPageClient({ initialAlbum = null, initialPhotos, in
       ])
       if (isCancelled()) return
       setAlbum(data)
-      setPhotos(photoData.photos)
-      setTotal(photoData.total)
+      // photoData is null when the photos request failed. The ALBUM still loaded, so show it —
+      // with whatever photos are already on screen — rather than an empty grid that reads as "your
+      // photos are gone". The next broadcast, or the SUBSCRIBED handler, fills it in.
+      if (photoData) {
+        setPhotos(photoData.photos)
+        setTotal(photoData.total)
+      }
       // Remember this album on the device whenever we're on its owner link, so the owner can
       // always get back to management view (read the token fresh from the hash — it's kept there).
       if (ownerTokenFromUrlRef.current) {
@@ -902,6 +924,9 @@ export default function AlbumPageClient({ initialAlbum = null, initialPhotos, in
       // Merge instead of replace: Realtime may have delivered photos after the query was
       // issued but before it resolves — a full replace would briefly remove them
       void fetchPhotos(albumId).then(r => {
+        // Null on failure — the uploader's own tiles are already on screen, so keeping them beats
+        // replacing them with nothing.
+        if (!r) return
         setPhotos(prev => mergeWindow(prev, r.photos))
         setTotal(r.total)
       })
