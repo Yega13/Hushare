@@ -34,7 +34,22 @@ const REQUIRED_POLICIES = [
 
 // Tables that must NOT be reachable with the public anon key. These are regression guards for real
 // leaks that shipped: photos (2951 rows enumerable), active_sessions (live album slugs).
-const MUST_DENY_ANON = ['photos', 'active_sessions', 'schema_migrations']
+//
+// The list is now EVERY application table, because on 2026-08-26 an audit found thirteen of them
+// still carrying a live anon SELECT grant. Nothing was exposed — RLS was on with no permissive
+// policy, so anon reads came back empty, verified against the live REST API — but that made the
+// whole thing rest on one layer. albums carries owner_token and password_hash; subscriptions
+// carries billing identifiers. Adding a single permissive policy while building a feature would
+// have published those to anyone holding the key that ships in the browser bundle.
+//
+// Nothing in the browser reads a table directly (auth and realtime Broadcast only), so the grants
+// were pure surface area and were revoked. This keeps them revoked.
+const MUST_DENY_ANON = [
+  'photos', 'active_sessions', 'schema_migrations', 'profiles',
+  'albums', 'collections', 'collection_albums', 'subscriptions', 'statements',
+  'error_events', 'pending_stream_uploads', 'poll_votes', 'rate_limit_events',
+  'studio_credits', 'studio_credit_ledger', 'studio_generations', 'system_state',
+]
 
 const client = new pg.Client({ connectionString: connectionString('check-db'), ssl: { rejectUnauthorized: false } })
 await client.connect()
