@@ -90,8 +90,24 @@
     transition: transform 220ms cubic-bezier(0.16, 1, 0.3, 1);
   }
 
-  .hush-reveal {
-    animation: hush-fade-up 520ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  /* Driven by ScrollReveal.tsx, not by an animation timeline.
+     This was `animation-timeline: view()` with a time-based fade behind it, and the fade is what
+     most visitors got: scroll-driven animations do not exist on iOS, so on a phone every reveal on
+     the page played at load — including the ones several screens down, which had finished long
+     before anyone scrolled to them. The footer reveal was rewritten for exactly this reason.
+     The hidden state is scoped to `html.hush-reveal-armed`, a class the component adds once it is
+     running. No script, no hidden content: the page reads as if none of this were here. */
+  html.hush-reveal-armed .hush-reveal {
+    opacity: 0;
+    transform: translateY(18px);
+  }
+
+  html.hush-reveal-armed .hush-reveal.is-in {
+    opacity: 1;
+    transform: none;
+    transition:
+      opacity 620ms cubic-bezier(0.16, 1, 0.3, 1),
+      transform 620ms cubic-bezier(0.16, 1, 0.3, 1);
   }
 
   .hush-faq-extra {
@@ -105,14 +121,6 @@
   .hush-hover-lift:hover {
     transform: translateY(-6px);
     box-shadow: 0 12px 32px rgba(99, 8, 38, 0.15);
-  }
-}
-
-@supports (animation-timeline: view()) {
-  .hush-reveal {
-    animation: hush-fade-up both;
-    animation-timeline: view();
-    animation-range: entry 0% cover 26%;
   }
 }
 

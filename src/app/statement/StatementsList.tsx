@@ -63,7 +63,7 @@ export default function StatementsList({ statements }: { statements: StatementCa
             <Link
               key={s.slug}
               href={`/statement/${s.slug}`}
-              className="hush-statement-card"
+              className="hush-statement-card hush-reveal"
               style={{
                 display: 'block', textDecoration: 'none', background: '#FFFFFF',
                 border: '1px solid #E4DDD2', borderRadius: 16, padding: '1.5rem 1.75rem',

@@ -3,6 +3,7 @@ import { Geist, Geist_Mono, Playfair_Display, Playwrite_GB_J, Noto_Serif_Armenia
 import AppToastViewport from "@/components/AppToast";
 import PresenceBeacon from "@/components/PresenceBeacon";
 import SiteFooter from "@/components/SiteFooter";
+import ScrollReveal from "@/components/ScrollReveal";
 import { getServerLocale } from "@/i18n/server";
 import { getDictionary } from "@/i18n/get-dictionary";
 import { LocaleProvider } from "@/i18n/LocaleProvider";
@@ -402,6 +403,8 @@ export default async function RootLayout({
         {/* Renders nothing; installs the window-level error + unhandled-rejection reporters so
             crashes reach /admin instead of dying silently in the user's browser. */}
         <ErrorReporter />
+        {/* Reveals .hush-reveal sections as they scroll into view — see ScrollReveal.tsx. */}
+        <ScrollReveal />
         <LocaleProvider locale={locale} dict={dict}>
           {children}
           <SiteFooter />
