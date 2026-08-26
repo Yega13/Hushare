@@ -4,13 +4,57 @@ type RateLimitResult =
   | { ok: true }
   | { ok: false; retryAfterSeconds: number }
 
+// ONE ROUND TRIP, via a counter row that is incremented and judged in a single statement.
+//
+// The old path cost two HTTPS round trips to Supabase per check (insert a row, then count the
+// rows) and a third on rejection (delete the row it just inserted) — and there are FOUR checks on
+// the upload path, so an event spent tens of thousands of round trips on rate limiting alone. The
+// database work was never the problem: the count is an Index Only Scan at 1.8ms, measured. The cost
+// was the network, and no index or query tuning reaches that.
+//
+// public.rate_limit_hit() increments the counter and returns the verdict in one statement, so the
+// check-then-act race the insert-first pattern was built to avoid cannot happen — proved against
+// the live database with 1,000 genuinely parallel calls against a limit of 900: exactly 900
+// admitted, every call counted, zero errors.
+//
+// It also stops the table growing: one row per key per window instead of one per request.
+// rate_limit_events peaked at 62,846 rows.
+//
+// THE TRADE, and it is a real one. A counter is a FIXED window (hits in this N-second block) where
+// the old one was SLIDING (events in the last N seconds), so up to 2x the limit can pass across a
+// boundary. For an abuse backstop that is the normal trade. It is NOT acceptable where max is tiny
+// and the limiter is really a DEBOUNCE — photo_notify allows 1 per 600s to send the owner one "new
+// photos" email, and a fixed window could send two. Those callers pass `sliding: true` and keep the
+// old implementation, which is why it is still here rather than deleted.
 export async function checkRateLimit(
   key: string,
   windowSeconds: number,
   maxRequests: number,
-  options?: { failOpen?: boolean },
+  options?: { failOpen?: boolean; sliding?: boolean },
 ): Promise<RateLimitResult> {
   const failOpen = options?.failOpen ?? false
+  if (!options?.sliding) {
+    try {
+      const admin = createAdminClient()
+      const { data, error } = await admin
+        .rpc('rate_limit_hit', { p_key: key, p_window_seconds: windowSeconds, p_max: maxRequests })
+        .single<{ allowed: boolean; retry_after: number }>()
+      if (error) {
+        // Fall through to the sliding implementation rather than failing the request: a limiter
+        // that breaks the product it protects is worse than one that costs an extra round trip.
+        console.warn('[rate-limit] rate_limit_hit failed, falling back:', error.message)
+      } else if (data) {
+        return data.allowed
+          ? { ok: true }
+          : { ok: false, retryAfterSeconds: Math.max(1, data.retry_after) }
+      }
+    } catch (err) {
+      console.warn('[rate-limit] rate_limit_hit threw, falling back:', err instanceof Error ? err.message : String(err))
+    }
+  }
+
+  // ── Sliding-window implementation. Still the path for debounce-shaped callers, and the fallback
+  //    if the counter RPC is unavailable (e.g. mid-migration, before the function exists).
   try {
     const admin = createAdminClient()
     const since = new Date(Date.now() - windowSeconds * 1000).toISOString()
