@@ -63,6 +63,10 @@ export type Album = {
   photo_style: string | null;
   welcome_message: string | null;
   hide_branding: boolean;
+  // Collaboration albums: the Hushare mark cannot be hidden, whatever the plan. Set by an admin
+  // as part of a promotion deal (free Max in exchange for the album carrying our name), never by
+  // the owner. Enforced in api/album/branding AND at read time in resolveAlbum.
+  branding_locked: boolean;
   reveal_at: string | null;
   media_radius: number;
   video_autoplay: boolean;

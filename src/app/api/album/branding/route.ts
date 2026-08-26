@@ -29,7 +29,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: 'Invalid request' }, { status: 400, headers: NO_STORE })
   }
 
-  const access = await verifyOwnerViaCookieWithRateLimit(req, slug.trim())
+  const access = await verifyOwnerViaCookieWithRateLimit<{ id: string; owner_token: string; user_id: string | null; branding_locked: boolean }>(req, slug.trim(), 'branding_locked')
   if (!access.ok) return NextResponse.json({ error: access.error }, { status: access.status, headers: NO_STORE })
 
   // The tier checked is the ALBUM OWNER'S, not the caller's.
@@ -44,6 +44,22 @@ export async function POST(req: Request) {
   const ownerId = access.album.user_id
   if (!ownerId) {
     return NextResponse.json({ error: 'Sign in to change branding' }, { status: 401, headers: NO_STORE })
+  }
+
+  // COLLABORATION ALBUMS CANNOT HIDE THE MARK, whatever plan they are on.
+  //
+  // These albums are given Max for free precisely so that everyone who opens them sees Hushare, so
+  // the mark is the consideration in the deal rather than a default someone is stuck with. One
+  // toggle would otherwise remove it, by accident or otherwise, and nobody would find out until
+  // after the event. Checked before the plan, because the answer does not depend on the plan.
+  //
+  // Refused with a plain reason rather than a silent no-op: a switch that flips back on its own is
+  // a bug to whoever is looking at it, and this owner is a partner we want to keep.
+  if (hide && access.album.branding_locked) {
+    return NextResponse.json(
+      { error: 'The Hushare mark stays on this album — it is part of the collaboration for this event. Ask us if you need that changed.' },
+      { status: 403, headers: NO_STORE },
+    )
   }
 
   // Turning it back ON is always allowed, whatever the plan. Otherwise a lapsed subscription would

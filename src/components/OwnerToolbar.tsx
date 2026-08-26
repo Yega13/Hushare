@@ -1240,15 +1240,29 @@ export default function OwnerToolbar({ album, photos, ownerToken, userTier, medi
 
                     {/* Pro+. The server is the authority — this only decides what the owner is
                         shown, and a free owner toggling it gets the plan message back rather than a
-                        silent failure. */}
-                    <label className="flex items-center justify-between gap-4 rounded-xl px-3 py-3" style={{ background: '#FDFAF5', border: '1px solid #DDD5C5', cursor: 'pointer' }}>
+                        silent failure.
+
+                        A COLLABORATION ALBUM shows it fixed instead of letting the owner flip a
+                        switch that snaps back. The refusal would be handled correctly either way
+                        (the catch below reverts and toasts), but a control that undoes itself reads
+                        as a bug — and this owner is a partner, not someone to trip up. Same
+                        not-allowed/dimmed treatment the locked Collections row already uses. */}
+                    <label
+                      className="flex items-center justify-between gap-4 rounded-xl px-3 py-3"
+                      style={{ background: '#FDFAF5', border: '1px solid #DDD5C5', cursor: album.branding_locked ? 'not-allowed' : 'pointer', opacity: album.branding_locked ? 0.6 : 1 }}
+                    >
                       <span>
                         <span className="block text-sm font-semibold" style={{ color: '#630826' }}>Remove Hushare branding</span>
-                        <span className="block text-xs" style={{ color: '#7C5C3E' }}>Hides our logo from this album&apos;s header. Pro and Max.</span>
+                        <span className="block text-xs" style={{ color: '#7C5C3E' }}>
+                          {album.branding_locked
+                            ? 'Kept on for this album as part of our collaboration.'
+                            : 'Hides our logo from this album’s header. Pro and Max.'}
+                        </span>
                       </span>
                       <input
                         type="checkbox"
                         checked={hideBranding}
+                        disabled={album.branding_locked}
                         onChange={async (e) => {
                           const next = e.target.checked
                           setHideBranding(next)

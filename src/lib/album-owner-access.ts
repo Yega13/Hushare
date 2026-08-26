@@ -17,7 +17,7 @@ const ALLOWED_EXTRA_COLUMNS = new Set([
   'media_radius', 'media_filter', 'media_hover', 'mobile_grid_columns', 'photo_layout',
   'slideshow_interval_ms', 'slideshow_animation', 'slideshow_motion', 'video_autoplay',
   'guest_uploads_enabled', 'allow_guest_downloads', 'face_finder_enabled', 'bib_search_enabled', 'bib_min', 'bib_max',
-  'last_activity_at', 'last_notification_at', 'created_at',
+  'last_activity_at', 'last_notification_at', 'created_at', 'branding_locked',
 ])
 
 function validateExtraColumns(extras: string): string[] {

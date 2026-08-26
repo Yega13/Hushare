@@ -199,6 +199,39 @@ export function isForeignError(message: string, file?: string): boolean {
   return WALLET_NAME_RE.test(message) && GLOBAL_PROP_RE.test(message)
 }
 
+// What was actually done to the DOM, collected at the moment it broke.
+//
+// The diagnosis above has been a THEORY since 2026-08-17 — page translation or an extension — and
+// nine occurrences later it is still a theory, because nothing recorded the one thing that would
+// decide it. Guessing again would be the third fix aimed at a cause nobody has confirmed.
+//
+// Chrome's translator is not subtle about itself: it stamps `translated-ltr` (or `translated-rtl`)
+// on <html> and rewrites text nodes inside <font> tags, neither of which this app ever emits. A
+// changed <html lang> against the language the document was served in says the same thing. Scripts
+// from an origin that is not ours are the extension case. All three are free to read and none of
+// them contain anything personal — no text, no URLs beyond our own origin, just counts and flags.
+//
+// The NEXT occurrence answers the question instead of adding to the pile.
+function domForensics(): Record<string, unknown> {
+  try {
+    const html = document.documentElement
+    const scripts = Array.from(document.querySelectorAll('script[src]'))
+      .map((el) => (el as HTMLScriptElement).src)
+      .filter((src) => { try { return new URL(src).origin !== window.location.origin } catch { return true } })
+    return {
+      translated: /\btranslated-(?:ltr|rtl)\b/.test(html.className) || document.querySelector('font') !== null,
+      htmlLang: html.lang || null,
+      htmlClass: html.className.slice(0, 120),
+      foreignScripts: scripts.length,
+      // Origins only — never the full URL, which can carry an extension id that identifies a person.
+      foreignOrigins: Array.from(new Set(scripts.map((src) => { try { return new URL(src).origin } catch { return 'unparseable' } }))).slice(0, 4),
+      bodyChildren: document.body.childElementCount,
+    }
+  } catch {
+    return {}
+  }
+}
+
 export function reportClientError(input: ReportInput): void {
   try {
     if (typeof window === 'undefined') return
@@ -264,6 +297,9 @@ export function reportClientError(input: ReportInput): void {
         albumId: input.albumId ?? undefined,
         context: {
           ...(input.context ?? {}),
+          // Only for the error class it can explain — everything else would carry the noise for
+          // nothing. See domForensics.
+          ...(looksLikeDomCorruption(message) ? domForensics() : {}),
           path: window.location.pathname,
           // Which bundle this browser is actually running (see next.config.ts).
           build: process.env.NEXT_PUBLIC_BUILD_ID ?? 'unknown',

@@ -29,6 +29,36 @@ const OFF_SWITCH_GUARDS: Record<string, RegExp> = {
   'api/album/media-settings/route.ts': /if \(updates\.require_approval === true\) \{[\s\S]{0,200}?refuseBelowTier/,
 }
 
+// A COLLABORATION ALBUM KEEPS THE HUSHARE MARK, and that has to hold in two places.
+//
+// These albums are given Max for free in exchange for carrying our name in front of everyone who
+// opens them, so the mark is the consideration in the deal. Max includes "remove Hushare branding"
+// as one toggle. Refusing the write is not enough on its own: hide_branding has already once
+// survived a cancelled subscription forever because nothing re-checked it at READ time, and a
+// value stored before a lock would do exactly the same thing.
+describe('a collaboration album cannot hide the Hushare mark', () => {
+  const read = (rel: string) => readFileSync(join(process.cwd(), 'src', ...rel.split('/')), 'utf8')
+
+  it('refuses the write while the album is locked', () => {
+    const source = read('app/api/album/branding/route.ts')
+    expect(
+      /if \(hide && access\.album\.branding_locked\)/.test(source),
+      'api/album/branding must refuse to hide the mark on a locked album',
+    ).toBe(true)
+  })
+
+  it('forces the mark back on when the album is read', () => {
+    const source = read('lib/server/album-access.ts')
+    expect(
+      // `.` already stops at a newline, so this stays on one line without needing an escape that
+      // a shell or script could eat on the way to disk — see tests/source-hygiene.test.ts.
+      /hide_branding:.*!album\.branding_locked/.test(source),
+      'resolveAlbum must AND !branding_locked into hide_branding, so a value stored before the ' +
+        'lock cannot keep taking effect',
+    ).toBe(true)
+  })
+})
+
 describe('a plan gate never blocks turning a feature off', () => {
   for (const [route, guard] of Object.entries(OFF_SWITCH_GUARDS)) {
     it(`${route} gates only the "on" direction`, () => {

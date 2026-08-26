@@ -27,7 +27,7 @@ const ALBUM_SELECT_COLS = [
   'media_radius', 'media_filter', 'media_hover', 'mobile_grid_columns', 'photo_layout',
   'slideshow_interval_ms', 'slideshow_animation', 'slideshow_motion', 'video_autoplay',
   'cover_photo_id', 'header_image', 'header_focal', 'header_zoom', 'header_touched', 'header_video_mode', 'reveal_at', 'guest_uploads_enabled', 'allow_guest_downloads',
-  'require_approval', 'face_finder_enabled', 'bib_search_enabled', 'bib_min', 'bib_max',
+  'require_approval', 'face_finder_enabled', 'bib_search_enabled', 'bib_min', 'bib_max', 'branding_locked',
   'accent_color', 'logo_url', 'sponsor_logos', 'template', 'title_font', 'photo_style', 'welcome_message', 'hide_branding',
   'last_activity_at', 'created_at',
   'password_hash', 'retired_at',
@@ -53,6 +53,7 @@ type AlbumRow = {
   bib_min: number | null; bib_max: number | null
   accent_color: string | null; logo_url: string | null; sponsor_logos: SponsorLogo[]; template: string | null
   title_font: string | null; photo_style: string | null; welcome_message: string | null; hide_branding: boolean
+  branding_locked: boolean
   last_activity_at: string; created_at: string
   password_hash: string | null; retired_at: string | null
 }
@@ -219,7 +220,12 @@ export async function resolveAlbum(
       // was also a promise the code did not keep. Face Finder and Collections already re-check the
       // owner's tier on every request; this now does the same, and it is free — ownerTier is
       // already in hand for the upload caps.
-      hide_branding: album.hide_branding && ownerTier !== 'free',
+      // Two ways to lose the mark, and both are refused here rather than only where they are set.
+      // The plan check is the lapsed-subscription case; branding_locked is a collaboration album,
+      // which was given Max for free in exchange for carrying our name. A stored `true` from before
+      // either rule applied must not go on taking effect — that is exactly how hide_branding
+      // survived a cancelled subscription forever the first time.
+      hide_branding: album.hide_branding && ownerTier !== 'free' && !album.branding_locked,
       // SAME RE-CHECK, for the two flags that put a control in front of GUESTS.
       //
       // Both of these open a search that api/album/face-search and api/album/bib-search refuse
