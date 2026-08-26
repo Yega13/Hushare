@@ -259,9 +259,9 @@ export default async function CollectionPage({ params }: Props) {
           </div>
           <div className="relative z-10 mt-8 grid grid-cols-3 gap-3 max-w-xl">
             {([
-              [dict['c.statAlbums'], orderedAlbums.length],
+              [orderedAlbums.length === 1 ? dict['c.statAlbum'] : dict['c.statAlbums'], orderedAlbums.length],
               [dict['c.statMedia'], mediaTotal],
-              [dict['c.statVideos'], videoTotal],
+              [videoTotal === 1 ? dict['c.statVideo'] : dict['c.statVideos'], videoTotal],
             ] as const).map(([label, value]) => (
               <div
                 key={label}

@@ -237,7 +237,24 @@ export default function WelcomeModal({
         >
           {t('welcome.unlocked')}
         </p>
-        <ul style={{ textAlign: 'left', marginBottom: '22px', display: 'grid', gap: '7px' }}>
+        {/* THE LIST IS CAPPED because it is not fixed-length. It comes from planFeatures(), which
+            grows every time a feature is gated — Max went from six lines to nine in one change. The
+            card has no max-height of its own (the seal straddles its top edge, so clipping the card
+            would cut the seal off), and it sits in a pointer-transparent wrapper that cannot scroll,
+            so a card taller than the viewport would have been clipped at BOTH ends with no way to
+            reach the button. Capping the list keeps the rest of the card a known height. */}
+        <ul
+          style={{
+            textAlign: 'left',
+            marginBottom: '22px',
+            display: 'grid',
+            gap: '7px',
+            maxHeight: 'min(42vh, 300px)',
+            overflowY: 'auto',
+            // Without this, reaching the end of the list scrolls the dashboard behind the scrim.
+            overscrollBehavior: 'contain',
+          }}
+        >
           {features.map((f) => (
             <li key={f} style={{ display: 'flex', gap: '9px', alignItems: 'flex-start', fontSize: '13.5px', color: '#3F3228' }}>
               <span aria-hidden="true" style={{ color: isMax ? '#A87F2E' : WINE, fontWeight: 700, lineHeight: 1.5 }}>&#10003;</span>

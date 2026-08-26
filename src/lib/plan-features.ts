@@ -18,13 +18,24 @@ import {
 // the same constants the API routes check against, so a limit cannot be changed in one place and
 // left stale on the page that sells it.
 //
-// SCOPE IS THE HONEST PART. Only features that are genuinely gated appear under a paid plan. As of
-// today the server gates exactly these:
+// SCOPE IS THE HONEST PART, AND IT MOVES. Only features the server genuinely gates may appear under
+// a paid plan — and the gates are not frozen, so this list is only correct while it tracks them.
+// Grep for `refuseBelowTier` and `albumHasTier`; as of today they are:
 //   pro and above  — custom album URL (api/album/custom-url), removing Hushare branding
-//                    (api/album/branding), and the higher album/media/upload limits
-//   studio only    — Face Finder (api/album/face-index, face-search) and Collections (app/c/[slug])
-// Password protection, custom backgrounds, the live photo wall and QR sharing are NOT gated, and
-// listing them as paid perks would be selling something already free.
+//                    (api/album/branding), a custom logo (api/album/logo), photo moderation
+//                    (api/album/media-settings), the countdown reveal (api/album/reveal), and the
+//                    higher album/media/upload limits
+//   studio only    — Face Finder (api/album/face-index, face-search), Collections (app/c/[slug]),
+//                    the live photo wall (app/wall/[slug]), sponsor logos (api/album/sponsors) and
+//                    bib-number search (api/album/bib-search)
+// Password protection, custom backgrounds and QR sharing are NOT gated, and listing them as paid
+// perks would be selling something already free.
+//
+// THE LIVE WALL MOVED AND THIS FILE DID NOT. It used to be ungated, so it was listed as a free
+// feature; once app/wall/[slug] started requiring Max, the free plan went on promising a page the
+// product refuses to open — on the account page, which is where someone decides whether to pay. The
+// test that was supposed to prevent exactly this asserted the OLD gate, so it passed. Whenever a
+// gate is added or removed, this list and tests/plan-features.test.ts have to move with it.
 
 export type PlanFeature = { key: string; vars?: Record<string, string | number> }
 
@@ -48,15 +59,25 @@ export function planFeatures(tier: Tier, isAdmin = false): PlanFeature[] {
       ...limits('studio'),
       { key: 'plan.faceFinder' },
       { key: 'plan.collections' },
+      { key: 'plan.photoWall' },
+      { key: 'plan.sponsors' },
+      { key: 'plan.bibSearch' },
       { key: 'plan.noBranding' },
     ]
   }
 
   if (tier === 'pro') {
-    return [...limits('pro'), { key: 'plan.customUrl' }, { key: 'plan.noBranding' }]
+    return [
+      ...limits('pro'),
+      { key: 'plan.customUrl' },
+      { key: 'plan.noBranding' },
+      { key: 'plan.logo' },
+      { key: 'plan.moderation' },
+      { key: 'plan.reveal' },
+    ]
   }
 
   // Free. Named for what it genuinely includes rather than what it lacks — these are real, and
   // people are choosing whether to trust the product at all before they consider paying for it.
-  return [...limits('free'), { key: 'plan.password' }, { key: 'plan.photoWall' }, { key: 'plan.qr' }]
+  return [...limits('free'), { key: 'plan.password' }, { key: 'plan.qr' }]
 }

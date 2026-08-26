@@ -40,7 +40,12 @@ function fmtDate(iso: string): string {
 export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }): Promise<Metadata> {
   const { slug } = await params
   const s = await fetchStatement(slug)
-  if (!s) return { title: 'Announcement' }
+  // The 404 branch MUST say noindex. A statement that does not exist renders the not-found page,
+  // and Next.js documents that a streamed response keeps its 200 status — so the only thing telling
+  // a crawler this page is nothing is the meta tag. Without an override here the ROOT LAYOUT's
+  // `index, follow` was inherited onto every dead statement URL, contradicting the noindex Next
+  // injects. /[slug] and /c/[slug] already do this; this route was the one that did not.
+  if (!s) return { title: 'Announcement', robots: { index: false, follow: false } }
   const desc = s.summary ?? 'An official statement from Hushare.'
   return {
     title: s.title,
@@ -109,6 +114,17 @@ export default async function StatementPage({ params }: { params: Promise<{ slug
 
       <style>{`
         .hush-statement-body { color: #2A211C; font-size: 0.95rem; line-height: 1.72; }
+        /* RUNNING TEXT IS CAPPED, VISUALS ARE NOT. The article is 1200px wide so card grids and
+           screenshots have room, but a paragraph filling that width is ~150 characters a line —
+           roughly twice a comfortable measure, and the eye loses its place returning to the left
+           edge. Only the direct text children are capped, so tables, figures and the injected card
+           grids still span the full column. Left-aligned rather than centred, so the text column
+           lines up with the blocks below it instead of drifting against them. */
+        .hush-statement-body > p,
+        .hush-statement-body > h2,
+        .hush-statement-body > h3,
+        .hush-statement-body > ul,
+        .hush-statement-body > ol { max-width: 68ch; }
         .hush-statement-body p { margin: 0 0 1rem; }
         .hush-statement-body h2 { font-family: var(--font-serif); color: #2A211C; font-size: 1.4rem; font-weight: 700; margin: 2.6rem 0 1rem; padding-bottom: .5rem; border-bottom: 2px solid #E7DDCC; }
         .hush-statement-body h3 { font-family: var(--font-serif); color: #630826; font-size: 1.12rem; font-weight: 700; margin: 1.8rem 0 .5rem; }

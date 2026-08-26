@@ -42,9 +42,17 @@ export async function POST(req: Request) {
   if (!access.userId) {
     return NextResponse.json({ error: 'Sign in to use Face Finder' }, { status: 401, headers: NO_STORE })
   }
-  const tier = await getUserTierById(access.userId)
-  if (tier !== 'studio') {
-    return NextResponse.json({ error: 'Face Finder requires a Max plan' }, { status: 403, headers: NO_STORE })
+  // ONLY TURNING IT ON IS GATED. Switching it off must always work, whatever the plan — the same
+  // rule api/album/branding and api/album/media-settings already follow. A gate that runs in both
+  // directions freezes the setting onto the album of anyone who is not on the plan any more, which
+  // costs them the ability to undo a choice rather than costing them a feature.
+  // Doubly true here: leaving it on is not a dormant setting, it is biometric indexing that keeps
+  // running. Someone must always be able to stop that.
+  if (enabled) {
+    const tier = await getUserTierById(access.userId)
+    if (tier !== 'studio') {
+      return NextResponse.json({ error: 'Face Finder requires a Max plan' }, { status: 403, headers: NO_STORE })
+    }
   }
 
   const admin = createAdminClient()

@@ -55,8 +55,14 @@ export async function POST(req: Request) {
   // Bib number search is a paid feature — checked against the ALBUM OWNER'S plan, never the
   // caller's. Owner links are shareable, so asking about whoever is holding one would let a
   // single subscriber mint this on albums belonging to strangers.
-  const refusal = await refuseBelowTier(access.album.user_id, 'studio', 'Bib number search')
-  if (refusal) return refusal
+  // ONLY TURNING IT ON IS GATED. Switching it off must always work, whatever the plan — the same
+  // rule api/album/branding and api/album/media-settings already follow. A gate that runs in both
+  // directions freezes the setting onto the album of anyone who is not on the plan any more, which
+  // costs them the ability to undo a choice rather than costing them a feature.
+  if (enabled) {
+    const refusal = await refuseBelowTier(access.album.user_id, 'studio', 'Bib number search')
+    if (refusal) return refusal
+  }
 
   const patch: { bib_search_enabled: boolean; bib_min?: number | null; bib_max?: number | null } =
     { bib_search_enabled: enabled }

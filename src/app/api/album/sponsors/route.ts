@@ -77,8 +77,24 @@ export async function POST(req: Request) {
   // Sponsor logos is a paid feature — checked against the ALBUM OWNER'S plan, never the
   // caller's. Owner links are shareable, so asking about whoever is holding one would let a
   // single subscriber mint this on albums belonging to strangers.
-  const refusal = await refuseBelowTier(access.album.user_id, 'studio', 'Sponsor logos')
-  if (refusal) return refusal
+  // ONLY TURNING IT ON IS GATED. Clearing it must always work, whatever the plan.
+  //
+  // The gate used to run before the update regardless of direction, so an owner on the free plan who
+  // had set this while it was ungated could no longer take it off — the setting was frozen onto their
+  // album for good. api/album/branding and api/album/media-settings already got this right and say
+  // why: a lapsed or absent subscription should cost someone a feature, never the ability to undo it.
+  // This endpoint replaces the whole array, so "turning it off" is not one flag — removing a single
+  // sponsor also arrives as a full save. The test is therefore whether the save ADDS anything: a list
+  // whose every entry is already on the album is a removal or a reorder, and is always allowed.
+  const current = Array.isArray(access.album.sponsor_logos)
+    ? (access.album.sponsor_logos as { id?: unknown; url?: unknown }[])
+    : []
+  const currentKeys = new Set(current.map((sponsor) => `${String(sponsor?.id)}|${String(sponsor?.url)}`))
+  const addsSomething = next.some((sponsor) => !currentKeys.has(`${sponsor.id}|${sponsor.url}`))
+  if (addsSomething) {
+    const refusal = await refuseBelowTier(access.album.user_id, 'studio', 'Sponsor logos')
+    if (refusal) return refusal
+  }
 
   // Ownership is known only now. Every entry is checked, not just the first: the route diffs the
   // old list against the new one and deletes whatever disappeared, so a single foreign URL smuggled

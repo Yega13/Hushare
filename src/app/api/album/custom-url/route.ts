@@ -52,10 +52,21 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: 'Sign in to use custom URLs' }, { status: 401, headers: NO_STORE })
   }
 
-  // Custom URL requires Pro+
-  const tier = await getUserTierById(ownerId)
-  if (tier === 'free') {
-    return NextResponse.json({ error: 'Custom URLs require a Pro or Max plan' }, { status: 403, headers: NO_STORE })
+  // Custom URL requires Pro+ — but only to SET one.
+
+  // ONLY TURNING IT ON IS GATED. Clearing it must always work, whatever the plan.
+  //
+  // The gate used to run before the update regardless of direction, so an owner on the free plan who
+  // had set this while it was ungated could no longer take it off — the setting was frozen onto their
+  // album for good. api/album/branding and api/album/media-settings already got this right and say
+  // why: a lapsed or absent subscription should cost someone a feature, never the ability to undo it.
+  // Releasing a custom URL also frees the name for someone else, so refusing it holds a public
+  // address hostage to a plan the owner may no longer be on.
+  if (newCustomSlug !== null) {
+    const tier = await getUserTierById(ownerId)
+    if (tier === 'free') {
+      return NextResponse.json({ error: 'Custom URLs require a Pro or Max plan' }, { status: 403, headers: NO_STORE })
+    }
   }
 
   const admin = createAdminClient()
