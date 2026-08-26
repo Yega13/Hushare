@@ -1143,7 +1143,7 @@ export default function OwnerToolbar({ album, photos, ownerToken, userTier, medi
                 </button>
                 {openSection === 'guests' && (
                   <div className="px-4 pb-4 space-y-3">
-                    <label className="flex items-center justify-between gap-4 rounded-xl px-3 py-3" style={{ background: '#FDFAF5', border: '1px solid #DDD5C5', cursor: 'pointer' }}>
+                    <label className="flex items-center justify-between gap-4 rounded-xl px-3 py-3" style={{ background: '#FDFAF5', border: '1px solid #DDD5C5', cursor: showLockedCustomize ? 'not-allowed' : 'pointer', opacity: showLockedCustomize ? 0.6 : 1 }}>
                       <span>
                         <span className="block text-sm font-semibold" style={{ color: '#630826' }}>
                           {t('ot.requireApproval')} <PlanBadge need="pro" tier={userTier} />
@@ -1171,7 +1171,8 @@ export default function OwnerToolbar({ album, photos, ownerToken, userTier, medi
                           }
                         }}
                         className="h-4 w-4"
-                      />
+                                              disabled={!canCustomize}
+/>
                     </label>
                   </div>
                 )}
@@ -1337,7 +1338,8 @@ export default function OwnerToolbar({ album, photos, ownerToken, userTier, medi
                           }
                         }}
                         className="h-4 w-4"
-                      />
+                                              disabled={!canUseCollections}
+/>
                     </label>
                   </div>
                 )}

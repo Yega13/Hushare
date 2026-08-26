@@ -36,10 +36,24 @@ export default function PlanBadge({
   if (tier === null) return null
   if (canUse(tier, need)) return null
 
+  // A CHIP, not loose text. As bare letters beside a label it read as part of the sentence — people
+  // saw "CUSTOM URL PRO" and could not tell whether PRO was a heading, a state, or a word that
+  // belonged to the setting. A bordered pill is unmistakably a tag on the thing next to it.
+  const studio = need === 'studio'
   return (
     <span
-      className={`text-[10px] font-semibold uppercase ${className}`}
-      style={{ color: need === 'studio' ? '#8B6F4E' : '#7C4A2D', letterSpacing: '0.06em' }}
+      className={`text-[9.5px] font-bold uppercase ${className}`}
+      style={{
+        letterSpacing: '0.09em',
+        padding: '2px 7px',
+        borderRadius: 999,
+        lineHeight: 1.5,
+        whiteSpace: 'nowrap',
+        flex: 'none',
+        color: studio ? '#7A5A22' : '#7C4A2D',
+        background: studio ? 'rgba(201, 166, 120, 0.22)' : 'rgba(124, 74, 45, 0.11)',
+        border: `1px solid ${studio ? 'rgba(201, 166, 120, 0.55)' : 'rgba(124, 74, 45, 0.28)'}`,
+      }}
     >
       {LABEL[need]}
     </span>

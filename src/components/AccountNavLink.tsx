@@ -66,14 +66,21 @@ export default function AccountNavLink() {
 
   // Signed in — every account (free included) now has a dashboard, and sign-out lives there.
   return (
-    <Link href="/account" className={`${linkClass} hush-account-nav-link`} style={linkStyle} aria-label={t('nav.account')}>
+    // With a picture, the picture IS the label — the word beside it says nothing the face does not.
+    // Without one, the word stays: an unexplained generic icon is worse than a plain link.
+    <Link
+      href="/account"
+      className={`${linkClass} hush-account-nav-link${avatarUrl ? ' hush-account-has-avatar' : ''}`}
+      style={linkStyle}
+      aria-label={t('nav.account')}
+    >
       <span className="hush-account-label-full">{t('nav.account')}</span>
       {avatarUrl ? (
         // eslint-disable-next-line @next/next/no-img-element
         <img
           src={avatarUrl}
           alt=""
-          className="hush-account-icon"
+          className="hush-account-avatar"
           style={{ borderRadius: '50%', objectFit: 'cover' }}
           aria-hidden="true"
         />

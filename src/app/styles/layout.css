@@ -1101,3 +1101,26 @@ body.hush-page-preloading .hush-word {
 .hush-account-tap:active {
   background: rgba(99, 8, 38, 0.08);
 }
+
+/* The account link when it has a picture.
+   The word "Account" beside a face says nothing the face does not, so the picture replaces it at
+   every width rather than only on narrow screens. Without a picture the word stays: an unexplained
+   generic icon is worse than a plain link, which is why this is scoped to the has-avatar case. */
+.hush-account-has-avatar .hush-account-label-full {
+  display: none;
+}
+
+.hush-account-avatar {
+  display: block;
+  width: 1.65rem;
+  height: 1.65rem;
+  flex: none;
+  /* A hairline ring so a pale photo still reads as a distinct control against the cream nav. */
+  box-shadow: 0 0 0 1px rgba(99, 8, 38, 0.18);
+}
+
+/* Inside the mobile menu the row has a label of its own, so the picture sits at text size. */
+.hush-mobile-nav .hush-account-avatar {
+  width: 1.4rem;
+  height: 1.4rem;
+}
