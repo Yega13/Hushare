@@ -12,12 +12,13 @@ export const runtime = 'nodejs'
 
 const NO_STORE = { 'Cache-Control': 'no-store' }
 
-type PhotoRow = { url: string | null; storage_path: string | null; storage_backend: string; album_id: string }
+type PhotoRow = { url: string | null; storage_path: string | null; storage_backend: string; album_id: string; hidden: boolean }
 type AlbumRow = {
   id: string
   owner_token: string
   allow_guest_downloads: boolean
   password_hash: string | null
+  reveal_at: string | null
   retired_at: string | null
 }
 
@@ -52,7 +53,7 @@ export async function GET(req: Request) {
   const admin = createAdminClient()
   const { data: photo, error: photoErr } = await admin
     .from('photos')
-    .select('url, storage_path, storage_backend, album_id')
+    .select('url, storage_path, storage_backend, album_id, hidden')
     .eq('id', photoId)
     .maybeSingle<PhotoRow>()
 
@@ -66,7 +67,7 @@ export async function GET(req: Request) {
 
   const { data: album, error: albumErr } = await admin
     .from('albums')
-    .select('id, owner_token, allow_guest_downloads, password_hash, retired_at')
+    .select('id, owner_token, allow_guest_downloads, password_hash, reveal_at, retired_at')
     .eq('id', photo.album_id)
     .maybeSingle<AlbumRow>()
 
@@ -79,6 +80,23 @@ export async function GET(req: Request) {
   const isOwner = ownerCookie.length > 0 && timingSafeEqual(ownerCookie, album.owner_token)
 
   if (!isOwner) {
+    // THREE GATES, not one. This route checked the password and nothing else, so the other two
+    // ways an album withholds a photo were simply not enforced on the download path — M1 of the
+    // 2026-08-20 audit.
+    //
+    // A COUNTDOWN REVEAL is a promise that nobody sees the album before a set moment. Reading it
+    // here costs one column that was already being fetched from the same row.
+    if (album.reveal_at && new Date(album.reveal_at) > new Date()) {
+      return NextResponse.json({ error: 'This album has not been revealed yet' }, { status: 403, headers: NO_STORE })
+    }
+    // HIDDEN covers both photo moderation (waiting for the owner's approval) and a photo the owner
+    // deliberately took down. The album grid already refuses to show these to a guest; without this
+    // the file behind one stayed downloadable to anyone holding its id. "Guest photos wait for your
+    // approval before anyone else sees them" is sold on the pricing page and said again in the
+    // public statement — a gate that the grid honours and the download does not is not a gate.
+    if (photo.hidden) {
+      return NextResponse.json({ error: 'Not found' }, { status: 404, headers: NO_STORE })
+    }
     if (!album.allow_guest_downloads) {
       return NextResponse.json(
         { error: 'Downloads are disabled for this album' },
