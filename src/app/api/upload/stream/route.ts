@@ -196,11 +196,12 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: 'Failed to initiate video upload' }, { status: 502, headers: NO_STORE })
   }
 
-  // 1% chance — purge stale rows (video uploaded but photos/create never called, e.g. tab closed).
-  if (Math.random() < 0.01) {
-    const staleCutoff = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()
-    void admin.from('pending_stream_uploads').delete().lt('created_at', staleCutoff)
-  }
+  // Stale rows (video uploaded but photos/create never called, e.g. tab closed) are pruned by
+  // api/cron/prune-data on the daily pass. There used to be a `Math.random() < 0.01` sweep here
+  // instead, and it did not work: it only ran when somebody started ANOTHER video upload, video is
+  // 1.5% of media, so six-week-old rows were still sitting there — each one a redeemable upload
+  // token past its 24-hour life. Cleanup that only runs when there is something to clean up after
+  // cannot keep a promise, and having it here made it look covered.
 
   return NextResponse.json({ uploadUrl, streamUid, iframeUrl, thumbnailUrl }, { headers: NO_STORE })
 }

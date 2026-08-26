@@ -17,6 +17,9 @@ const NO_STORE = { 'Cache-Control': 'no-store' }
 // 2026-08-17 the table held 28,663 rows going back seven weeks.
 const IP_LOG_DAYS = 30
 const ERROR_LOG_DAYS = 30
+// Matches the 24-hour cutoff api/upload/stream already intended for these — this route just makes
+// it actually happen. Long enough that a genuinely slow upload finishing overnight still redeems.
+const PENDING_UPLOAD_HOURS = 24
 // Face templates are biometric data and cannot sit around indefinitely waiting for someone to
 // delete an album. The clock runs from the last photo added, so an album that finished its event
 // stops holding face data three months later whether or not anyone remembers to act.
@@ -58,6 +61,27 @@ export async function POST(req: Request) {
       .delete({ count: 'exact' })
       .lt('created_at', iso(IP_LOG_DAYS))
     result.rateLimitDeleted = error ? `error: ${error.message}` : (count ?? 0)
+  }
+
+  // ── Abandoned video-upload tokens ─────────────────────────────────────────
+  //
+  // A pending_stream_uploads row is a LIVE CREDENTIAL, not bookkeeping: api/album/photos/create
+  // consumes one to accept a Cloudflare Stream uid onto an album. It is meant to last 24 hours.
+  //
+  // The only thing deleting them was `Math.random() < 0.01` inside api/upload/stream — a one-in-a
+  // -hundred sweep that runs only when somebody starts ANOTHER video upload. Video is 1.5% of all
+  // media here, so across the product's entire history that dice roll came up perhaps twice: on
+  // 2026-08-26 the table still held rows from 13 July, six weeks past a 24-hour expiry, every one
+  // of them still redeemable. Precisely the pattern the presence note above was written about —
+  // cleanup that only runs when there is something to clean up after cannot keep a promise.
+  //
+  // On the daily pass, on a clock, whether or not anyone uploads anything.
+  {
+    const { error, count } = await admin
+      .from('pending_stream_uploads')
+      .delete({ count: 'exact' })
+      .lt('created_at', new Date(Date.now() - PENDING_UPLOAD_HOURS * 3600e3).toISOString())
+    result.pendingUploadsDeleted = error ? `error: ${error.message}` : (count ?? 0)
   }
 
   // ── Client error reports (carry user-agent and the page they happened on) ──
