@@ -4,7 +4,7 @@ import { getCloudflareContext } from '@opennextjs/cloudflare'
 // postgres_changes collapses under bursty fan-out (a load test showed postgres_changes dropped
 // ~93% of INSERT events to 150 viewers; Broadcast delivered reliably). Used for two live signals:
 //   - album SETTINGS changed  → topic `album-settings-<id>`, event `album_settings` (payload)
-//   - album PHOTOS changed     → topic `album:<id>`, event `changed` (contentless; client refetches)
+//   - album PHOTOS changed     → topic `album:<id>`, event `changed` (payload {kind}; see below)
 async function postBroadcast(topic: string, event: string, payload: Record<string, unknown>): Promise<void> {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
   const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY

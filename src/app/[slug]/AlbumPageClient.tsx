@@ -54,6 +54,10 @@ type Props = {
 // Full album view server-renders the first window; a BIG album (> first window) loads its tail on
 // demand. Small albums (every album today) load fully in the first window — pagination never engages.
 const ALBUM_FIRST_WINDOW = 2000 // must match ALBUM_PAGE_SIZE in lib/server/album-access.ts
+// How long a viewer may go without a full refetch. Captions, display filters and face-index
+// progress change photo rows without ever broadcasting on the photos channel; a full fetch used to
+// repair them by accident on every upload, and this keeps that repair on a bounded clock.
+const RECONCILE_AFTER_MS = 60_000
 const LOAD_MORE_PAGE = 500
 
 // How long after one of THIS tab's own album edits a settings-broadcast refetch is treated as an
@@ -336,65 +340,93 @@ export default function AlbumPageClient({ initialAlbum = null, initialPhotos, in
   // Whether the pending debounced refresh may use the cheap path. Set from the broadcast payload
   // and read once the timer fires. A ref, not state: it must not re-render anything, and the timer
   // has to see the latest value rather than the one captured when it was scheduled.
-  const deltaPending = useRef(false)
+  // Sticky: set by any broadcast that is not a plain upload, cleared only when the refetch it
+  // demanded actually runs.
+  const needsFullRefetch = useRef(false)
+  // When the last FULL refetch happened. A delta cannot see a caption edit, a filter change, or a
+  // face-index finishing — none of those broadcast on the photos channel at all. Before this change
+  // every upload triggered a full refetch, which repaired all of them by accident within seconds at
+  // a live event. Reconciling on a clock keeps that repair, at one full fetch a minute instead of
+  // one per upload.
+  // Starts at mount rather than at render: Date.now() during render is an impure call, and the
+  // value only needs to be "when this viewer last had the whole truth".
+  const lastFullFetchAt = useRef(0)
+  useEffect(() => { lastFullFetchAt.current = Date.now() }, [])
 
   // Fetch ONLY the photos newer than the newest one on screen, and append them.
   //
-  // The album is ordered by sort_order, then created_at, then id, with null sort_order sorting
-  // LAST — and a fresh upload has a null sort_order and the newest created_at, so it belongs at the
-  // end. That is what makes appending correct rather than a guess: it lands exactly where a full
-  // refetch would have put it.
+  // THE PRECONDITION IS THE WHOLE DESIGN: this runs only when the viewer already holds the ENTIRE
+  // album. The first draft did not check that, and it was wrong in two ways that a review caught
+  // before it shipped:
   //
-  // SELF-HEALING, because a delta cannot see a deletion. If a 'changed' ping is ever lost — a
-  // dropped socket, a backgrounded tab — the list would quietly drift from the album. So the
-  // server's true total is compared against what is held, and any disagreement falls back to the
-  // full refetch. That check is why the delta path is safe to take at all.
-  const applyDelta = useCallback(async (albumId: string) => {
+  //  * On an album larger than ALBUM_FIRST_WINDOW the viewer holds the OLDEST 2,000 rows in album
+  //    order, so "the newest created_at I have" is the 2,000th-oldest in the album — and `since`
+  //    then matched the entire remaining tail. The "delta" fetched a full 2,000 rows and appended
+  //    them, so a few upload pings dragged all 10,000 photos onto every phone. The exact opposite
+  //    of the point, on precisely the Pro and Max albums the point was for.
+  //  * loadMore pages by `offset = photos.length`, which is only meaningful while `photos` is a
+  //    PREFIX of the album. Appending the album's LAST photo breaks that, so the next page skipped
+  //    a photo permanently and the Load-more button stopped doing anything.
+  //
+  // Both vanish if the viewer holds everything: there is no tail to mis-fetch and no paging to
+  // desynchronise. Albums past the window keep the old full refetch, which is correct — just not
+  // optimised. Every album that exists today is inside the window (largest: 985).
+  const applyDelta = useCallback(async (albumId: string, stillActive: () => boolean) => {
     const held = photosRef.current
+    const knownTotal = totalRef.current
+    const full = async () => {
+      const r = await fetchPhotos(albumId)
+      if (stillActive()) { applyWindowRefresh(r); lastFullFetchAt.current = Date.now() }
+    }
+
+    // Reconcile on a clock. A delta cannot see a caption edit, a display-filter change or a face
+    // index finishing — none of them broadcast on this channel at all. A full refetch used to
+    // repair those by accident on every upload; this keeps the repair at one fetch a minute.
+    if (Date.now() - lastFullFetchAt.current > RECONCILE_AFTER_MS) return full()
+
+    // The precondition. Anything but a complete, in-window album takes the safe path.
+    const holdsWholeAlbum = knownTotal <= ALBUM_FIRST_WINDOW && held.length === knownTotal
+    if (!holdsWholeAlbum) return full()
+
     const newest = held.reduce<string | null>(
       (max: string | null, p: Photo) => (p.created_at && (!max || p.created_at > max) ? p.created_at : max),
       null,
     )
-    // Nothing on screen yet, or rows without timestamps: there is no "since" to ask from, so the
-    // only correct answer is the whole window.
-    if (!newest) {
-      const r = await fetchPhotos(albumId)
-      applyWindowRefresh(r)
-      return
-    }
+    if (!newest) return full()
 
     const res = await fetch(
       `/api/album/photos?albumId=${encodeURIComponent(albumId)}&since=${encodeURIComponent(newest)}`,
       { cache: 'no-store' },
     )
-    if (!res.ok) {
-      // A failed delta must never leave the album stale — fall back to the path that always works.
-      const r = await fetchPhotos(albumId)
-      applyWindowRefresh(r)
-      return
-    }
+    if (!stillActive()) return
+    if (!res.ok) return full()
+
     const json = await res.json() as { photos?: Photo[]; total?: number }
+    if (!stillActive()) return
     const incoming = (json.photos ?? []).filter(p => !isRecentlyDeleted(p.id))
     const total = typeof json.total === 'number' ? json.total : held.length
 
-    const have = new Set(held.map((p: Photo) => p.id))
-    // `since` uses >= so a shared millisecond cannot drop a photo, which means the newest row the
-    // caller already holds usually comes back. Dedup by id, here.
-    const added = incoming.filter(p => !have.has(p.id))
-    const merged = added.length > 0 ? [...held, ...added] : held
-
-    // The disagreement check. `merged.length` can legitimately be lower than `total` on a big album
-    // whose tail has not been paged in yet — that is what ALBUM_FIRST_WINDOW means — so only a
-    // shortfall WITHIN the loaded window is evidence that something was missed.
-    const windowIsComplete = total <= ALBUM_FIRST_WINDOW
-    if (windowIsComplete && merged.length !== total) {
-      const r = await fetchPhotos(albumId)
-      applyWindowRefresh(r)
-      return
-    }
-
+    // FUNCTIONAL, and re-derived from the CURRENT list rather than the snapshot taken before the
+    // awaits above. A delete arriving mid-flight is applied by its own full refetch; writing a
+    // pre-await array back over that would reinstate the deleted photo with nothing left to
+    // correct it. Every other setPhotos in this file is written this way for the same reason.
+    let mergedLength = 0
+    setPhotos(prev => {
+      const have = new Set(prev.map((p: Photo) => p.id))
+      // `since` uses >= so a shared millisecond cannot drop a photo, which means the newest row
+      // already held usually comes back. Dedup by id, here.
+      const added = incoming.filter(p => !have.has(p.id))
+      const next = added.length > 0 ? [...prev, ...added] : prev
+      mergedLength = next.length
+      return next
+    })
     setTotal(total)
-    if (added.length > 0) setPhotos(merged)
+
+    // The disagreement check, which is now a genuine invariant rather than a hopeful one: the
+    // viewer holds the whole album, so its length must equal the server's count. Anything else
+    // means something was missed — a lost ping, or a row committed behind our watermark — and the
+    // only honest answer is to fetch the lot.
+    if (mergedLength !== total) return full()
   }, [fetchPhotos, applyWindowRefresh, isRecentlyDeleted])
 
   // ─── fetchAlbum ─────────────────────────────────────────────────────────────
@@ -704,16 +736,26 @@ export default function AlbumPageClient({ initialAlbum = null, initialPhotos, in
           //
           // ANYTHING UNRECOGNISED IS TREATED AS A FULL REFETCH. A ping from an older server has no
           // kind at all, and the expensive-but-correct branch is the only safe default.
+          // STICKY, NOT LAST-WRITE-WINS. This was `= (kind === 'added')`, which meant an upload
+          // ping arriving inside the same 500ms window ERASED a delete, hide or reorder that had
+          // already landed. Broadcasts are separate HTTP POSTs from separate Worker invocations
+          // with no ordering guarantee, so at a busy event that overlap is close to certain — and
+          // a reorder is count-neutral, so the reconcile below cannot catch it. Every guest would
+          // have kept the wrong order until they reloaded.
+          //
+          // Once anything in a batch needs the full refetch, the whole batch gets it.
           const kind = (msg as { payload?: { kind?: unknown } } | undefined)?.payload?.kind
-          if (kind === 'added') deltaPending.current = true
-          else deltaPending.current = false
+          if (kind !== 'added') needsFullRefetch.current = true
 
           // Debounce: a burst of uploads sends many pings — collapse them into one fetch so
           // 50 uploads in 2s cost ~1 fetch, not 50 list rebuilds.
           if (refetchTimer) clearTimeout(refetchTimer)
           refetchTimer = setTimeout(() => {
-            if (deltaPending.current) void applyDelta(albumId)
-            else void fetchPhotos(albumId).then(r => { if (active) applyWindowRefresh(r) })
+            if (!active) return
+            const full = needsFullRefetch.current
+            needsFullRefetch.current = false
+            if (full) void fetchPhotos(albumId).then(r => { if (active) applyWindowRefresh(r) })
+            else void applyDelta(albumId, () => active)
           }, 500)
         })
         // DELETE and UPDATE used to arrive on postgres_changes for instant per-row feedback. They

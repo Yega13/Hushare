@@ -42,6 +42,22 @@ export async function GET(req: Request) {
   // PostgREST as a filter it will reject — a broken album beats a broken query string, but a
   // correct album beats both.
   const sinceRaw = url.searchParams.get('since')
+  // `since` is only meaningful on its own. Combined with offset/limit it would page WITHIN the
+  // filtered set (an offset into "what is new", which means nothing to any caller), and combined
+  // with `recent` it would mix a delta into the wall's descending window. No current caller does
+  // either — applyDelta sends albumId and since, nothing else — but this route is public and the
+  // next caller will not know that, so the combination is refused here rather than left to
+  // produce a quietly wrong list.
+  if (sinceRaw && (recentLimit !== undefined || offset !== undefined || limit !== undefined)) {
+    return NextResponse.json(
+      { error: 'since cannot be combined with recent, offset or limit' },
+      { status: 400, headers: NO_STORE },
+    )
+  }
+  // Date.parse guards NaN and the value is normalised to a real ISO string, so nothing
+  // user-controlled reaches PostgREST. Note toISOString() truncates microseconds DOWNWARD to
+  // milliseconds, which makes `since` never later than the true value — it can only over-fetch a
+  // row the caller already has, never skip one. That direction is load-bearing, not incidental.
   const since = sinceRaw && !Number.isNaN(Date.parse(sinceRaw)) ? new Date(sinceRaw).toISOString() : undefined
   const cookieStore = await cookies()
 
