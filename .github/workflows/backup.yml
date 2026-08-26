@@ -47,12 +47,43 @@ jobs:
           SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
         run: node scripts/backup-db.mjs
 
+      # CHECKED BEFORE THE DUMP, not after it.
+      #
+      # On 2026-08-25 and 2026-08-26 this job "ran" and failed, and nobody noticed for two days.
+      # The dump succeeded, so the log looked like work was happening; the upload then exited
+      # because the R2 secrets were never set on the repository, and the dump went in the bin with
+      # the runner. Two nights of believing there was a backup, with none.
+      #
+      # Failing on the FIRST step names the actual problem in the first ten seconds of the log
+      # instead of at the last line, and it does not waste a database dump to tell you.
+      - name: Check the secrets exist before doing any work
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+        run: |
+          missing=""
+          for name in SUPABASE_DB_URL CLOUDFLARE_ACCOUNT_ID R2_ACCESS_KEY_ID R2_SECRET_ACCESS_KEY; do
+            if [ -z "${!name}" ]; then missing="$missing $name"; fi
+          done
+          if [ -n "$missing" ]; then
+            echo "::error::Nightly backup cannot run. Missing repository secret(s):$missing"
+            echo "Set them under Settings -> Secrets and variables -> Actions."
+            echo "Until they are set there is NO off-machine copy of the database."
+            exit 1
+          fi
+          echo "All four secrets are present."
+
       - name: Upload to R2 and prune old copies
         env:
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
           R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
           R2_BACKUP_BUCKET: ${{ secrets.R2_BACKUP_BUCKET }}
+          # Also needed here now: a successful upload records a heartbeat the admin dashboard reads,
+          # so a silent failure shows up somewhere the owner actually looks.
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
         run: node scripts/backup-upload.mjs
 
       # DELIBERATELY no actions/upload-artifact step. Artifacts on a public repository can be

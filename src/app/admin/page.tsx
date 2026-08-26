@@ -130,7 +130,7 @@ export default async function AdminPage() {
   const [
     albumsActive, albumsRetired, imgCount, vidCount, subsCount,
     recentAlbumsRes, subsRes, streamUsage, r2Usage, usersRes, errors24Res, recentErrorsRes,
-    clearedMsgsRes,
+    clearedMsgsRes, backupRes,
   ] = await Promise.all([
     admin.from('albums').select('id', { count: 'exact', head: true }).is('retired_at', null),
     admin.from('albums').select('id', { count: 'exact', head: true }).not('retired_at', 'is', null),
@@ -168,7 +168,19 @@ export default async function AdminPage() {
     // error_events ever grows past the limit it should become a database view, and the cap means
     // the failure mode is a missing mark rather than a slow admin page.
     admin.from('error_events').select('message').not('resolved_at', 'is', null).limit(5000),
+    // When the database was last copied off this infrastructure. Written by scripts/backup-upload
+    // only after an upload succeeds, so its ABSENCE is the signal — see the backup line in
+    // AdminLiveStats.
+    admin.from('system_state').select('updated_at').eq('key', 'last_backup_at').maybeSingle(),
   ])
+
+  const lastBackupAt = (backupRes.data as { updated_at?: string } | null)?.updated_at ?? null
+  const backupAgeHours = lastBackupAt
+    ? Math.floor((Date.now() - new Date(lastBackupAt).getTime()) / 3600e3)
+    : null
+  // 36 hours rather than 24: the job runs at 03:15 UTC, so this means a night was missed outright
+  // rather than a run being a few hours late.
+  const backupFreshness = { lastBackupAt, backupAgeHours, backupStale: backupAgeHours === null || backupAgeHours > 36 }
 
   const recentAlbums = recentAlbumsRes.data ?? []
   const subs = subsRes.data ?? []
@@ -377,6 +389,10 @@ export default async function AdminPage() {
     users: (usersRes.data as { total?: number } | null)?.total ?? allUsers.length,
     subscriptions: subsCount.count ?? 0,
     openErrors: errors24Res.count ?? 0,
+    // Included in the FIRST paint, not left to the poll 20 seconds later. This is the one line on
+    // the page that says whether the database has a copy anywhere else, and a version of it that
+    // appears late is a version somebody closes the tab before seeing.
+    ...backupFreshness,
   }
 
   const cards: { label: string; value: string; hint?: string }[] = [

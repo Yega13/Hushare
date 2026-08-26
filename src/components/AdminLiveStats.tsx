@@ -28,6 +28,12 @@ export type LiveStats = {
   users: number
   subscriptions: number
   openErrors: number
+  // Backup freshness. NOT a card: it is not a count, and forcing it into one would give it a
+  // CountUp animation and a green delta, which is absurd for "hours since the database was last
+  // copied somewhere else". It gets its own line, and that line turns red.
+  lastBackupAt?: string | null
+  backupAgeHours?: number | null
+  backupStale?: boolean
 }
 
 const KEY = 'hushare.admin.baseline.v1'
@@ -199,7 +205,11 @@ export default function AdminLiveStats({ initial }: { initial: LiveStats }) {
     return () => { clearInterval(id); document.removeEventListener('visibilitychange', onVisible) }
   }, [refresh])
 
-  const cards: { label: string; key: keyof LiveStats; hint?: string; invert?: boolean }[] = [
+  // Only the COUNTS get a card. Keyed off a narrowed union rather than `keyof LiveStats`, so
+  // adding a non-numeric stat (backup freshness, below) cannot silently end up rendered
+  // through CountUp — it fails to compile instead.
+  type CountKey = 'albums' | 'photos' | 'videos' | 'users' | 'subscriptions' | 'openErrors'
+  const cards: { label: string; key: CountKey; hint?: string; invert?: boolean }[] = [
     { label: 'Active albums', key: 'albums' },
     { label: 'Photos', key: 'photos' },
     { label: 'Videos', key: 'videos' },
@@ -227,6 +237,27 @@ export default function AdminLiveStats({ initial }: { initial: LiveStats }) {
           )
         })}
       </div>
+      {/* THE BACKUP LINE.
+          Supabase's free plan takes no backups, so the only copies are the ones this product makes
+          for itself. The nightly job failed silently on 25 and 26 August — the dump ran, the upload
+          exited on missing credentials, and the copy was thrown away with the runner — and nobody
+          knew for two days because nothing said so anywhere the owner looks. This is that place. */}
+      {live.backupStale !== undefined && (
+        <p
+          style={{
+            fontSize: 12,
+            fontWeight: live.backupStale ? 700 : 400,
+            color: live.backupStale ? ALERT : MUTED,
+            margin: '0 0 10px',
+          }}
+        >
+          {live.lastBackupAt == null
+            ? 'No database backup has ever completed. Supabase takes none of its own — right now there is no off-machine copy.'
+            : live.backupStale
+              ? `Last database backup was ${live.backupAgeHours}h ago. The nightly job runs at 03:15 UTC, so a night has been missed.`
+              : `Database backed up ${live.backupAgeHours}h ago.`}
+        </p>
+      )}
       <p style={{ fontSize: 11.5, color: stale ? ALERT : MUTED, margin: '0 0 18px' }}>
         {stale
           ? 'Live updates paused — could not reach the server. These numbers may be out of date.'

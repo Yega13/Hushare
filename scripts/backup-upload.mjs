@@ -82,6 +82,48 @@ async function main() {
     console.log(`  pruned ${stale.length} old backup(s), keeping the newest ${KEEP}`)
   }
   console.log(`  ${Math.min(keys.length, KEEP)} backup(s) now stored remotely`)
+
+  await recordHeartbeat(newest, body.length)
+}
+
+// Record that a backup actually LANDED SOMEWHERE OTHER THAN THE MACHINE THAT MADE IT.
+//
+// The nightly job failed silently on 2026-08-25 and 2026-08-26 and nobody noticed for two days.
+// The dump step succeeded both times, so the log looked busy; the upload step then exited because
+// the R2 credentials were not set as repository secrets, and the dump was thrown away with the
+// runner. Two nights of believing there was a backup, with none.
+//
+// A failure nobody sees is worse than no backup at all, because it removes the worry that would
+// have made someone check. So success — not the attempt — writes a heartbeat the admin dashboard
+// reads, and the dashboard goes red when it goes stale. The thing that notices is now on the page
+// the owner already looks at every day, rather than an email from GitHub about a cron.
+//
+// Deliberately non-fatal: if this write fails, the backup still happened and is still safe in R2.
+// Failing the job here would report a disaster that did not occur.
+async function recordHeartbeat(file, bytes) {
+  if (!process.env.SUPABASE_DB_URL) {
+    console.warn('  (no SUPABASE_DB_URL — backup is uploaded but the admin heartbeat was not written)')
+    return
+  }
+  try {
+    const { default: pg } = await import('pg')
+    const { connectionString } = await import('./db-connection.mjs')
+    const client = new pg.Client({
+      connectionString: connectionString('backup-upload'),
+      ssl: { rejectUnauthorized: false },
+    })
+    await client.connect()
+    await client.query(
+      `insert into public.system_state (key, value, updated_at)
+       values ('last_backup_at', $1, now())
+       on conflict (key) do update set value = excluded.value, updated_at = now()`,
+      [JSON.stringify({ at: new Date().toISOString(), file, bytes })],
+    )
+    await client.end()
+    console.log('  heartbeat recorded (admin will show this as the last successful backup)')
+  } catch (e) {
+    console.warn('  heartbeat not recorded:', e.message)
+  }
 }
 
 main().catch(e => { console.error('backup-upload failed:', e.message); process.exitCode = 1 })
