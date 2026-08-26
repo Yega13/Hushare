@@ -11,7 +11,7 @@ export const POLLS: Record<string, PollDef> = {
     question: 'What should we build next?',
     note: 'Pick the one you would want most — it genuinely shapes what we build first.',
     options: [
-      { key: 'design',     label: 'Designable albums',            hint: 'Give every album its own cover, colour, font and mood — the look you just saw above.' },
+      { key: 'design',     label: 'Designable albums',            hint: 'Give every album its own cover, colour, font and mood, in seconds.' },
       { key: 'music',      label: 'Music on the wall',            hint: 'Play a soundtrack under the live slideshow, so the room has a pulse, not just pictures.' },
       { key: 'reactions',  label: 'Reactions & comments',         hint: 'Let guests heart a photo or drop a line under it, right inside the album.' },
       { key: 'guestbook',  label: 'A guestbook',                  hint: 'A place for guests to leave the host a written message — the words, not only the photos.' },
