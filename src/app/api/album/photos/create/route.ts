@@ -594,7 +594,10 @@ export async function POST(req: Request) {
       // Allow at most one notification email per album per 10 minutes (failOpen: a limiter
       // outage sends the email rather than dropping it). Trade-off: the email's count reflects
       // the first flush that won the gate, not the whole session — an acceptable nudge.
-      const notifyGate = await checkRateLimit(`photo_notify:${albumId}`, 600, 1, { failOpen: true })
+      // sliding: this is a DEBOUNCE, not an abuse limit — one "new photos" email per 10 minutes.
+      // A fixed window would let a second email through just after a boundary, which the owner
+      // experiences as the product emailing them twice about the same batch.
+      const notifyGate = await checkRateLimit(`photo_notify:${albumId}`, 600, 1, { failOpen: true, sliding: true })
       if (!notifyGate.ok) return
       const { data: userData } = await admin.auth.admin.getUserById(album.user_id)
       const email = userData?.user?.email

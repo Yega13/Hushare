@@ -84,6 +84,19 @@ export async function POST(req: Request) {
     result.pendingUploadsDeleted = error ? `error: ${error.message}` : (count ?? 0)
   }
 
+  // ── Rate-limit counters ───────────────────────────────────────────────────
+  //
+  // One row per key per window, so this stays small by construction — but "small by construction"
+  // is how rate_limit_events was described too, and it reached 62,846 rows. Windows are at most an
+  // hour, so anything older than a day is finished and cannot affect a decision.
+  {
+    const { error, count } = await admin
+      .from('rate_limit_counters')
+      .delete({ count: 'exact' })
+      .lt('window_start', iso(1))
+    result.rateLimitCountersDeleted = error ? `error: ${error.message}` : (count ?? 0)
+  }
+
   // ── Client error reports (carry user-agent and the page they happened on) ──
   {
     const { error, count } = await admin
