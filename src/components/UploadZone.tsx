@@ -608,6 +608,36 @@ async function processImageInner(file: File): Promise<ProcessedImage> {
 
 // ─── XHR PUT ──────────────────────────────────────────────────────────────────
 
+// Refusals the product MEANT to make, as opposed to things that went wrong.
+//
+// Too-large and unsupported-type mean the product looked at the file and correctly declined it. The
+// album's password and reveal gates are the same class of event: the gate did its job, and the
+// guest was told plainly what to do. None of them is a defect, and filing them as errors put rows
+// in the admin Errors tab implying something was broken — a 103 MB video refused twice on
+// 2026-08-18 was two of the four "errors" outstanding, and a password prompt on 2026-08-25 was
+// three more. They still get reported, at warn, because how often guests hit these is worth
+// knowing.
+//
+// A REFUSED CONTRIBUTION IS STILL AN ERROR SERVER-SIDE, with the exact reason attached — see the
+// reportServerError call in api/album/photos/create. That is the row to look at when uploads are
+// genuinely being lost (Annie's 163 refused uploads were found through it), so downgrading this
+// client-side copy removes a duplicate rather than the evidence.
+//
+// Matching on our own message prefixes, the way the first two already did. The server carries a
+// `code` for the save path, but the per-file upload path throws HttpError, which has no room for
+// one — a single predicate both paths can call is worth more here than threading a field through
+// every throw site.
+const EXPECTED_REFUSAL_PREFIXES = [
+  'File too large',
+  'Unsupported',
+  'Enter the album password before adding photos',
+  'This album has not been revealed yet',
+]
+
+function isExpectedRefusal(message: string): boolean {
+  return EXPECTED_REFUSAL_PREFIXES.some((prefix) => message.startsWith(prefix))
+}
+
 class HttpError extends Error {
   constructor(public readonly status: number, message: string) { super(message) }
 }
@@ -2082,7 +2112,10 @@ export default function UploadZone({ album, onPhotosUploaded }: Props) {
           // outstanding the banner should offer the account.
           setPendingSaveReason(prev => (prev === 'full' || full ? 'full' : 'failed'))
         }
-        reportClientEvent(full ? 'warn' : 'error', full ? 'album-full' : 'save', msg, album.id, { count: ids.length })
+        // Same rule on the save path: a gate refusal arrives here as a plain message, and it is
+        // not a failure of ours any more than a full album is.
+        const expectedSave = full || isExpectedRefusal(msg)
+        reportClientEvent(expectedSave ? 'warn' : 'error', full ? 'album-full' : 'save', msg, album.id, { count: ids.length })
       },
       // Over-limit nag (once per upload session): the server flags albums past the free allowance.
       (msg) => showAppToast(msg, 'success'),
@@ -2153,8 +2186,7 @@ export default function UploadZone({ album, onPhotosUploaded }: Props) {
           // which is already logged at warn. Logged as errors they sat in the admin Errors tab
           // implying something was broken: a 103 MB video refused twice on 2026-08-18 was two of
           // the four "errors" outstanding, and nothing was wrong.
-          const expectedRejection = e instanceof Error
-            && (e.message.startsWith('File too large') || e.message.startsWith('Unsupported'))
+          const expectedRejection = e instanceof Error && isExpectedRefusal(e.message)
           // Adaptive lane: a genuine upload failure (not a user cancel, not a pre-upload reject)
           // means the network can't take the current concurrency — snap back to serial and stop
           // probing. Same distinction as above, so it is now made once.
@@ -2217,7 +2249,7 @@ export default function UploadZone({ album, onPhotosUploaded }: Props) {
         else groups.set(key, { n: 1, sample: f })
       }
       for (const { n, sample } of groups.values()) {
-        const expected = sample.msg.startsWith('File too large') || sample.msg.startsWith('Unsupported')
+        const expected = isExpectedRefusal(sample.msg)
         // A parked failure is not (yet) a lost photo — the uploader is going to retry it by itself.
         // Reporting it at error level would put a row in the Errors tab, and a count against the
         // error-alert threshold, for an incident the product is in the middle of handling
