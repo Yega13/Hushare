@@ -1171,8 +1171,8 @@ export default function OwnerToolbar({ album, photos, ownerToken, userTier, medi
                           }
                         }}
                         className="h-4 w-4"
-                                              disabled={!canCustomize}
-/>
+                        disabled={!canCustomize}
+                      />
                     </label>
                   </div>
                 )}
@@ -1338,67 +1338,9 @@ export default function OwnerToolbar({ album, photos, ownerToken, userTier, medi
                           }
                         }}
                         className="h-4 w-4"
-                                              disabled={!canUseCollections}
-/>
-                    </label>
-                  </div>
-                )}
-              </section>
-
-              {/* Custom URL */}
-              <section style={settingsSectionStyle}>
-                <button type="button" className="hush-motion" style={accordionButton} onClick={() => toggleSection('customUrl')}>
-                  <Link2 className="w-4 h-4" style={{ color: showLockedCustomize ? '#A89880' : '#7C5C3E' }} />
-                  <span style={sectionTitle}>{t('ot.customUrl')}</span>
-                  <PlanBadge need="pro" tier={userTier} />
-                  <ChevronDown
-                    className="ml-auto w-4 h-4 transition-transform"
-                    style={{ color: '#A89880', transform: openSection === 'customUrl' ? 'rotate(180deg)' : 'rotate(0deg)' }}
-                  />
-                </button>
-                {openSection === 'customUrl' && (
-                  <div className="px-4 pb-4">
-                    <p className="text-xs mb-3" style={{ color: '#7C5C3E' }}>
-                      {t('ot.customUrlSub')}
-                    </p>
-                    <div className="flex items-stretch rounded-lg overflow-hidden" style={{ border: '1px solid #DDD5C5', background: '#FDFAF5', opacity: showLockedCustomize ? 0.55 : 1 }}>
-                      <span className="text-xs flex items-center px-2 select-none" style={{ color: '#A89880' }}>hushare.space/</span>
-                      <input
-                        type="text"
-                        value={customUrlInput}
-                        onChange={(e) => setCustomUrlInput(e.target.value)}
-                        placeholder="anna-and-david"
-                        maxLength={40}
-                        disabled={!canCustomize}
-                        className="flex-1 text-sm px-2 py-2 focus:outline-none disabled:cursor-not-allowed"
-                        style={{ background: 'transparent', color: '#630826' }}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter' && canCustomize && !customUrlSaving && customUrlInput.trim()) void saveCustomUrl('set')
-                        }}
+                        disabled={!canUseCollections}
                       />
-                    </div>
-                    {customUrlError && <p className="text-xs mt-2" style={{ color: '#C0392B' }}>{customUrlError}</p>}
-                    {customUrlSaved && !customUrlError && <p className="text-xs mt-2" style={{ color: '#630826' }}>{t('ot.saved')}</p>}
-                    <div className="flex items-center gap-2 mt-3">
-                      <button
-                        onClick={() => void saveCustomUrl('set')}
-                        disabled={!canCustomize || customUrlSaving || !customUrlInput.trim()}
-                        className="hush-press flex-1 text-sm font-semibold rounded-lg py-2 transition hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed"
-                        style={{ background: '#630826', color: '#FDFAF5' }}
-                      >
-                        {customUrlSaving ? t('ot.saving') : t('ot.save')}
-                      </button>
-                      {album.custom_slug && (
-                        <button
-                          onClick={() => void saveCustomUrl('clear')}
-                          disabled={!canCustomize || customUrlSaving}
-                          className="hush-press text-sm rounded-lg py-2 px-3 transition hover:opacity-90 disabled:opacity-50"
-                          style={{ background: '#F5F0E8', color: '#7C5C3E', border: '1px solid #DDD5C5' }}
-                        >
-                          {t('ot.clear')}
-                        </button>
-                      )}
-                    </div>
+                    </label>
                   </div>
                 )}
               </section>
@@ -1471,63 +1413,60 @@ export default function OwnerToolbar({ album, photos, ownerToken, userTier, medi
                 )}
               </section>
 
-              {/* Collections */}
+              {/* Custom URL */}
               <section style={settingsSectionStyle}>
-                <button type="button" className="hush-motion" style={accordionButton} onClick={() => toggleSection('collection')}>
-                  <FolderPlus className="w-4 h-4" style={{ color: showLockedCollections ? '#A89880' : '#7C5C3E' }} />
-                  <span style={sectionTitle}>{t('ot.collections')}</span>
-                  <PlanBadge need="studio" tier={userTier} />
+                <button type="button" className="hush-motion" style={accordionButton} onClick={() => toggleSection('customUrl')}>
+                  <Link2 className="w-4 h-4" style={{ color: showLockedCustomize ? '#A89880' : '#7C5C3E' }} />
+                  <span style={sectionTitle}>{t('ot.customUrl')}</span>
+                  <PlanBadge need="pro" tier={userTier} />
                   <ChevronDown
                     className="ml-auto w-4 h-4 transition-transform"
-                    style={{ color: '#A89880', transform: openSection === 'collection' ? 'rotate(180deg)' : 'rotate(0deg)' }}
+                    style={{ color: '#A89880', transform: openSection === 'customUrl' ? 'rotate(180deg)' : 'rotate(0deg)' }}
                   />
                 </button>
-                {openSection === 'collection' && (
+                {openSection === 'customUrl' && (
                   <div className="px-4 pb-4">
                     <p className="text-xs mb-3" style={{ color: '#7C5C3E' }}>
-                      {t('ot.collectionsSub')}
+                      {t('ot.customUrlSub')}
                     </p>
-
-                    {canUseCollections && (
-                      <div className="mb-4 rounded-xl p-3" style={{ background: '#FDFAF5', border: '1px solid #E8E0D2' }}>
-                        <div className="mb-2 flex items-center justify-between gap-3">
-                          <span className="text-xs font-semibold uppercase tracking-[0.08em]" style={{ color: '#8B6F4E' }}>{t('ot.yourCollections')}</span>
-                          {collectionsLoading && <span className="text-xs" style={{ color: '#A89880' }}>{t('ot.loading')}</span>}
-                        </div>
-                        <div className="space-y-2">
-                          {collections.map((collection) => (
-                            <button
-                              key={collection.id}
-                              type="button"
-                              onClick={() => void addAlbumToCollection(collection.id)}
-                              disabled={collectionSaving || collection.contains_album}
-                              className="hush-press flex w-full items-center justify-between gap-3 rounded-lg px-3 py-2 text-left text-xs transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-70"
-                              style={{ background: '#FFFFFF', border: '1px solid #DDD5C5', color: '#630826' }}
-                            >
-                              <span className="min-w-0">
-                                <span className="block truncate font-semibold">{collection.name}</span>
-                                <span className="block truncate" style={{ color: '#8B6F4E' }}>
-                                  /c/{collection.slug} - {collection.album_count} album{collection.album_count === 1 ? '' : 's'}
-                                </span>
-                              </span>
-                              <span className="shrink-0 font-semibold" style={{ color: collection.contains_album ? '#630826' : '#7C5C3E' }}>
-                                {collection.contains_album ? t('ot.added') : t('ot.add')}
-                              </span>
-                            </button>
-                          ))}
-                          {!collectionsLoading && collections.length === 0 && (
-                            <p className="text-xs" style={{ color: '#8B6F4E' }}>{t('ot.noCollections')}</p>
-                          )}
-                        </div>
-                      </div>
-                    )}
-
-                    {collectionError && <p className="text-xs mt-2" style={{ color: '#C0392B' }}>{collectionError}</p>}
-                    {collectionUrl && (
-                      <p className="text-xs mt-2 break-all" style={{ color: '#630826' }}>
-                        Added: <a href={collectionUrl} className="underline">{collectionUrl}</a>
-                      </p>
-                    )}
+                    <div className="flex items-stretch rounded-lg overflow-hidden" style={{ border: '1px solid #DDD5C5', background: '#FDFAF5', opacity: showLockedCustomize ? 0.55 : 1 }}>
+                      <span className="text-xs flex items-center px-2 select-none" style={{ color: '#A89880' }}>hushare.space/</span>
+                      <input
+                        type="text"
+                        value={customUrlInput}
+                        onChange={(e) => setCustomUrlInput(e.target.value)}
+                        placeholder="anna-and-david"
+                        maxLength={40}
+                        disabled={!canCustomize}
+                        className="flex-1 text-sm px-2 py-2 focus:outline-none disabled:cursor-not-allowed"
+                        style={{ background: 'transparent', color: '#630826' }}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' && canCustomize && !customUrlSaving && customUrlInput.trim()) void saveCustomUrl('set')
+                        }}
+                      />
+                    </div>
+                    {customUrlError && <p className="text-xs mt-2" style={{ color: '#C0392B' }}>{customUrlError}</p>}
+                    {customUrlSaved && !customUrlError && <p className="text-xs mt-2" style={{ color: '#630826' }}>{t('ot.saved')}</p>}
+                    <div className="flex items-center gap-2 mt-3">
+                      <button
+                        onClick={() => void saveCustomUrl('set')}
+                        disabled={!canCustomize || customUrlSaving || !customUrlInput.trim()}
+                        className="hush-press flex-1 text-sm font-semibold rounded-lg py-2 transition hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed"
+                        style={{ background: '#630826', color: '#FDFAF5' }}
+                      >
+                        {customUrlSaving ? t('ot.saving') : t('ot.save')}
+                      </button>
+                      {album.custom_slug && (
+                        <button
+                          onClick={() => void saveCustomUrl('clear')}
+                          disabled={!canCustomize || customUrlSaving}
+                          className="hush-press text-sm rounded-lg py-2 px-3 transition hover:opacity-90 disabled:opacity-50"
+                          style={{ background: '#F5F0E8', color: '#7C5C3E', border: '1px solid #DDD5C5' }}
+                        >
+                          {t('ot.clear')}
+                        </button>
+                      )}
+                    </div>
                   </div>
                 )}
               </section>
@@ -1632,6 +1571,67 @@ export default function OwnerToolbar({ album, photos, ownerToken, userTier, medi
                   </div>
                   )
                 })()}
+              </section>
+
+              {/* Collections */}
+              <section style={settingsSectionStyle}>
+                <button type="button" className="hush-motion" style={accordionButton} onClick={() => toggleSection('collection')}>
+                  <FolderPlus className="w-4 h-4" style={{ color: showLockedCollections ? '#A89880' : '#7C5C3E' }} />
+                  <span style={sectionTitle}>{t('ot.collections')}</span>
+                  <PlanBadge need="studio" tier={userTier} />
+                  <ChevronDown
+                    className="ml-auto w-4 h-4 transition-transform"
+                    style={{ color: '#A89880', transform: openSection === 'collection' ? 'rotate(180deg)' : 'rotate(0deg)' }}
+                  />
+                </button>
+                {openSection === 'collection' && (
+                  <div className="px-4 pb-4">
+                    <p className="text-xs mb-3" style={{ color: '#7C5C3E' }}>
+                      {t('ot.collectionsSub')}
+                    </p>
+
+                    {canUseCollections && (
+                      <div className="mb-4 rounded-xl p-3" style={{ background: '#FDFAF5', border: '1px solid #E8E0D2' }}>
+                        <div className="mb-2 flex items-center justify-between gap-3">
+                          <span className="text-xs font-semibold uppercase tracking-[0.08em]" style={{ color: '#8B6F4E' }}>{t('ot.yourCollections')}</span>
+                          {collectionsLoading && <span className="text-xs" style={{ color: '#A89880' }}>{t('ot.loading')}</span>}
+                        </div>
+                        <div className="space-y-2">
+                          {collections.map((collection) => (
+                            <button
+                              key={collection.id}
+                              type="button"
+                              onClick={() => void addAlbumToCollection(collection.id)}
+                              disabled={collectionSaving || collection.contains_album}
+                              className="hush-press flex w-full items-center justify-between gap-3 rounded-lg px-3 py-2 text-left text-xs transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-70"
+                              style={{ background: '#FFFFFF', border: '1px solid #DDD5C5', color: '#630826' }}
+                            >
+                              <span className="min-w-0">
+                                <span className="block truncate font-semibold">{collection.name}</span>
+                                <span className="block truncate" style={{ color: '#8B6F4E' }}>
+                                  /c/{collection.slug} - {collection.album_count} album{collection.album_count === 1 ? '' : 's'}
+                                </span>
+                              </span>
+                              <span className="shrink-0 font-semibold" style={{ color: collection.contains_album ? '#630826' : '#7C5C3E' }}>
+                                {collection.contains_album ? t('ot.added') : t('ot.add')}
+                              </span>
+                            </button>
+                          ))}
+                          {!collectionsLoading && collections.length === 0 && (
+                            <p className="text-xs" style={{ color: '#8B6F4E' }}>{t('ot.noCollections')}</p>
+                          )}
+                        </div>
+                      </div>
+                    )}
+
+                    {collectionError && <p className="text-xs mt-2" style={{ color: '#C0392B' }}>{collectionError}</p>}
+                    {collectionUrl && (
+                      <p className="text-xs mt-2 break-all" style={{ color: '#630826' }}>
+                        Added: <a href={collectionUrl} className="underline">{collectionUrl}</a>
+                      </p>
+                    )}
+                  </div>
+                )}
               </section>
 
               {/* Delete album */}
