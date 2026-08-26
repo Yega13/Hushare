@@ -674,6 +674,7 @@ export const hy: Partial<Record<DictKey, string>> = {
   'notFound.title': 'Ալբոմը չգտնվեց',
   'notFound.body': 'Հնարավոր է՝ այս ալբոմը ջնջվել է, ժամկետը լրացել է, կամ հղումը սխալ է։',
   'notFound.cta': 'Ստեղծել նոր ալբոմ',
+  'notFound.lost': 'Կորցրե՞լ եք ալբոմի հղումը։ Մենք կօգնենք։',
 
   // «դեպի վերև» կոճակ
   'common.backToTop': 'Դեպի վերև',

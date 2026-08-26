@@ -674,6 +674,7 @@ export const ru: Partial<Record<DictKey, string>> = {
   'notFound.title': 'Альбом не найден',
   'notFound.body': 'Возможно, этот альбом удалён, срок его действия истёк, или ссылка неверна.',
   'notFound.cta': 'Создать новый альбом',
+  'notFound.lost': 'Потеряли ссылку на альбом? Мы поможем.',
 
   // кнопка «наверх»
   'common.backToTop': 'Наверх',

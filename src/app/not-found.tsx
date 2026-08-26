@@ -51,13 +51,27 @@ export default async function NotFound() {
           </p>
         </div>
 
-        <Link
-          href="/"
-          className="rounded-xl px-6 py-3 font-semibold text-sm transition hover:opacity-85"
-          style={{ background: '#630826', color: '#FDFAF5' }}
-        >
-          {dict['notFound.cta']}
-        </Link>
+        {/* TWO ways out, because this page is reached by two different people with opposite
+            problems. "Create a new album" is the right answer for somebody who mistyped a URL and
+            is useless for the two who actually arrive here: a guest sent a bad link to somebody
+            else's wedding, and an owner whose own link has gone. Offering only that made the page a
+            dead end for exactly the person who most needed it not to be. */}
+        <div className="flex flex-col items-center gap-3 w-full">
+          <Link
+            href="/"
+            className="rounded-xl px-6 py-3 font-semibold text-sm transition hover:opacity-85"
+            style={{ background: '#630826', color: '#FDFAF5' }}
+          >
+            {dict['notFound.cta']}
+          </Link>
+          <Link
+            href="/support"
+            className="text-sm transition hover:opacity-80"
+            style={{ color: '#8B6F4E', textDecoration: 'underline', textDecorationStyle: 'dotted' }}
+          >
+            {dict['notFound.lost']}
+          </Link>
+        </div>
       </div>
     </div>
   )

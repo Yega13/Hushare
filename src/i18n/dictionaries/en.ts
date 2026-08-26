@@ -696,6 +696,7 @@ export const en = {
   'notFound.title': 'Album not found',
   'notFound.body': 'This album may have been deleted, expired, or the link might be wrong.',
   'notFound.cta': 'Create a new album',
+  'notFound.lost': 'Lost your album link? We can help.',
 
   // back-to-top
   'common.backToTop': 'Back to top',
