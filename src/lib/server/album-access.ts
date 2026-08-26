@@ -220,6 +220,19 @@ export async function resolveAlbum(
       // owner's tier on every request; this now does the same, and it is free — ownerTier is
       // already in hand for the upload caps.
       hide_branding: album.hide_branding && ownerTier !== 'free',
+      // SAME RE-CHECK, for the two flags that put a control in front of GUESTS.
+      //
+      // Both of these open a search that api/album/face-search and api/album/bib-search refuse
+      // unless the owner is on Max. Left unmasked, an album whose owner set them up while they were
+      // free — or who has since downgraded — shows its visitors a button that always fails, which
+      // reads as a broken album rather than as a plan boundary. The owner's own toolbar reads its
+      // state from `plan` and the PRO/MAX marks, so it still shows the setting truthfully.
+      //
+      // require_approval and reveal_at are deliberately NOT masked here: unmasking those would
+      // PUBLISH something the owner is holding back — photos awaiting approval, or an album that
+      // has not opened yet. A plan boundary must never be the thing that reveals someone's photos.
+      face_finder_enabled: album.face_finder_enabled && ownerTier === 'studio',
+      bib_search_enabled: album.bib_search_enabled && ownerTier === 'studio',
       media_caps: uploadCapsForTier(ownerTier),
     } as unknown as Album,
   }

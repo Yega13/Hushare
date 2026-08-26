@@ -1,4 +1,5 @@
 import { createAdminClient } from '@/lib/supabase/admin'
+import { getUserTierById } from '@/lib/subscriptions'
 import { ensureCollection, indexPhotoFaces } from '@/lib/rekognition'
 
 // Server-side face indexing, mirroring src/lib/server/bib-index.ts.
@@ -68,10 +69,15 @@ export async function indexAlbumFacesBatch(albumId: string): Promise<number> {
   // further is sent to AWS.
   const { data: album } = await admin
     .from('albums')
-    .select('face_finder_enabled')
+    .select('face_finder_enabled, user_id')
     .eq('id', albumId)
-    .maybeSingle<{ face_finder_enabled: boolean }>()
+    .maybeSingle<{ face_finder_enabled: boolean; user_id: string | null }>()
   if (!album?.face_finder_enabled) return 0
+
+  // AND the owner must still be on Max. The flag alone is not enough: it can be switched on while
+  // the feature is free, or survive a downgrade, and indexing is a BILLED call to AWS on every
+  // photo. Without this we pay to build an index for a search the server then refuses.
+  if (!album.user_id || (await getUserTierById(album.user_id)) !== 'studio') return 0
 
   const { data: pending } = await admin
     .from('photos')

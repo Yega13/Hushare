@@ -1,5 +1,6 @@
 import { getCloudflareContext } from '@opennextjs/cloudflare'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { getUserTierById } from '@/lib/subscriptions'
 import { detectBibNumbers } from '@/lib/rekognition'
 
 // Bib indexing runs AFTER the response has been sent (waitUntil), never inside it. Upload speed is
@@ -57,11 +58,16 @@ export async function indexAlbumBibsBatch(albumId: string): Promise<number> {
 
   const { data: album } = await admin
     .from('albums')
-    .select('bib_search_enabled')
+    .select('bib_search_enabled, user_id')
     .eq('id', albumId)
-    .maybeSingle<{ bib_search_enabled: boolean }>()
+    .maybeSingle<{ bib_search_enabled: boolean; user_id: string | null }>()
   // Re-checked every link: an owner who switches bib search back off mid-sweep stops it.
   if (!album?.bib_search_enabled) return 0
+
+  // AND the owner must still be on Max. The flag alone is not enough: it can be switched on while
+  // the feature is free, or survive a downgrade, and indexing is a BILLED call to AWS on every
+  // photo. Without this we pay to build an index for a search the server then refuses.
+  if (!album.user_id || (await getUserTierById(album.user_id)) !== 'studio') return 0
 
   const { data: pending } = await admin
     .from('photos')
