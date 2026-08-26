@@ -2,11 +2,10 @@
 // Re-exported here so all existing imports of `@/lib/media-display` keep working.
 export type {
   MediaDisplayFilter,
-  MediaHoverEffect,
   MobileGridColumns,
   SlideshowAnimation,
 } from '@/types'
-import type { MediaDisplayFilter, MediaHoverEffect, MobileGridColumns, SlideshowAnimation } from '@/types'
+import type { MediaDisplayFilter, MobileGridColumns, SlideshowAnimation } from '@/types'
 
 // Per-photo filter override: null means "inherit global", 'global' is the explicit sentinel.
 export type PhotoFilterChoice = MediaDisplayFilter | 'global'
@@ -26,14 +25,6 @@ export const MEDIA_DISPLAY_FILTER_OPTIONS: Array<{ value: MediaDisplayFilter; la
   { value: 'soft', label: 'Soft' },
 ]
 
-export const MEDIA_HOVER_EFFECT_OPTIONS: Array<{ value: MediaHoverEffect; label: string }> = [
-  { value: 'none', label: 'None' },
-  { value: 'mono', label: 'Mono' },
-  { value: 'fade', label: 'Fade in' },
-  { value: 'zoom', label: 'Zoom' },
-  { value: 'lift', label: 'Lift' },
-]
-
 export const MOBILE_GRID_COLUMN_OPTIONS: Array<{ value: MobileGridColumns; label: string }> = [
   { value: 3, label: '3 in a row' },
   { value: 4, label: '4 in a row' },
@@ -51,19 +42,12 @@ export const SLIDESHOW_ANIMATION_OPTIONS: Array<{ value: SlideshowAnimation; lab
 const MEDIA_DISPLAY_FILTERS = new Set<MediaDisplayFilter>(
   MEDIA_DISPLAY_FILTER_OPTIONS.map((o) => o.value),
 )
-const MEDIA_HOVER_EFFECTS = new Set<MediaHoverEffect>(
-  MEDIA_HOVER_EFFECT_OPTIONS.map((o) => o.value),
-)
 const SLIDESHOW_ANIMATIONS = new Set<SlideshowAnimation>(
   SLIDESHOW_ANIMATION_OPTIONS.map((o) => o.value),
 )
 
 export function isMediaDisplayFilter(value: unknown): value is MediaDisplayFilter {
   return typeof value === 'string' && MEDIA_DISPLAY_FILTERS.has(value as MediaDisplayFilter)
-}
-
-export function isMediaHoverEffect(value: unknown): value is MediaHoverEffect {
-  return typeof value === 'string' && MEDIA_HOVER_EFFECTS.has(value as MediaHoverEffect)
 }
 
 export function isMobileGridColumns(value: unknown): value is MobileGridColumns {

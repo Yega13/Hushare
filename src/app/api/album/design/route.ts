@@ -3,21 +3,21 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { verifyOwnerViaCookieWithRateLimit } from '@/lib/album-owner-access'
 import { forbidCrossSiteRequest } from '@/lib/request-security'
 import { queueAlbumSettingsBroadcast } from '@/lib/broadcast'
-import { isValidHex, isValidFont, getTemplate, isValidPhotoStyle, isValidHeaderVideoMode } from '@/lib/album-design'
+import { isValidHex, isValidFont, isValidPhotoStyle, isValidHeaderVideoMode } from '@/lib/album-design'
 
 export const runtime = 'nodejs'
 
 const NO_STORE = { 'Cache-Control': 'no-store' }
 
 // Album design settings — text/enum fields only (accent_color, welcome_message, title_font,
-// template, photo_style). Fields backed by an R2-hosted image get their own dedicated route
+// photo_style). Fields backed by an R2-hosted image get their own dedicated route
 // instead (see /api/album/background, /api/album/header-image, /api/album/logo) since those need
 // upload presigning and old-object cleanup that a shared text-field route has no business doing.
 export async function POST(req: Request) {
   const csrfError = forbidCrossSiteRequest(req)
   if (csrfError) return csrfError
 
-  const body = await req.json().catch(() => null) as { slug?: unknown; accent_color?: unknown; welcome_message?: unknown; title_font?: unknown; template?: unknown; photo_style?: unknown; header_focal?: unknown; header_zoom?: unknown; header_video_mode?: unknown } | null
+  const body = await req.json().catch(() => null) as { slug?: unknown; accent_color?: unknown; welcome_message?: unknown; title_font?: unknown; photo_style?: unknown; header_focal?: unknown; header_zoom?: unknown; header_video_mode?: unknown } | null
   if (!body || typeof body.slug !== 'string') {
     return NextResponse.json({ error: 'Missing slug' }, { status: 400, headers: NO_STORE })
   }
@@ -65,25 +65,6 @@ export async function POST(req: Request) {
       updates.photo_style = body.photo_style
     } else {
       return NextResponse.json({ error: 'photo_style must be a known style or null' }, { status: 400, headers: NO_STORE })
-    }
-  }
-
-  // template: apply a one-tap "look" — sets accent, title font, and layout together in one write.
-  // All preset accents are palette colours, so this is always free (no paid-colour check needed).
-  if (body.template !== undefined) {
-    if (body.template === null) {
-      updates.template = null
-    } else if (typeof body.template === 'string') {
-      const preset = getTemplate(body.template)
-      if (!preset) {
-        return NextResponse.json({ error: 'Unknown template' }, { status: 400, headers: NO_STORE })
-      }
-      updates.template = preset.key
-      updates.accent_color = preset.accent
-      updates.title_font = preset.font
-      updates.photo_layout = preset.layout
-    } else {
-      return NextResponse.json({ error: 'template must be a preset key or null' }, { status: 400, headers: NO_STORE })
     }
   }
 

@@ -80,30 +80,6 @@ export function fontStack(key: string | null | undefined): string {
 
 // ── One-tap "looks" — event-type presets. Each dresses the whole album in a tap (accent + title
 // font + photo layout). Every accent is a palette colour, so applying a look is always free.
-export type AlbumTemplate = { key: string; label: string; accent: string; font: string; layout: 'grid' | 'justified' }
-export const ALBUM_TEMPLATES: AlbumTemplate[] = [
-  { key: 'wedding',   label: 'Wedding',   accent: '#fdfaf5', font: 'elegant', layout: 'justified' },
-  { key: 'race',      label: 'Race',      accent: '#a63a1e', font: 'bold',    layout: 'grid' },
-  { key: 'party',     label: 'Party',     accent: '#8a1e5c', font: 'script',  layout: 'justified' },
-  { key: 'corporate', label: 'Corporate', accent: '#1e3a5f', font: 'sans',    layout: 'grid' },
-  { key: 'minimal',   label: 'Minimal',   accent: '#2b2b2e', font: 'sans',    layout: 'justified' },
-]
-export function getTemplate(key: string): AlbumTemplate | null {
-  return ALBUM_TEMPLATES.find((t) => t.key === key) ?? null
-}
-
-// ── Photo style — how the tiles present. null/'default' = the album's own media_radius; the three
-// named styles override every tile's look. Chosen in the Album Designer.
-export type AlbumPhotoStyle = { key: string; label: string }
-export const ALBUM_PHOTO_STYLES: AlbumPhotoStyle[] = [
-  { key: 'default', label: 'Standard' },
-  { key: 'edge', label: 'Edge to edge' },
-  { key: 'rounded', label: 'Rounded' },
-  { key: 'framed', label: 'Framed' },
-]
-export function isValidPhotoStyle(key: string): boolean {
-  return key === 'edge' || key === 'rounded' || key === 'framed'
-}
 
 // ── Header video playback modes (used when the chosen header photo is a video).
 export const HEADER_VIDEO_MODES: { key: HeaderVideoMode; label: string }[] = [
@@ -117,6 +93,19 @@ export function isValidHeaderVideoMode(key: string): key is HeaderVideoMode {
 }
 // Resolve a tile's radius + whether it wears a white matte, from the album's photo_style.
 // `mediaRadius` is the album's own per-tile radius, used only for the default style.
+// ── Photo style — how the tiles present. null/'default' = the album's own media_radius; the three
+// named styles override every tile's look. Chosen in the Album Designer.
+export type AlbumPhotoStyle = { key: string; label: string }
+export const ALBUM_PHOTO_STYLES: AlbumPhotoStyle[] = [
+  { key: 'default', label: 'Standard' },
+  { key: 'edge', label: 'Edge to edge' },
+  { key: 'rounded', label: 'Rounded' },
+  { key: 'framed', label: 'Framed' },
+]
+export function isValidPhotoStyle(key: string): boolean {
+  return key === 'edge' || key === 'rounded' || key === 'framed'
+}
+
 export function photoStyleTile(style: string | null | undefined, mediaRadius: number): { radius: number; framed: boolean } {
   switch (style) {
     case 'edge': return { radius: 0, framed: false }

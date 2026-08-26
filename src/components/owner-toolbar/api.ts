@@ -1,5 +1,5 @@
 import type { CollectionSummary } from '@/components/owner-toolbar/types'
-import type { MediaDisplayFilter, MediaHoverEffect, MobileGridColumns, SlideshowAnimation } from '@/lib/media-display'
+import type { MediaDisplayFilter, MobileGridColumns, SlideshowAnimation } from '@/lib/media-display'
 import type { SponsorLogo, SlideshowMotion } from '@/types'
 import { readFileRobust } from '@/lib/file-read'
 
@@ -76,7 +76,6 @@ export async function saveMediaSettingsRequest(
   mediaRadius: number,
   videoAutoplay: boolean,
   mediaFilter: MediaDisplayFilter,
-  mediaHover: MediaHoverEffect,
   mobileGridColumns: MobileGridColumns,
   slideshowIntervalMs: number,
   slideshowAnimation: SlideshowAnimation,
@@ -87,7 +86,6 @@ export async function saveMediaSettingsRequest(
   media_radius: number
   video_autoplay: boolean
   media_filter: MediaDisplayFilter
-  media_hover: MediaHoverEffect
   mobile_grid_columns: MobileGridColumns
   slideshow_interval_ms: number
   slideshow_animation: SlideshowAnimation
@@ -100,7 +98,6 @@ export async function saveMediaSettingsRequest(
       media_radius: mediaRadius,
       video_autoplay: videoAutoplay,
       media_filter: mediaFilter,
-      media_hover: mediaHover,
       mobile_grid_columns: mobileGridColumns,
       slideshow_interval_ms: slideshowIntervalMs,
       slideshow_animation: slideshowAnimation,
@@ -113,7 +110,6 @@ export async function saveMediaSettingsRequest(
     media_radius?: number
     video_autoplay?: boolean
     media_filter?: MediaDisplayFilter
-    media_hover?: MediaHoverEffect
     mobile_grid_columns?: MobileGridColumns
     slideshow_interval_ms?: number
     slideshow_animation?: SlideshowAnimation
@@ -123,7 +119,6 @@ export async function saveMediaSettingsRequest(
     body.media_radius == null ||
     body.video_autoplay == null ||
     !body.media_filter ||
-    !body.media_hover ||
     !body.mobile_grid_columns ||
     body.slideshow_interval_ms == null ||
     !body.slideshow_animation
@@ -135,7 +130,6 @@ export async function saveMediaSettingsRequest(
     media_radius: body.media_radius,
     video_autoplay: body.video_autoplay,
     media_filter: body.media_filter,
-    media_hover: body.media_hover,
     mobile_grid_columns: body.mobile_grid_columns,
     slideshow_interval_ms: body.slideshow_interval_ms,
     slideshow_animation: body.slideshow_animation,

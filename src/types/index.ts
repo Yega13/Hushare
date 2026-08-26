@@ -1,7 +1,6 @@
 export type MediaType = "image" | "video";
 export type StorageBackend = "r2" | "stream";
 export type MediaDisplayFilter = "none" | "warm" | "cool" | "mono" | "vintage" | "soft";
-export type MediaHoverEffect = "none" | "mono" | "fade" | "zoom" | "lift";
 export type MobileGridColumns = 3 | 4 | 5 | 6;
 export type PhotoLayout = "grid" | "justified";
 // Retired as a user-facing choice — kept as the fallback for albums that have never touched the
@@ -56,7 +55,6 @@ export type Album = {
   // Sponsor-branding strip (race/festival albums), owner-ordered. Paid, same gate as logo_url.
   // Empty array (the default) shows no strip.
   sponsor_logos: SponsorLogo[];
-  template: string | null;
   // Owner-selectable title font (key into ALBUM_FONTS); null = the default classic serif.
   title_font: string | null;
   // How the photo tiles present (edge / rounded / framed); null = default (per-album media_radius).
@@ -71,7 +69,6 @@ export type Album = {
   media_radius: number;
   video_autoplay: boolean;
   media_filter: MediaDisplayFilter;
-  media_hover: MediaHoverEffect;
   mobile_grid_columns: MobileGridColumns;
   photo_layout: PhotoLayout;
   slideshow_interval_ms: number;

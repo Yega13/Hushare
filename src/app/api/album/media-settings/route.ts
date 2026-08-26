@@ -11,7 +11,6 @@ export const runtime = 'nodejs'
 const NO_STORE = { 'Cache-Control': 'no-store' }
 
 const VALID_FILTERS = new Set(['none', 'warm', 'cool', 'mono', 'vintage', 'soft'])
-const VALID_HOVERS = new Set(['none', 'mono', 'fade', 'zoom', 'lift'])
 const VALID_GRID_COLUMNS = new Set([3, 4, 5, 6])
 const VALID_SLIDESHOW_ANIMS = new Set(['none', 'fade', 'rise', 'zoom'])
 
@@ -23,7 +22,6 @@ export async function POST(req: Request) {
     slug?: unknown
     media_radius?: unknown
     media_filter?: unknown
-    media_hover?: unknown
     mobile_grid_columns?: unknown
     slideshow_interval_ms?: unknown
     slideshow_animation?: unknown
@@ -51,12 +49,6 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: `media_filter must be one of: ${[...VALID_FILTERS].join(', ')}` }, { status: 400, headers: NO_STORE })
     }
     updates.media_filter = body.media_filter
-  }
-  if (body.media_hover !== undefined) {
-    if (typeof body.media_hover !== 'string' || !VALID_HOVERS.has(body.media_hover)) {
-      return NextResponse.json({ error: `media_hover must be one of: ${[...VALID_HOVERS].join(', ')}` }, { status: 400, headers: NO_STORE })
-    }
-    updates.media_hover = body.media_hover
   }
   if (body.mobile_grid_columns !== undefined) {
     if (typeof body.mobile_grid_columns !== 'number' || !VALID_GRID_COLUMNS.has(body.mobile_grid_columns)) {
@@ -149,7 +141,6 @@ export async function POST(req: Request) {
     media_radius: updates.media_radius,
     video_autoplay: updates.video_autoplay,
     media_filter: updates.media_filter,
-    media_hover: updates.media_hover,
     mobile_grid_columns: updates.mobile_grid_columns,
     slideshow_interval_ms: updates.slideshow_interval_ms,
     slideshow_animation: updates.slideshow_animation,

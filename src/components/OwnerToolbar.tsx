@@ -12,7 +12,6 @@ import {
   MEDIA_DISPLAY_FILTER_OPTIONS,
   MOBILE_GRID_COLUMN_OPTIONS,
   type MediaDisplayFilter,
-  type MediaHoverEffect,
   type MobileGridColumns,
   type SlideshowAnimation,
 } from '@/lib/media-display'
@@ -143,7 +142,6 @@ export default function OwnerToolbar({ album, photos, ownerToken, userTier, medi
   const [photoLayout, setPhotoLayout] = useState<'grid' | 'justified'>(album.photo_layout === 'justified' ? 'justified' : 'grid')
   const [mediaFilter, setMediaFilter] = useState<MediaDisplayFilter>(album.media_filter ?? 'none')
   const [savedMediaFilter, setSavedMediaFilter] = useState<MediaDisplayFilter>(album.media_filter ?? 'none')
-  const [mediaHover, setMediaHover] = useState<MediaHoverEffect>(album.media_hover ?? 'none')
   const [mobileGridColumns, setMobileGridColumns] = useState<MobileGridColumns>(album.mobile_grid_columns ?? 3)
   const [slideshowIntervalMs, setSlideshowIntervalMs] = useState(album.slideshow_interval_ms ?? DEFAULT_SLIDESHOW_INTERVAL_MS)
   const [slideshowAnimation, setSlideshowAnimation] = useState<SlideshowAnimation>(album.slideshow_animation ?? 'fade')
@@ -307,7 +305,6 @@ export default function OwnerToolbar({ album, photos, ownerToken, userTier, medi
       setFaceFinderEnabled(!!album.face_finder_enabled)
       setMediaFilter(album.media_filter ?? 'none')
       setSavedMediaFilter(album.media_filter ?? 'none')
-      setMediaHover(album.media_hover ?? 'none')
       setMobileGridColumns(album.mobile_grid_columns ?? 3)
       setSlideshowIntervalMs(album.slideshow_interval_ms ?? DEFAULT_SLIDESHOW_INTERVAL_MS)
       setSlideshowAnimation(album.slideshow_animation ?? 'fade')
@@ -323,7 +320,7 @@ export default function OwnerToolbar({ album, photos, ownerToken, userTier, medi
       setDeleteConfirm(false)
       setDeleteError('')
     }
-  }, [album.allow_guest_downloads, album.custom_slug, album.media_filter, album.media_hover, album.media_radius, album.mobile_grid_columns, album.reveal_at, album.slideshow_animation, album.slideshow_motion, album.slideshow_interval_ms, album.video_autoplay, showSettings])
+  }, [album.allow_guest_downloads, album.custom_slug, album.media_filter, album.media_radius, album.mobile_grid_columns, album.reveal_at, album.slideshow_animation, album.slideshow_motion, album.slideshow_interval_ms, album.video_autoplay, showSettings])
 
   useEffect(() => {
     if (showSettings && canUseCollections) void loadCollections()
@@ -414,7 +411,6 @@ export default function OwnerToolbar({ album, photos, ownerToken, userTier, medi
     nextRadius = mediaRadius,
     nextAutoplay = videoAutoplay,
     nextFilter = mediaFilter,
-    nextHover = mediaHover,
     nextMobileGridColumns = mobileGridColumns,
     nextSlideshowIntervalMs = slideshowIntervalMs,
     nextSlideshowAnimation = slideshowAnimation,
@@ -428,7 +424,6 @@ export default function OwnerToolbar({ album, photos, ownerToken, userTier, medi
         nextRadius,
         nextAutoplay,
         nextFilter,
-        nextHover,
         nextMobileGridColumns,
         nextSlideshowIntervalMs,
         nextSlideshowAnimation,
@@ -445,7 +440,6 @@ export default function OwnerToolbar({ album, photos, ownerToken, userTier, medi
       setVideoAutoplay(result.video_autoplay)
       setMediaFilter(result.media_filter)
       setSavedMediaFilter(result.media_filter)
-      setMediaHover(result.media_hover)
       setMobileGridColumns(result.mobile_grid_columns)
       setSlideshowIntervalMs(result.slideshow_interval_ms)
       setSlideshowAnimation(result.slideshow_animation)
@@ -454,7 +448,6 @@ export default function OwnerToolbar({ album, photos, ownerToken, userTier, medi
           media_radius: result.media_radius,
           video_autoplay: result.video_autoplay,
           media_filter: result.media_filter,
-          media_hover: result.media_hover,
           mobile_grid_columns: result.mobile_grid_columns,
           slideshow_interval_ms: result.slideshow_interval_ms,
           slideshow_animation: result.slideshow_animation,
@@ -480,7 +473,6 @@ export default function OwnerToolbar({ album, photos, ownerToken, userTier, medi
     nextRadius: number,
     nextAutoplay: boolean,
     nextFilter: MediaDisplayFilter,
-    nextHover: MediaHoverEffect,
     nextMobileGridColumns: MobileGridColumns,
     nextSlideshowIntervalMs: number,
     nextSlideshowAnimation: SlideshowAnimation,
@@ -494,7 +486,6 @@ export default function OwnerToolbar({ album, photos, ownerToken, userTier, medi
         nextRadius,
         nextAutoplay,
         nextFilter,
-        nextHover,
         nextMobileGridColumns,
         nextSlideshowIntervalMs,
         nextSlideshowAnimation,
@@ -506,7 +497,7 @@ export default function OwnerToolbar({ album, photos, ownerToken, userTier, medi
     const nextRadius = Math.max(0, Math.min(radiusMax, Math.round(value)))
     setMediaRadius(nextRadius)
     onAlbumUpdated({ media_radius: nextRadius }, { forceGlobalRadius: true })
-    scheduleAutoSave(nextRadius, videoAutoplay, mediaFilter, mediaHover, mobileGridColumns, slideshowIntervalMs, slideshowAnimation)
+    scheduleAutoSave(nextRadius, videoAutoplay, mediaFilter, mobileGridColumns, slideshowIntervalMs, slideshowAnimation)
   }
 
   function parseMediaRadiusDraft(value: string): number | null {
@@ -558,7 +549,7 @@ export default function OwnerToolbar({ album, photos, ownerToken, userTier, medi
     const nextInterval = Math.max(MIN_SLIDESHOW_INTERVAL_MS, Math.min(MAX_SLIDESHOW_INTERVAL_MS, Math.round(value)))
     setSlideshowIntervalMs(nextInterval)
     onAlbumUpdated({ slideshow_interval_ms: nextInterval })
-    scheduleAutoSave(mediaRadius, videoAutoplay, mediaFilter, mediaHover, mobileGridColumns, nextInterval, slideshowAnimation)
+    scheduleAutoSave(mediaRadius, videoAutoplay, mediaFilter, mobileGridColumns, nextInterval, slideshowAnimation)
   }
 
   async function addAlbumToCollection(collectionId: string) {
@@ -840,7 +831,7 @@ export default function OwnerToolbar({ album, photos, ownerToken, userTier, medi
                           setVideoAutoplay(nextAutoplay)
                           onAlbumUpdated({ video_autoplay: nextAutoplay })
                           if (debouncedSaveRef.current !== null) { window.clearTimeout(debouncedSaveRef.current); debouncedSaveRef.current = null }
-                          void saveMediaSettings(mediaRadius, nextAutoplay, mediaFilter, mediaHover, mobileGridColumns, slideshowIntervalMs, slideshowAnimation)
+                          void saveMediaSettings(mediaRadius, nextAutoplay, mediaFilter, mobileGridColumns, slideshowIntervalMs, slideshowAnimation)
                         }}
                         className="h-4 w-4"
                       />
@@ -855,7 +846,7 @@ export default function OwnerToolbar({ album, photos, ownerToken, userTier, medi
                           setMediaFilter(nextFilter)
                           onAlbumUpdated({ media_filter: nextFilter })
                           if (debouncedSaveRef.current !== null) { window.clearTimeout(debouncedSaveRef.current); debouncedSaveRef.current = null }
-                          void saveMediaSettings(mediaRadius, videoAutoplay, nextFilter, mediaHover, mobileGridColumns, slideshowIntervalMs, slideshowAnimation)
+                          void saveMediaSettings(mediaRadius, videoAutoplay, nextFilter, mobileGridColumns, slideshowIntervalMs, slideshowAnimation)
                         }}
                         className="w-full rounded-lg px-3 py-2 text-sm focus:outline-none"
                         style={{ background: '#FDFAF5', border: '1px solid #DDD5C5', color: '#630826' }}
@@ -879,7 +870,7 @@ export default function OwnerToolbar({ album, photos, ownerToken, userTier, medi
                                 setMobileGridColumns(option.value)
                                 onAlbumUpdated({ mobile_grid_columns: option.value })
                                 if (debouncedSaveRef.current !== null) { window.clearTimeout(debouncedSaveRef.current); debouncedSaveRef.current = null }
-                                void saveMediaSettings(mediaRadius, videoAutoplay, mediaFilter, mediaHover, option.value, slideshowIntervalMs, slideshowAnimation)
+                                void saveMediaSettings(mediaRadius, videoAutoplay, mediaFilter, option.value, slideshowIntervalMs, slideshowAnimation)
                               }}
                               className="hush-press rounded-lg py-2 text-sm font-semibold"
                               style={{
