@@ -27,8 +27,8 @@ type RelayEnv = { STREAM_RELAY_LIMITER?: RateLimitBinding }
 // or https://upload.cloudflarestream.com/. There is no SSRF surface here — uid is the only client
 // input, and it only ever resolves to a URL we chose, never one the client chooses.
 //
-// This is READ-ONLY against pending_stream_uploads — it never deletes/consumes the row. That
-// happens exactly once, later, in /api/album/photos/create's atomic DELETE+RETURNING.
+// This is READ-ONLY against pending_stream_uploads — it never consumes the row. That happens
+// exactly once, later, in /api/album/photos/create's atomic UPDATE ... RETURNING claim.
 
 type PendingRow = { album_id: string; upload_url: string | null }
 
@@ -38,6 +38,17 @@ async function lookupPendingUpload(uid: string): Promise<PendingRow | null> {
     .from('pending_stream_uploads')
     .select('album_id, upload_url')
     .eq('stream_uid', uid)
+    // A CONSUMED TOKEN IS NOT RELAYABLE, and this line is what keeps that true.
+    //
+    // photos/create used to DELETE the row when it claimed a token, so a consumed uid simply had
+    // no row and this lookup returned null. It now marks consumed_at instead (so a retried save
+    // can be told apart from an injection attempt — see that route), which means the row survives
+    // the claim. Without this filter, that change would quietly reopen the relay for a video that
+    // has already been saved: the same uid, still forwarding chunks, indefinitely.
+    //
+    // Nothing about the relay itself needs to change for the retry fix. A retried SAVE never comes
+    // back through here — the bytes are already in Stream; it is the database row that is missing.
+    .is('consumed_at', null)
     .maybeSingle<PendingRow>()
   return data ?? null
 }

@@ -455,16 +455,18 @@ export async function POST(req: Request) {
   const rejectedStreamUids = new Set<string>()
 
   if (streamUidsToVerify.length > 0) {
-    // Atomic DELETE+RETURNING: verify and consume in one statement.
-    // A plain SELECT-then-DELETE TOCTOU allows two concurrent requests to both pass
-    // the SELECT check before either fires the DELETE.
+    // Atomic claim: UPDATE ... WHERE consumed_at IS NULL RETURNING, in one statement.
+    // A plain SELECT-then-write allows two concurrent requests to both pass the check before
+    // either writes, so the claim and the test have to be the same statement. This used to be
+    // DELETE ... RETURNING, which had the same atomicity and one fatal shortcoming — see below.
     // Reject tokens older than 24h — they were never completed.
     const tokenTtlCutoff = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()
     const { data: consumed, error: consumeErr } = await admin
       .from('pending_stream_uploads')
-      .delete()
+      .update({ consumed_at: new Date().toISOString() })
       .in('stream_uid', streamUidsToVerify)
       .eq('album_id', albumId)
+      .is('consumed_at', null)
       .gte('created_at', tokenTtlCutoff)
       .select('stream_uid')
     if (consumeErr) {
@@ -473,6 +475,40 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'Failed to process photos' }, { status: 500, headers: NO_STORE })
     }
     const verified = new Set((consumed ?? []).map((r: { stream_uid: string }) => r.stream_uid))
+
+    // A RETRIED SAVE IS NOT AN INJECTION ATTEMPT, and a deleted row could not tell them apart.
+    //
+    // The token is claimed above and the rows are inserted below, in that order, with nothing
+    // transactional between them. When the connection dies in that gap — venue wifi, which is the
+    // whole environment this runs in — the client retries the save, the dedup pre-check finds no
+    // photos row so the uid is still in the batch, and the claim now matches nothing. The video was
+    // refused, and the guest was told to press Retry, which starts an entire new upload: a clip
+    // that just took twenty minutes to send has to go again, over the same bad connection, with the
+    // finished bytes already sitting in Cloudflare Stream.
+    //
+    // Keeping the claimed row makes the distinction visible. Scoped to THIS album, so the
+    // cross-album injection this check exists for is still refused — a uid issued for someone
+    // else's album has no row here at all. Re-inserting a uid we already issued for this album is
+    // harmless: unique(album_id, stream_uid) with ignoreDuplicates means a replay can only ever
+    // produce the one row it would have produced anyway.
+    const unclaimed = streamUidsToVerify.filter(uid => !verified.has(uid))
+    if (unclaimed.length > 0) {
+      const { data: retried, error: retryErr } = await admin
+        .from('pending_stream_uploads')
+        .select('stream_uid')
+        .in('stream_uid', unclaimed)
+        .eq('album_id', albumId)
+        .not('consumed_at', 'is', null)
+        .gte('created_at', tokenTtlCutoff)
+      if (retryErr) {
+        // Not fatal. Failing here would refuse a video we might well have accepted, which is the
+        // outcome this whole change exists to stop. The uid simply stays unverified, exactly as it
+        // would have before.
+        console.error('[photos/create] retry-token lookup failed:', retryErr.message)
+      } else {
+        for (const row of retried ?? []) verified.add((row as { stream_uid: string }).stream_uid)
+      }
+    }
     // An unverified uid drops ITS OWN row. It used to 403 the entire batch, which meant one bad
     // video destroyed the photos uploaded alongside it — and those photos were already sitting in
     // R2, fully paid for, with a save that is idempotent and would have succeeded.
