@@ -88,6 +88,15 @@ export default function AlbumPageClient({ initialAlbum = null, initialPhotos, in
   const [loadingMore, setLoadingMore] = useState(false)
   const loadingMoreRef = useRef(false)
   const photosLenRef = useRef(photos.length); photosLenRef.current = photos.length
+  // The list itself, mirrored for applyDelta, which needs the ROWS (to find the newest created_at
+  // and to dedup) rather than just how many there are — and must stay a stable callback, since
+  // reading `photos` directly would rebuild the realtime channel on every upload.
+  //
+  // Assigned in an effect rather than during render like the refs around it. Those predate the
+  // react-hooks/refs rule and already trip it; there is no reason to add another. The one-render
+  // lag it introduces cannot matter here: the delta runs behind a 500ms debounce.
+  const photosRef = useRef(photos)
+  useEffect(() => { photosRef.current = photos }, [photos])
   const totalRef = useRef(total); totalRef.current = total
   const albumIdRef = useRef<string | null>(initialAlbum?.id ?? null); albumIdRef.current = album?.id ?? null
 
@@ -323,6 +332,70 @@ export default function AlbumPageClient({ initialAlbum = null, initialPhotos, in
     setTotal(r.total)
     setPhotos(prev => (r.total <= ALBUM_FIRST_WINDOW ? r.photos : mergeWindow(prev, r.photos)))
   }, [])
+
+  // Whether the pending debounced refresh may use the cheap path. Set from the broadcast payload
+  // and read once the timer fires. A ref, not state: it must not re-render anything, and the timer
+  // has to see the latest value rather than the one captured when it was scheduled.
+  const deltaPending = useRef(false)
+
+  // Fetch ONLY the photos newer than the newest one on screen, and append them.
+  //
+  // The album is ordered by sort_order, then created_at, then id, with null sort_order sorting
+  // LAST — and a fresh upload has a null sort_order and the newest created_at, so it belongs at the
+  // end. That is what makes appending correct rather than a guess: it lands exactly where a full
+  // refetch would have put it.
+  //
+  // SELF-HEALING, because a delta cannot see a deletion. If a 'changed' ping is ever lost — a
+  // dropped socket, a backgrounded tab — the list would quietly drift from the album. So the
+  // server's true total is compared against what is held, and any disagreement falls back to the
+  // full refetch. That check is why the delta path is safe to take at all.
+  const applyDelta = useCallback(async (albumId: string) => {
+    const held = photosRef.current
+    const newest = held.reduce<string | null>(
+      (max: string | null, p: Photo) => (p.created_at && (!max || p.created_at > max) ? p.created_at : max),
+      null,
+    )
+    // Nothing on screen yet, or rows without timestamps: there is no "since" to ask from, so the
+    // only correct answer is the whole window.
+    if (!newest) {
+      const r = await fetchPhotos(albumId)
+      applyWindowRefresh(r)
+      return
+    }
+
+    const res = await fetch(
+      `/api/album/photos?albumId=${encodeURIComponent(albumId)}&since=${encodeURIComponent(newest)}`,
+      { cache: 'no-store' },
+    )
+    if (!res.ok) {
+      // A failed delta must never leave the album stale — fall back to the path that always works.
+      const r = await fetchPhotos(albumId)
+      applyWindowRefresh(r)
+      return
+    }
+    const json = await res.json() as { photos?: Photo[]; total?: number }
+    const incoming = (json.photos ?? []).filter(p => !isRecentlyDeleted(p.id))
+    const total = typeof json.total === 'number' ? json.total : held.length
+
+    const have = new Set(held.map((p: Photo) => p.id))
+    // `since` uses >= so a shared millisecond cannot drop a photo, which means the newest row the
+    // caller already holds usually comes back. Dedup by id, here.
+    const added = incoming.filter(p => !have.has(p.id))
+    const merged = added.length > 0 ? [...held, ...added] : held
+
+    // The disagreement check. `merged.length` can legitimately be lower than `total` on a big album
+    // whose tail has not been paged in yet — that is what ALBUM_FIRST_WINDOW means — so only a
+    // shortfall WITHIN the loaded window is evidence that something was missed.
+    const windowIsComplete = total <= ALBUM_FIRST_WINDOW
+    if (windowIsComplete && merged.length !== total) {
+      const r = await fetchPhotos(albumId)
+      applyWindowRefresh(r)
+      return
+    }
+
+    setTotal(total)
+    if (added.length > 0) setPhotos(merged)
+  }, [fetchPhotos, applyWindowRefresh, isRecentlyDeleted])
 
   // ─── fetchAlbum ─────────────────────────────────────────────────────────────
 
@@ -616,13 +689,31 @@ export default function AlbumPageClient({ initialAlbum = null, initialPhotos, in
       const ch = supabase
         // Channel name IS the broadcast topic the server sends to (`album:<id>`).
         .channel(`album:${albumId}`)
-        .on('broadcast', { event: 'changed' }, () => {
+        .on('broadcast', { event: 'changed' }, (msg) => {
           if (!active) return
-          // Debounce: a burst of uploads sends many pings — collapse them into one refetch so
-          // 50 uploads in 2s cost ~1 refetch, not 50 list rebuilds.
+          // A DELTA FOR UPLOADS, A FULL REFETCH FOR EVERYTHING ELSE.
+          //
+          // Every ping used to pull the whole first window — up to 2,000 rows — from every phone
+          // in the room. At a 300-guest wedding the uploads causing the pings are coming from
+          // those same phones, so the album re-downloads itself hundreds of times over exactly
+          // while the network is at its worst.
+          //
+          // Uploads only ever append, so a viewer needs just the rows newer than the newest it
+          // holds. Deletes, hides and reorders rewrite or remove rows already on screen and no
+          // "what is new" query can express that, so those still refetch.
+          //
+          // ANYTHING UNRECOGNISED IS TREATED AS A FULL REFETCH. A ping from an older server has no
+          // kind at all, and the expensive-but-correct branch is the only safe default.
+          const kind = (msg as { payload?: { kind?: unknown } } | undefined)?.payload?.kind
+          if (kind === 'added') deltaPending.current = true
+          else deltaPending.current = false
+
+          // Debounce: a burst of uploads sends many pings — collapse them into one fetch so
+          // 50 uploads in 2s cost ~1 fetch, not 50 list rebuilds.
           if (refetchTimer) clearTimeout(refetchTimer)
           refetchTimer = setTimeout(() => {
-            void fetchPhotos(albumId).then(r => { if (active) applyWindowRefresh(r) })
+            if (deltaPending.current) void applyDelta(albumId)
+            else void fetchPhotos(albumId).then(r => { if (active) applyWindowRefresh(r) })
           }, 500)
         })
         // DELETE and UPDATE used to arrive on postgres_changes for instant per-row feedback. They
@@ -676,7 +767,7 @@ export default function AlbumPageClient({ initialAlbum = null, initialPhotos, in
       if (refetchTimer) clearTimeout(refetchTimer)
       if (currentChannel) supabase.removeChannel(currentChannel)
     }
-  }, [album?.id, supabase, fetchPhotos, applyWindowRefresh])
+  }, [album?.id, supabase, fetchPhotos, applyWindowRefresh, applyDelta])
 
   // ─── Effect 4: Realtime settings broadcast channel ──────────────────────────
   useEffect(() => {

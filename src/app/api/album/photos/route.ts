@@ -37,10 +37,16 @@ export async function GET(req: Request) {
   const offset = Number.isFinite(offsetRaw) && offsetRaw > 0 ? Math.floor(offsetRaw) : undefined
   const limitRaw = Number(url.searchParams.get('limit'))
   const limit = Number.isFinite(limitRaw) && limitRaw > 0 ? Math.floor(limitRaw) : undefined
+  // Delta window for the live album view: "everything at least this new". Validated as a real date
+  // rather than passed through, so a malformed value degrades to a full fetch instead of reaching
+  // PostgREST as a filter it will reject — a broken album beats a broken query string, but a
+  // correct album beats both.
+  const sinceRaw = url.searchParams.get('since')
+  const since = sinceRaw && !Number.isNaN(Date.parse(sinceRaw)) ? new Date(sinceRaw).toISOString() : undefined
   const cookieStore = await cookies()
 
   try {
-    const result = await fetchAuthorizedPhotos(albumId, cookieStore, { recentLimit, offset, limit })
+    const result = await fetchAuthorizedPhotos(albumId, cookieStore, { recentLimit, offset, limit, since })
     switch (result.kind) {
       case 'invalid':
         return NextResponse.json({ error: 'Invalid album id' }, { status: 400, headers: NO_STORE })
