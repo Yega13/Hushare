@@ -1,6 +1,8 @@
 'use client'
 
 import { useCallback, useRef, useState, type CSSProperties } from 'react'
+import PlanBadge, { canUse, gatedRowStyle } from '@/components/PlanBadge'
+import type { Tier } from '@/types'
 import { Loader2, Plus, X, Play, ChevronLeft, ChevronRight } from 'lucide-react'
 import type { Album, Photo, SponsorLogo, HeaderVideoMode } from '@/types'
 import AlbumHeader from '@/components/AlbumHeader'
@@ -39,6 +41,15 @@ const label: React.CSSProperties = { fontSize: 12, fontWeight: 700, color: '#7C5
 const section: React.CSSProperties = { padding: '16px 0', borderBottom: `1px solid #EFE7D8` }
 
 export default function AlbumDesigner({ album, photos, onAlbumUpdated, onClose }: Props) {
+  // THE DESIGNER DID NOT KNOW THE PLAN AT ALL. A custom logo is gated by api/album/logo (Pro) and
+  // sponsor marks by api/album/sponsors (Max), but neither section showed anything — a free owner
+  // picked a file, waited for the upload, and only then got a refusal. The album already carries
+  // the OWNER'S tier (resolveAlbum sets `plan`), so nothing new has to be fetched to say so up
+  // front. null means not known yet, and PlanBadge deliberately renders nothing in that case
+  // rather than flashing a mark at a paying customer.
+  const ownerTier: Tier | null = album.plan ?? null
+  const lockedLogo = ownerTier !== null && !canUse(ownerTier, 'pro')
+  const lockedSponsors = ownerTier !== null && !canUse(ownerTier, 'studio')
   const { t } = useT()
   const [accentHex, setAccentHex] = useState(album.accent_color || DEFAULT_ACCENT)
   const accentTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -428,8 +439,10 @@ export default function AlbumDesigner({ album, photos, onAlbumUpdated, onClose }
           </div>
 
           {/* Logo */}
-          <div style={section}>
-            <p style={label}>{t('ad.logo')}</p>
+          <div style={{ ...section, ...gatedRowStyle(lockedLogo) }}>
+            <p style={{ ...label, display: 'flex', alignItems: 'center', gap: 8 }}>
+              {t('ad.logo')} <PlanBadge need="pro" tier={ownerTier} />
+            </p>
             {/* Ungated while we get every design feature working end-to-end — pricing comes later. */}
             {(
               <>
@@ -482,8 +495,10 @@ export default function AlbumDesigner({ album, photos, onAlbumUpdated, onClose }
           </div>
 
           {/* Sponsors */}
-          <div style={section}>
-            <p style={label}>{t('ad.sponsors')}</p>
+          <div style={{ ...section, ...gatedRowStyle(lockedSponsors) }}>
+            <p style={{ ...label, display: 'flex', alignItems: 'center', gap: 8 }}>
+              {t('ad.sponsors')} <PlanBadge need="studio" tier={ownerTier} />
+            </p>
             {/* Free for everyone — sponsor branding is a core need for the race/festival albums
                 this is aimed at, so gating it behind a plan would block the exact users it exists
                 for. Server-side gate removed to match (see /api/album/sponsors). */}

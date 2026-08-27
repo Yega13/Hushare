@@ -59,3 +59,29 @@ export default function PlanBadge({
     </span>
   )
 }
+
+// The look of a control the album's plan cannot use — ONE definition, so they cannot drift.
+//
+// They had drifted. Some gated rows dimmed to 0.6, one to 0.55, several not at all; one icon was
+// hand-coloured grey (`showLockedCustomize ? '#A89880' : '#7C5C3E'`) while the icons beside it
+// stayed full colour. The result read as a half-broken panel rather than a plan boundary, which is
+// exactly what the badge exists to prevent.
+//
+// `grayscale(1)` is what makes the rule hold for anything added later: it drains the icon, the
+// wine-coloured label and any swatch in one stroke, so a new gated row cannot forget to grey its
+// own icon the way the old per-row styling could. Opacity alone left colour showing and read as
+// "loading" rather than "locked".
+//
+// Deliberately NOT display:none. Someone who cannot see the control cannot learn the product has
+// it, and a control that vanishes on the free plan is indistinguishable from one that is broken.
+export function gatedRowStyle(locked: boolean): {
+  cursor: 'not-allowed' | 'pointer'
+  opacity: number
+  filter: string | undefined
+} {
+  return {
+    cursor: locked ? 'not-allowed' : 'pointer',
+    opacity: locked ? 0.55 : 1,
+    filter: locked ? 'grayscale(1)' : undefined,
+  }
+}

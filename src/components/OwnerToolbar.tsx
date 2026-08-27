@@ -44,7 +44,7 @@ import {
 } from '@/components/owner-toolbar/api'
 import { accordionButton, btnBase, inputStyle, sectionTitle, settingsSectionStyle } from '@/components/owner-toolbar/styles'
 import type { CollectionSummary, SettingsSection } from '@/components/owner-toolbar/types'
-import PlanBadge from '@/components/PlanBadge'
+import PlanBadge, { gatedRowStyle } from '@/components/PlanBadge'
 
 type Props = {
   album: Album
@@ -239,6 +239,11 @@ export default function OwnerToolbar({ album, photos, ownerToken, userTier, medi
   const tierKnown = userTier !== null
   const showLockedCustomize = tierKnown && !canCustomize
   const showLockedCollections = tierKnown && !canUseCollections
+  // Branding removal is gated by api/album/branding exactly like the custom URL, and it had NO
+  // badge and NO dimming — a free owner saw an ordinary switch, flipped it, and learned it was
+  // paid only from the error that came back. `canCustomize` is the same Pro test the custom URL
+  // uses; this row simply never asked it.
+  const showLockedBranding = tierKnown && !canCustomize
   const radiusMax = Math.max(1, Math.round(mediaRadiusMax))
 
   useEffect(() => {
@@ -1134,7 +1139,7 @@ export default function OwnerToolbar({ album, photos, ownerToken, userTier, medi
                 </button>
                 {openSection === 'guests' && (
                   <div className="px-4 pb-4 space-y-3">
-                    <label className="flex items-center justify-between gap-4 rounded-xl px-3 py-3" style={{ background: '#FDFAF5', border: '1px solid #DDD5C5', cursor: showLockedCustomize ? 'not-allowed' : 'pointer', opacity: showLockedCustomize ? 0.6 : 1 }}>
+                    <label className="flex items-center justify-between gap-4 rounded-xl px-3 py-3" style={{ background: '#FDFAF5', border: '1px solid #DDD5C5', ...gatedRowStyle(showLockedCustomize) }}>
                       <span>
                         <span className="block text-sm font-semibold" style={{ color: '#630826' }}>
                           {t('ot.requireApproval')} <PlanBadge need="pro" tier={userTier} />
@@ -1240,10 +1245,12 @@ export default function OwnerToolbar({ album, photos, ownerToken, userTier, medi
                         not-allowed/dimmed treatment the locked Collections row already uses. */}
                     <label
                       className="flex items-center justify-between gap-4 rounded-xl px-3 py-3"
-                      style={{ background: '#FDFAF5', border: '1px solid #DDD5C5', cursor: album.branding_locked ? 'not-allowed' : 'pointer', opacity: album.branding_locked ? 0.6 : 1 }}
+                      style={{ background: '#FDFAF5', border: '1px solid #DDD5C5', ...gatedRowStyle(album.branding_locked || showLockedBranding) }}
                     >
                       <span>
-                        <span className="block text-sm font-semibold" style={{ color: '#630826' }}>Remove Hushare branding</span>
+                        <span className="flex items-center gap-2 text-sm font-semibold" style={{ color: '#630826' }}>
+                          Remove Hushare branding <PlanBadge need="pro" tier={userTier} />
+                        </span>
                         <span className="block text-xs" style={{ color: '#7C5C3E' }}>
                           {album.branding_locked
                             ? 'Kept on for this album as part of our collaboration.'
@@ -1282,7 +1289,7 @@ export default function OwnerToolbar({ album, photos, ownerToken, userTier, medi
 
                     <label
                       className="flex items-center justify-between gap-4 rounded-xl px-3 py-3"
-                      style={{ background: '#FDFAF5', border: '1px solid #DDD5C5', cursor: showLockedCollections ? 'not-allowed' : 'pointer', opacity: showLockedCollections ? 0.6 : 1 }}
+                      style={{ background: '#FDFAF5', border: '1px solid #DDD5C5', ...gatedRowStyle(showLockedCollections) }}
                     >
                       <span>
                         <span className="flex items-center gap-2 text-sm font-semibold" style={{ color: '#630826' }}>
@@ -1421,7 +1428,7 @@ export default function OwnerToolbar({ album, photos, ownerToken, userTier, medi
               {/* Custom URL */}
               <section style={settingsSectionStyle}>
                 <button type="button" className="hush-motion" style={accordionButton} onClick={() => toggleSection('customUrl')}>
-                  <Link2 className="w-4 h-4" style={{ color: showLockedCustomize ? '#A89880' : '#7C5C3E' }} />
+                  <Link2 className="w-4 h-4" style={{ color: '#7C5C3E' }} />
                   <span style={sectionTitle}>{t('ot.customUrl')}</span>
                   <PlanBadge need="pro" tier={userTier} />
                   <ChevronDown
@@ -1434,7 +1441,7 @@ export default function OwnerToolbar({ album, photos, ownerToken, userTier, medi
                     <p className="text-xs mb-3" style={{ color: '#7C5C3E' }}>
                       {t('ot.customUrlSub')}
                     </p>
-                    <div className="flex items-stretch rounded-lg overflow-hidden" style={{ border: '1px solid #DDD5C5', background: '#FDFAF5', opacity: showLockedCustomize ? 0.55 : 1 }}>
+                    <div className="flex items-stretch rounded-lg overflow-hidden" style={{ border: '1px solid #DDD5C5', background: '#FDFAF5', ...gatedRowStyle(showLockedCustomize) }}>
                       <span className="text-xs flex items-center px-2 select-none" style={{ color: '#A89880' }}>hushare.space/</span>
                       <input
                         type="text"

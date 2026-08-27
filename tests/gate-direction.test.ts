@@ -29,6 +29,74 @@ const OFF_SWITCH_GUARDS: Record<string, RegExp> = {
   'api/album/media-settings/route.ts': /if \(updates\.require_approval === true\) \{[\s\S]{0,200}?refuseBelowTier/,
 }
 
+// EVERY GATED CONTROL MUST CARRY ITS MARK, and they had drifted apart badly.
+//
+// The server gated ten features. The owner toolbar showed a PRO/MAX badge on seven of them, and
+// AlbumDesigner — which owns the custom logo and the sponsor marks, both gated — did not import
+// PlanBadge at all and never even read the album's plan. So a free owner picked a logo file,
+// waited for it to upload, and learned it was a paid feature from the error that came back.
+// "Remove Hushare branding" was the same: an ordinary-looking switch that simply refused.
+//
+// The dimming had drifted too — 0.6 here, 0.55 there, several rows not dimmed at all, and one icon
+// hand-coloured grey while the icons beside it stayed in colour. gatedRowStyle() is now the single
+// definition, and grayscale(1) means a row added later cannot forget to grey its own icon.
+describe('every server-gated control shows which plan it needs', () => {
+  const read = (rel: string) => readFileSync(join(process.cwd(), 'src', ...rel.split('/')), 'utf8')
+
+  it('badges every gated control in the owner toolbar', () => {
+    const source = read('components/OwnerToolbar.tsx')
+    // The EXACT call, not a prefix: `ot.customUrl` also matches `ot.customUrlCleared` in a toast
+    // a thousand lines earlier, and the first draft of this test matched that and failed on code
+    // that was perfectly correct.
+    for (const key of ['ot.liveWall', 'ot.requireApproval', 'ot.faceFinder', 'ot.bibSearch', 'ot.customUrl', 'ot.delayedReveal', 'ot.collections']) {
+      const label = `t('${key}')`
+      const at = source.indexOf(label)
+      expect(at, `${label} is missing from the toolbar entirely`).toBeGreaterThan(-1)
+      // The badge sits on the same line or the next one, so look at a small window after the label.
+      expect(
+        source.slice(at, at + 220).includes('PlanBadge'),
+        `${label} is gated on the server but shows no PRO/MAX badge`,
+      ).toBe(true)
+    }
+  })
+
+  it('badges branding removal, which had none', () => {
+    const source = read('components/OwnerToolbar.tsx')
+    const at = source.indexOf('Remove Hushare branding')
+    expect(at).toBeGreaterThan(-1)
+    expect(
+      source.slice(at, at + 220).includes('PlanBadge'),
+      'api/album/branding gates this on Pro — the row must say so before it is used',
+    ).toBe(true)
+  })
+
+  it('makes the album designer plan-aware for the logo and sponsor marks', () => {
+    const source = read('components/AlbumDesigner.tsx')
+    expect(source.includes('PlanBadge'), 'AlbumDesigner must import PlanBadge').toBe(true)
+    expect(source.includes('album.plan'), 'AlbumDesigner must read the OWNER tier from the album').toBe(true)
+    for (const [label, need] of [['ad.logo', 'pro'], ['ad.sponsors', 'studio']] as const) {
+      const at = source.indexOf(label)
+      expect(at, `${label} missing`).toBeGreaterThan(-1)
+      const window = source.slice(at, at + 200)
+      expect(window.includes(`need="${need}"`), `${label} must carry a ${need.toUpperCase()} badge`).toBe(true)
+    }
+  })
+
+  it('uses ONE definition for how a gated control looks', () => {
+    const badge = read('components/PlanBadge.tsx')
+    expect(badge.includes('grayscale(1)'), 'gatedRowStyle must grey the whole row, icons included').toBe(true)
+    for (const rel of ['components/OwnerToolbar.tsx', 'components/AlbumDesigner.tsx']) {
+      const source = read(rel)
+      expect(source.includes('gatedRowStyle'), `${rel} must use the shared gated style`).toBe(true)
+      // The hand-rolled dims this replaced. Any of them coming back means the look has drifted again.
+      expect(
+        /opacity: \w+ \? 0\.6 : 1/.test(source),
+        `${rel} has a hand-rolled dim again — use gatedRowStyle`,
+      ).toBe(false)
+    }
+  })
+})
+
 // A COLLABORATION ALBUM KEEPS THE HUSHARE MARK, and that has to hold in two places.
 //
 // These albums are given Max for free in exchange for carrying our name in front of everyone who
