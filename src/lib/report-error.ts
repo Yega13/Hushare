@@ -99,8 +99,20 @@ function staleReloadStillAvailable(): boolean {
 // went wrong" — so a reload costs nothing that was not already lost, and rebuilds the tree from
 // scratch. One shot only, on its own flag so it can never consume, or be consumed by, the
 // stale-deploy recovery: if it happens twice the reload is not the answer and the error is real.
+// EVERY ENGINE PHRASES THIS DIFFERENTLY, and matching only one of them was a real gap.
+//
+// The first two alternatives are Chrome/Blink and Gecko. Safari says none of that — WebKit's
+// NotFoundError reads simply "The object can not be found here." Two of those arrived from an iPad
+// on 2026-08-27, and because the pattern did not match them: the one-shot reload never fired, and
+// the forensics added the day before (translated?, foreign scripts?) were never collected. The
+// rows landed with no recovery attempted and nothing to diagnose from — the exact two things that
+// instrumentation existed to provide.
+//
+// Matching on message text across three engines is fragile by nature, which is why the stack is
+// also checked: a removeChild/insertBefore/appendChild frame is the same evidence, whatever the
+// engine calls the error.
 const DOM_CORRUPTION_RE =
-  /Failed to execute '(?:insertBefore|removeChild|appendChild)' on 'Node'|The node (?:before which the new node is to be inserted|to be removed) is not a child of this node/i
+  /Failed to execute '(?:insertBefore|removeChild|appendChild)' on 'Node'|The node (?:before which the new node is to be inserted|to be removed) is not a child of this node|The object can ?not be found here/i
 const DOM_RELOAD_FLAG = 'hush-dom-reloaded'
 
 export function looksLikeDomCorruption(message: string): boolean {

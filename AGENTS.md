@@ -34,6 +34,19 @@ you will keep finding evidence for it and keep shipping fixes to the wrong thing
 
 11. if you fixed some error or warning in the website that is in admin page's panel, you should clean it, so you can notice if something's new is off.
 
+12. A NEW ERROR OR WARNING IN THE ADMIN PANEL IS YOUR JOB, NOT A QUESTION FOR ME. If one appears,
+investigate it and fix it without asking permission. Do not report that it exists and wait — read
+it, find the cause, fix the cause, and tell me what it was afterwards. Asking "want me to look at
+this?" makes me do the remembering, which is the part I delegated.
+
+The same applies to anything you notice while working: an error, a wrong number on a page, a
+promise the code does not keep. Fix it, then tell me. Ask only when the answer would change what
+you build, or when the action is destructive or outward-facing.
+
+If the cause turns out NOT to be ours — a browser bug, an injected extension script — say so
+plainly and filter it so it stops filling the panel, rather than leaving it there to be re-read
+every time.
+
 The rule of thumb: **one failed fix is a mistake, two is a signal to get another pair of eyes.** Do
 not spend a third attempt on your own hypothesis.
 
