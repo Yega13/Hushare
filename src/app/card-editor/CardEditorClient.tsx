@@ -9,7 +9,6 @@ import { ArrowLeft, Circle, Download, ImagePlus, Layers, Minus, MousePointer, Re
 import QRCode from 'qrcode'
 import { qrForegroundColor } from '@/lib/album-design'
 import type { Base, TextEl, RectEl, EllipseEl, LineEl, ImgEl, El, HistState, ElPatch } from './types'
-import { ColorSwatch, NumInput, SliderRow } from './ui-atoms'
 import PropsPanel from './PropsPanel'
 import LayersPanel from './LayersPanel'
 
@@ -342,12 +341,6 @@ export default function CardEditorClient() {
     const dup = { ...el, id: uid(), x: el.x + 16, y: el.y + 16, name: el.name + ' copy' }
     const idx = liveEls.findIndex(e => e.id === id)
     setEls(p => [...p.slice(0, idx + 1), dup, ...p.slice(idx + 1)])
-    setSelectedId(dup.id)
-  }
-
-  function pasteEl(el: El) {
-    const dup = { ...el, id: uid(), x: Math.min(el.x + 20, LW - 20), y: Math.min(el.y + 20, LH - 20), name: el.name.replace(/ copy$/, '') + ' copy' }
-    setEls(p => [...p, dup])
     setSelectedId(dup.id)
   }
 

@@ -18,7 +18,19 @@ export async function GET(req: Request) {
   // Generous, because this is a legitimate path a real album page hits repeatedly (pagination, the
   // live wall, delta refreshes) and the ceiling must never be reachable by ordinary browsing.
   // failOpen: a limiter blip must not stop people looking at their photos.
-  const rl = await checkRateLimit(clientIpKey(req, 'album_photos'), 60, 600, { failOpen: true })
+  // 6000/min, not 600. THIS CEILING WAS THE REAL EVENT FAILURE, and it is worth being exact about
+  // why: clientIpKey keys on cf-connecting-ip, which at a venue is ONE public IP shared by every
+  // guest on the WiFi. 300 guests do not get 300 buckets; they get one. A single upload burst has
+  // every phone refetch, so 300 requests land at once, and a few bursts a minute exhausted 600 —
+  // at which point every screen in the room 429s together and the albums blank simultaneously.
+  //
+  // The old number was chosen for one abusive client, not for a room. 6000 fits 300 guests
+  // refetching on the 2.5s debounce (24/min each) with headroom, and still stops a runaway loop.
+  //
+  // This is a READ of an album the caller can already open, and the photos themselves are served
+  // publicly from the CDN — so there is little here worth scraping that is not already public. The
+  // limiter is a runaway-loop backstop, not an access control, and it should be sized as one.
+  const rl = await checkRateLimit(clientIpKey(req, 'album_photos'), 60, 6000, { failOpen: true })
   if (!rl.ok) {
     return NextResponse.json(
       { error: 'Too many requests' },

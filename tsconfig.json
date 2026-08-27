@@ -12,6 +12,11 @@
     "allowJs": true,
     "skipLibCheck": true,
     "strict": true,
+    // A variable that is computed and never used is usually a feature that has been half-deleted.
+    // The E8 delta-fetch branch parsed and validated a `since` parameter and then never passed it
+    // to the query — the whole server side had been lost in a merge — and FOUR review rounds and
+    // every `tsc --noEmit` missed it, because an unused local is not a type error. It is now.
+    "noUnusedLocals": true,
     "noEmit": true,
     "esModuleInterop": true,
     "module": "esnext",

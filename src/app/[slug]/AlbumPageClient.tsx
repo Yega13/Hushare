@@ -54,6 +54,8 @@ type Props = {
 // Full album view server-renders the first window; a BIG album (> first window) loads its tail on
 // demand. Small albums (every album today) load fully in the first window — pagination never engages.
 const ALBUM_FIRST_WINDOW = 2000 // must match ALBUM_PAGE_SIZE in lib/server/album-access.ts
+// How long to collapse a burst of realtime pings into one refetch. See the note at the debounce.
+const REFETCH_DEBOUNCE_MS = 2500
 const LOAD_MORE_PAGE = 500
 
 // How long after one of THIS tab's own album edits a settings-broadcast refetch is treated as an
@@ -642,10 +644,19 @@ export default function AlbumPageClient({ initialAlbum = null, initialPhotos, in
           if (!active) return
           // Debounce: a burst of uploads sends many pings — collapse them into one refetch so
           // 50 uploads in 2s cost ~1 refetch, not 50 list rebuilds.
+          //
+          // 2.5s, not 500ms. THE THING THAT BREAKS AT A VENUE IS REQUEST COUNT, not bytes. This
+          // route allows 600/min per cf-connecting-ip and 300 guests on one venue WiFi share a
+          // single public IP, so they share one bucket. At 500ms each guest could issue up to 120
+          // requests a minute; at 2.5s it is 24. That is the difference between 300 guests fitting
+          // inside the ceiling and every screen in the room getting a 429 at once.
+          //
+          // The cost is that a new photo can take up to 2.5s to appear instead of 0.5s. Nobody
+          // watching an album notices two seconds; everybody notices the album refusing to load.
           if (refetchTimer) clearTimeout(refetchTimer)
           refetchTimer = setTimeout(() => {
             void fetchPhotos(albumId).then(r => { if (active) applyWindowRefresh(r) })
-          }, 500)
+          }, REFETCH_DEBOUNCE_MS)
         })
         // DELETE and UPDATE used to arrive on postgres_changes for instant per-row feedback. They
         // no longer do, and this is a SECURITY fix rather than a refactor: Supabase only delivers
