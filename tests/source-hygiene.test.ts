@@ -87,3 +87,40 @@ describe('source files contain no invisible characters', () => {
     ).toEqual([])
   })
 })
+
+// PAGINATION MUST BE ORDERED. `.range()` without `.order()` is not pagination — it is two
+// independent queries, and Postgres is free to return them in different orders.
+//
+// A row can therefore land in NEITHER page and be skipped silently. Found on 2026-08-28 in
+// src/lib/album-delete.ts, which pages through an album's photos to collect the R2 objects and
+// Stream videos to delete: a skipped row meant its file was never deleted, and the album row was
+// removed moments later, so nothing was left pointing at it. Billed forever, unfindable.
+//
+// Reachable today — it only bites past the 1000-row page size, and the largest live album is 1,378.
+describe('every paginated read is ordered', () => {
+  const files = ROOTS.flatMap((root) => walk(join(process.cwd(), root)))
+
+  it('has no .range() without a preceding .order()', () => {
+    const offenders: string[] = []
+    for (const file of files) {
+      const lines = readFileSync(file, 'utf8').split('\n')
+      lines.forEach((line, i) => {
+        // A CHAINED CALL, not the characters ".range(" anywhere on the line. Substring matching
+        // flagged two false positives in a row: first the comment written above the fix (which
+        // quotes ".range()" to explain the rule) and then this test's own source. A real query
+        // chain in this codebase always puts the call at the start of its own line.
+        const code = line.trim()
+        if (!code.startsWith('.range(')) return
+        // The order() may sit a few lines above in the same query chain.
+        const window = lines.slice(Math.max(0, i - 8), i + 1).join('\n')
+        if (window.includes('.order(')) return
+        offenders.push(`${file.split(sep).slice(-3).join('/')}:${i + 1}`)
+      })
+    }
+    expect(
+      offenders,
+      'A .range() with no .order() can skip rows entirely. Add a stable order — the primary key ' +
+        'is always safe — or the page boundary is undefined.',
+    ).toEqual([])
+  })
+})

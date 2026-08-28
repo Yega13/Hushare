@@ -78,6 +78,18 @@ export async function deleteAlbumAssetsAndRows(
       .from('photos')
       .select('storage_path, storage_backend, poster_url, stream_uid, thumb_url')
       .eq('album_id', album.id)
+      // ORDERED, because .range() without it is not pagination — it is two independent queries.
+      //
+      // Postgres gives NO row-order guarantee without ORDER BY, so the planner is free to return
+      // page two in a different order from page one. A row can then land in NEITHER page and be
+      // skipped entirely. Here that means its R2 object and its Stream video are never collected
+      // for deletion — and the album row is deleted moments later, so nothing is left that points
+      // at the file. It is billed forever with no way to find it.
+      //
+      // id is the stable total order: it is the primary key, so it is unique and never ties.
+      // Only bites on albums past PAGE_SIZE (1000) — the largest live album is 1,378, so this is
+      // reachable today, not theoretical.
+      .order('id', { ascending: true })
       .range(offset, offset + PAGE_SIZE - 1)
       .returns<PhotoToDelete[]>()
 
