@@ -1,4 +1,6 @@
 import { NextResponse } from 'next/server'
+import { cookies } from 'next/headers'
+import { ALBUM_GATE_COLS, gateAllowsContribution } from '@/lib/server/album-access'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { searchFacesByImage } from '@/lib/rekognition'
 import { forbidCrossSiteRequest } from '@/lib/request-security'
@@ -77,10 +79,11 @@ async function handlePost(req: Request) {
 
   const { data: album } = await admin
     .from('albums')
-    .select('id, user_id, face_finder_enabled')
+    // The GATE columns as well as the feature ones — see the gate check below.
+    .select(`id, user_id, face_finder_enabled, ${ALBUM_GATE_COLS}`)
     .or(`slug.eq.${slug},custom_slug.eq.${slug}`)
     .is('retired_at', null)
-    .maybeSingle<{ id: string; user_id: string | null; face_finder_enabled: boolean }>()
+    .maybeSingle<{ id: string; user_id: string | null; face_finder_enabled: boolean } & Parameters<typeof gateAllowsContribution>[0]>()
 
   if (!album) {
     return NextResponse.json({ error: 'Album not found' }, { status: 404, headers: NO_STORE })
@@ -88,6 +91,23 @@ async function handlePost(req: Request) {
   if (!album.face_finder_enabled || (await getUserTierById(album.user_id)) !== 'studio') {
     return NextResponse.json({ error: 'Face Finder is not enabled for this album' }, { status: 403, headers: NO_STORE })
   }
+
+  // THE PASSWORD AND REVEAL GATE APPLIES HERE TOO, and it was missing.
+  //
+  // This route ran a face search against the album's Rekognition collection knowing only the slug —
+  // no password, no reveal, no owner link. Proved against a live password-protected album on
+  // 2026-08-28: execution reached AWS with no password cookie present.
+  //
+  // What that leaked is exactly what a password is bought to withhold: an attacker could upload a
+  // photo of a specific person and be told whether that person appears in a locked album, plus the
+  // matching photo ids and similarity scores. Biometric confirmation about someone who never
+  // consented, on an album its owner had deliberately closed — and it spent the owner's Rekognition
+  // budget doing it.
+  //
+  // face-index GET already had this exact check, with a comment explaining why. This is its sibling
+  // and it was missed. Same two lines, deliberately identical so the pair cannot drift again.
+  const gate = await gateAllowsContribution(album, await cookies())
+  if (!gate.ok) return NextResponse.json({ error: gate.error }, { status: 403, headers: NO_STORE })
 
   // failOpen:false — same reasoning as the IP-scoped limiter above.
   const albumLimit = await checkRateLimit(`face_search_album:${album.id}`, SEARCH_WINDOW_SECONDS, SEARCH_ALBUM_MAX, { failOpen: false })

@@ -24,7 +24,7 @@ const OFF_SWITCH_GUARDS: Record<string, RegExp> = {
   'api/album/sponsors/route.ts': /if \(addsSomething\) \{[\s\S]{0,200}?refuseBelowTier/,
   'api/album/bib-search/route.ts': /if \(enabled\) \{[\s\S]{0,200}?refuseBelowTier/,
   'api/album/custom-url/route.ts': /if \(newCustomSlug !== null\) \{[\s\S]{0,300}?Custom URLs require a Pro or Max plan/,
-  'api/album/face-finder/route.ts': /if \(enabled\) \{[\s\S]{0,400}?Face Finder requires a Max plan/,
+  'api/album/face-finder/route.ts': /if \(enabled\) \{[\s\S]{0,200}?refuseBelowTier/,
   'api/album/branding/route.ts': /if \(hide\) \{[\s\S]{0,300}?requires a Pro or Max plan/,
   'api/album/media-settings/route.ts': /if \(updates\.require_approval === true\) \{[\s\S]{0,200}?refuseBelowTier/,
 }
@@ -40,6 +40,42 @@ const OFF_SWITCH_GUARDS: Record<string, RegExp> = {
 // The dimming had drifted too — 0.6 here, 0.55 there, several rows not dimmed at all, and one icon
 // hand-coloured grey while the icons beside it stayed in colour. gatedRowStyle() is now the single
 // definition, and grayscale(1) means a row added later cannot forget to grey its own icon.
+// EVERY ROUTE THAT READS ALBUM DATA APPLIES THE PASSWORD AND REVEAL GATE.
+//
+// This class has now been missed three separate times, and the third was proved exploitable against
+// a live password-protected album: api/album/face-search ran an AWS Rekognition face search knowing
+// only the slug — no password, no reveal, no owner link. An attacker could upload a photo of a
+// specific person and be told whether they appear in a locked album, with matching photo ids and
+// similarity scores. Biometric confirmation about someone who never consented, on an album its
+// owner had deliberately closed, billed to that owner.
+//
+// Its sibling api/album/face-index GET already had the check, with a comment explaining exactly
+// why. Being one file apart was not enough to keep them in step, so the rule is asserted here.
+// Paths are relative to src/. Some routes gate through a shared helper rather than calling
+// gateAllowsContribution themselves — api/upload/presign delegates to
+// lib/server/image-upload-authorization, which is where its check lives — so the helper is listed
+// instead of the route. Listing the route would have failed against perfectly correct code.
+const READ_PATHS_NEEDING_THE_GATE = [
+  'app/api/album/face-search/route.ts',
+  'app/api/album/face-index/route.ts',
+  'app/api/album/photos/create/route.ts',
+  'app/api/upload/stream/route.ts',
+  'lib/server/image-upload-authorization.ts',
+]
+
+describe('every album-reading route applies the password and reveal gate', () => {
+  for (const route of READ_PATHS_NEEDING_THE_GATE) {
+    it(`${route} calls gateAllowsContribution`, () => {
+      const source = readFileSync(join(process.cwd(), 'src', ...route.split('/')), 'utf8')
+      expect(
+        source.includes('gateAllowsContribution'),
+        `${route} reads or writes album data without checking the album's password and reveal ` +
+          `date. Knowing the slug must never be enough.`,
+      ).toBe(true)
+    })
+  }
+})
+
 describe('every server-gated control shows which plan it needs', () => {
   const read = (rel: string) => readFileSync(join(process.cwd(), 'src', ...rel.split('/')), 'utf8')
 

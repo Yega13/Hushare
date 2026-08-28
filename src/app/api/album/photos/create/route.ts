@@ -146,27 +146,45 @@ function validatePhoto(
     ) {
       return `photos[${index}]: url must start with "${albumsPrefix}" and must not contain ".."`
     }
+    // THUMBNAILS LIVE UNDER thumbs/, AND ONLY THERE. Allowing albums/ as well turned a guest
+    // upload into a way to destroy the owner's real photos.
+    //
+    // The attack, which needed no account, no owner link and no uploaded bytes: read any public
+    // album's photo list (it returns the album id and every photo's public url), then POST rows
+    // whose storage_path is a fresh uuid — so the upsert inserts them — but whose thumb_url points
+    // at a REAL photo's file. The owner sees junk photos and deletes them. photo/delete and
+    // bulk-delete feed thumb_url straight into r2KeyFromUrl() and delete that key from R2, so the
+    // owner's own moderation click permanently destroys their originals. The rows survive, the
+    // bytes do not, and nothing records what happened. It is aimed at exactly the moment an owner
+    // is most likely to click delete.
+    //
+    // The permissive branch was never used: of 13,616 photo rows, 13,471 thumb_urls are under
+    // thumbs/ and ZERO under albums/ (poster_url: 84 under thumbs/, zero under albums/). It was
+    // dead code and pure attack surface. All 88 live albums accept guest uploads, and a check for
+    // prior abuse (thumb_url matching another row's url) returned zero — found before it was used.
     if (
       photo.thumb_url != null &&
       (typeof photo.thumb_url !== 'string' ||
         photo.thumb_url.length > 2048 ||
-        (!photo.thumb_url.startsWith(thumbsPrefix) && !photo.thumb_url.startsWith(albumsPrefix)) ||
+        !photo.thumb_url.startsWith(thumbsPrefix) ||
         hasTraversal(photo.thumb_url))
     ) {
-      return `photos[${index}]: thumb_url must start with "${thumbsPrefix}" or "${albumsPrefix}" and must not contain ".."`
+      return `photos[${index}]: thumb_url must start with "${thumbsPrefix}" and must not contain ".."`
     }
   } else {
     if (typeof photo.stream_uid !== 'string' || !STREAM_UID_RE.test(photo.stream_uid)) {
       return `photos[${index}]: stream_uid must be a 32-character lowercase hex string`
     }
+    // Same rule, same reason as thumb_url above — a video poster is written under thumbs/ too, and
+    // allowing albums/ let a poisoned poster_url delete a real photo on the owner's next cleanup.
     if (
       photo.poster_url != null &&
       (typeof photo.poster_url !== 'string' ||
         photo.poster_url.length > 2048 ||
-        (!photo.poster_url.startsWith(albumsPrefix) && !photo.poster_url.startsWith(thumbsPrefix)) ||
+        !photo.poster_url.startsWith(thumbsPrefix) ||
         hasTraversal(photo.poster_url))
     ) {
-      return `photos[${index}]: poster_url must start with "${albumsPrefix}" or "${thumbsPrefix}" and must not contain ".."`
+      return `photos[${index}]: poster_url must start with "${thumbsPrefix}" and must not contain ".."`
     }
     if (
       photo.duration_seconds != null &&

@@ -1,9 +1,9 @@
 import { NextResponse } from 'next/server'
+import { refuseBelowTier } from '@/lib/require-tier'
 import { deleteCollection } from '@/lib/rekognition'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { verifyOwnerViaCookieWithRateLimit } from '@/lib/album-owner-access'
 import { forbidCrossSiteRequest } from '@/lib/request-security'
-import { getUserTierById } from '@/lib/subscriptions'
 
 export const runtime = 'nodejs'
 
@@ -38,21 +38,33 @@ export async function POST(req: Request) {
   const access = await verifyOwnerViaCookieWithRateLimit(req, slug.trim())
   if (!access.ok) return NextResponse.json({ error: access.error }, { status: access.status, headers: NO_STORE })
 
-  // Guest album owners have no account — a subscription is required
-  if (!access.userId) {
-    return NextResponse.json({ error: 'Sign in to use Face Finder' }, { status: 401, headers: NO_STORE })
-  }
   // ONLY TURNING IT ON IS GATED. Switching it off must always work, whatever the plan — the same
   // rule api/album/branding and api/album/media-settings already follow. A gate that runs in both
   // directions freezes the setting onto the album of anyone who is not on the plan any more, which
   // costs them the ability to undo a choice rather than costing them a feature.
   // Doubly true here: leaving it on is not a dormant setting, it is biometric indexing that keeps
   // running. Someone must always be able to stop that.
+  //
+  // THE ALBUM OWNER'S PLAN, NEVER THE CALLER'S. This route asked `getUserTierById(access.userId)`
+  // — the person making the request — and it was the last one in the codebase still doing so.
+  // branding and custom-url were both corrected with a paragraph explaining why; this one was
+  // missed.
+  //
+  // Owner links are shareable BY DESIGN, so the two are different questions and the answer diverged
+  // in both directions at once:
+  //   * A Max subscriber holding any stranger's owner link could switch Face Finder on for a FREE
+  //     owner's album — writing face_consent_by/face_consent_at naming themselves. A forged
+  //     biometric-consent record on someone else's photos, which is the one thing the consent
+  //     check above exists to make real.
+  //   * A Max customer opening their OWN owner link without a signed-in session was told to sign in
+  //     to use a feature they pay for — the 401 that used to sit above this.
+  //
+  // refuseBelowTier is the shared helper the other nine gated routes already use; it answers
+  // "is this ALBUM on the plan", handles the guest-album (no account) case, and names the plan in
+  // the error so the owner knows what to buy.
   if (enabled) {
-    const tier = await getUserTierById(access.userId)
-    if (tier !== 'studio') {
-      return NextResponse.json({ error: 'Face Finder requires a Max plan' }, { status: 403, headers: NO_STORE })
-    }
+    const refusal = await refuseBelowTier(access.album.user_id, 'studio', 'Face Finder')
+    if (refusal) return refusal
   }
 
   const admin = createAdminClient()

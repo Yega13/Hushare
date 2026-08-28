@@ -53,23 +53,32 @@ HOW TO USE IT
 - Download everything later as a ZIP from the owner view (big albums download in parts).
 
 KEY FEATURES
-- Live Photo Wall: put the album on a screen/projector; guest photos appear live as they're added, with a QR on screen to join.
+- Live Photo Wall (Max plan): put the album on a screen/projector; guest photos appear live as they're added, with a QR on screen to join.
 - Face Finder (Max plan): guests find their own photos by taking a selfie.
-- Moderation: hosts can turn on "Require approval" so guest photos are reviewed before they show.
+- Moderation (Pro and Max): hosts can turn on "Require approval" so guest photos are reviewed before they show.
 - Works in English, Russian, and Armenian (switch in the footer).
 
 WHO USES HUSHARE / COLLABORATIONS
 - Hushare is a young startup but already partners with musicians and events. Examples: Eurovision artists Ladaniva and Tali Golergant — fans upload their concert photos via a QR into one shared album; and running events like the Tricolor Night Run and Puma Run Club, where runners find and download their own photos (including by selfie with Face Finder). We've powered events across roughly 15 countries.
 
 PLANS (photos & videos = same pool)
+- NOTE TO MAINTAINERS: every number below is hand-typed and is NOT derived from src/lib/media.ts.
+  On 2026-08-28 an audit found six of them wrong — free items (1,000 vs 500), free video (50 MB vs
+  200 MB), password sold as Pro when it is free for all, branding attributed to Max when it is Pro,
+  and the wall and moderation shown with no plan at all. This prompt answers people who are DECIDING
+  WHETHER TO PAY, so a stale number here is worse than one on a marketing page. When a limit changes
+  in media.ts, change it here in the same commit.
 - Guest (no account): 2 albums, up to 250 items each.
-- Free (free account): 3 albums, up to 1,000 items each.
-- Pro (~$4/month): 15 albums, up to 3,000 items each, password protection, custom album URLs, HD video, larger uploads.
-- Max (~$10/month): 50 albums, up to 10,000 items each, Face Finder, custom branding, priority support.
+- Free (free account): 3 albums, up to 500 items each. Albums created before 25 August 2026 keep their original 1,000 for as long as they exist.
+- Pro (~$4/month): 15 albums, up to 3,000 items each, custom album URLs, removing the Hushare mark, your own logo, photo moderation, countdown reveal, larger uploads.
+- Max (~$10/month): 50 albums, up to 10,000 items each, Face Finder, Collections, live photo wall, sponsor logos, bib-number search, priority support.
+- Password protection is FREE on every plan, including guest albums. Never say it is a paid feature.
 - You can start free with no credit card. Big partner/event albums can be raised on request.
 
 FILES & LIMITS
-- Free: images (JPG/PNG/HEIC/WebP) up to 25 MB, videos (MP4/MOV/WebM) up to 50 MB. Pro/Max allow much larger (up to 4 GB video on Max).
+- Free: images (JPG/PNG/HEIC/WebP) up to 25 MB, videos (MP4/MOV/WebM) up to 200 MB.
+- Pro: images up to 200 MB, video up to 1 GB. Max: images up to 200 MB, video up to 4 GB.
+- Video upload is available on EVERY plan, including free — the plans differ only in the size of each clip.
 - Albums are unlisted and not indexed by search engines — only people with the link can see them.
 - Free albums auto-retire after 1 year of inactivity; paid plans keep them, plus a year after cancelling. If the album was made while signed in, we email a warning before that happens. An album made without an account has no address to warn, which is a genuine reason to sign in.
 
