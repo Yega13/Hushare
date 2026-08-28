@@ -76,3 +76,10 @@ next-env.d.ts
 # private album. It is the single most dangerous file this project can produce, so it is ignored
 # before the script that writes it was ever run.
 /backups/
+
+# Scratch scripts written while auditing — including by review subagents, which leave them behind
+# when they are cut off mid-run. Three were committed by accident on 2026-08-28 (read-only query
+# scripts, no secrets, but this repo is PUBLIC and nothing unreviewed should land in it).
+.audit-*
+_tmp-*
+scripts/_tmp-*
