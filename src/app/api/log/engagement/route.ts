@@ -51,7 +51,9 @@ export async function POST(req: Request) {
   // Generous, because a guest at an event legitimately loads many pages and uploads many files, and
   // failOpen because losing a statistic must never cost anything. This grants nothing, so the limit
   // exists to bound cost and noise rather than to protect access.
-  const rl = await checkRateLimit(clientIpKey(req, 'engagement'), 3600, 400, { failOpen: true })
+  // 5000/hour. 300 guests viewing two or three pages each sends ~900 in an hour, so 400 threw
+  // away most of the analytics from precisely the events worth measuring.
+  const rl = await checkRateLimit(clientIpKey(req, 'engagement'), 3600, 5000, { failOpen: true })
   if (!rl.ok) return NextResponse.json({ ok: true }, { headers: NO_STORE })
 
   const raw = await req.text().catch(() => '')

@@ -36,7 +36,12 @@ export default function PresenceBeacon() {
     }
 
     ping()
-    const iv = setInterval(ping, 30_000)
+    // 60s, not 30s. A presence row lives for TEN MINUTES (api/cron/prune-data), so pinging twice
+    // a minute was four times more often than the data it feeds is even kept. At an event that
+    // difference is not academic: 300 guests behind one venue IP produced 600 pings a minute
+    // against a 120/min ceiling, so most of them were refused and the "active right now" figure
+    // was wrong at exactly the moment anyone would look at it.
+    const iv = setInterval(ping, 60_000)
     const onVisible = () => { if (document.visibilityState === 'visible') ping() }
     document.addEventListener('visibilitychange', onVisible)
     return () => {

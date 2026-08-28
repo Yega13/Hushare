@@ -19,7 +19,11 @@ export async function POST(req: Request) {
   // cleanup only removes rows older than 10 minutes, so an unlimited caller could hold tens of
   // thousands of rows in active_sessions and inflate the live-user counter at the same time.
   // failOpen: presence is cosmetic, and a limiter blip must not break the page it decorates.
-  const rl = await checkRateLimit(clientIpKey(req, 'presence'), 60, 120, { failOpen: true })
+  // SIZED FOR A ROOM, NOT FOR ONE CLIENT. Every per-IP limit in this product is fighting its own
+  // use case: the entire point is many people at one venue, and cf-connecting-ip gives all of them
+  // ONE bucket. 300 guests pinging once a minute is 300/min; 120 refused four fifths of them.
+  // 3000 covers about 500 guests with headroom and still stops a runaway loop.
+  const rl = await checkRateLimit(clientIpKey(req, 'presence'), 60, 3000, { failOpen: true })
   if (!rl.ok) return NextResponse.json({ ok: true, throttled: true }, { headers: NO_STORE })
 
   const body = await req.json().catch(() => null) as { id?: unknown; path?: unknown } | null

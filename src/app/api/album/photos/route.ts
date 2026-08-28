@@ -30,7 +30,10 @@ export async function GET(req: Request) {
   // This is a READ of an album the caller can already open, and the photos themselves are served
   // publicly from the CDN — so there is little here worth scraping that is not already public. The
   // limiter is a runaway-loop backstop, not an access control, and it should be sized as one.
-  const rl = await checkRateLimit(clientIpKey(req, 'album_photos'), 60, 6000, { failOpen: true })
+  // 20000. The previous 6000 was already a raise from 600, but it was still short: at peak each
+  // guest refetches every 2.5s (24/min), so 300 guests is 7200/min and 500 is 12000. Being refused
+  // here means an album that stops updating during the event it was made for.
+  const rl = await checkRateLimit(clientIpKey(req, 'album_photos'), 60, 20000, { failOpen: true })
   if (!rl.ok) {
     return NextResponse.json(
       { error: 'Too many requests' },
