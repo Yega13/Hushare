@@ -306,7 +306,7 @@ const jsonLd = {
           name: "Is Hushare really free?",
           acceptedAnswer: {
             "@type": "Answer",
-            text: "Yes. Free albums are free to create, share, upload to, and download from, with no credit card required. Paid tiers add custom URLs, passwords, larger uploads, Max Collections, and no inactivity retirement.",
+            text: "Yes. Free albums are free to create, share, upload to, and download from, with no credit card required - and password protection is free too. Paid tiers add custom URLs, removing the Hushare mark, larger uploads, Collections, and no inactivity retirement.",
           },
         },
         {
@@ -346,7 +346,7 @@ const jsonLd = {
           name: "What photo formats and sizes are supported?",
           acceptedAnswer: {
             "@type": "Answer",
-            text: "Free albums support JPG, PNG, HEIC, and WebP images up to 25 MB each, plus MP4, MOV, or WebM videos up to 50 MB. Pro and Max albums support uploads up to 200 MB.",
+            text: "Free albums support JPG, PNG, HEIC, and WebP images up to 25 MB each, plus MP4, MOV, or WebM videos up to 200 MB. Pro raises this to 200 MB photos and 1 GB video; Max allows 4 GB video.",
           },
         },
       ],

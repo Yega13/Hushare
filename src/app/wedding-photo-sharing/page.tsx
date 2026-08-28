@@ -63,7 +63,7 @@ const jsonLd = {
           name: 'Can we password-protect the wedding album?',
           acceptedAnswer: {
             '@type': 'Answer',
-            text: 'Yes, with a Hushare Pro plan you can add password protection so only your guests can see the photos.',
+            text: 'Yes, on every plan including free. Add password protection so only your guests can see the photos.',
           },
         },
       ],
@@ -94,11 +94,11 @@ export default function WeddingPhotoSharingPage() {
         },
         {
           title: 'Password-protect for guests only',
-          body: 'On Pro, add a password so only your guests can open the album. Share the password in the invite - the album is yours and theirs alone.',
+          body: 'Add a password so only your guests can open the album - free on every plan. Share it in the invite; the album is yours and theirs alone.',
         },
         {
           title: 'Download everything after',
-          body: 'When the night is over, download all guest photos as a single ZIP at original quality. No compression. Every candid, every detail shot, every tearful hug.',
+          body: 'When the night is over, download all guest photos as a single ZIP. Every candid, every detail shot, every tearful hug. Large photos are resized to 2560px on the long edge so the album stays quick on a phone; videos are kept exactly as uploaded.',
         },
       ]}
       faq={[
@@ -120,7 +120,7 @@ export default function WeddingPhotoSharingPage() {
         },
         {
           q: 'Is there a limit on photos or guests?',
-          a: 'No limits on either. Any number of guests can contribute, and albums hold unlimited photos. Each file can be up to 25 MB on Free, 200 MB on Pro.',
+          a: 'Any number of guests can contribute — there is no limit on people. Free albums hold up to 500 photos and videos (250 without an account); Pro holds 3,000 and Max 10,000. Each photo can be up to 25 MB on Free and 200 MB on paid plans.',
         },
         {
           q: 'How long will the wedding album last?',
@@ -132,7 +132,7 @@ export default function WeddingPhotoSharingPage() {
         },
         {
           q: 'What file types can guests upload?',
-          a: 'JPG, PNG, HEIC, and WebP on Free. Video (MP4, MOV) is available on Pro and Max plans.',
+          a: 'JPG, PNG, HEIC and WebP images, plus MP4, MOV and WebM video — on every plan including free. Photos are up to 25 MB on Free and 200 MB on paid plans; video is 200 MB on Free, 1 GB on Pro and 4 GB on Max.',
         },
       ]}
       jsonLd={jsonLd}

@@ -98,7 +98,7 @@ export default function EventPhotoSharingPage() {
         },
         {
           title: 'Walk away with everything',
-          body: 'At the end of the event, download a ZIP of every photo at original quality. No compression, no watermarks, no chasing people to send you their shots.',
+          body: 'At the end of the event, download a ZIP of every photo in one go. No watermarks, no chasing people to send you their shots. Large photos are resized to 2560px on the long edge so albums stay quick on a phone; videos are kept exactly as uploaded.',
         },
       ]}
       faq={[
@@ -120,15 +120,15 @@ export default function EventPhotoSharingPage() {
         },
         {
           q: 'Can I restrict who can add photos?',
-          a: 'Albums are unlisted - only people with the link can add photos. On Pro, you can add password protection so only invited attendees can contribute.',
+          a: 'Albums are unlisted - only people with the link can add photos. You can also add password protection, free on every plan, so only invited attendees can contribute.',
         },
         {
           q: 'What file types are supported?',
-          a: 'JPG, PNG, HEIC, and WebP on Free plans. HD video (MP4, MOV) is available on Pro and Max. Each file can be up to 25 MB on Free or 200 MB on paid plans.',
+          a: 'JPG, PNG, HEIC and WebP images, plus MP4, MOV and WebM video — on every plan including free. Photos are up to 25 MB on Free and 200 MB on paid plans; video is 200 MB on Free, 1 GB on Pro and 4 GB on Max.',
         },
         {
           q: 'How do I download all event photos at once?',
-          a: 'One click in the album downloads a ZIP of every photo and video at original quality. No manual selecting or downloading one by one.',
+          a: 'One click in the album downloads a ZIP of every photo and video, exactly as they are stored. No manual selecting or downloading one by one.',
         },
         {
           q: 'How long does the event album last?',

@@ -8,6 +8,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { isAccountAdmin } from '@/lib/auth'
 import { getActiveSubscription } from '@/lib/subscriptions'
 import { planFeatures } from '@/lib/plan-features'
+import { uploadCapsForTier, formatCapSize } from '@/lib/media'
 import { formatDate } from '@/lib/utils'
 import CollectionActions from './CollectionActions'
 import CreateCollectionButton from './CreateCollectionButton'
@@ -386,7 +387,14 @@ export default async function AccountPage({ searchParams }: Props) {
                 <div className="rounded-xl p-4" style={{ background: '#FDFAF5', border: '1px solid #E8E0D2' }}>
                   <dt className="text-xs uppercase tracking-wide mb-1" style={{ color: '#8B6F4E' }}>{dict['acct.uploads']}</dt>
                   <dd className="font-semibold" style={{ color: '#630826' }}>
-                    {isAdmin ? dict['acct.everythingEnabled'] : subscription ? dict['acct.upTo200'] : '25 MB images · 50 MB videos'}
+                    {/* Derived from the enforced caps, not typed by hand. This line was a
+                        hardcoded English string ('25 MB images · 50 MB videos') that bypassed i18n
+                        entirely and named a free video limit of 50 MB when it is 200 — and for a
+                        paying customer it said "Up to 200 MB" when Pro allows 1 GB of video and Max
+                        allows 4 GB, understating the plan they are paying for. */}
+                    {isAdmin
+                      ? dict['acct.everythingEnabled']
+                      : `${formatCapSize(uploadCapsForTier(subscription?.tier ?? 'free').image)} images · ${formatCapSize(uploadCapsForTier(subscription?.tier ?? 'free').video)} videos`}
                   </dd>
                 </div>
                 <div className="rounded-xl p-4" style={{ background: '#FDFAF5', border: '1px solid #E8E0D2' }}>

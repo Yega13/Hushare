@@ -93,7 +93,7 @@ const tiers: Tier[] = [
       'Up to 1,000 photos & videos per album (250 as a guest)',
       'Anyone can view & add via the link',
       'Download full album as ZIP',
-      'Photos up to 25 MB · videos up to 50 MB',
+      'Photos up to 25 MB · videos up to 200 MB',
       'Album auto-retires after 1 year of inactivity',
       'Create up to 3 albums (2 as a guest)',
       'Password-protect your albums',

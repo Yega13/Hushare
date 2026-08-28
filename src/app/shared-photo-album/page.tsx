@@ -63,7 +63,7 @@ const jsonLd = {
           name: 'How many photos can be in a shared album?',
           acceptedAnswer: {
             '@type': 'Answer',
-            text: 'Free albums support unlimited photos per album. Each file can be up to 25 MB on Free, or 200 MB on paid plans.',
+            text: 'Free albums hold up to 500 photos and videos (250 without an account), and albums created before 25 August 2026 keep their original 1,000. Each photo can be up to 25 MB on Free and 200 MB on paid plans; video is 200 MB on Free, 1 GB on Pro and 4 GB on Max.',
           },
         },
       ],
@@ -98,7 +98,7 @@ export default function SharedPhotoAlbumPage() {
         },
         {
           title: 'Highest quality, always',
-          body: 'Photos are stored at the resolution they were taken. No compression, no watermarks. Download the full album as a ZIP whenever you want.',
+          body: 'No watermarks, ever. Large photos are resized to 2560px on the long edge so the album loads quickly on a phone; videos are kept exactly as uploaded. Download the full album as a ZIP whenever you want.',
         },
       ]}
       faq={[
@@ -108,19 +108,19 @@ export default function SharedPhotoAlbumPage() {
         },
         {
           q: 'How many photos can be in a shared album?',
-          a: 'Free albums support unlimited photos per album. Each file can be up to 25 MB on Free, or 200 MB on paid plans. There is no cap on the number of files.',
+          a: 'Free albums hold up to 500 photos and videos (250 without an account), and albums created before 25 August 2026 keep their original 1,000. Each photo can be up to 25 MB on Free and 200 MB on paid plans; video is 200 MB on Free, 1 GB on Pro and 4 GB on Max.',
         },
         {
           q: 'Can I make the album private so only invited guests can see it?',
-          a: 'Albums are unlisted by default - not indexed, not searchable. Only people with the link can see them. On Pro or Max you can also add password protection.',
+          a: 'Albums are unlisted by default - not indexed, not searchable. Only people with the link can see them. You can also add password protection, which is free on every plan.',
         },
         {
           q: 'What file types can guests upload?',
-          a: 'JPG, PNG, HEIC, and WebP on Free. HD video (MP4, MOV) is available on Pro and Max plans.',
+          a: 'JPG, PNG, HEIC and WebP images, plus MP4, MOV and WebM video — on every plan including free. Photos are up to 25 MB on Free and 200 MB on paid plans; video is 200 MB on Free, 1 GB on Pro and 4 GB on Max.',
         },
         {
           q: 'Can I download all the photos at once?',
-          a: 'Yes - there is a one-click ZIP download that packages every photo and video in the album at original quality.',
+          a: 'Yes - there is a one-click ZIP download that packages every photo and video in the album, exactly as they are stored.',
         },
         {
           q: 'How long does the album last?',

@@ -98,7 +98,7 @@ export default function QrCodePhotoAlbumPage() {
         },
         {
           title: 'Real-time photos, highest quality',
-          body: 'Photos appear in the album the moment guests upload them. Everything is stored at original resolution. Download the full album as a ZIP at any time.',
+          body: 'Photos appear in the album the moment guests upload them. Large photos are resized to 2560px on the long edge so the album stays quick on a phone; videos are kept exactly as uploaded. Download the full album as a ZIP at any time.',
         },
       ]}
       faq={[
@@ -124,11 +124,11 @@ export default function QrCodePhotoAlbumPage() {
         },
         {
           q: 'Can I password-protect the QR code album so only my guests can upload?',
-          a: 'Yes. With a Hushare Pro plan you can add a password to your album. Only guests who know the password can view or add photos.',
+          a: 'Yes, on every plan including free. Add a password to your album and only guests who know it can view or add photos.',
         },
         {
           q: 'What file types can guests upload after scanning the QR code?',
-          a: 'JPG, PNG, HEIC, and WebP on Free. HD video (MP4, MOV) is available on Pro and Max plans.',
+          a: 'JPG, PNG, HEIC and WebP images, plus MP4, MOV and WebM video — on every plan including free. Photos are up to 25 MB on Free and 200 MB on paid plans; video is 200 MB on Free, 1 GB on Pro and 4 GB on Max.',
         },
         {
           q: 'Is there a limit on how many guests can scan the same code and upload?',
