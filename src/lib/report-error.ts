@@ -299,6 +299,26 @@ export function reportClientError(input: ReportInput): void {
     //
     // The distinction is whether recovery is actually available: once the one-shot reload has been
     // spent and the chunk STILL fails, the page is genuinely broken and that is a real error.
+    // Gathered ONCE, because the answer now decides the level as well as filling the context.
+    const forensics = looksLikeDomCorruption(message) ? domForensics() : {}
+
+    // THE QUESTION IS ANSWERED, so this stops being filed as our error.
+    //
+    // The diagnosis was a theory from 2026-08-17 through nine occurrences. On 2026-08-29 the
+    // forensics above finally caught one: translated: true, htmlLang "ja", on a page served in
+    // English — Chrome's built-in translator replacing text nodes underneath React, which then
+    // cannot find the children it put there. Three reports in two minutes from one session, plus a
+    // fourth as the error boundary itself tore down.
+    //
+    // React cannot survive a third party rewriting its DOM, so there is no fix here to make. The
+    // one-shot reload already recovers the page. What was left was an unfixable browser behaviour
+    // filing itself as an app error every time, which is how a panel full of real problems becomes
+    // a panel nobody reads.
+    //
+    // Recorded at warn, not dropped: if this ever becomes frequent it is worth seeing, and the
+    // answer would be to reconsider what is marked translate="no" — the photo grid already is.
+    const translatedDom = forensics.translated === true
+
     const recoverable =
       ((stale || input.staleDeploy === true) && staleReloadStillAvailable()) ||
       (domFatal && domReloadStillAvailable())
@@ -311,13 +331,13 @@ export function reportClientError(input: ReportInput): void {
       body: JSON.stringify({
         source: input.source.slice(0, 60),
         message,
-        level: recoverable ? 'warn' : (input.level ?? 'error'),
+        level: (recoverable || translatedDom) ? 'warn' : (input.level ?? 'error'),
         albumId: input.albumId ?? undefined,
         context: {
           ...(input.context ?? {}),
           // Only for the error class it can explain — everything else would carry the noise for
           // nothing. See domForensics.
-          ...(looksLikeDomCorruption(message) ? domForensics() : {}),
+          ...forensics,
           path: window.location.pathname,
           // Which bundle this browser is actually running (see next.config.ts).
           build: process.env.NEXT_PUBLIC_BUILD_ID ?? 'unknown',
