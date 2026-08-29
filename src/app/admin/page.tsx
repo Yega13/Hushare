@@ -13,6 +13,7 @@ import AdminDeleteAlbumButton from '@/components/AdminDeleteAlbumButton'
 import AdminSyncPolarButton from '@/components/AdminSyncPolarButton'
 import AdminPublishStatement from '@/components/AdminPublishStatement'
 import AdminLiveUsers from '@/components/AdminLiveUsers'
+import AdminStorageAudit from '@/components/AdminStorageAudit'
 import AdminGrowthChart from '@/components/AdminGrowthChart'
 import AdminWeekdayBars from '@/components/AdminWeekdayBars'
 import AdminBreakdown from '@/components/AdminBreakdown'
@@ -655,6 +656,8 @@ export default async function AdminPage() {
           </p>
           <AdminTestAlertButton />
         </div>
+
+        <AdminStorageAudit />
 
         {/* Recent albums */}
         <h2 id="albums" style={{ fontSize: 15, fontWeight: 700, color: INK, margin: '0 0 10px', scrollMarginTop: 64 }}>Recent albums</h2>
