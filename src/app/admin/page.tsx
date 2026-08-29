@@ -447,7 +447,7 @@ export default async function AdminPage() {
         {/* Real-time active users — self-updating (polls every 5s) */}
         {/* Sticky jump-nav so every section is one click away */}
         <nav style={{ position: 'sticky', top: 0, zIndex: 30, background: '#FDFAF5', borderBottom: `1px solid ${BORDER}`, padding: '10px 0', marginBottom: 22, display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-          {(([['support', 'Support'], ['live', 'Live'], ['overview', 'Overview'], ['growth', 'Growth'], ['traffic', 'Traffic'], ['ops', 'Ops'], ['errors', 'Errors'], ['albums', 'Albums'], ['users', 'Users']]) as [string, string][]).map(([id, label]) => (
+          {(([['support', 'Support'], ['live', 'Live'], ['overview', 'Overview'], ['growth', 'Growth'], ['traffic', 'Traffic'], ['ops', 'Ops'], ['errors', 'Errors'], ['storage', 'Storage'], ['albums', 'Albums'], ['users', 'Users']]) as [string, string][]).map(([id, label]) => (
             <a key={id} href={`#${id}`} style={{ fontSize: 12.5, fontWeight: 600, color: BRAND, background: CARD, border: `1px solid ${BORDER}`, borderRadius: 999, padding: '5px 13px', textDecoration: 'none' }}>{label}</a>
           ))}
         </nav>
@@ -657,6 +657,7 @@ export default async function AdminPage() {
           <AdminTestAlertButton />
         </div>
 
+        <h2 id="storage" style={{ fontSize: 15, fontWeight: 700, color: INK, margin: '0 0 10px', scrollMarginTop: 64 }}>Storage</h2>
         <AdminStorageAudit />
 
         {/* Recent albums */}
