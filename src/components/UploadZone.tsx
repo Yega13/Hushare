@@ -31,7 +31,17 @@ const STALL_TIMEOUT_MS = 20_000
 // 2560px (≈QHD) keeps images crisp on any phone/laptop screen while cutting a 12-48MP phone
 // photo from several MB down to well under 1MB — uploads are bandwidth-bound, so this is the
 // single biggest lever on upload speed. The lightbox never needs more than this to look sharp.
-const MAX_IMG_DIM = 2560
+// 3500px on the long edge. THE NUMBER IS AN A4 PRINT AT 300 DPI (3508px) — the point past which
+// extra pixels stop being something a person can see or use, and start being upload time.
+//
+// It was 2560, which is a laptop screen and nothing more: a 4032px phone photo lost a third of its
+// area, could not be printed properly, and could not be cropped in without going soft — while
+// /about promised "the exact quality they were shot in".
+//
+// Going the other way, to true originals, was measured and rejected: ~4 MB a photo means ~20 GB
+// for a 5,000-photo shoot and roughly two hours of uploading on one connection. 3500 lands at
+// ~1.5 MB — about double today, a quarter of full size, and it prints.
+const MAX_IMG_DIM = 3500
 
 // ─── Semaphore ────────────────────────────────────────────────────────────────
 
@@ -224,15 +234,30 @@ async function encodeCanvas(
 
 // ─── Single-decode pipeline constants ────────────────────────────────────────
 
-const MAIN_QUALITY = 0.86
+// 0.92, up from 0.86. Above ~0.90 JPEG artefacts stop being visible on a photograph; 0.86 was
+// low enough to soften skin and flatten gradients on every photo the site stored.
+//
+// Not 1.0 and not "keep the original bytes": full originals were measured at roughly 4 MB a photo,
+// which for the 5,000-photo event this was sized against is ~20 GB to push up a single connection —
+// a couple of hours of uploading. Storage is not the constraint (20 GB is about $0.30/month); the
+// photographer's time is.
+const MAIN_QUALITY = 0.92
 const THUMB_QUALITY = 0.85
 // 600px longest edge: sharp on the grid even at 2–3× DPR (a 3-col mobile tile is
 // ~120 CSS px = ~360 physical px on a 3× screen). Small enough to stay a fast-loading
 // thumbnail. The lightbox still swaps in the full-resolution original.
 const THUMB_MAX_DIM = 600
-// Files at or under this size skip re-encoding (original bytes upload; JPEG gets a lossless
-// EXIF strip) — the canvas round-trip would cost quality for no meaningful size win.
-const RESIZE_THRESHOLD_BYTES = 1.2 * 1024 * 1024
+// The ONLY reason left to re-encode a photo for size: it would not otherwise be accepted.
+//
+// This used to be 1.2 MB — every phone photo is bigger than that, so in practice every photo was
+// resized and re-encoded, and the original was thrown away at the point of upload. Now the album's
+// own cap is the threshold, so a photo is kept exactly as shot unless keeping it would mean
+// refusing it outright.
+//
+// Ladder used only when a photo is STILL over the album's cap after the 3500px pass — a rare,
+// genuinely enormous file. Stops at the first rung that fits, so it comes down no further than it
+// must.
+const SHRINK_LADDER = [3500, 2560, 1920]
 
 // Decoding a 48MP photo briefly holds a full-resolution bitmap (~190MB RGBA). Bound how many
 // decodes run at once — independently of upload concurrency — so network slots stay saturated
@@ -389,16 +414,16 @@ type ProcessedImage = {
   height: number | null
 }
 
-async function processImage(file: File): Promise<ProcessedImage> {
+async function processImage(file: File, capBytes: number): Promise<ProcessedImage> {
   const release = await decodeSem.acquire()
   try {
-    return await processImageInner(file)
+    return await processImageInner(file, capBytes)
   } finally {
     release()
   }
 }
 
-async function processImageInner(file: File): Promise<ProcessedImage> {
+async function processImageInner(file: File, capBytes: number): Promise<ProcessedImage> {
   const isHeic = /heic|heif/i.test(file.type) || /\.(heic|heif)$/i.test(file.name)
 
   if (isHeic) {
@@ -513,14 +538,29 @@ async function processImageInner(file: File): Promise<ProcessedImage> {
   try {
     const thumbBlob = await deriveThumb(bitmap)
 
-    if (file.size > RESIZE_THRESHOLD_BYTES) {
+    // RESIZE ONLY WHAT IS ACTUALLY BIGGER THAN 3500px, and judge that on PIXELS, not bytes.
+    //
+    // The old test was `file.size > 1.2 MB`, which is every phone photo — so everything was
+    // re-encoded and the original thrown away, including images already smaller than the target.
+    // Testing the long edge instead means a photo at or under 3500px takes the lossless path below:
+    // original bytes, metadata stripped, nothing re-encoded. Only genuinely larger images pay.
+    if (Math.max(bitmap.width, bitmap.height) > MAX_IMG_DIM || file.size > capBytes) {
       // PNG/WebP are re-encoded IN THEIR OWN FORMAT — never to JPEG — so transparency is
       // preserved (a JPEG re-encode turned transparent areas solid black). Canvas re-encode
       // needs no EXIF strip (metadata never survives it) and bakes orientation into pixels.
       const outMime = mimeType === 'image/png' ? 'image/png'
         : mimeType === 'image/webp' ? 'image/webp'
         : 'image/jpeg'
-      const main = await scaleAndEncode(bitmap, MAX_IMG_DIM, outMime, MAIN_QUALITY)
+      // Walk the ladder and stop at the first size that fits, so a photo 10% over the cap loses
+      // almost nothing while a genuinely enormous one still gets through. The last rung is used
+      // regardless — a refused upload is worse than a smaller photo.
+      let main = await scaleAndEncode(bitmap, MAX_IMG_DIM, outMime, MAIN_QUALITY)
+      // Only if 3500px STILL does not fit the album's cap does it come down further, one rung at a
+      // time. A refused upload is worse than a smaller photo.
+      for (const dim of SHRINK_LADDER.slice(1)) {
+        if (main.blob.size <= capBytes) break
+        main = await scaleAndEncode(bitmap, dim, outMime, MAIN_QUALITY)
+      }
       // Label the bytes we ACTUALLY produced, not the ones we asked for.
       //
       // Per the HTML spec both toBlob and toDataURL silently fall back to image/png when the engine
@@ -1370,7 +1410,7 @@ async function uploadImageToR2(
   // Process BEFORE presigning — fileSize in presign must match the actual blob we PUT.
   // One decode yields the upload blob, the thumbnail AND the dimensions (see processImage).
   onProgress(2)
-  const processed = await processImage(file)
+  const processed = await processImage(file, imageCapBytes)
   onProgress(12)
 
   // Cap enforced on the PROCESSED size — what actually uploads. A 30MB phone photo that
