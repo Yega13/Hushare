@@ -102,7 +102,7 @@ export default function AdminUsers({ users, cohorts }: { users: UserRow[]; cohor
 
   return (
     <div style={{ display: 'grid', gap: 12 }}>
-      <div style={{ display: 'grid', gap: 12, gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))' }}>
+      <div style={{ display: 'grid', gap: 12, gridTemplateColumns: 'repeat(auto-fit, minmax(min(160px, 100%), 1fr))' }}>
         <Card label="Registered" value={total.toLocaleString('en-US')} />
         <Card
           label="Made an album"

@@ -542,6 +542,15 @@
   display: inline !important;
 }
 
+/* ...AND ONLY the word. The bar beside the hamburger already carries your picture as a one-tap
+   shortcut to the account, so repeating it inside the menu showed the same identity twice on one
+   screen — and because the rule above wins on !important, the menu row showed the word AND the
+   picture while the bar showed the picture again. In the menu the label is what a menu row needs;
+   the face belongs in the bar, where it is the whole control. */
+.hush-mobile-nav .hush-account-avatar {
+  display: none !important;
+}
+
 /* Slide-up entrance animation for menu items */
 @keyframes hush-menu-in {
   from { opacity: 0; transform: translateY(18px); }

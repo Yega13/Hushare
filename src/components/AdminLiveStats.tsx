@@ -220,7 +220,7 @@ export default function AdminLiveStats({ initial }: { initial: LiveStats }) {
 
   return (
     <>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 12, marginBottom: 10 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(150px, 100%), 1fr))', gap: 12, marginBottom: 10 }}>
         {cards.map(c => {
           const value = live[c.key]
           const was = baseline?.[c.key]

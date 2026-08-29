@@ -423,7 +423,11 @@ export default async function AdminPage() {
   const td: React.CSSProperties = { padding: '8px 10px', fontSize: 13, color: INK, borderBottom: `1px solid ${BORDER}`, whiteSpace: 'nowrap' }
 
   return (
-    <main style={{ minHeight: '100vh', background: '#FDFAF5', padding: '28px 20px', fontFamily: 'var(--font-sans)' }}>
+    // overflowX hidden is the backstop, not the fix: every grid below clamps its own floor with
+    // min(), and the wide tables scroll inside their own box. This stops one future card with a
+    // fixed width from sliding the entire admin page sideways on a phone, which is a failure you
+    // only notice by opening it on one.
+    <main style={{ minHeight: '100vh', background: '#FDFAF5', padding: 'clamp(16px, 4vw, 28px) clamp(12px, 3.5vw, 20px)', fontFamily: 'var(--font-sans)', overflowX: 'hidden' }}>
       <div style={{ maxWidth: 1080, margin: '0 auto' }}>
         {/* Logo → home */}
         <Link href="/" aria-label="Go to Hushare home" style={{ display: 'inline-block', marginBottom: 18 }}>
@@ -456,7 +460,7 @@ export default async function AdminPage() {
         {/* Overview — headline totals */}
         <h2 id="overview" style={{ fontSize: 15, fontWeight: 700, color: INK, margin: '20px 0 10px', scrollMarginTop: 64 }}>Overview</h2>
         <AdminLiveStats initial={liveInitial} />
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 12, marginBottom: 28 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(150px, 100%), 1fr))', gap: 12, marginBottom: 28 }}>
           {cards.map((c) => (
             <div key={c.label} style={{ background: CARD, border: `1px solid ${BORDER}`, borderRadius: 12, padding: '14px 16px' }}>
               <div style={{ fontSize: 12, color: MUTED, marginBottom: 6 }}>{c.label}</div>
@@ -470,7 +474,7 @@ export default async function AdminPage() {
         <h2 id="growth" style={{ fontSize: 15, fontWeight: 700, color: INK, margin: '0 0 10px', scrollMarginTop: 64 }}>
           Growth <span style={{ fontSize: 12, fontWeight: 400, color: MUTED }}>· last 7 days (30-day total in gray)</span>
         </h2>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 12, marginBottom: 28 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(150px, 100%), 1fr))', gap: 12, marginBottom: 28 }}>
           {growthCards.map((c) => (
             <div key={c.label} style={{ background: CARD, border: `1px solid ${BORDER}`, borderRadius: 12, padding: '14px 16px' }}>
               <div style={{ fontSize: 12, color: MUTED, marginBottom: 6 }}>{c.label}</div>
@@ -486,7 +490,7 @@ export default async function AdminPage() {
             card, which at 120px tall would cover most of the data it is describing.
             Album views below deliberately keeps the bar chart — it is a different kind of number
             (traffic, not creation) and reads better as discrete daily columns. */}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 12, marginBottom: 28 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(240px, 100%), 1fr))', gap: 12, marginBottom: 28 }}>
           <AdminAreaChartLazy label="Signups / day" points={signupsPts} color="#1F5136" unit="users" />
           <AdminAreaChartLazy label="New albums / day" points={albumsPts} color={BRAND} unit="albums" />
           <AdminAreaChartLazy label="Uploads / day" points={uploadsPts} color="#B4531F" unit="items" />
@@ -499,7 +503,7 @@ export default async function AdminPage() {
           Last 30 days of album views. Aggregate only — no visitor is identified or followed between
           visits; every figure describes a group.
         </p>
-        <div style={{ display: 'grid', gap: 12, gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', marginBottom: 12 }}>
+        <div style={{ display: 'grid', gap: 12, gridTemplateColumns: 'repeat(auto-fit, minmax(min(260px, 100%), 1fr))', marginBottom: 12 }}>
           <AdminBreakdown title="Countries" rows={analytics.countries} color="#1F5136" />
           <AdminBreakdown title="Cities" rows={analytics.cities} color="#21458c" />
           <AdminBreakdown title="How they arrived" rows={analytics.referrers} color={BRAND} empty="no referrer data yet" />
@@ -519,7 +523,7 @@ export default async function AdminPage() {
         <div style={{ marginBottom: 12 }}>
           <AdminFunnel funnel={analytics.funnel} engagement={analytics.engagement} throughput={analytics.throughput} color={BRAND} />
         </div>
-        <div style={{ display: 'grid', gap: 12, gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', marginBottom: 12 }}>
+        <div style={{ display: 'grid', gap: 12, gridTemplateColumns: 'repeat(auto-fit, minmax(min(280px, 100%), 1fr))', marginBottom: 12 }}>
           <AdminBreakdown
             title="Repeated taps on the same spot"
             rows={analytics.friction}
@@ -534,7 +538,7 @@ export default async function AdminPage() {
         <p style={{ fontSize: 11.5, color: '#8A7A66', margin: '0 0 10px' }}>
           Last {WEEKDAY_DAYS} days, counted in {OWNER_TZ.replace('_', ' ')} local time.
         </p>
-        <div style={{ display: 'grid', gap: 12, gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))' }}>
+        <div style={{ display: 'grid', gap: 12, gridTemplateColumns: 'repeat(auto-fit, minmax(min(240px, 100%), 1fr))' }}>
           <AdminWeekdayBars label="Signups" days={weekdaySignups} color="#1F5136" unit="users" />
           <AdminWeekdayBars label="New albums" days={weekdayAlbums} color={BRAND} unit="albums" />
           <AdminWeekdayBars label="Uploads" days={weekdayUploads} color="#B4531F" unit="items" />
@@ -557,7 +561,7 @@ export default async function AdminPage() {
               </div>
             )}
             {trafficCards.length > 0 && (
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 12, marginBottom: 12 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(150px, 100%), 1fr))', gap: 12, marginBottom: 12 }}>
                 {trafficCards.map((c) => (
                   <div key={c.label} style={{ background: CARD, border: `1px solid ${BORDER}`, borderRadius: 12, padding: '14px 16px' }}>
                     <div style={{ fontSize: 12, color: MUTED, marginBottom: 6 }}>{c.label}</div>
@@ -568,7 +572,7 @@ export default async function AdminPage() {
               </div>
             )}
 
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 12, marginBottom: 12 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(280px, 100%), 1fr))', gap: 12, marginBottom: 12 }}>
               {viewsPerDay && viewsPerDay.length > 0 && (
                 <AdminGrowthChart label="Album views / day" points={viewsPerDay} color="#21458c" unit="views" />
               )}
@@ -687,7 +691,7 @@ export default async function AdminPage() {
         <div style={{ marginBottom: 20 }}>
           <AdminUsers users={userRows} cohorts={cohorts} />
         </div>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: 20 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(300px, 100%), 1fr))', gap: 20 }}>
           <div>
             <h2 style={{ fontSize: 15, fontWeight: 700, color: INK, margin: '0 0 10px' }}>Subscriptions</h2>
             <div style={scrollBox}>
