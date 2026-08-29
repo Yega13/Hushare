@@ -346,9 +346,17 @@ export type PhotosResult =
 // Authorized photo listing. Anon RLS only exposes OPEN albums, so password/reveal-gated albums
 // (and an owner's own view of them) are read here via the admin client AFTER verifying the caller
 // is the owner (owner cookie) or an unlocked guest (password access-token cookie).
-// Default page size for the full album view. Small albums (≤ this) fetch everything in one shot —
-// exactly the pre-pagination behaviour. Only albums LARGER than this ever paginate.
-export const ALBUM_PAGE_SIZE = 2000
+// Default page size for the full album view. Small albums (≤ this) fetch everything in one shot.
+//
+// 500, DOWN FROM 2000. This is what the album page server-renders, so on a 5,000-photo race album
+// it was 1.63 MB of HTML before a guest saw anything — measured against a real 5,000-row album on
+// 2026-08-29, on the venue WiFi the whole finish area shares.
+//
+// 2000 was the right number while both searches ran over the photos the phone had loaded: a
+// smaller window meant a runner past it was told they had no photos. Now the database answers the
+// bib search and face-search returns its own rows, so the window only decides how much of the grid
+// is painted before scrolling — and 500 is already more than anyone scrolls through.
+export const ALBUM_PAGE_SIZE = 500
 
 export async function fetchAuthorizedPhotos(
   albumId: string,

@@ -53,7 +53,7 @@ type Props = {
 
 // Full album view server-renders the first window; a BIG album (> first window) loads its tail on
 // demand. Small albums (every album today) load fully in the first window — pagination never engages.
-const ALBUM_FIRST_WINDOW = 2000 // must match ALBUM_PAGE_SIZE in lib/server/album-access.ts
+const ALBUM_FIRST_WINDOW = 500 // must match ALBUM_PAGE_SIZE in lib/server/album-access.ts
 // How long to collapse a burst of realtime pings into one refetch. See the note at the debounce.
 const REFETCH_DEBOUNCE_MS = 2500
 const LOAD_MORE_PAGE = 500
