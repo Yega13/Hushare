@@ -46,12 +46,14 @@ type Props = {
   onPhotoUpdated: (id: string, patch: Partial<Photo>) => void
   onPhotosReordered: (photos: Photo[]) => void
   slideshowRequestId?: number
+  /** A search is narrowing this grid, so an empty result means "no matches", not "no photos". */
+  filtered?: boolean
   arrangeMode?: boolean
   coverPhotoId?: string | null
   onCoverSet?: (photoId: string | null) => void
 }
 
-export default function PhotoGrid({ album, photos, albumPhotoCount, isOwner, slug, forceGlobalRadius, onRadiusMaxChange, onPhotoDeleted, onPhotoUpdated, onPhotosReordered, slideshowRequestId = 0, arrangeMode = false, coverPhotoId, onCoverSet }: Props) {
+export default function PhotoGrid({ album, photos, albumPhotoCount, isOwner, slug, forceGlobalRadius, onRadiusMaxChange, onPhotoDeleted, onPhotoUpdated, onPhotosReordered, slideshowRequestId = 0, filtered = false, arrangeMode = false, coverPhotoId, onCoverSet }: Props) {
   const { t } = useT()
   const gridRef = useRef<HTMLDivElement>(null)
   const lightboxHistoryRef = useRef(false)
@@ -97,7 +99,7 @@ export default function PhotoGrid({ album, photos, albumPhotoCount, isOwner, slu
   // The layout is part of the key so the observers re-attach to the new tile elements when the
   // owner switches grid ↔ masonry (the tiles live in a different container per layout).
   const photoIdsKey = useMemo(() => (masonry ? 'm:' : 'g:') + photos.map((p) => p.id).join('|'), [photos, masonry])
-  const tileRadiusMaxById = usePhotoGridObservers(gridRef, photoIdsKey, onRadiusMaxChange)
+  const { measureTileRadiusMax, gridSizeVersion } = usePhotoGridObservers(gridRef, photoIdsKey, onRadiusMaxChange)
 
   const aspects = useMediaAspects(photos, masonry)
   const [containerWidth, setContainerWidth] = useState(0)
@@ -189,7 +191,8 @@ export default function PhotoGrid({ album, photos, albumPhotoCount, isOwner, slu
     forceGlobalRadius,
     currentId: current?.id,
     lightboxRadiusMax,
-    tileRadiusMaxById,
+    measureTileRadiusMax,
+    gridSizeVersion,
     onPhotoUpdated,
   })
 
@@ -517,10 +520,17 @@ export default function PhotoGrid({ album, photos, albumPhotoCount, isOwner, slu
             WebkitBackdropFilter: 'blur(8px)',
           }}
         >
+          {/* AN EMPTY FILTER IS NOT AN EMPTY ALBUM. A runner who searched their number and matched
+              nothing was shown "Nothing here yet — be the first to upload a photo!" underneath a
+              bar simultaneously saying the album held 5,000 photos and was still being read. On a
+              race album the search IS the primary path, so this is the screen most guests see when
+              it goes wrong, and it was telling them the album was empty. */}
           <p className="text-lg" style={{ color: '#630826', fontFamily: 'var(--font-serif)', fontWeight: 700 }}>
-            {t('pg.empty')}
+            {filtered ? t('pg.noMatches') : t('pg.empty')}
           </p>
-          <p className="text-sm mt-2" style={{ color: '#5C4A3C' }}>{t('pg.emptySub')}</p>
+          <p className="text-sm mt-2" style={{ color: '#5C4A3C' }}>
+            {filtered ? t('pg.noMatchesSub') : t('pg.emptySub')}
+          </p>
         </div>
       </div>
     )

@@ -34,6 +34,8 @@ const ALBUM_SELECT_COLS = [
 ].join(', ')
 
 // Same columns AlbumPageClient renders (mirrors the former photos route).
+import { bibSearchCandidates } from '@/lib/bib-match'
+
 const PHOTO_SELECT_COLS = [
   'id', 'album_id', 'storage_path', 'storage_backend',
   'url', 'thumb_url', 'caption', 'author_name', 'created_at',
@@ -267,6 +269,11 @@ export type AlbumGateRow = {
 // Columns a caller must select for gateAllowsContribution to work. Keeps the two in step.
 export const ALBUM_GATE_COLS = 'owner_token, password_hash, reveal_at'
 
+// What a face-search result needs to render a tile and open the lightbox on it. Deliberately the
+// full photo shape rather than a trimmed one: the results grid hands these straight to the same
+// components the album grid uses, and a missing column there shows up as a blank tile.
+export const FACE_MATCH_PHOTO_COLS = PHOTO_SELECT_COLS
+
 // The `reason` is not decoration. A real customer had 163 uploads refused with "Enter the album
 // password before adding photos" after four had gone through minutes earlier, on the same device,
 // and it was impossible to say WHY: the message is identical whether the owner cookie was never
@@ -334,7 +341,7 @@ export type PhotosResult =
   | { kind: 'notfound' }
   | { kind: 'reveal' }
   | { kind: 'password' }
-  | { kind: 'ok'; photos: Photo[]; total?: number }
+  | { kind: 'ok'; photos: Photo[]; total?: number; bibStats?: { indexed: number; totalImages: number } }
 
 // Authorized photo listing. Anon RLS only exposes OPEN albums, so password/reveal-gated albums
 // (and an owner's own view of them) are read here via the admin client AFTER verifying the caller
@@ -346,16 +353,19 @@ export const ALBUM_PAGE_SIZE = 2000
 export async function fetchAuthorizedPhotos(
   albumId: string,
   cookieStore: CookieStore,
-  opts: { recentLimit?: number; offset?: number; limit?: number } = {},
+  opts: { recentLimit?: number; offset?: number; limit?: number; bib?: string; bibStats?: boolean; statsOnly?: boolean } = {},
 ): Promise<PhotosResult> {
   if (!UUID_RE.test(albumId)) return { kind: 'invalid' }
 
   const admin = createAdminClient()
   const { data: album } = await admin
     .from('albums')
-    .select('id, owner_token, password_hash, reveal_at, retired_at')
+    // bib_min/bib_max come from the ALBUM, never from the caller. They decide which OCR readings
+    // count, so accepting them from the request would let anyone widen the race's numbering and
+    // pull back photos the owner's bounds were set to exclude.
+    .select('id, user_id, owner_token, password_hash, reveal_at, retired_at, bib_search_enabled, bib_min, bib_max')
     .eq('id', albumId)
-    .maybeSingle<{ id: string; owner_token: string; password_hash: string | null; reveal_at: string | null; retired_at: string | null }>()
+    .maybeSingle<{ id: string; user_id: string | null; owner_token: string; password_hash: string | null; reveal_at: string | null; retired_at: string | null; bib_search_enabled: boolean; bib_min: number | null; bib_max: number | null }>()
 
   if (!album || album.retired_at) return { kind: 'notfound' }
 
@@ -384,8 +394,62 @@ export async function fetchAuthorizedPhotos(
   const offset = Math.max(0, Math.floor(opts.offset ?? 0))
   const limit = Math.min(ALBUM_PAGE_SIZE, Math.max(1, Math.floor(opts.limit ?? ALBUM_PAGE_SIZE)))
 
+  // BIB SEARCH RUNS HERE, NOT ON THE PHONE.
+  //
+  // Matching used to happen client-side over the photos already loaded, which is instant and was
+  // right for a 200-photo wedding. On a 5,000-photo race it quietly became a lie: the album loads a
+  // window at a time, so a runner whose photos sit outside it typed their number and was told there
+  // were none. The alternative — shipping all 5,000 rows to every phone so the filter could see
+  // them — is 3-4 MB of JSON each, over the one venue WiFi, times every runner in the finish area.
+  //
+  // So the database answers instead. One GIN-indexed array overlap returns the runner's photos and
+  // nothing else, whatever is loaded, on any album size. The phone still filters what it has as you
+  // type, for the instant feel; this is the authoritative answer that replaces it.
+  // THE FEATURE GATE IS RE-CHECKED HERE, on the album and on the owner's plan, and BEFORE the
+  // stats short-circuit below — which is where it sat first, letting a stats request walk straight
+  // past the very check that had just been added.
+  //
+  // Bib search reached this route as a query parameter, and nothing on the way in asked whether the
+  // album had the feature switched on or whether its owner was still on Max. The client only ever
+  // sends it for an album showing the search bar, so nothing leaked that the caller could not
+  // already fetch — but every sibling path re-checks flag AND tier on the server (bib-index before
+  // it spends money on OCR, face-search before it answers), and a gate that exists only in the
+  // client is not a gate. It is a convention.
+  if (opts.bib !== undefined || opts.statsOnly) {
+    if (!album.bib_search_enabled) return { kind: 'ok', photos: [], total: 0 }
+    if (!album.user_id || (await getUserTierById(album.user_id)) !== 'studio') {
+      return { kind: 'ok', photos: [], total: 0 }
+    }
+  }
+
+  // Stats with no search: the bar shows "still reading photos, 1,200 of 5,000" before anyone has
+  // typed, and that needs two counts, not five thousand rows. Without this the search bar's own
+  // progress note would refetch the entire album on every page load.
+  if (opts.statsOnly) {
+    return { kind: 'ok', photos: [], total: 0, bibStats: await countBibStats(albumId, isOwner) }
+  }
+
+  // ASKING FOR A BIB SEARCH AND ASKING FOR THE ALBUM ARE DIFFERENT REQUESTS.
+  //
+  // bibSearchCandidates returns null for "nothing to search for", which at the top level correctly
+  // means no filter. Passed straight through here it meant something else: `bib=abc` produced null
+  // and returned the WHOLE album as that runner's photos. The client only ever sends stripped
+  // digits so it is not reachable today, but the distinction it destroys is the one every test in
+  // tests/bib-match.ts exists to protect, and it sits one layer above them. If `bib` was asked for
+  // at all, an unusable value matches nothing — it never matches everything.
+  const bibCandidates = opts.bib !== undefined
+    ? (bibSearchCandidates(opts.bib, { min: album.bib_min, max: album.bib_max }) ?? [])
+    : null
+  // An empty candidate list is NOT "no filter" — it is a number that cannot match anything, such as
+  // one outside the race's numbering. Returning the whole album here would hand a runner every
+  // photo in it, so the search short-circuits to nothing instead.
+  if (bibCandidates !== null && bibCandidates.length === 0) {
+    return { kind: 'ok', photos: [], total: 0, bibStats: opts.bibStats ? await countBibStats(albumId, isOwner) : undefined }
+  }
+
   let query = admin.from('photos').select(PHOTO_SELECT_COLS).eq('album_id', albumId)
   if (!isOwner) query = query.eq('hidden', false)
+  if (bibCandidates) query = query.overlaps('bib_numbers', bibCandidates)
   // recentLimit (the live wall): fetch only the newest N — the wall shows a bounded window, so
   // pulling the whole album on every refetch is pure waste on the always-on display device.
   query = recent
@@ -411,9 +475,41 @@ export async function fetchAuthorizedPhotos(
   } else {
     let countQuery = admin.from('photos').select('id', { count: 'exact', head: true }).eq('album_id', albumId)
     if (!isOwner) countQuery = countQuery.eq('hidden', false)
+    // The count must carry the same filter as the rows it is counting. Without this a bib search
+    // that filled a page would report the whole album's size as its match count.
+    if (bibCandidates) countQuery = countQuery.overlaps('bib_numbers', bibCandidates)
     const { count } = await countQuery
     total = count ?? offset + got
   }
 
-  return { kind: 'ok', photos: (photos ?? []) as unknown as Photo[], total }
+  return {
+    kind: 'ok',
+    photos: (photos ?? []) as unknown as Photo[],
+    total,
+    bibStats: opts.bibStats ? await countBibStats(albumId, isOwner) : undefined,
+  }
+}
+
+// How far OCR has got, counted over the WHOLE album rather than the loaded window.
+//
+// The search bar tells a runner "still reading photos, 1,200 of 5,000" so they do not read an
+// empty result as "I was not photographed". Both numbers used to be counted over the photos the
+// phone happened to hold, so on a partly-loaded album they agreed with each other perfectly and
+// the bar fell silent — at exactly the moment the warning was true.
+//
+// Videos are excluded from both: nothing reads a bib off a video, so counting them would leave the
+// bar permanently stuck below 100%.
+async function countBibStats(albumId: string, isOwner: boolean): Promise<{ indexed: number; totalImages: number }> {
+  const admin = createAdminClient()
+  const base = () => {
+    let q = admin.from('photos').select('id', { count: 'exact', head: true })
+      .eq('album_id', albumId).neq('media_type', 'video')
+    if (!isOwner) q = q.eq('hidden', false)
+    return q
+  }
+  const [{ count: totalImages }, { count: indexed }] = await Promise.all([
+    base(),
+    base().not('bib_numbers', 'is', null),
+  ])
+  return { indexed: indexed ?? 0, totalImages: totalImages ?? 0 }
 }

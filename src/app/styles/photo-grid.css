@@ -10,6 +10,25 @@
     user-select: none;
   }
 
+  /* SKIP THE WORK FOR TILES NOBODY IS LOOKING AT.
+     A 5,000-photo album puts 5,000 tiles in the page, and the browser lays out and paints the
+     contents of every one of them even though a phone shows about nine. This tells it to skip the
+     inside of any tile that is off screen, and do it the moment it scrolls near.
+
+     No contain-intrinsic-size is set, on purpose. The tile's own box is already definite in both
+     layouts — the grid track gives its width and aspect-square gives its height; in masonry the
+     parent gives both — so the box keeps its size while skipped and the scrollbar does not move.
+     A contain-intrinsic-size here would be a second, competing answer to a question already
+     answered, which is how this feature collapses a grid to nothing.
+
+     Not applied while arranging: drag-and-drop measures tiles the guest cannot see to work out
+     where a photo would land, and those measurements must stay live.
+
+     Safari before 18 ignores the property. That is the old behaviour, not a broken one. */
+  .hush-photo-tile:not(.hush-reorder-ring) {
+    content-visibility: auto;
+  }
+
   .hush-reorder-ring::after {
     content: "";
     position: absolute;

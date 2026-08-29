@@ -9,7 +9,11 @@ type Options = {
   forceGlobalRadius: boolean
   currentId: string | undefined
   lightboxRadiusMax: number | null
-  tileRadiusMaxById: Record<string, number>
+  /** Measures ONE tile when asked. Returns null if that tile is not on screen — see
+   *  usePhotoGridObservers for why this is no longer a map of every photo in the album. */
+  measureTileRadiusMax: (photoId: string) => number | null
+  /** Changes when the tile WIDTH changes, so an open slider re-reads its ceiling after a rotate. */
+  gridSizeVersion: number
   onPhotoUpdated: (id: string, patch: Partial<Photo>) => void
 }
 
@@ -58,7 +62,8 @@ export function usePhotoSettings({
   forceGlobalRadius,
   currentId,
   lightboxRadiusMax,
-  tileRadiusMaxById,
+  measureTileRadiusMax,
+  gridSizeVersion,
   onPhotoUpdated,
 }: Options): PhotoSettings {
   const [settingsPhoto, setSettingsPhoto] = useState<Photo | null>(null)
@@ -73,7 +78,7 @@ export function usePhotoSettings({
     if (currentId === photo.id && lightboxRadiusMax != null) {
       return lightboxRadiusMax
     }
-    return Math.max(1, Math.round(tileRadiusMaxById[photo.id] ?? 144))
+    return Math.max(1, Math.round(measureTileRadiusMax(photo.id) ?? 144))
   }
 
   function openSettings(photo: Photo) {
@@ -199,9 +204,11 @@ export function usePhotoSettings({
     if (!settingsPhoto) return
     const max = currentId === settingsPhoto.id && lightboxRadiusMax != null
       ? lightboxRadiusMax
-      : Math.max(1, Math.round(tileRadiusMaxById[settingsPhoto.id] ?? 144))
+      : Math.max(1, Math.round(measureTileRadiusMax(settingsPhoto.id) ?? 144))
     if (settingsRadius > max) setSettingsRadius(max)
-  }, [currentId, lightboxRadiusMax, settingsPhoto, settingsRadius, tileRadiusMaxById])
+    // gridSizeVersion is in the deps on purpose even though it is not read: it is the signal that
+    // the tile got narrower (a rotate), which is the case this clamp exists for.
+  }, [currentId, lightboxRadiusMax, settingsPhoto, settingsRadius, measureTileRadiusMax, gridSizeVersion])
 
   return {
     settingsPhoto,

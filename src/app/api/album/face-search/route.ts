@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { cookies } from 'next/headers'
-import { ALBUM_GATE_COLS, gateAllowsContribution } from '@/lib/server/album-access'
+import { ALBUM_GATE_COLS, FACE_MATCH_PHOTO_COLS, gateAllowsContribution } from '@/lib/server/album-access'
+import { timingSafeEqual } from '@/lib/timing-safe'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { searchFacesByImage } from '@/lib/rekognition'
 import { forbidCrossSiteRequest } from '@/lib/request-security'
@@ -106,7 +107,8 @@ async function handlePost(req: Request) {
   //
   // face-index GET already had this exact check, with a comment explaining why. This is its sibling
   // and it was missed. Same two lines, deliberately identical so the pair cannot drift again.
-  const gate = await gateAllowsContribution(album, await cookies())
+  const cookieStore = await cookies()
+  const gate = await gateAllowsContribution(album, cookieStore)
   if (!gate.ok) return NextResponse.json({ error: gate.error }, { status: 403, headers: NO_STORE })
 
   // failOpen:false — same reasoning as the IP-scoped limiter above.
@@ -157,7 +159,54 @@ async function handlePost(req: Request) {
     )
   }
 
-  track({ name: 'face_search_run', albumId: album.id, matches: matches.length })
 
-  return NextResponse.json({ matches }, { headers: NO_STORE })
+  // THE PHOTOS COME BACK WITH THE MATCH, not just their ids.
+  //
+  // Face Finder used to take these ids and look each one up in the photos the album page had
+  // loaded, dropping any it could not find. On an album that pages its photos in, that silently
+  // deleted real results — a runner matched in 40 photos was shown the 28 that happened to be
+  // loaded and told nothing about the rest. Sending the rows themselves makes the answer complete
+  // regardless of what the page holds, and it is a small payload: a match list is tens of photos,
+  // not thousands.
+  //
+  // Guests never receive hidden photos (pending approval, or hidden by the owner). The owner does,
+  // because that is what they see everywhere else in their own album.
+  const ownerCookie = (cookieStore.get(`hushare_owner_${album.id}`)?.value ?? '').trim()
+  const isOwner = ownerCookie.length > 0 && timingSafeEqual(ownerCookie, album.owner_token)
+  let photos: { id: string }[] = []
+  if (matches.length > 0) {
+    let photoQuery = admin
+      .from('photos')
+      .select(FACE_MATCH_PHOTO_COLS)
+      .eq('album_id', album.id)
+      .in('id', matches.map((m) => m.photoId))
+    if (!isOwner) photoQuery = photoQuery.eq('hidden', false)
+    const { data, error: photoError } = await photoQuery
+    if (photoError) {
+      // An answer we cannot stand behind is worse than no answer: returning the ids alone would let
+      // the client show a confident undercount. The guest gets "try again", which is true.
+      console.error('[album/face-search] match photo fetch failed:', photoError.message)
+      return NextResponse.json({ error: 'Could not load your photos. Please try again.' }, { status: 500, headers: NO_STORE })
+    }
+    photos = (data ?? []) as unknown as { id: string }[]
+  }
+
+  // THE MATCH LIST IS CUT DOWN TO THE PHOTOS THE CALLER MAY ACTUALLY SEE.
+  //
+  // Rekognition answers from its own face collection, which knows nothing about `hidden` and still
+  // holds faces from photos that have since been deleted. Returning that raw list alongside a
+  // filtered photo list told the guest exactly how many results they were not being shown — the
+  // count of photos the owner hid or left pending approval, which is the one thing `hidden` exists
+  // to withhold. It also promised those photos were "still loading" when they were never coming.
+  //
+  // Filtering here rather than in the client means the number the guest sees is the number of
+  // photos that exist for them, and every id they receive resolves to one.
+  const visibleIds = new Set(photos.map((p) => p.id))
+  const visibleMatches = matches.filter((m) => visibleIds.has(m.photoId))
+
+  // Tracked AFTER the filter: the number worth knowing is how many photos the guest was actually
+  // shown, not how many rows Rekognition returned before the album's own rules were applied.
+  track({ name: 'face_search_run', albumId: album.id, matches: visibleMatches.length })
+
+  return NextResponse.json({ matches: visibleMatches, photos }, { headers: NO_STORE })
 }

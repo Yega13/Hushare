@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, useMemo } from 'react'
 import { createPortal } from 'react-dom'
 import { useParams, notFound } from 'next/navigation'
 import dynamic from 'next/dynamic'
@@ -57,6 +57,9 @@ const ALBUM_FIRST_WINDOW = 2000 // must match ALBUM_PAGE_SIZE in lib/server/albu
 // How long to collapse a burst of realtime pings into one refetch. See the note at the debounce.
 const REFETCH_DEBOUNCE_MS = 2500
 const LOAD_MORE_PAGE = 500
+// Most photos one bib number can sensibly return. A runner is in tens of photos; a junk OCR reading
+// off a banner ("2026") can hit thousands, and that is the request this bounds.
+const BIB_RESULT_LIMIT = 300
 
 // How long after one of THIS tab's own album edits a settings-broadcast refetch is treated as an
 // echo of that edit rather than news from somewhere else. Every owner mutation broadcasts, and the
@@ -322,6 +325,131 @@ export default function AlbumPageClient({ initialAlbum = null, initialPhotos, in
     }
   }, [fetchPage])
 
+  // SEARCH MUST SEE THE WHOLE ALBUM, not just what has been scrolled to.
+  //
+  // Bib search matched against `photos` — the LOADED window. That is fine at 900 photos and
+  // silently wrong at 5,000: with a first window of 2,000, a runner whose photos sit at #3,400
+  // types their number and is told there are none. It does not look like a bug to them. It looks
+  // like they were not photographed.
+  //
+  // The obvious fix — load all 5,000 rows into every phone so the filter can see them — is 3-4 MB
+  // of JSON per guest over the one WiFi the whole finish area is sharing, and it makes the phone
+  // parse and hold the entire album to answer a question about thirty photos. So the DATABASE
+  // searches instead: one GIN-indexed lookup over bib_numbers, complete on any album size.
+  //
+  // The local filter still runs on every keystroke, because it is instant and needs no network.
+  // The server's answer replaces it the moment it lands. On a small album they are identical; on a
+  // big one the local pass is a fast first draft of the real answer.
+  const albumId = album?.id ?? null
+  const bibEnabled = !!album?.bib_search_enabled
+  const [bibResult, setBibResult] = useState<{ query: string; photos: Photo[]; total: number } | null>(null)
+  const [bibStats, setBibStats] = useState<{ indexed: number; totalImages: number } | null>(null)
+  // THE NUMBER THAT FAILED, not a boolean. Tagged the same way bibResult is, and for the same
+  // reason: a failure belongs to the query that produced it. As a flag it had to be cleared, the
+  // only place clearing it was inside .then(), and a failed search for "123" followed by typing
+  // "1234" showed "Could not search just now" against a number nothing had attempted yet. Tagging
+  // it makes that state unrepresentable instead of remembering to reset it.
+  const [bibFailedQuery, setBibFailedQuery] = useState<string | null>(null)
+  // Bumped by the retry button. The effect keys on the digits, so without this, retrying the SAME
+  // number after a failure fires nothing at all and the runner is stuck on the failure.
+  const [bibRetry, setBibRetry] = useState(0)
+
+  const bibDigits = bibQuery.replace(/\D/g, '')
+  // A bib filter is on screen: the grid is short, so the "load more" sentinel sits in view and the
+  // observer keeps firing — paging the whole 5,000-photo album across the venue WiFi while the
+  // runner looks at twelve photos. The server already gave the complete answer; there is nothing
+  // left for those rows to contribute.
+  const bibFilterActive = bibEnabled && !!bibDigits
+
+  // "We do not have an answer for the number currently in the box." Derived, not a loading flag,
+  // and that distinction is the whole point.
+  //
+  // The obvious fix for the flicker below is to skip the refetch when the same number is searched
+  // twice — which trades a flicker for a stale answer, and during a live race a stale answer is the
+  // failure: a runner who searched at minute 1 and again at minute 5 would be shown the two photos
+  // that existed the first time and never the eight that exist now. So the request always goes, and
+  // what changes is that an answer already on screen is not taken away while the next one arrives.
+  //
+  // Because this is false whenever a result for THIS number is held, a background refresh cannot
+  // push the bar back through "Searching…" or, worse, through the "no photos with that number"
+  // panel — presented as final, then withdrawn — which is what a plain in-flight flag did.
+  const bibFailed = bibEnabled && !!bibDigits && bibFailedQuery === bibDigits
+  const bibAwaitingServer = bibEnabled && !!bibDigits && bibResult?.query !== bibDigits && !bibFailed
+
+  useEffect(() => {
+    if (!bibEnabled || !albumId) return
+    let cancelled = false
+    const controller = new AbortController()
+    // Debounced so typing "1234" is one request, not four. 300ms is below the point a person
+    // notices a pause and above a fast typist's gap between digits.
+    const timer = window.setTimeout(() => {
+      const url = bibDigits
+        // LIMITED. OCR reads every number in the frame, so a banner year like "2026" is a real
+        // stored value; without a cap, typing it returns up to 2,000 full rows. No runner is in 300
+        // photos, so nothing legitimate is lost.
+        //
+        // NO bibStats HERE. Those are two full count scans, and the numbers they return cannot
+        // change between one keystroke and the next — sending them per search meant four round
+        // trips per number typed, three of which returned what we already knew. The empty-box
+        // request below fetches them, which is every page load.
+        ? `/api/album/photos?albumId=${encodeURIComponent(albumId)}&bib=${encodeURIComponent(bibDigits)}&limit=${BIB_RESULT_LIMIT}`
+        : `/api/album/photos?albumId=${encodeURIComponent(albumId)}&bibStats=1&statsOnly=1`
+      fetch(url, { signal: controller.signal })
+        .then((r) => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
+        .then((json: { photos?: Photo[]; total?: number; bibStats?: { indexed: number; totalImages: number } }) => {
+          if (cancelled) return
+          if (json.bibStats) setBibStats(json.bibStats)
+          // A stats-only reply carries no photos and must not be mistaken for "no matches".
+          if (!bibDigits) return
+          // Tagged with the query it answers. Without that, a slow response for "12" can land
+          // after a fast one for "1234" and show the wrong runner's photos — the classic
+          // out-of-order search race, and the one people photograph and send you.
+          // `total` is the TRUE match count even when the rows were capped, so the bar can say
+          // "showing the first 300 of 1,847" instead of presenting 300 as the whole answer.
+          const rows = json.photos ?? []
+          setBibResult({ query: bibDigits, photos: rows, total: json.total ?? rows.length })
+        })
+        .catch((err: unknown) => {
+          if (cancelled || (err as { name?: string })?.name === 'AbortError') return
+          // SAYING SO IS THE POINT. Falling back to the local filter looks harmless and is not: it
+          // filters the loaded window, finds nothing, and the bar states "No photos found" with
+          // full confidence to a runner who is in twelve photos. One 429 on a shared venue IP, or
+          // one dropped packet, is enough. An honest "couldn't search, try again" is the only
+          // answer here that is not a lie.
+          if (bibDigits) setBibFailedQuery(bibDigits)
+        })
+    }, bibDigits ? 300 : 0)
+    return () => {
+      cancelled = true
+      controller.abort()
+      window.clearTimeout(timer)
+    }
+  }, [bibEnabled, albumId, bibDigits, bibRetry])
+
+  // The bib result rows, kept in step with the album. Built here, above the hooks boundary, and
+  // memoised: it used to be a `.map` + `.find` in the render body, which at a capped 300 rows
+  // against a fully-loaded 5,000-photo album is 1.5M id comparisons on EVERY re-render — and this
+  // component re-renders on every realtime ping and every refetch.
+  const photosById = useMemo(() => new Map(photos.map((p) => [p.id, p])), [photos])
+  const bibServerAnswered = bibResult !== null && bibResult.query === bibDigits
+  const albumFullyLoaded = total <= 0 || photos.length >= total
+  const bibServerPhotos = useMemo(() => {
+    if (!bibResult) return []
+    const out: Photo[] = []
+    for (const row of bibResult.photos) {
+      // A photo deleted in this tab, tombstoned exactly as every other fetch result is.
+      if (isRecentlyDeleted(row.id)) continue
+      const live = photosById.get(row.id)
+      // Prefer the loaded copy: it is the one caption edits, radius changes and hides reach.
+      if (live) { out.push(live); continue }
+      // Not in the loaded window. If the whole album IS loaded, its absence means it was deleted
+      // or hidden somewhere else — the search result is a snapshot and would otherwise keep
+      // showing it, and open it in the lightbox on a URL that no longer resolves.
+      if (!albumFullyLoaded) out.push(row)
+    }
+    return out
+  }, [bibResult, photosById, isRecentlyDeleted, albumFullyLoaded])
+
   // Infinite scroll: auto-load the next page as the sentinel nears view. loadMore self-gates, so
   // firing on every intersection is safe; the visible button is the manual fallback. The sentinel
   // only renders while more remain, so when caught up the observer detaches. rootMargin prefetches.
@@ -332,7 +460,13 @@ export default function AlbumPageClient({ initialAlbum = null, initialPhotos, in
     const io = new IntersectionObserver(entries => { if (entries[0]?.isIntersecting) void loadMore() }, { rootMargin: '600px' })
     io.observe(el)
     return () => io.disconnect()
-  }, [loadMore, total, photos.length])
+    // bibFilterActive is a dep because the sentinel ELEMENT is unmounted while a bib filter is on
+    // screen. Without it: search a number, the sentinel goes away, clear the box and a NEW sentinel
+    // element mounts — but `total` and `photos.length` have not changed, so this never re-runs and
+    // the observer stays pointed at a detached node. Auto-load is then dead for the rest of the
+    // session. It self-heals during an upload burst (total moves every 2.5s) and does not once the
+    // photographer stops, which is most of the time anyone is browsing.
+  }, [loadMore, total, photos.length, bibFilterActive])
 
   // Apply a first-window refetch (realtime). Small album (fits the window) → plain replace, exactly
   // the pre-pagination behaviour. Big album → merge so the already-loaded tail survives the refresh.
@@ -529,6 +663,13 @@ export default function AlbumPageClient({ initialAlbum = null, initialPhotos, in
     setForceGlobalRadius(false)
     setSlideshowRequestId(0)
     setMediaRadiusMax(144)
+    // BIB STATE IS PER ALBUM. Left behind on a client-side album-to-album navigation, the query
+    // still matched its own cached result, so the new album's grid rendered the PREVIOUS album's
+    // photo rows until the next response landed — and its indexing counts with them.
+    setBibQuery('')
+    setBibResult(null)
+    setBibStats(null)
+    setBibFailedQuery(null)
 
     let cancelled = false
 
@@ -1101,13 +1242,21 @@ export default function AlbumPageClient({ initialAlbum = null, initialPhotos, in
   // client-side over photos already loaded, so typing is instant and costs no requests. When the
   // album isn't a race album (or the box is empty) this is the untouched photo list.
   const bibRange = { min: album.bib_min ?? null, max: album.bib_max ?? null }
-  const visiblePhotos = album.bib_search_enabled && bibQuery.replace(/\D/g, '')
-    ? photos.filter((p) => bibMatches(p, bibQuery, bibRange))
+  // The server's answer for THIS query wins; the local filter covers the moment before it lands
+  // and the case where the request failed. bibResult is tagged with the query it answers, so a
+  // stale response for an earlier number can never be shown against a newer one.
+  const visiblePhotos = album.bib_search_enabled && bibDigits
+    ? (bibServerAnswered ? bibServerPhotos : photos.filter((p) => bibMatches(p, bibQuery, bibRange)))
     : photos
   // Progress figures for the "still reading photos" note — indexing happens in the background
   // after upload, so a guest can arrive before every photo has been read.
-  const totalImageCount = photos.filter((p) => p.media_type !== 'video').length
-  const bibIndexedCount = photos.filter((p) => p.media_type !== 'video' && p.bib_numbers != null).length
+  //
+  // COUNTED OVER THE WHOLE ALBUM BY THE SERVER, not over the loaded window. Counting locally made
+  // the two numbers agree with each other perfectly on a partly-loaded album — "2,000 of 2,000
+  // read" while 3,000 photos were still coming — which is the most reassuring possible way to be
+  // wrong. The local counts remain as the fallback until the first response lands.
+  const totalImageCount = bibStats?.totalImages ?? photos.filter((p) => p.media_type !== 'video').length
+  const bibIndexedCount = bibStats?.indexed ?? photos.filter((p) => p.media_type !== 'video' && p.bib_numbers != null).length
   const headerVideo = resolveHeaderVideo(album, photos)
 
   return (
@@ -1192,6 +1341,10 @@ export default function AlbumPageClient({ initialAlbum = null, initialPhotos, in
             matchCount={visiblePhotos.length}
             indexedCount={bibIndexedCount}
             totalImages={totalImageCount}
+            totalMatches={bibServerAnswered ? bibResult.total : null}
+            awaitingServer={bibAwaitingServer}
+            failed={bibFailed}
+            onRetry={() => { setBibFailedQuery(null); setBibRetry((n) => n + 1) }}
             // Only offered when the owner has Face Finder on — otherwise there's nothing to send
             // a runner to and the button would be a lie.
             onTryFaceFinder={album.face_finder_enabled ? () => setShowFaceFinder(true) : undefined}
@@ -1209,6 +1362,7 @@ export default function AlbumPageClient({ initialAlbum = null, initialPhotos, in
             albumPhotoCount={photos.length}
             album={album}
             photos={visiblePhotos}
+            filtered={bibFilterActive}
             isOwner={effectiveIsOwner}
             slug={album.slug}
             forceGlobalRadius={forceGlobalRadius}
@@ -1223,7 +1377,7 @@ export default function AlbumPageClient({ initialAlbum = null, initialPhotos, in
           />
         </div>
 
-        {total > ALBUM_FIRST_WINDOW && total > photos.length && (
+        {!bibFilterActive && total > ALBUM_FIRST_WINDOW && total > photos.length && (
           <div ref={loadMoreSentinelRef} className="text-center py-6">
             <button
               type="button"

@@ -2,7 +2,12 @@
 
 import { Search, X } from 'lucide-react'
 import { useT } from '@/i18n/LocaleProvider'
-import type { Photo } from '@/types'
+import { bibMatches, type BibRange } from '@/lib/bib-match'
+
+// Re-exported so the album page keeps importing the matcher from the search bar it belongs to.
+// The rule itself lives in lib/bib-match.ts because the server needs the same one.
+export { bibMatches }
+export type { BibRange }
 
 // Guest-facing bib search. Filters the album IN PLACE rather than opening a separate results
 // screen: a runner types their number and the same grid they're already looking at narrows to
@@ -17,40 +22,36 @@ type Props = {
   matchCount: number
   indexedCount: number
   totalImages: number
+  /** The TRUE number of matches, which can exceed the rows returned — the search is capped so a
+   *  junk OCR reading off a banner cannot pull thousands of rows. Null until the server answers. */
+  totalMatches: number | null
+  /** True while the authoritative answer for the current query is still in flight. */
+  awaitingServer: boolean
+  /** The search request failed. The bar must say so rather than show an empty result as fact. */
+  failed: boolean
+  onRetry: () => void
   // Face Finder is the escape hatch when a number can't be read. Absent when the owner has it off.
   onTryFaceFinder?: () => void
 }
 
-export type BibRange = { min: number | null; max: number | null }
-
-// A bib matches if the typed digits equal the detected number, ignoring the leading zeros race
-// bibs are usually printed with — a runner reading "00945" off their chest types "945" as often
-// as not, and both must work. This also rescues OCR that drops a zero: "0994" and "00994" both
-// normalise to 994.
-//
-// `range` discards detections outside the race's numbering before comparing. OCR reads every
-// number in the frame, including banner years and lap counters, and on a race numbered 1-500 a
-// stray "14" would otherwise hand runner 14 a photo they are not in. Filtering here rather than at
-// indexing time means correcting the range is instant and costs no re-OCR.
-export function bibMatches(photo: Photo, query: string, range?: BibRange): boolean {
-  const q = query.replace(/\D/g, '')
-  if (!q) return true
-  const wanted = Number(q)
-  return (photo.bib_numbers ?? []).some((b) => {
-    const n = Number(b)
-    if (!Number.isFinite(n)) return false
-    if (range?.min != null && n < range.min) return false
-    if (range?.max != null && n > range.max) return false
-    return n === wanted
-  })
-}
-
-export default function BibSearchBar({ query, onQueryChange, matchCount, indexedCount, totalImages, onTryFaceFinder }: Props) {
+export default function BibSearchBar({ query, onQueryChange, matchCount, totalMatches, indexedCount, totalImages, awaitingServer, failed, onRetry, onTryFaceFinder }: Props) {
   const { t } = useT()
   const searching = query.replace(/\D/g, '').length > 0
   // Indexing runs in the background after upload, so an album can be mid-way through. Saying so
   // is better than a runner concluding their photos don't exist when they simply aren't read yet.
+  //
+  // Both counts come from the server and cover the whole album, so they no longer agree with each
+  // other by accident on a partly-loaded one — that bug had a runner at bib 3,400 told with total
+  // confidence that they were not photographed.
   const stillIndexing = indexedCount < totalImages
+  // NOTHING NEGATIVE MAY BE STATED UNTIL THE REAL ANSWER IS IN. While the request is in flight the
+  // grid is showing a local filter over the photos this phone happens to hold, which on a big album
+  // is not the answer — and if the request failed, there is no answer at all.
+  const answerIsFinal = !awaitingServer && !failed
+  // Saying "300 photos" when the answer was cut off at 300 states a cap as a total. It only happens
+  // on a number OCR read off something that is not a bib, but the fix for that is the album's
+  // number range, not a bar that rounds the truth off.
+  const capped = totalMatches != null && totalMatches > matchCount
 
   return (
     <div className="hush-container" style={{ paddingInline: 'clamp(14px, 4vw, 20px)', marginTop: 14 }}>
@@ -89,14 +90,36 @@ export default function BibSearchBar({ query, onQueryChange, matchCount, indexed
 
           {searching ? (
             <span style={{ fontSize: 14, color: matchCount > 0 ? BRAND : MUTED, fontWeight: 700 }}>
-              {matchCount > 0 ? t('bib.found', { n: matchCount }) : t('bib.none')}
+              {/* Order matters: a failure and an unfinished search both outrank a count of zero,
+                  because zero is only true once the server has said so. */}
+              {failed ? t('bib.failed')
+                : !answerIsFinal ? t('bib.searching')
+                : capped ? t('bib.foundCapped', { n: matchCount, total: totalMatches })
+                : matchCount > 0 ? t('bib.found', { n: matchCount })
+                : t('bib.none')}
             </span>
           ) : (
             <span style={{ fontSize: 13, color: MUTED }}>{t('bib.hint')}</span>
           )}
         </div>
 
-        {searching && stillIndexing && (
+        {searching && failed && (
+          <div style={{ marginTop: 10 }}>
+            <button
+              type="button"
+              onClick={onRetry}
+              className="hush-press"
+              style={{
+                padding: '8px 16px', fontSize: 13, fontWeight: 700, color: '#FDFAF5',
+                background: BRAND, border: 'none', borderRadius: 10, cursor: 'pointer',
+              }}
+            >
+              {t('bib.retry')}
+            </button>
+          </div>
+        )}
+
+        {searching && !failed && stillIndexing && (
           <p style={{ fontSize: 12, color: MUTED, margin: '8px 0 0' }}>
             {t('bib.stillIndexing', { done: indexedCount, total: totalImages })}
           </p>
@@ -108,7 +131,14 @@ export default function BibSearchBar({ query, onQueryChange, matchCount, indexed
             usually means "we couldn't READ your number", not "you aren't in any photo", and sending
             the runner to Face Finder finds them in exactly the shots where the number failed.
             Without this, the most likely single outcome of a race-day search is a blank screen. */}
-        {searching && matchCount === 0 && !stillIndexing && (
+        {/* SHOWN EVEN WHILE INDEXING IS BEHIND. This used to require !stillIndexing, which sounds
+            careful and hid the escape hatch for the entire event: during a live race the
+            photographer uploads continuously and OCR chains behind in batches, so "indexed <
+            total" is true almost the whole time. One photo whose OCR permanently fails keeps it
+            true forever. A runner who searched and found nothing was then shown no way forward at
+            the exact moment they needed one. The "still reading photos" note above already says
+            the album is incomplete; this offers them something to do about it. */}
+        {searching && matchCount === 0 && answerIsFinal && (
           <div style={{ marginTop: 12, paddingTop: 12, borderTop: `1px solid ${BORDER}` }}>
             <p style={{ fontSize: 13, lineHeight: 1.5, color: MUTED, margin: 0 }}>
               {onTryFaceFinder ? t('bib.noneHelpFace') : t('bib.noneHelp')}

@@ -60,6 +60,9 @@ export default function FaceFinder({ albumSlug, photos, onClose }: Props) {
   const [selfiePreview, setSelfiePreview] = useState<string | null>(null)
   const [selfieFile, setSelfieFile] = useState<File | null>(null)
   const [matches, setMatches] = useState<Match[]>([])
+  // The photo rows the SERVER returned with the match. See the resolve step below for why the
+  // album's loaded window is not good enough to render a result from.
+  const [matchedRows, setMatchedRows] = useState<Photo[]>([])
   const [errorMsg, setErrorMsg] = useState('')
   const [lightbox, setLightbox] = useState<Photo | null>(null)
   // Two separate inputs so "Upload from files" doesn't permanently strip the capture attribute
@@ -215,9 +218,9 @@ export default function FaceFinder({ albumSlug, photos, onClose }: Props) {
 
       const res = await fetch('/api/album/face-search', { method: 'POST', body: form })
       const bodyText = await res.text()
-      let json: { matches?: Match[]; error?: string }
+      let json: { matches?: Match[]; photos?: Photo[]; error?: string }
       try {
-        json = JSON.parse(bodyText) as { matches?: Match[]; error?: string }
+        json = JSON.parse(bodyText) as { matches?: Match[]; photos?: Photo[]; error?: string }
       } catch {
         errorOrigin.current = 'search'
         setStep('error')
@@ -239,6 +242,7 @@ export default function FaceFinder({ albumSlug, photos, onClose }: Props) {
       }
 
       setMatches(json.matches ?? [])
+      setMatchedRows(json.photos ?? [])
       setStep('results')
     } catch {
       errorOrigin.current = 'search'
@@ -252,15 +256,36 @@ export default function FaceFinder({ albumSlug, photos, onClose }: Props) {
     setSelfieFile(null)
     setSelfiePreview(null)
     setMatches([])
+    setMatchedRows([])
     setErrorMsg('')
     setStep('selfie')
     if (cameraInputRef.current) cameraInputRef.current.value = ''
     if (fileInputRef.current) fileInputRef.current.value = ''
   }
 
-  const matchedPhotos = matches
-    .map((m) => ({ ...m, photo: photos.find((p) => p.id === m.photoId) }))
+  // THE SERVER'S ANSWER IS THE COMPLETE ONE, so the rows come from the server too.
+  //
+  // This used to look each matched id up in `photos` — the album's LOADED window — and drop the
+  // ones it could not find. On a big album that silently deleted real results: a runner matched in
+  // 40 photos, 12 of them past the loaded window, was shown 28 and told nothing about the rest.
+  // /api/album/face-search now returns the matching photo rows alongside the ids, so the window
+  // does not come into it.
+  //
+  // The server now returns ONLY matches whose row it also returns — it filters out photos the guest
+  // may not see (hidden, pending approval) and faces whose photo has since been deleted, because
+  // returning those ids told the guest exactly how many results were being withheld and promised
+  // they were "still loading" when they were never coming.
+  //
+  // So in normal operation every id resolves and the count below is zero. It is kept as a guard for
+  // one case: a response that carries ids but no rows. Its message says results are MISSING, not
+  // that they are on their way — a promise this cannot keep is what it was written to replace.
+  const rowById = new Map<string, Photo>()
+  for (const p of photos) rowById.set(p.id, p)
+  for (const p of matchedRows) rowById.set(p.id, p)
+  const resolved = matches.map((m) => ({ ...m, photo: rowById.get(m.photoId) }))
+  const matchedPhotos = resolved
     .filter((m): m is { photoId: string; similarity: number; photo: Photo } => !!m.photo)
+  const pendingMatchCount = resolved.length - matchedPhotos.length
 
   return (
     <>
@@ -402,9 +427,15 @@ export default function FaceFinder({ albumSlug, photos, onClose }: Props) {
               <div className="flex flex-col gap-4 py-2">
                 {matchedPhotos.length === 0 ? (
                   <div className="text-center py-8">
-                    <p className="font-semibold mb-2" style={{ color: '#FDFAF5' }}>{t('ff.noMatches')}</p>
+                    {/* Never say "no matches" when the answer is "not loaded yet". pendingMatchCount
+                        is how many photos the SERVER matched that this page cannot show yet — if it
+                        is non-zero, the runner is in photos and telling them otherwise is the one
+                        answer they will believe and act on. */}
+                    <p className="font-semibold mb-2" style={{ color: '#FDFAF5' }}>
+                      {pendingMatchCount > 0 ? t('ff.stillLoading', { n: pendingMatchCount }) : t('ff.noMatches')}
+                    </p>
                     <p className="text-sm mb-5" style={{ color: '#B0808F' }}>
-                      {t('ff.noMatchesHint')}
+                      {pendingMatchCount > 0 ? t('ff.stillLoadingHint') : t('ff.noMatchesHint')}
                     </p>
                     <button
                       onClick={reset}
@@ -418,6 +449,7 @@ export default function FaceFinder({ albumSlug, photos, onClose }: Props) {
                   <>
                     <p className="text-sm" style={{ color: '#E8C4D0' }}>
                       {t('ff.foundIn', { n: matchedPhotos.length })}
+                      {pendingMatchCount > 0 && ` · ${t('ff.morePending', { n: pendingMatchCount })}`}
                     </p>
                     <div className="grid grid-cols-3 gap-1.5">
                       {matchedPhotos.map(({ photo, similarity }) => (

@@ -29,6 +29,10 @@ import { ensureCollection, indexPhotoFaces } from '@/lib/rekognition'
 // Rekognition calls, comfortably inside DetectText/IndexFaces default rates. Throttling would
 // surface as failed photos, not slow ones.
 const BATCH = 100
+// Exported so the cron can charge its subrequest budget for the work that will ACTUALLY
+// happen. It used to charge for the cap it passed in, which this clamps down — see the
+// budget note in api/cron/bib-index for what that cost.
+export { BATCH as FACE_BATCH }
 const CONCURRENCY = 10
 
 type PendingPhoto = { id: string; url: string | null; thumb_url: string | null }
@@ -62,7 +66,11 @@ async function indexOne(admin: ReturnType<typeof createAdminClient>, albumId: st
 
 // Indexes one batch. Returns how many photos still need indexing, so the caller knows whether to
 // keep going within its time budget.
-export async function indexAlbumFacesBatch(albumId: string): Promise<number> {
+// `max` lets the caller shrink a batch to fit what is left of the invocation's subrequest
+// budget. The cron sweeps EVERY album with indexing on, so the budget is shared between them
+// — see the accounting in api/cron/bib-index. Omitted, this behaves exactly as before.
+export async function indexAlbumFacesBatch(albumId: string, max: number = BATCH): Promise<number> {
+  const cap = Math.max(1, Math.min(BATCH, Math.floor(max)))
   const admin = createAdminClient()
 
   // Re-checked every batch: an owner who switches Face Finder off mid-sweep stops it, and nothing
@@ -85,7 +93,7 @@ export async function indexAlbumFacesBatch(albumId: string): Promise<number> {
     .eq('album_id', albumId)
     .neq('media_type', 'video')
     .is('face_ids', null)
-    .limit(BATCH)
+    .limit(cap)
     .returns<PendingPhoto[]>()
   if (!pending || pending.length === 0) return 0
 
@@ -102,5 +110,5 @@ export async function indexAlbumFacesBatch(albumId: string): Promise<number> {
   // Previously a COUNT(*) over the album on EVERY batch — a scan per batch, which on a 600-photo
   // album cost more than the OCR it was measuring. A full batch means there is very likely more
   // work; a short one means the queue just drained. The caller only needs "keep going or stop".
-  return pending.length === BATCH ? BATCH : 0
+  return pending.length === cap ? cap : 0
 }

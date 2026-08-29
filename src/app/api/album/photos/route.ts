@@ -52,10 +52,20 @@ export async function GET(req: Request) {
   const offset = Number.isFinite(offsetRaw) && offsetRaw > 0 ? Math.floor(offsetRaw) : undefined
   const limitRaw = Number(url.searchParams.get('limit'))
   const limit = Number.isFinite(limitRaw) && limitRaw > 0 ? Math.floor(limitRaw) : undefined
+  // Bib search rides on THIS route rather than getting one of its own, so it inherits the
+  // owner/password/reveal check and the limiter above instead of growing a second copy of both.
+  // Absent = no bib filter at all; present but empty = the stats only, which is what the search
+  // bar needs before anyone has typed. Capped because the only legitimate value is a few digits.
+  const bibRaw = url.searchParams.get('bib')
+  const bib = bibRaw === null ? undefined : bibRaw.slice(0, 32)
+  const bibStats = url.searchParams.get('bibStats') === '1'
+  // Counts without rows. Sent while the search box is empty, so asking how far OCR has got does
+  // not drag the whole album across the wire to answer it.
+  const statsOnly = url.searchParams.get('statsOnly') === '1'
   const cookieStore = await cookies()
 
   try {
-    const result = await fetchAuthorizedPhotos(albumId, cookieStore, { recentLimit, offset, limit })
+    const result = await fetchAuthorizedPhotos(albumId, cookieStore, { recentLimit, offset, limit, bib, bibStats, statsOnly })
     switch (result.kind) {
       case 'invalid':
         return NextResponse.json({ error: 'Invalid album id' }, { status: 400, headers: NO_STORE })
@@ -66,7 +76,10 @@ export async function GET(req: Request) {
       case 'password':
         return NextResponse.json({ error: 'Password required' }, { status: 403, headers: NO_STORE })
       case 'ok':
-        return NextResponse.json({ photos: result.photos, total: result.total }, { headers: NO_STORE })
+        return NextResponse.json(
+          { photos: result.photos, total: result.total, bibStats: result.bibStats },
+          { headers: NO_STORE },
+        )
     }
   } catch {
     return NextResponse.json({ error: 'Failed to load photos' }, { status: 500, headers: NO_STORE })

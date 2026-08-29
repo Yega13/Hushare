@@ -1,8 +1,9 @@
 import { NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { timingSafeEqual } from '@/lib/timing-safe'
-import { indexAlbumBibsBatch } from '@/lib/server/bib-index'
-import { indexAlbumFacesBatch } from '@/lib/server/face-sweep'
+import { indexAlbumBibsBatch, BIB_BATCH } from '@/lib/server/bib-index'
+import { indexAlbumFacesBatch, FACE_BATCH } from '@/lib/server/face-sweep'
+import { createSubrequestBudget } from '@/lib/server/index-budget'
 
 export const runtime = 'nodejs'
 export const maxDuration = 60
@@ -14,6 +15,9 @@ const NO_STORE = { 'Cache-Control': 'no-store' }
 // Nothing is waiting on this response, so a long request is free; the cap just guarantees we
 // finish well inside the Worker's limit and hand control back cleanly.
 const TIME_BUDGET_MS = 25_000
+
+// Subrequest accounting lives in lib/server/index-budget so the test can exercise the real
+// thing rather than a copy of it. See that file for the arithmetic and why it is shaped this way.
 
 // Sweeps bib indexing for every album that has it switched on and still has unread photos.
 // Called once a minute by the scheduled handler (see worker.ts). This is the RELIABLE path:
@@ -31,19 +35,37 @@ export async function POST(req: Request) {
   const admin = createAdminClient()
 
   // Albums that opted in. Small list in practice — only race albums ever turn this on.
+  // ORDERED, because the read below is paged by the driver and an unordered result has no defined
+  // sequence; the rotation underneath needs a stable list to rotate.
   const { data: albums } = await admin
     .from('albums')
     .select('id, bib_search_enabled, face_finder_enabled')
     .or('bib_search_enabled.eq.true,face_finder_enabled.eq.true')
     .is('retired_at', null)
+    .order('id', { ascending: true })
     .returns<{ id: string; bib_search_enabled: boolean; face_finder_enabled: boolean }[]>()
+
+  // WHOEVER IS FIRST GETS THE BUDGET, so nobody may be first every time.
+  //
+  // Once the budget can run out mid-loop, a fixed order means the album at the end of the list is
+  // swept only with whatever the ones before it left over — and on a busy day, never. That is not
+  // a slow album, it is an album whose runners are permanently told they are not in any photos.
+  // Rotating the start by the minute gives every album its turn at the front within a few ticks.
+  const list = albums ?? []
+  const start = list.length > 0 ? Math.floor(Date.now() / 60_000) % list.length : 0
+  const ordered = [...list.slice(start), ...list.slice(0, start)]
+
+  const budget = createSubrequestBudget()
+  const anythingAffordable = (): boolean => budget.affordable(Math.min(BIB_BATCH, FACE_BATCH)) > 0
 
   let bibBatches = 0
   let faceBatches = 0
   let albumsTouched = 0
   const errors: string[] = []
-  for (const album of albums ?? []) {
+  let budgetExhausted = false
+  for (const album of ordered) {
     if (Date.now() - started > TIME_BUDGET_MS) break
+    if (!anythingAffordable()) { budgetExhausted = true; break }
     let touched = false
     // Per-album isolation. Rekognition can fail for one album (missing collection, throttling, a
     // credential problem) and without this the throw escapes the whole handler, so a single bad
@@ -65,14 +87,22 @@ export async function POST(req: Request) {
     // Throughput is now bounded by that ceiling (~15 photos/invocation) rather than by time, which
     // is the honest limit until the account moves to the paid plan (50 -> 1000 subrequests).
     if (album.bib_search_enabled) {
-      const left = await indexAlbumBibsBatch(album.id)
-      bibBatches++; touched = true
-      void left
+      const cap = budget.affordable(BIB_BATCH)
+      if (cap > 0) {
+        budget.charge(cap)
+        const left = await indexAlbumBibsBatch(album.id, cap)
+        bibBatches++; touched = true
+        void left
+      } else budgetExhausted = true
     }
     if (album.face_finder_enabled && Date.now() - started < TIME_BUDGET_MS) {
-      const left = await indexAlbumFacesBatch(album.id)
-      faceBatches++; touched = true
-      void left
+      const cap = budget.affordable(FACE_BATCH)
+      if (cap > 0) {
+        budget.charge(cap)
+        const left = await indexAlbumFacesBatch(album.id, cap)
+        faceBatches++; touched = true
+        void left
+      } else budgetExhausted = true
     }
 
     } catch (e) {
@@ -85,7 +115,9 @@ export async function POST(req: Request) {
   }
 
   return NextResponse.json(
-    { ok: true, albums: albumsTouched, bibBatches, faceBatches, errors, ms: Date.now() - started },
+    // budgetExhausted is worth seeing on /admin: it means albums went unswept this tick, which is
+    // the signal that the ceiling — not the queue — is what is pacing indexing before an event.
+    { ok: true, albums: albumsTouched, bibBatches, faceBatches, errors, budgetExhausted, subrequestsBudgeted: budget.spent(), ms: Date.now() - started },
     { headers: NO_STORE },
   )
 }
