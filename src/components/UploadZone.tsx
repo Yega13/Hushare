@@ -4,6 +4,13 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import * as tus from 'tus-js-client'
 import type { Album } from '@/types'
 import { stripExifFromJpeg, jpegOrientation, stripMetadataFromPng, stripMetadataFromWebp } from '@/lib/exif'
+// The judgements this component makes about someone else's photo — whether it is re-encoded,
+// in what format, how far it is shrunk, and whether a failure is worth retrying. Pure, and
+// tested in tests/upload-policy.test.ts, because none of it was reachable from inside here.
+import {
+  MAX_IMG_DIM, needsReEncode, outputMimeFor, nextShrinkDim,
+  backoffDelay, isNetworkClass, isExpectedRefusal,
+} from '@/lib/upload-policy'
 import { snapshotFileRobust, readFileRobust, isFileReadFailure } from '@/lib/file-read'
 import { trackUploadStep } from '@/lib/engagement'
 import { showAppToast } from '@/components/AppToast'
@@ -27,21 +34,9 @@ import {
 // Instead we watch for *stalls*: if the socket sends no bytes for this long, abort and let the
 // retry loop reconnect. Any real progress resets the clock, so a slow upload is never cut off.
 const STALL_TIMEOUT_MS = 20_000
-// ─── Max image dimension — images larger than this get downscaled before upload ─
-// 2560px (≈QHD) keeps images crisp on any phone/laptop screen while cutting a 12-48MP phone
-// photo from several MB down to well under 1MB — uploads are bandwidth-bound, so this is the
-// single biggest lever on upload speed. The lightbox never needs more than this to look sharp.
-// 3500px on the long edge. THE NUMBER IS AN A4 PRINT AT 300 DPI (3508px) — the point past which
-// extra pixels stop being something a person can see or use, and start being upload time.
-//
-// It was 2560, which is a laptop screen and nothing more: a 4032px phone photo lost a third of its
-// area, could not be printed properly, and could not be cropped in without going soft — while
-// /about promised "the exact quality they were shot in".
-//
-// Going the other way, to true originals, was measured and rejected: ~4 MB a photo means ~20 GB
-// for a 5,000-photo shoot and roughly two hours of uploading on one connection. 3500 lands at
-// ~1.5 MB — about double today, a quarter of full size, and it prints.
-const MAX_IMG_DIM = 3500
+// MAX_IMG_DIM, the shrink ladder and the re-encode rule now live in lib/upload-policy.ts, with the
+// reasoning for each. They moved so they could be tested: this file is 2,800 lines and none of it
+// was reachable from a test.
 
 // ─── Semaphore ────────────────────────────────────────────────────────────────
 
@@ -247,17 +242,6 @@ const THUMB_QUALITY = 0.85
 // ~120 CSS px = ~360 physical px on a 3× screen). Small enough to stay a fast-loading
 // thumbnail. The lightbox still swaps in the full-resolution original.
 const THUMB_MAX_DIM = 600
-// The ONLY reason left to re-encode a photo for size: it would not otherwise be accepted.
-//
-// This used to be 1.2 MB — every phone photo is bigger than that, so in practice every photo was
-// resized and re-encoded, and the original was thrown away at the point of upload. Now the album's
-// own cap is the threshold, so a photo is kept exactly as shot unless keeping it would mean
-// refusing it outright.
-//
-// Ladder used only when a photo is STILL over the album's cap after the 3500px pass — a rare,
-// genuinely enormous file. Stops at the first rung that fits, so it comes down no further than it
-// must.
-const SHRINK_LADDER = [3500, 2560, 1920]
 
 // Decoding a 48MP photo briefly holds a full-resolution bitmap (~190MB RGBA). Bound how many
 // decodes run at once — independently of upload concurrency — so network slots stay saturated
@@ -463,7 +447,14 @@ async function processImageInner(file: File, capBytes: number): Promise<Processe
     try {
       const thumbBlob = await deriveThumb(bitmap)
       // HEIC→JPEG can inflate dramatically (48MP ProRAW → 30+MB JPEG) — re-encode when large.
-      if (jpegBlob.size > 2 * 1024 * 1024 || Math.max(bitmap.width, bitmap.height) > MAX_IMG_DIM) {
+      // The same decision as the main path, so it uses the same function — the inline version had
+      // its operands in the opposite order (size first, edge second), which is exactly the shape of
+      // mistake that swaps two arguments and is invisible afterwards.
+      //
+      // A HARD 2 MB, not the album's cap, and that is deliberate: HEIC to JPEG can inflate wildly
+      // (a 48MP ProRAW becomes a 30 MB JPEG), so this re-encodes on bloat rather than on whether
+      // the album would accept it.
+      if (needsReEncode(Math.max(bitmap.width, bitmap.height), jpegBlob.size, 2 * 1024 * 1024)) {
         const main = await scaleAndEncode(bitmap, MAX_IMG_DIM, 'image/jpeg', MAIN_QUALITY)
         return { blob: main.blob, thumbBlob, mimeType: 'image/jpeg', name: jpgName, width: main.width, height: main.height }
       }
@@ -544,21 +535,20 @@ async function processImageInner(file: File, capBytes: number): Promise<Processe
     // re-encoded and the original thrown away, including images already smaller than the target.
     // Testing the long edge instead means a photo at or under 3500px takes the lossless path below:
     // original bytes, metadata stripped, nothing re-encoded. Only genuinely larger images pay.
-    if (Math.max(bitmap.width, bitmap.height) > MAX_IMG_DIM || file.size > capBytes) {
+    if (needsReEncode(Math.max(bitmap.width, bitmap.height), file.size, capBytes)) {
       // PNG/WebP are re-encoded IN THEIR OWN FORMAT — never to JPEG — so transparency is
       // preserved (a JPEG re-encode turned transparent areas solid black). Canvas re-encode
       // needs no EXIF strip (metadata never survives it) and bakes orientation into pixels.
-      const outMime = mimeType === 'image/png' ? 'image/png'
-        : mimeType === 'image/webp' ? 'image/webp'
-        : 'image/jpeg'
+      const outMime = outputMimeFor(mimeType)
       // Walk the ladder and stop at the first size that fits, so a photo 10% over the cap loses
       // almost nothing while a genuinely enormous one still gets through. The last rung is used
       // regardless — a refused upload is worse than a smaller photo.
       let main = await scaleAndEncode(bitmap, MAX_IMG_DIM, outMime, MAIN_QUALITY)
       // Only if 3500px STILL does not fit the album's cap does it come down further, one rung at a
       // time. A refused upload is worse than a smaller photo.
-      for (const dim of SHRINK_LADDER.slice(1)) {
-        if (main.blob.size <= capBytes) break
+      for (let rung = 0; ; rung++) {
+        const dim = nextShrinkDim(rung, main.blob.size, capBytes)
+        if (dim === null) break
         main = await scaleAndEncode(bitmap, dim, outMime, MAIN_QUALITY)
       }
       // Label the bytes we ACTUALLY produced, not the ones we asked for.
@@ -648,35 +638,10 @@ async function processImageInner(file: File, capBytes: number): Promise<Processe
 
 // ─── XHR PUT ──────────────────────────────────────────────────────────────────
 
-// Refusals the product MEANT to make, as opposed to things that went wrong.
-//
-// Too-large and unsupported-type mean the product looked at the file and correctly declined it. The
-// album's password and reveal gates are the same class of event: the gate did its job, and the
-// guest was told plainly what to do. None of them is a defect, and filing them as errors put rows
-// in the admin Errors tab implying something was broken — a 103 MB video refused twice on
-// 2026-08-18 was two of the four "errors" outstanding, and a password prompt on 2026-08-25 was
-// three more. They still get reported, at warn, because how often guests hit these is worth
-// knowing.
-//
-// A REFUSED CONTRIBUTION IS STILL AN ERROR SERVER-SIDE, with the exact reason attached — see the
-// reportServerError call in api/album/photos/create. That is the row to look at when uploads are
-// genuinely being lost (Annie's 163 refused uploads were found through it), so downgrading this
-// client-side copy removes a duplicate rather than the evidence.
-//
-// Matching on our own message prefixes, the way the first two already did. The server carries a
-// `code` for the save path, but the per-file upload path throws HttpError, which has no room for
-// one — a single predicate both paths can call is worth more here than threading a field through
-// every throw site.
-const EXPECTED_REFUSAL_PREFIXES = [
-  'File too large',
-  'Unsupported',
-  'Enter the album password before adding photos',
-  'This album has not been revealed yet',
-]
-
-function isExpectedRefusal(message: string): boolean {
-  return EXPECTED_REFUSAL_PREFIXES.some((prefix) => message.startsWith(prefix))
-}
+// isExpectedRefusal — which failures the product MEANT to make — is in lib/upload-policy.ts, with
+// the full reasoning and the list of prefixes. A refused contribution is still recorded server-side
+// with its exact reason (see the reportServerError call in api/album/photos/create); downgrading
+// the client-side copy to warn removed a duplicate, not the evidence.
 
 class HttpError extends Error {
   constructor(public readonly status: number, message: string) { super(message) }
@@ -756,22 +721,8 @@ async function xhrPut(
 // Network failures, timeouts, stalls and 5xx are transient — retried with jittered
 // exponential backoff. A deliberate cancel (AbortError) always propagates immediately.
 
-// Exponential backoff capped at 8s. Mobile networks at a crowded venue drop for *seconds* at a
-// time, so the early sub-second delays alone weren't enough to ride out a drop — the curve now
-// climbs to multi-second waits (0.5→1→2→4→8s) before giving up, mirroring the video path's
-// persistence. Every retry re-PUTs the same immutable R2 key, so extra attempts are idempotent.
-function backoffDelay(attempt: number): number {
-  return Math.min(8000, 500 * 2 ** (attempt - 1)) + Math.random() * 300
-}
-
-// A network-class failure means NO HTTP RESPONSE ARRIVED AT ALL: a TypeError from fetch (DNS, TCP,
-// TLS, connection reset) or a TimeoutError from the per-attempt signal. An HTTP response — even a
-// 500 — is not network-class, because the server was reached and answered. The distinction decides
-// whether waiting can possibly help.
-function isNetworkClass(e: unknown): boolean {
-  if (e instanceof DOMException && e.name === 'TimeoutError') return true
-  return e instanceof TypeError
-}
+// The wait between attempts is backoffDelay in lib/upload-policy.ts — the COMPLETE wait, including
+// both jitters. Every retry re-PUTs the same immutable R2 key, so extra attempts are idempotent.
 
 // Is our origin actually reachable right now?
 //
@@ -939,7 +890,7 @@ async function fetchWithRetry(
       // come back together, and at an event that means thousands of clients firing inside the same
       // narrow window — recovery turning straight back into an outage. Spreading each wait across
       // half its nominal value is what breaks the lockstep.
-      const wait = backoffDelay(attempt) * (0.5 + Math.random() * 0.5)
+      const wait = backoffDelay(attempt)
       // Never sleep past the deadline just to fail on the far side of it.
       if (Date.now() + wait >= deadline) break
       await new Promise(r => setTimeout(r, wait))
@@ -1056,7 +1007,7 @@ async function putWithRetry(
   for (;;) {
     if (signal?.aborted) throw new DOMException('Upload aborted', 'AbortError')
     if (attempt > 0) {
-      const wait = backoffDelay(attempt) * (0.5 + Math.random() * 0.5)
+      const wait = backoffDelay(attempt)
       if (Date.now() + wait >= deadline) break
       await new Promise(r => setTimeout(r, wait))
     }
@@ -1142,7 +1093,7 @@ async function relayUploadImage(
   for (;;) {
     if (signal?.aborted) throw new DOMException('Upload aborted', 'AbortError')
     if (attempt > 0) {
-      const wait = backoffDelay(attempt) * (0.5 + Math.random() * 0.5)
+      const wait = backoffDelay(attempt)
       if (Date.now() + wait >= deadline) break
       await new Promise(r => setTimeout(r, wait))
     }
