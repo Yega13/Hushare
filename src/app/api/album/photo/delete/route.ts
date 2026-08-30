@@ -83,8 +83,8 @@ export async function POST(req: Request) {
 
   // Collect R2 keys before any mutation
   const r2Keys: string[] = []
-  // The SAME function album deletion uses. This was a hand-copy of it, and the copy was already a
-  // field behind — the shared version also collects mirror_url. More importantly, album-delete
+  // The SAME function album deletion uses. This was a hand-copy of it, and only that copy was
+  // tested. More importantly, album-delete
   // carries the reasoning for why a Stream row's storage_path must never be read (that key belongs
   // to whatever else wrote it) and only that copy was tested. Three copies of a rule about which
   // file to destroy is three chances to destroy the wrong one.

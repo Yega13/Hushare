@@ -1269,7 +1269,10 @@ export default function OwnerToolbar({ album, photos, ownerToken, userTier, medi
                       <input
                         type="checkbox"
                         checked={hideBranding}
-                        disabled={album.branding_locked}
+                        // The plan check as well as the lock: this row was dimmed and badged but
+                        // still clickable, so a free owner flipped it and learned it was paid from
+                        // the error — the experience the badge was added to replace.
+                        disabled={album.branding_locked || !tierAllows(userTier, 'hideBranding')}
                         onChange={async (e) => {
                           const next = e.target.checked
                           setHideBranding(next)
@@ -1298,7 +1301,7 @@ export default function OwnerToolbar({ album, photos, ownerToken, userTier, medi
 
                     <label
                       className="flex items-center justify-between gap-4 rounded-xl px-3 py-3"
-                      style={{ background: '#FDFAF5', border: '1px solid #DDD5C5', ...gatedRowStyle(showLockedCollections) }}
+                      style={{ background: '#FDFAF5', border: '1px solid #DDD5C5', ...gatedRowStyle(showsAsLocked(userTier, 'faceFinder')) }}
                     >
                       <span>
                         <span className="flex items-center gap-2 text-sm font-semibold" style={{ color: '#630826' }}>
@@ -1311,7 +1314,7 @@ export default function OwnerToolbar({ album, photos, ownerToken, userTier, medi
                       <input
                         type="checkbox"
                         checked={faceFinderEnabled}
-                        disabled={!canUseCollections}
+                        disabled={!tierAllows(userTier, 'faceFinder')}
                         onChange={(e) => {
                           if (e.target.checked) { setConsentCopied(false); setFaceConsentOpen(true); return }
                           void applyFaceFinder(false)
@@ -1359,7 +1362,7 @@ export default function OwnerToolbar({ album, photos, ownerToken, userTier, medi
                           }
                         }}
                         className="h-4 w-4"
-                        disabled={!canUseCollections}
+                        disabled={!tierAllows(userTier, 'bibSearch')}
                       />
                     </label>
                   </div>

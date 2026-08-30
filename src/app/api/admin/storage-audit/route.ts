@@ -96,17 +96,39 @@ export async function GET() {
   //
   // albumAssetKeys is the same function album deletion uses, so the two cannot disagree again about
   // what an album owns.
-  const { data: albums } = await admin.from('albums').select(ALBUM_ASSET_COLUMNS)
-  for (const a of albums ?? []) {
-    for (const key of albumAssetKeys(a as Parameters<typeof albumAssetKeys>[0])) referenced.add(key)
+  // PAGED, exactly like the photos above, and for exactly the same reason: PostgREST caps a bare
+  // select at 1,000 rows. Unpaged, the referenced set silently stopped at album 1,000 — and every
+  // background, header, logo and sponsor mark beyond that landed in the orphan count, the dollar
+  // figure, and the sample of keys printed to be checked before deleting. That is the bug this
+  // endpoint was fixed for this morning, reintroduced one query lower down. Ordered by id, because
+  // .range() without .order() is not pagination.
+  for (let offset = 0; ; offset += PAGE) {
+    const { data, error } = await admin
+      .from('albums').select(ALBUM_ASSET_COLUMNS).order('id', { ascending: true }).range(offset, offset + PAGE - 1)
+    if (error) {
+      console.error('[admin/storage-audit] album page failed:', error.message)
+      return NextResponse.json({ error: 'Could not read albums' }, { status: 500, headers: NO_STORE })
+    }
+    for (const a of data ?? []) {
+      for (const key of albumAssetKeys(a as Parameters<typeof albumAssetKeys>[0])) referenced.add(key)
+    }
+    if (!data || data.length < PAGE) break
   }
 
   // Profile pictures are not album assets at all — nothing in the album tables points at them, so
   // without this every avatar on the site reads as an orphan too.
-  const { data: profiles } = await admin.from('profiles').select('avatar_url')
-  for (const pr of profiles ?? []) {
-    const key = r2KeyFromUrl((pr as { avatar_url: string | null }).avatar_url)
-    if (key) referenced.add(key)
+  for (let offset = 0; ; offset += PAGE) {
+    const { data, error } = await admin
+      .from('profiles').select('user_id, avatar_url').order('user_id', { ascending: true }).range(offset, offset + PAGE - 1)
+    if (error) {
+      console.error('[admin/storage-audit] profile page failed:', error.message)
+      return NextResponse.json({ error: 'Could not read profiles' }, { status: 500, headers: NO_STORE })
+    }
+    for (const pr of data ?? []) {
+      const key = r2KeyFromUrl((pr as { avatar_url: string | null }).avatar_url)
+      if (key) referenced.add(key)
+    }
+    if (!data || data.length < PAGE) break
   }
 
   let scannedObjects = 0

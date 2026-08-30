@@ -2,7 +2,7 @@ import { getCloudflareContext } from '@opennextjs/cloudflare'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { verifyAccessToken } from '@/lib/album-password'
 import { timingSafeEqual } from '@/lib/timing-safe'
-import { getUserTierById } from '@/lib/subscriptions'
+import { getUserTierById, getUserTierResolved } from '@/lib/subscriptions'
 import { uploadCapsForTier } from '@/lib/media'
 import type { Album, Photo, SponsorLogo } from '@/types'
 
@@ -342,6 +342,10 @@ export type PhotosResult =
   | { kind: 'reveal' }
   | { kind: 'password' }
   | { kind: 'ok'; photos: Photo[]; total?: number; bibStats?: { indexed: number; totalImages: number } }
+  // COULD NOT ANSWER — not "the answer is nothing". Returned when the owner's tier could not be
+  // determined, so the caller reports a failure the guest can retry instead of an empty result they
+  // will read as final. See getUserTierResolved.
+  | { kind: 'unavailable' }
 
 // Authorized photo listing. Anon RLS only exposes OPEN albums, so password/reveal-gated albums
 // (and an owner's own view of them) are read here via the admin client AFTER verifying the caller
@@ -425,9 +429,14 @@ export async function fetchAuthorizedPhotos(
   // client is not a gate. It is a convention.
   if (opts.bib !== undefined || opts.statsOnly) {
     if (!album.bib_search_enabled) return { kind: 'ok', photos: [], total: 0 }
-    if (!album.user_id || (await getUserTierById(album.user_id)) !== 'studio') {
-      return { kind: 'ok', photos: [], total: 0 }
-    }
+    if (!album.user_id) return { kind: 'ok', photos: [], total: 0 }
+    // RESOLVED, not merely fetched. getUserTierById degrades to 'free' when the subscriptions query
+    // fails, and this gate refuses by returning ZERO PHOTOS — so a single blip would have told
+    // every runner at a race "No photos with that number", stated as final with no retry offered.
+    // An empty result is only honest when we actually know the album is not entitled.
+    const resolved = await getUserTierResolved(album.user_id)
+    if (!resolved.authoritative) return { kind: 'unavailable' }
+    if (resolved.tier !== 'studio') return { kind: 'ok', photos: [], total: 0 }
   }
 
   // Stats with no search: the bar shows "still reading photos, 1,200 of 5,000" before anyone has

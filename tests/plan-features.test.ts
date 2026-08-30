@@ -291,3 +291,43 @@ describe('the homepage FAQ cannot state a stale upload limit', () => {
     expect(/Array\.from\(\{ length: 10 \}/.test(page), 'the FAQ length must be derived from the dictionary').toBe(false)
   })
 })
+
+// A RAW {token} MUST NEVER REACH A VISITOR.
+//
+// interpolate returns the string untouched when no vars are passed, so a key containing {n} called
+// without them renders "{n}" on screen. Found in FaceFinder: the placeholder was being handed to
+// the headline (which has none) while the hint (which has one) was called bare. Near-unreachable
+// today, because face-search only returns ids it also returns rows for — but a guard path that is
+// broken the day it fires is not a guard.
+describe('every interpolated string is called with the vars it needs', () => {
+  const dict = readFileSync(join(process.cwd(), 'src', 'i18n', 'dictionaries', 'en.ts'), 'utf8')
+
+  /** Keys whose English text contains a {placeholder}. */
+  const keysWithTokens = new Set<string>()
+  for (const raw of dict.split(String.fromCharCode(10))) {
+    // .trim() first: the file has CRLF endings, so an anchored match would look for the comma at
+    // the end of a line that actually ends in a carriage return, and find nothing at all.
+    const m = /^'([a-zA-Z0-9._]+)':\s*'(.*)',$/.exec(raw.trim())
+    if (m && m[2].includes('{')) keysWithTokens.add(m[1])
+  }
+
+  it('found keys that take placeholders', () => {
+    expect(keysWithTokens.size, 'a guard on the guard — an empty set proves nothing').toBeGreaterThan(5)
+  })
+
+  for (const file of ['components/FaceFinder.tsx', 'components/BibSearchBar.tsx']) {
+    it(`${file} passes vars wherever the string expects them`, () => {
+      const src = readFileSync(join(process.cwd(), 'src', ...file.split('/')), 'utf8')
+      const offenders: string[] = []
+      // t('some.key') with no second argument.
+      for (const m of src.matchAll(/\bt\('([a-zA-Z0-9._]+)'\s*\)/g)) {
+        if (keysWithTokens.has(m[1])) offenders.push(m[1])
+      }
+      expect(
+        offenders,
+        `these strings contain a {placeholder} but are called with no vars, so the visitor sees ` +
+          `the raw token`,
+      ).toEqual([])
+    })
+  }
+})

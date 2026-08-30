@@ -158,10 +158,29 @@ describe('the owner toolbar reads the same table as the server', () => {
   })
 
   it('gates each control on its own feature, not a shared bucket', () => {
-    // Photo moderation and the custom URL both sit at 'pro' today and used to share one boolean.
-    // Moving either alone would have silently moved both.
-    for (const feature of ['customUrl', 'photoModeration', 'collections', 'hideBranding']) {
+    // EVERY feature the toolbar has a control for, not a hand-picked four. The first version of
+    // this test listed four names and passed while Face Finder and bib search were both still
+    // riding on the 'collections' flag — identical tier today, so nothing looked wrong, and
+    // repackaging Face Finder as Pro would have left its switch Max-only in silence.
+    for (const feature of ['customUrl', 'photoModeration', 'collections', 'hideBranding', 'faceFinder', 'bibSearch']) {
       expect(toolbar.includes(`'${feature}'`), `${feature} must be gated by name`).toBe(true)
     }
+  })
+
+  it('disables a gated control, not merely dims it', () => {
+    // A row that is greyed and badged but still clickable teaches the owner nothing — they flip it
+    // and learn it is paid from the error toast, which is the experience the badge replaced.
+    // "Remove Hushare branding" was exactly that: styled by the plan, disabled only by the lock.
+    const at = toolbar.indexOf('Remove Hushare branding')
+    expect(at).toBeGreaterThan(-1)
+    // 1,600 chars: the control sits ~1,000 after its label and the gap grows whenever the row
+    // gains a comment. A window sized to today's layout is a test that breaks on formatting.
+    const row = toolbar.slice(at, at + 1600)
+    // Plain string, no regex: the first version built one with escapes and they were mangled before
+    // the file reached disk, so it failed against correct code. Rule 24, for the third time today.
+    expect(
+      row.includes("disabled={album.branding_locked || !tierAllows(userTier, 'hideBranding')}"),
+      'the branding toggle must be disabled by the plan as well as by the collaboration lock',
+    ).toBe(true)
   })
 })

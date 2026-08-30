@@ -1,4 +1,6 @@
 import { describe, it, expect } from 'vitest'
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { gateAllowsContribution, type AlbumGateRow } from '@/lib/server/album-access'
 import { deriveAccessToken, hashPassword } from '@/lib/album-password'
 import { isSubActive } from '@/lib/subscriptions'
@@ -226,5 +228,45 @@ describe('gateAllowsContribution recognises the signed-in owner', () => {
     const refused = await gateAllowsContribution(withPassword, cookies(), null)
     expect(refused.ok).toBe(false)
     if (!refused.ok) expect(refused.reason).toBe('password-cookie-absent')
+  })
+})
+
+// "COULD NOT TELL" IS NOT "NO".
+//
+// getUserTierById degrades to 'free' when the subscriptions query fails — correct for display, a
+// blip must not crash a page. It is wrong for a gate that refuses by returning ZERO PHOTOS, because
+// the caller cannot tell that apart from a real refusal and reports it as fact.
+//
+// Concretely: bib search refuses a non-Max album with an empty result. One Supabase blip during a
+// race would have told every runner "No photos with that number" — stated as final, with no retry
+// offered, on the primary path of the album. That is the exact failure the whole bib rewrite was
+// done to remove, reintroduced by the gate that was added to secure it.
+describe('a gate that refuses silently must know it is refusing', () => {
+  const access = readFileSync(join(process.cwd(), 'src', 'lib', 'server', 'album-access.ts'), 'utf8')
+
+  it('the bib gate asks for a RESOLVED tier, not a degraded one', () => {
+    expect(
+      access.includes('getUserTierResolved'),
+      'the bib gate returns an empty result on refusal, so it must distinguish "not entitled" from ' +
+        '"could not determine" — getUserTierById cannot, it degrades to free on a failed query',
+    ).toBe(true)
+    expect(
+      /if \(!resolved\.authoritative\) return \{ kind: 'unavailable' \}/.test(access),
+      'an unresolved tier must produce "unavailable", never an empty photo list',
+    ).toBe(true)
+  })
+
+  it('the route turns that into a failure the guest can retry, not an empty 200', () => {
+    const route = readFileSync(join(process.cwd(), 'src', 'app', 'api', 'album', 'photos', 'route.ts'), 'utf8')
+    expect(route.includes("case 'unavailable':"), 'the route must handle it').toBe(true)
+    expect(/case 'unavailable':[\s\S]{0,400}?status: 503/.test(route), 'and answer 503, not 200').toBe(true)
+  })
+
+  it('getUserTierResolved reports confidence, and getUserTierById still degrades for display', () => {
+    const subs = readFileSync(join(process.cwd(), 'src', 'lib', 'subscriptions.ts'), 'utf8')
+    expect(/return \{ tier, authoritative: cacheable \}/.test(subs), 'confidence comes from the query succeeding').toBe(true)
+    // The old helper must keep its forgiving behaviour — pages that merely SHOW a tier should not
+    // break on a blip, and dozens of call sites rely on that.
+    expect(/export async function getUserTierById[\s\S]{0,600}?return tier/.test(subs)).toBe(true)
   })
 })

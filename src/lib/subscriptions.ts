@@ -86,6 +86,37 @@ const TIER_TTL_MS = 30_000
 const TIER_CACHE_MAX = 500
 const tierCache = new Map<string, { tier: Tier; at: number }>()
 
+/**
+ * The tier AND whether we actually know it.
+ *
+ * getUserTierById below degrades to 'free' when the subscriptions query fails, which is right for
+ * display — a blip must not crash a page. It is WRONG for a gate that returns an empty result,
+ * because "not entitled" and "could not tell" then look identical to the caller, and the caller
+ * reports the first one as fact.
+ *
+ * That distinction is not academic: bib search refuses a non-Max album by returning zero photos, so
+ * a degraded lookup during a race would tell every runner "No photos with that number" — final, no
+ * retry offered. Any gate whose refusal is silent must use this and treat `authoritative: false` as
+ * a failure to answer rather than as a no.
+ */
+export async function getUserTierResolved(
+  userId: string | null | undefined,
+): Promise<{ tier: Tier; authoritative: boolean }> {
+  if (!userId) return { tier: 'free', authoritative: true }
+
+  const cached = tierCache.get(userId)
+  if (cached && Date.now() - cached.at < TIER_TTL_MS) return { tier: cached.tier, authoritative: true }
+
+  const { tier, cacheable } = await computeUserTier(userId)
+  if (cacheable) {
+    if (tierCache.size >= TIER_CACHE_MAX) tierCache.clear()
+    tierCache.set(userId, { tier, at: Date.now() })
+  }
+  // `cacheable` is false exactly when the query failed — the same signal, named for what it means
+  // to a caller rather than for what it does to the cache.
+  return { tier, authoritative: cacheable }
+}
+
 export async function getUserTierById(userId: string | null | undefined): Promise<Tier> {
   if (!userId) return 'free'
 

@@ -432,10 +432,10 @@ export default function FaceFinder({ albumSlug, photos, onClose }: Props) {
                         is non-zero, the runner is in photos and telling them otherwise is the one
                         answer they will believe and act on. */}
                     <p className="font-semibold mb-2" style={{ color: '#FDFAF5' }}>
-                      {pendingMatchCount > 0 ? t('ff.stillLoading', { n: pendingMatchCount }) : t('ff.noMatches')}
+                      {pendingMatchCount > 0 ? t('ff.stillLoading') : t('ff.noMatches')}
                     </p>
                     <p className="text-sm mb-5" style={{ color: '#B0808F' }}>
-                      {pendingMatchCount > 0 ? t('ff.stillLoadingHint') : t('ff.noMatchesHint')}
+                      {pendingMatchCount > 0 ? t('ff.stillLoadingHint', { n: pendingMatchCount }) : t('ff.noMatchesHint')}
                     </p>
                     <button
                       onClick={reset}

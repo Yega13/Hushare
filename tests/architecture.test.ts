@@ -39,7 +39,10 @@ const SIZE_BUDGET: Record<string, number> = {
   // MIME types and now builds from lib/media. An import and a comment cost four lines here
   // and removed a list that had already fallen two formats behind. Deliberate.
   'src/components/UploadZone.tsx': 2800,
-  'src/components/OwnerToolbar.tsx': 1780,
+  // +3 on 2026-08-30: the branding toggle gained a real plan check (it was dimmed but still
+  // clickable), and Face Finder and bib search stopped riding on the collections flag. Three
+  // lines of reasoning for three gates that were wrong. Deliberate.
+  'src/components/OwnerToolbar.tsx': 1783,
   'src/app/[slug]/AlbumPageClient.tsx': 1450,
   'src/app/card-editor/CardEditorClient.tsx': 873,
   'src/components/PhotoGrid.tsx': 843,

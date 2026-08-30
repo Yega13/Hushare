@@ -75,6 +75,11 @@ export async function GET(req: Request) {
         return NextResponse.json({ error: 'Locked' }, { status: 403, headers: NO_STORE })
       case 'password':
         return NextResponse.json({ error: 'Password required' }, { status: 403, headers: NO_STORE })
+      case 'unavailable':
+        // 503, not an empty 200. The album's tier could not be determined, so we do not know
+        // whether the search should return nothing — and a guest reading "no photos" as final is
+        // the worst outcome this endpoint has. The client shows "could not search" and a retry.
+        return NextResponse.json({ error: 'Could not search right now' }, { status: 503, headers: NO_STORE })
       case 'ok':
         return NextResponse.json(
           { photos: result.photos, total: result.total, bibStats: result.bibStats },
