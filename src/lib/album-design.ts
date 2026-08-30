@@ -187,3 +187,30 @@ export function headerVideoIframeSrc(photo: Photo, mode: HeaderVideoMode, autopl
   if (autoplay) url.searchParams.set('autoplay', 'true')
   return url.toString()
 }
+
+// WHERE THE HEADER IMAGE IS ANCHORED, parsed from its stored "X% Y%" string.
+//
+// The column is text and has survived several formats of hand-editing, so the parse must never
+// throw and never produce an off-canvas anchor: a bad value falls back to dead centre, which is
+// what the header looked like before the feature existed. Values are clamped because the regex
+// alone admits "999% 999%" — three digits — and an anchor outside the image renders as a header
+// stuck to one edge with no way to see why.
+export function parseFocalPoint(v: string | null | undefined): { x: number; y: number } {
+  const m = v ? /^(\d{1,3})% (\d{1,3})%$/.exec(v) : null
+  if (!m) return { x: 50, y: 50 }
+  return {
+    x: Math.min(100, Math.max(0, Number(m[1]))),
+    y: Math.min(100, Math.max(0, Number(m[2]))),
+  }
+}
+
+/** The welcome message cap — also the maxLength on the input that edits it. */
+export const WELCOME_MESSAGE_MAX = 200
+
+// The message a guest reads on arrival, normalised the one way both the input and the save agree
+// on: runs of whitespace collapse (pasted text arrives full of newlines), the cap applies to the
+// collapsed form, and an effectively-empty message stores as null so the header section knows to
+// render nothing rather than an empty bubble.
+export function normalizeWelcomeMessage(text: string): string | null {
+  return text.replace(/\s+/g, ' ').trim().slice(0, WELCOME_MESSAGE_MAX) || null
+}

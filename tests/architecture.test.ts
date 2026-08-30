@@ -92,7 +92,7 @@ describe('the big files do not get bigger', () => {
 // not permission: names may be REMOVED as tests arrive, never added. A new file in src/lib with no
 // test fails this immediately.
 const UNTESTED_LEGACY = new Set([
-  'access', 'album-backgrounds', 'album-design', 'album-owner-access', 'analytics', 'auth',
+  'access', 'album-backgrounds', 'album-owner-access', 'analytics', 'auth',
   'broadcast', 'cf-analytics', 'constants', 'country-names', 'email', 'engagement', 'exif',
   'heic-worker', 'media-display', 'my-albums', 'polls', 'provision-user', 'rate-limit',
   'rekognition', 'report-server-error', 'require-tier', 'slideshow-motion', 'useIsNarrow', 'utils',

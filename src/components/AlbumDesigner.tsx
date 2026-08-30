@@ -20,6 +20,7 @@ import {
 } from '@/components/owner-toolbar/api'
 import { PRESETS, DEFAULT_BG, isPickableImage } from '@/components/owner-toolbar/constants'
 import { STOCK_ALBUM_BACKGROUNDS } from '@/lib/album-backgrounds'
+import { parseFocalPoint, normalizeWelcomeMessage } from '@/lib/album-design'
 
 const INK = '#2A211C', MUTED = '#8A7A66', BORDER = '#DDD5C5', BRAND = '#630826'
 // Hard safety cap on the header-photo picker so an extreme-sized album can't render thousands of
@@ -91,7 +92,7 @@ export default function AlbumDesigner({ album, photos, onAlbumUpdated, onClose }
 
   const setFont = (key: string) => persist({ title_font: key === 'serif' ? null : key }, () => saveDesignRequest(album.slug, { title_font: key === 'serif' ? null : key }))
   const setPhotoStyle = (key: string) => persist({ photo_style: key === 'default' ? null : key }, () => saveDesignRequest(album.slug, { photo_style: key }))
-  const setWelcome = (text: string) => { const v = text.replace(/\s+/g, ' ').trim().slice(0, 200) || null; persist({ welcome_message: v }, () => saveDesignRequest(album.slug, { welcome_message: v })) }
+  const setWelcome = (text: string) => { const v = normalizeWelcomeMessage(text); persist({ welcome_message: v }, () => saveDesignRequest(album.slug, { welcome_message: v })) }
   const setBackground = (theme: string | null) => persist({ background_theme: theme }, () => saveBackgroundRequest(album.slug, theme))
   const setHeaderVideoMode = (mode: HeaderVideoMode) => persist({ header_video_mode: mode }, () => saveDesignRequest(album.slug, { header_video_mode: mode }))
 
@@ -100,10 +101,9 @@ export default function AlbumDesigner({ album, photos, onAlbumUpdated, onClose }
   // pattern as the accent colour picker, since a pointer drag can fire many times a second.
   const focalTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const focalDraggingRef = useRef(false)
-  function parseFocal(v: string | null): { x: number; y: number } {
-    const m = v ? /^(\d{1,3})% (\d{1,3})%$/.exec(v) : null
-    return m ? { x: Number(m[1]), y: Number(m[2]) } : { x: 50, y: 50 }
-  }
+  // Parsing lives in lib/album-design (with the clamp the inline copy lacked — the regex alone
+  // admits "999% 999%", which anchored the header off-canvas with no way to see why).
+  const parseFocal = parseFocalPoint
   function applyFocalFromEvent(e: React.PointerEvent<HTMLDivElement>) {
     const rect = e.currentTarget.getBoundingClientRect()
     const x = Math.round(Math.min(100, Math.max(0, ((e.clientX - rect.left) / rect.width) * 100)))

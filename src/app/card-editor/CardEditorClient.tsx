@@ -7,6 +7,7 @@ import type Konva from 'konva'
 import type { KonvaEventObject } from 'konva/lib/Node'
 import { ArrowLeft, Circle, Download, ImagePlus, Layers, Minus, MousePointer, Redo2, Square, Type, Undo2 } from 'lucide-react'
 import QRCode from 'qrcode'
+import { historyReducer, type HistoryAction, type HistoryState } from '@/lib/edit-history'
 import { qrForegroundColor } from '@/lib/album-design'
 import type { Base, TextEl, RectEl, EllipseEl, LineEl, ImgEl, El, HistState, ElPatch } from './types'
 import PropsPanel from './PropsPanel'
@@ -65,28 +66,15 @@ function template(title: string, qr: string, style: 'branded'|'bw'|'clean', acce
 
 // ─── Undo/redo ────────────────────────────────────────────────────────────────
 
-type HistAction =
-  | { type: 'PUSH';    state: HistState }
-  | { type: 'REPLACE'; state: HistState }
-  | { type: 'UNDO' }
-  | { type: 'REDO' }
 
-type HR = { states: HistState[]; idx: number }
 
-function histReducer(s: HR, a: HistAction): HR {
-  switch (a.type) {
-    case 'PUSH': {
-      const states = [...s.states.slice(0, s.idx + 1), a.state].slice(-50)
-      return { states, idx: states.length - 1 }
-    }
-    case 'REPLACE': return { states: [a.state], idx: 0 }
-    case 'UNDO':    return { ...s, idx: Math.max(0, s.idx - 1) }
-    case 'REDO':    return { ...s, idx: Math.min(s.states.length - 1, s.idx + 1) }
-  }
-}
-
+// The reducer lives in lib/edit-history, where its silent failure modes are tested — see that
+// file for what each of them destroys. This hook is only the React wiring around it.
 function useHistory(init: HistState) {
-  const [{ states, idx }, dispatch] = useReducer(histReducer, { states: [init], idx: 0 })
+  const [{ states, idx }, dispatch] = useReducer(
+    historyReducer as (s: HistoryState<HistState>, a: HistoryAction<HistState>) => HistoryState<HistState>,
+    { states: [init], idx: 0 },
+  )
   const push    = useCallback((s: HistState) => dispatch({ type: 'PUSH',    state: s }), [])
   const replace = useCallback((s: HistState) => dispatch({ type: 'REPLACE', state: s }), [])
   const undo    = useCallback(() => dispatch({ type: 'UNDO' }), [])
