@@ -22,6 +22,18 @@ jobs:
 
       - run: npm ci
 
+      # THE SUITE RUNS BEFORE PRODUCTION DEPLOYS, and it did not until 2026-08-30.
+      #
+      # Every deploy before that was gated on whoever pushed having remembered to run the tests on
+      # their own machine. That is not a gate, it is a habit, and it is a large part of why shipping
+      # a feature here has felt like handling a bomb: the only thing standing between a regression
+      # and a customer was someone's memory.
+      #
+      # A red test now stops the deploy. If a genuine emergency ever needs to bypass it, that should
+      # be a deliberate act — comment this out in a commit, so the bypass is in the history — rather
+      # than something that quietly never ran.
+      - run: npm test
+
       - name: Build for Cloudflare
         run: npm run cf:build
         env:

@@ -90,3 +90,77 @@ RESEND_DOMAIN_VERIFIED = "true"
 # AWS_ACCESS_KEY_ID              (Rekognition — Studio tier face search)
 # AWS_SECRET_ACCESS_KEY          (Rekognition)
 # AWS_REGION                     (defaults to eu-west-1)
+
+# ─── STAGING ──────────────────────────────────────────────────────────────────────────────────────
+#
+# A second, complete copy of Hushare: its own database, its own bucket, its own domain. It exists so
+# a change can be broken on purpose — a migration replayed, an album mass-deleted, a load test run
+# at 5,000 photos — without any of that reaching a customer.
+#
+# WRANGLER ENVIRONMENTS DO NOT INHERIT BINDINGS. Every binding below is redeclared on purpose, and
+# that is a safety property rather than a chore: there is no way to add a production binding at the
+# top of this file and have staging silently pick it up. Each one has to be written out and pointed
+# somewhere of its own.
+#
+# The dangerous mistake this cannot prevent by itself is a staging deploy still holding production's
+# Supabase URL — that does not error, it just quietly works against real albums. So the worker also
+# refuses to open a privileged database client when HUSHARE_ENV=staging and any production resource
+# is reachable. See src/lib/server/environment.ts and tests/environment-isolation.test.ts.
+#
+# Deploy with:  npx wrangler deploy --env staging
+[env.staging]
+name = "hushare-staging"
+
+[[env.staging.routes]]
+pattern = "staging.hushare.space/*"
+zone_name = "hushare.space"
+
+[env.staging.assets]
+directory = ".open-next/assets"
+binding = "ASSETS"
+
+# A DIFFERENT BUCKET. This single line is the difference between a safe staging environment and one
+# that deletes production photos during a deletion test.
+[[env.staging.r2_buckets]]
+binding = "R2_BUCKET"
+bucket_name = "hushare-media-staging"
+
+[[env.staging.analytics_engine_datasets]]
+binding = "ANALYTICS"
+dataset = "Hushare_events_staging"
+
+[[env.staging.ratelimits]]
+name = "STREAM_RELAY_LIMITER"
+namespace_id = "2001"
+  [env.staging.ratelimits.simple]
+  limit = 600
+  period = 60
+
+[[env.staging.ratelimits]]
+name = "SUPPORT_CHAT_LIMITER"
+namespace_id = "2002"
+  [env.staging.ratelimits.simple]
+  limit = 100
+  period = 60
+
+[env.staging.ai]
+binding = "AI"
+
+[env.staging.vars]
+# Read by src/lib/server/environment.ts. Without it a staging deploy believes it is production and
+# every isolation check below goes unenforced.
+HUSHARE_ENV = "staging"
+NEXT_PUBLIC_SITE_URL = "https://staging.hushare.space"
+# Replace with the staging Supabase project's URL and anon key once it exists. Left as obvious
+# placeholders rather than production's values: a placeholder fails immediately and visibly, and a
+# copied production URL fails silently by working.
+NEXT_PUBLIC_SUPABASE_URL = "https://REPLACE-WITH-STAGING-REF.supabase.co"
+NEXT_PUBLIC_SUPABASE_ANON_KEY = "REPLACE-WITH-STAGING-ANON-KEY"
+NEXT_PUBLIC_TURNSTILE_SITE_KEY = "1x00000000000000000000AA"  # Cloudflare's always-passes test key
+R2_PUBLIC_HOST = "media-staging.hushare.space"
+R2_BUCKET_NAME = "hushare-media-staging"
+RESEND_DOMAIN_VERIFIED = "false"   # staging must never send mail to a real address
+# Secrets are set separately and are NOT shared with production:
+#   npx wrangler secret put SUPABASE_SERVICE_ROLE_KEY --env staging
+# ...and so on for every secret listed at the top of this file. A staging deploy holding
+# production's service-role key can read and delete every real album regardless of the URL it uses.

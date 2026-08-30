@@ -1,0 +1,72 @@
+name: Deploy staging
+
+# ONLY the staging branch, and only by hand. Master must never be able to reach this workflow, and
+# this workflow must never be able to reach production: the two deploys share a repository and
+# nothing else. `workflow_dispatch` is here so staging can be redeployed without a commit, which is
+# most of what a staging environment is for.
+on:
+  push:
+    branches: [staging]
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    name: Deploy staging
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          # Same floor as production: below 22 the worker bundle loses its handler export.
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      # The suite runs here and NOT in the production workflow, on purpose. Production deploys are
+      # sometimes urgent and a red test must not be what stands between a customer and a fix; a
+      # staging deploy is never urgent, so this is where a regression should be caught.
+      - run: npm test
+
+      - name: Build for Cloudflare
+        run: npm run cf:build
+        env:
+          # NEXT_PUBLIC_* are baked in at BUILD time, so a staging build needs its own values here.
+          # Building with production's and deploying to staging produces a worker that says staging
+          # in its config and talks to production in its bundle.
+          NEXT_PUBLIC_SITE_URL: "https://staging.hushare.space"
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.STAGING_SUPABASE_URL }}
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.STAGING_SUPABASE_ANON_KEY }}
+          NEXT_PUBLIC_TURNSTILE_SITE_KEY: "1x00000000000000000000AA"
+
+      - name: Refuse to deploy a build wired to production
+        # The belt to the worker's braces. src/lib/server/environment.ts catches this at runtime,
+        # but by then the worker is deployed and serving; catching it here means it never ships.
+        run: |
+          if [ -z "${{ secrets.STAGING_SUPABASE_URL }}" ]; then
+            echo "::error::STAGING_SUPABASE_URL is not set — a staging build without its own database is production with a different name."
+            exit 1
+          fi
+          case "${{ secrets.STAGING_SUPABASE_URL }}" in
+            *yqngmyjquwemwogdyuwv*)
+              echo "::error::STAGING_SUPABASE_URL points at the PRODUCTION database. Refusing."
+              exit 1 ;;
+          esac
+
+      - name: Apply migrations to the STAGING database
+        run: |
+          if [ -n "$SUPABASE_DB_URL" ]; then
+            npm run db:migrate && npm run db:check
+          else
+            echo "::warning::STAGING_DB_URL not set — skipping migrations"
+          fi
+        env:
+          # db:migrate reads SUPABASE_DB_URL; it is fed staging's, never production's.
+          SUPABASE_DB_URL: ${{ secrets.STAGING_DB_URL }}
+
+      - name: Deploy via Wrangler
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          command: deploy --env staging
