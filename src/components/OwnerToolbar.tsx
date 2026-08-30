@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useT } from '@/i18n/LocaleProvider'
+import { tierAllows, showsAsLocked } from '@/lib/plan-gates'
 import { useZipDownload } from '@/components/photo-grid/useZipDownload'
 import { Search, ChevronDown, Clock, Copy, Download, FolderPlus, Images, Link2, Loader2, Lock, LockOpen, MonitorPlay, Move, Play, ScanFace, Settings, ShieldCheck, Trash2, X } from 'lucide-react'
 import type { Album, Photo, Tier } from '@/types'
@@ -230,20 +231,28 @@ export default function OwnerToolbar({ album, photos, ownerToken, userTier, medi
   // what they will actually be watching rather than a grey rectangle.
   const motionPreviewThumb = photos.find((p) => p.media_type !== 'video')?.thumb_url
     ?? photos[0]?.poster_url ?? photos[0]?.thumb_url ?? ''
-  const canCustomize = userTier === 'pro' || userTier === 'studio'
-  const canUseCollections = userTier === 'studio'
-  // Gate every LOCKED affordance — the Pro/Max badge and the dimming — on actually knowing the
-  // tier. While it is unknown the row simply renders plain: no badge appears and then vanishes.
-  // The controls themselves stay inert (canCustomize is false either way) for those few hundred
-  // milliseconds, which is invisible next to a label that contradicts what the owner paid for.
-  const tierKnown = userTier !== null
-  const showLockedCustomize = tierKnown && !canCustomize
-  const showLockedCollections = tierKnown && !canUseCollections
-  // Branding removal is gated by api/album/branding exactly like the custom URL, and it had NO
-  // badge and NO dimming — a free owner saw an ordinary switch, flipped it, and learned it was
-  // paid only from the error that came back. `canCustomize` is the same Pro test the custom URL
-  // uses; this row simply never asked it.
-  const showLockedBranding = tierKnown && !canCustomize
+  // EACH CONTROL ASKS ABOUT ITS OWN FEATURE, by name, against lib/plan-gates.ts — the same table
+  // every server route is held to in tests/plan-gates.test.ts.
+  //
+  // These used to be two booleans, canCustomize and canUseCollections, shared across unrelated
+  // controls because those controls happen to sit at the same tier TODAY. That is fine right up
+  // until one of them moves: repackaging the album logo as Max would silently take photo
+  // moderation and the custom URL with it, and the only signal would be a customer saying that
+  // something they pay for stopped working. Naming the feature lets each row move alone.
+  //
+  // showsAsLocked rather than plain "not allowed": while the tier is still being looked up the row
+  // renders PLAIN and inert. A PRO badge appearing on something the owner pays for and then
+  // vanishing is worse than a few hundred milliseconds of a control that does nothing.
+  const canSetCustomUrl = tierAllows(userTier, 'customUrl')
+  const canModeratePhotos = tierAllows(userTier, 'photoModeration')
+  const canUseCollections = tierAllows(userTier, 'collections')
+  const showLockedCustomUrl = showsAsLocked(userTier, 'customUrl')
+  const showLockedModeration = showsAsLocked(userTier, 'photoModeration')
+  const showLockedCollections = showsAsLocked(userTier, 'collections')
+  // Branding removal is gated by api/album/branding, and it had NO badge and NO dimming — a free
+  // owner saw an ordinary switch, flipped it, and learned it was paid from the error that came
+  // back. The row simply never asked.
+  const showLockedBranding = showsAsLocked(userTier, 'hideBranding')
   const radiusMax = Math.max(1, Math.round(mediaRadiusMax))
 
   useEffect(() => {
@@ -1139,7 +1148,7 @@ export default function OwnerToolbar({ album, photos, ownerToken, userTier, medi
                 </button>
                 {openSection === 'guests' && (
                   <div className="px-4 pb-4 space-y-3">
-                    <label className="flex items-center justify-between gap-4 rounded-xl px-3 py-3" style={{ background: '#FDFAF5', border: '1px solid #DDD5C5', ...gatedRowStyle(showLockedCustomize) }}>
+                    <label className="flex items-center justify-between gap-4 rounded-xl px-3 py-3" style={{ background: '#FDFAF5', border: '1px solid #DDD5C5', ...gatedRowStyle(showLockedModeration) }}>
                       <span>
                         <span className="block text-sm font-semibold" style={{ color: '#630826' }}>
                           {t('ot.requireApproval')} <PlanBadge need="pro" tier={userTier} />
@@ -1167,7 +1176,7 @@ export default function OwnerToolbar({ album, photos, ownerToken, userTier, medi
                           }
                         }}
                         className="h-4 w-4"
-                        disabled={!canCustomize}
+                        disabled={!canModeratePhotos}
                       />
                     </label>
                   </div>
@@ -1441,7 +1450,7 @@ export default function OwnerToolbar({ album, photos, ownerToken, userTier, medi
                     <p className="text-xs mb-3" style={{ color: '#7C5C3E' }}>
                       {t('ot.customUrlSub')}
                     </p>
-                    <div className="flex items-stretch rounded-lg overflow-hidden" style={{ border: '1px solid #DDD5C5', background: '#FDFAF5', ...gatedRowStyle(showLockedCustomize) }}>
+                    <div className="flex items-stretch rounded-lg overflow-hidden" style={{ border: '1px solid #DDD5C5', background: '#FDFAF5', ...gatedRowStyle(showLockedCustomUrl) }}>
                       <span className="text-xs flex items-center px-2 select-none" style={{ color: '#A89880' }}>hushare.space/</span>
                       <input
                         type="text"
@@ -1449,11 +1458,11 @@ export default function OwnerToolbar({ album, photos, ownerToken, userTier, medi
                         onChange={(e) => setCustomUrlInput(e.target.value)}
                         placeholder="anna-and-david"
                         maxLength={40}
-                        disabled={!canCustomize}
+                        disabled={!canSetCustomUrl}
                         className="flex-1 text-sm px-2 py-2 focus:outline-none disabled:cursor-not-allowed"
                         style={{ background: 'transparent', color: '#630826' }}
                         onKeyDown={(e) => {
-                          if (e.key === 'Enter' && canCustomize && !customUrlSaving && customUrlInput.trim()) void saveCustomUrl('set')
+                          if (e.key === 'Enter' && canSetCustomUrl && !customUrlSaving && customUrlInput.trim()) void saveCustomUrl('set')
                         }}
                       />
                     </div>
@@ -1462,7 +1471,7 @@ export default function OwnerToolbar({ album, photos, ownerToken, userTier, medi
                     <div className="flex items-center gap-2 mt-3">
                       <button
                         onClick={() => void saveCustomUrl('set')}
-                        disabled={!canCustomize || customUrlSaving || !customUrlInput.trim()}
+                        disabled={!canSetCustomUrl || customUrlSaving || !customUrlInput.trim()}
                         className="hush-press flex-1 text-sm font-semibold rounded-lg py-2 transition hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed"
                         style={{ background: '#630826', color: '#FDFAF5' }}
                       >
@@ -1471,7 +1480,7 @@ export default function OwnerToolbar({ album, photos, ownerToken, userTier, medi
                       {album.custom_slug && (
                         <button
                           onClick={() => void saveCustomUrl('clear')}
-                          disabled={!canCustomize || customUrlSaving}
+                          disabled={!canSetCustomUrl || customUrlSaving}
                           className="hush-press text-sm rounded-lg py-2 px-3 transition hover:opacity-90 disabled:opacity-50"
                           style={{ background: '#F5F0E8', color: '#7C5C3E', border: '1px solid #DDD5C5' }}
                         >
