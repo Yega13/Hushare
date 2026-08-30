@@ -35,6 +35,9 @@ type RetirementCandidate = {
   slug: string
   user_id: string | null
   background_theme: string | null
+  logo_url: string | null
+  header_image: string | null
+  sponsor_logos: unknown
   last_activity_at: string
 }
 
@@ -74,7 +77,7 @@ export async function POST(req: Request) {
   const warnedBefore = new Date(Date.now() - WARN_BEFORE_DAYS * 24 * 60 * 60 * 1000).toISOString()
   const { data: candidates, error } = await admin
     .from('albums')
-    .select('id, slug, user_id, background_theme, last_activity_at')
+    .select('id, slug, user_id, background_theme, logo_url, header_image, sponsor_logos, last_activity_at')
     .is('retired_at', null)
     .lt('last_activity_at', cutoff)
     .not('last_notification_at', 'is', null)

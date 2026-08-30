@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeAll } from 'vitest'
-import { r2KeyFromUrl, collectDeletionTargets, type PhotoToDelete } from '@/lib/album-delete'
+import { r2KeyFromUrl, collectDeletionTargets, albumAssetKeys, type PhotoToDelete } from '@/lib/album-delete'
 import { r2PublicUrl } from '@/lib/cloudflare/r2'
 
 // r2KeyFromUrl decides WHICH FILE GETS DELETED. Everything about album and photo deletion
@@ -200,5 +200,71 @@ describe('deleting an album destroys exactly its own files', () => {
     const { r2Keys, streamUids } = collectDeletionTargets([empty], null)
     expect(r2Keys.size).toBe(0)
     expect(streamUids.size).toBe(0)
+  })
+})
+
+// EVERY FILE AN ALBUM OWNS, NOT JUST THE ONES SOMEONE REMEMBERED.
+//
+// Deleting an album was told about its photos and its background only. Its logo, its header image
+// and its sponsor marks were never collected — the album row went and those files stayed in the
+// bucket with nothing left pointing at them, billed forever, unfindable. A header image is not a
+// rare extra; any album with one had this.
+//
+// The same missing fact ran the other way in api/admin/storage-audit, which built its "referenced"
+// set from photos plus logo_url and so reported every live background, header and sponsor mark as
+// an orphan — offered up for deletion, in a tool whose whole purpose is deciding what to delete.
+//
+// One function now answers "which files does this album own", and both sides call it.
+describe('an album owns more than its photos', () => {
+  const H = 'https://videos.hushare.space'
+
+  it('collects the uploaded background, logo, header and every sponsor mark', () => {
+    const keys = albumAssetKeys({
+      background_theme: `image:${H}/backgrounds/A/bg.jpg`,
+      logo_url: `${H}/logos/A/logo.jpg`,
+      header_image: `${H}/headers/A/head.webp`,
+      sponsor_logos: [{ id: 's1', url: `${H}/sponsors/A/one.png`, name: null },
+                      { id: 's2', url: `${H}/sponsors/A/two.png`, name: 'Two' }],
+    })
+    expect(keys.sort()).toEqual([
+      'backgrounds/A/bg.jpg', 'headers/A/head.webp', 'logos/A/logo.jpg',
+      'sponsors/A/one.png', 'sponsors/A/two.png',
+    ].sort())
+  })
+
+  it('knows a built-in background is not a file', () => {
+    // The same column holds '#ffe476' and 'stock:pexels-20954747'. Neither is in the bucket, and
+    // treating one as a URL is a delete aimed at nothing — or, in the audit, a phantom reference.
+    for (const theme of ['#ffe476', 'stock:pexels-20954747', 'none', null, 'image:not-a-url']) {
+      expect(albumAssetKeys({ background_theme: theme }), `${theme} is not a file`).toEqual([])
+    }
+  })
+
+  it('survives a sponsor_logos column holding something unexpected', () => {
+    // jsonb: whatever was written is what comes back. A malformed row must not throw halfway
+    // through deleting an album, nor halfway through scanning the bucket.
+    for (const junk of [null, undefined, '[]', 42, [null], [{ name: 'no url' }], [{ url: 123 }]]) {
+      expect(() => albumAssetKeys({ sponsor_logos: junk })).not.toThrow()
+    }
+    expect(albumAssetKeys({ sponsor_logos: [{ name: 'no url' }] })).toEqual([])
+  })
+
+  it('takes nothing from an album with no design assets at all', () => {
+    expect(albumAssetKeys({})).toEqual([])
+  })
+
+  it('names every prefix the upload routes actually mint', () => {
+    // backgrounds/, headers/, logos/ and sponsors/ are written by four separate upload routes. A
+    // fifth prefix added later with no line here is a file class that deletion silently leaks and
+    // the audit silently slanders — which is exactly how this bug happened.
+    const keys = albumAssetKeys({
+      background_theme: `image:${H}/backgrounds/A/b.jpg`,
+      logo_url: `${H}/logos/A/l.jpg`,
+      header_image: `${H}/headers/A/h.jpg`,
+      sponsor_logos: [{ url: `${H}/sponsors/A/s.png` }],
+    })
+    for (const prefix of ['backgrounds/', 'headers/', 'logos/', 'sponsors/']) {
+      expect(keys.some((k) => k.startsWith(prefix)), `${prefix} is not collected`).toBe(true)
+    }
   })
 })

@@ -15,6 +15,9 @@ type AlbumWithBackground = {
   user_id: string | null
   custom_slug?: string | null
   background_theme: string | null
+  logo_url: string | null
+  header_image: string | null
+  sponsor_logos: unknown
 }
 
 export async function POST(req: Request) {
@@ -28,13 +31,18 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: 'Missing slug' }, { status: 400, headers: NO_STORE })
   }
 
-  const access = await verifyOwnerViaCookieWithRateLimit<AlbumWithBackground>(req, slug.trim(), 'background_theme')
+  const access = await verifyOwnerViaCookieWithRateLimit<AlbumWithBackground>(req, slug.trim(), 'background_theme, logo_url, header_image, sponsor_logos')
   if (!access.ok) return NextResponse.json({ error: access.error }, { status: access.status, headers: NO_STORE })
 
   const admin = createAdminClient()
+  // The WHOLE album row's assets, not just the background. Passing a narrower object here is how
+  // logos, header images and sponsor marks were left in the bucket forever.
   const result = await deleteAlbumAssetsAndRows(admin, {
     id: access.album.id,
     background_theme: access.album.background_theme,
+    logo_url: access.album.logo_url,
+    header_image: access.album.header_image,
+    sponsor_logos: access.album.sponsor_logos,
   })
 
   if (!result.ok) {

@@ -3,7 +3,7 @@ import { getCloudflareContext } from '@opennextjs/cloudflare'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { isAccountAdmin } from '@/lib/auth'
-import { r2KeyFromUrl } from '@/lib/album-delete'
+import { r2KeyFromUrl, albumAssetKeys, ALBUM_ASSET_COLUMNS } from '@/lib/album-delete'
 
 export const runtime = 'nodejs'
 export const maxDuration = 60
@@ -86,10 +86,26 @@ export async function GET() {
     if (!data || data.length < PAGE) break
   }
 
-  // Album-level assets live outside the photos table and are just as real.
-  const { data: albums } = await admin.from('albums').select('logo_url')
+  // ALBUM-LEVEL ASSETS, ALL OF THEM.
+  //
+  // This read logo_url and nothing else, so every uploaded background, header image and sponsor
+  // mark on the site was counted as an orphan — an object nothing points at. This endpoint exists
+  // to inform a decision about deleting orphans, and its sample of keys is printed specifically to
+  // be checked by hand, so those were real customer files offered up for deletion. A sponsor logo
+  // is contractual; a header image is something a Max customer uploaded on purpose.
+  //
+  // albumAssetKeys is the same function album deletion uses, so the two cannot disagree again about
+  // what an album owns.
+  const { data: albums } = await admin.from('albums').select(ALBUM_ASSET_COLUMNS)
   for (const a of albums ?? []) {
-    const key = r2KeyFromUrl(a.logo_url)
+    for (const key of albumAssetKeys(a as Parameters<typeof albumAssetKeys>[0])) referenced.add(key)
+  }
+
+  // Profile pictures are not album assets at all — nothing in the album tables points at them, so
+  // without this every avatar on the site reads as an orphan too.
+  const { data: profiles } = await admin.from('profiles').select('avatar_url')
+  for (const pr of profiles ?? []) {
+    const key = r2KeyFromUrl((pr as { avatar_url: string | null }).avatar_url)
     if (key) referenced.add(key)
   }
 

@@ -9,9 +9,65 @@ type AdminClient = ReturnType<typeof createAdminClient>
 type R2BucketLike = { delete(keys: string | string[]): Promise<void> }
 type R2Env = { R2_BUCKET: R2BucketLike }
 
-type AlbumDeleteTarget = {
+// EVERY R2 OBJECT AN ALBUM OWNS, in one place, because two places already disagreed.
+//
+// Deleting an album was told only about its photos and its background. Nothing ever removed its
+// logo, its header image or its sponsor marks — the album row went, and those files stayed in the
+// bucket with nothing left pointing at them. Not a rare paid extra either: any album with a header
+// image had one.
+//
+// Meanwhile api/admin/storage-audit built its "referenced" set from photos plus logo_url alone, so
+// it reported every live background, header and sponsor mark as an orphan — an object nothing
+// points at. That audit exists to inform a decision about deleting orphans. Its numbers were wrong
+// in the direction that destroys customers' files, and the sample of keys it prints for
+// hand-checking was seeded with real sponsor logos.
+//
+// Both are the same missing fact. It is written once here now, and both read it.
+export const ALBUM_ASSET_COLUMNS = 'id, background_theme, logo_url, header_image, sponsor_logos'
+
+export type AlbumAssets = {
+  background_theme?: string | null
+  logo_url?: string | null
+  header_image?: string | null
+  /** jsonb: [{ id, url, name }]. Stored as an array; read defensively, it comes from the database. */
+  sponsor_logos?: unknown
+}
+
+type AlbumDeleteTarget = AlbumAssets & {
   id: string
-  background_theme: string | null
+}
+
+/**
+ * The R2 keys for an album's own design assets — everything that is NOT a photo.
+ *
+ * Only an UPLOADED background is a file. The built-in themes are stored in the same column as
+ * `#ffe476` (a colour) or `stock:pexels-20954747` (a stock reference), and neither is an object in
+ * the bucket — which is why the prefix is checked rather than the column being non-empty.
+ */
+export function albumAssetKeys(album: AlbumAssets): string[] {
+  const keys: string[] = []
+  // typeof-checked, not just null-checked. sponsor_logos is jsonb, so a url field can be a number
+  // or an object if anything ever wrote one — and r2KeyFromUrl calls startsWith on it. That throws,
+  // and it throws in the middle of deleting an album or of scanning the bucket, which is the worst
+  // possible place to discover that a column can hold surprises. Caught by its own test.
+  const add = (url: unknown) => {
+    if (typeof url !== 'string') return
+    const key = r2KeyFromUrl(url)
+    if (key) keys.push(key)
+  }
+
+  add(album.background_theme?.startsWith('image:') ? album.background_theme.slice(6) : null)
+  add(album.logo_url)
+  add(album.header_image)
+
+  // Defensive about the shape: this is jsonb, so it is whatever was written, and a bad row must not
+  // take out a deletion or make the audit throw halfway through the bucket.
+  if (Array.isArray(album.sponsor_logos)) {
+    for (const entry of album.sponsor_logos) {
+      if (entry && typeof entry === 'object' && 'url' in entry) add((entry as { url?: unknown }).url)
+    }
+  }
+  return keys
 }
 
 export type PhotoToDelete = {
@@ -152,8 +208,9 @@ export async function deleteAlbumAssetsAndRows(
     offset += PAGE_SIZE
   }
 
-  // The album's own background, collected once rather than per page.
-  for (const k of collectDeletionTargets([], album.background_theme).r2Keys) r2Keys.add(k)
+  // The album's own design assets — background, logo, header, sponsor marks — collected once
+  // rather than per page. Three of these four were never collected at all before.
+  for (const k of albumAssetKeys(album)) r2Keys.add(k)
 
   // Step 2a: Delete pending_stream_uploads rows for this album. These may not have a DB-level
   // CASCADE (depending on schema migration order), so we clean them up explicitly. Best-effort.

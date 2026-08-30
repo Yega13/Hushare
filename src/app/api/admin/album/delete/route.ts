@@ -32,9 +32,9 @@ export async function POST(req: Request) {
   const admin = createAdminClient()
   const { data: album, error } = await admin
     .from('albums')
-    .select('id, background_theme')
+    .select('id, background_theme, logo_url, header_image, sponsor_logos')
     .eq('id', albumId)
-    .maybeSingle<{ id: string; background_theme: string | null }>()
+    .maybeSingle<{ id: string; background_theme: string | null; logo_url: string | null; header_image: string | null; sponsor_logos: unknown }>()
   if (error || !album) {
     return NextResponse.json({ error: 'Album not found' }, { status: 404, headers: NO_STORE })
   }

@@ -13,6 +13,9 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 type AlbumForDelete = {
   id: string
   background_theme: string | null
+  logo_url: string | null
+  header_image: string | null
+  sponsor_logos: unknown
   user_id: string | null
 }
 
@@ -46,7 +49,7 @@ export async function POST(req: Request) {
 
   const { data: album } = await admin
     .from('albums')
-    .select('id, background_theme, user_id')
+    .select('id, background_theme, logo_url, header_image, sponsor_logos, user_id')
     .eq('id', album_id)
     .eq('user_id', user.id)
     .maybeSingle<AlbumForDelete>()
