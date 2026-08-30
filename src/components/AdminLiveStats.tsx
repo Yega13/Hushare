@@ -34,10 +34,24 @@ export type LiveStats = {
   lastBackupAt?: string | null
   backupAgeHours?: number | null
   backupStale?: boolean
+  // Optional: they arrive with the first poll (the server render predates them). A card whose
+  // value has not arrived renders nothing rather than a fake zero.
+  openWarnings?: number
+  uploads10m?: number
+  payingSubs?: number
+  downloads24h?: number | null
+  recentErrors?: unknown[]
 }
 
 const KEY = 'hushare.admin.baseline.v1'
-const POLL_MS = 20_000
+// The realtime switch (replaces the old 20s POLL_MS). ON polls every 5s and rebroadcasts each
+// payload so the error table follows along; OFF stops polling entirely — the escape hatch for the
+// day traffic makes even the dashboard's own polling worth counting. Remembered per browser.
+const RT_POLL_MS = 5_000
+const RT_KEY = 'hushare_admin_rt'
+function rtInitial(): boolean {
+  try { return window.localStorage.getItem(RT_KEY) !== '0' } catch { return true }
+}
 
 const CARD = '#FFFDF9'
 const BORDER = '#E8E0D0'
@@ -161,6 +175,8 @@ function CountUp({ value, from }: { value: number; from?: number }) {
 export default function AdminLiveStats({ initial }: { initial: LiveStats }) {
   const [live, setLive] = useState<LiveStats>(initial)
   const [stale, setStale] = useState(false)
+  const [rt, setRt] = useState(rtInitial)
+  const tick = useRef(0)
   const mounted = useRef(true)
 
   // The server cannot know what this browser remembers, so it renders no deltas and the client
@@ -183,12 +199,19 @@ export default function AdminLiveStats({ initial }: { initial: LiveStats }) {
 
   const refresh = useCallback(async () => {
     try {
-      const res = await fetch('/api/admin/stats', { cache: 'no-store' })
+      // Downloads come from Analytics Engine, which lags by seconds anyway — every 6th tick is as
+      // live as that number can be, without paying for the query on every poll.
+      const deep = tick.current++ % 6 === 0 ? '?deep=1' : ''
+      const res = await fetch(`/api/admin/stats${deep}`, { cache: 'no-store' })
       if (!res.ok) { setStale(true); return }
       const data = await res.json() as LiveStats
       if (!mounted.current) return
-      setLive(data)
+      // A shallow tick reports downloads24h as null — keep the last real reading instead of
+      // flickering the card away five ticks out of six.
+      setLive(prev => ({ ...prev, ...data, downloads24h: data.downloads24h ?? prev.downloads24h }))
       setStale(false)
+      // ONE poller feeds every live surface on the page; the error table listens for this.
+      window.dispatchEvent(new CustomEvent('hushare-admin-live', { detail: data }))
     } catch {
       // Offline, or the tab woke from sleep mid-request. Say so rather than showing a number that
       // has quietly stopped being true.
@@ -197,32 +220,58 @@ export default function AdminLiveStats({ initial }: { initial: LiveStats }) {
   }, [])
 
   useEffect(() => {
-    const id = setInterval(refresh, POLL_MS)
+    // The switch is the whole interval: OFF means no timer at all, not a slower one.
+    if (!rt) return
+    const id = setInterval(refresh, RT_POLL_MS)
     // Refresh the moment the tab is looked at again, rather than waiting out the interval on a
     // dashboard someone has just switched back to.
     const onVisible = () => { if (document.visibilityState === 'visible') void refresh() }
     document.addEventListener('visibilitychange', onVisible)
     return () => { clearInterval(id); document.removeEventListener('visibilitychange', onVisible) }
-  }, [refresh])
+  }, [refresh, rt])
 
   // Only the COUNTS get a card. Keyed off a narrowed union rather than `keyof LiveStats`, so
   // adding a non-numeric stat (backup freshness, below) cannot silently end up rendered
   // through CountUp — it fails to compile instead.
-  type CountKey = 'albums' | 'photos' | 'videos' | 'users' | 'subscriptions' | 'openErrors'
+  type CountKey = 'albums' | 'photos' | 'videos' | 'users' | 'subscriptions' | 'payingSubs' | 'openErrors' | 'openWarnings' | 'uploads10m' | 'downloads24h'
   const cards: { label: string; key: CountKey; hint?: string; invert?: boolean }[] = [
     { label: 'Active albums', key: 'albums' },
     { label: 'Photos', key: 'photos' },
     { label: 'Videos', key: 'videos' },
+    { label: 'Uploads · 10 min', key: 'uploads10m', hint: 'landing right now' },
     { label: 'Registered users', key: 'users' },
-    { label: 'Subscriptions', key: 'subscriptions', hint: 'paid' },
+    { label: 'Paying customers', key: 'payingSubs', hint: 'comps excluded' },
+    { label: 'Downloads · 24h', key: 'downloads24h' },
     { label: 'Open errors', key: 'openErrors', invert: true },
+    { label: 'Warnings', key: 'openWarnings', invert: true },
   ]
+
+  const toggleRt = () => {
+    setRt(v => {
+      try { window.localStorage.setItem(RT_KEY, v ? '0' : '1') } catch { /* private mode */ }
+      return !v
+    })
+  }
 
   return (
     <>
+      <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 8 }}>
+        <button
+          type="button"
+          onClick={toggleRt}
+          title="Live numbers poll every 5 seconds. Turn off if traffic ever makes the dashboard itself worth counting."
+          style={{
+            fontSize: 12, fontWeight: 700, padding: '5px 13px', borderRadius: 999, cursor: 'pointer',
+            background: rt ? '#F0FAF0' : CARD, color: rt ? '#1D7A44' : MUTED,
+            border: `1px solid ${rt ? '#BFDEC7' : BORDER}`,
+          }}
+        >
+          {rt ? 'realtime on · 5s' : 'realtime off'}
+        </button>
+      </div>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(150px, 100%), 1fr))', gap: 12, marginBottom: 10 }}>
-        {cards.map(c => {
-          const value = live[c.key]
+        {cards.filter(c => typeof live[c.key] === 'number').map(c => {
+          const value = live[c.key] as number
           const was = baseline?.[c.key]
           const delta = typeof was === 'number' ? value - was : 0
           return (

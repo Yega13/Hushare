@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo, useState, useSyncExternalStore } from 'react'
+import { useEffect, useMemo, useState, useSyncExternalStore } from 'react'
 
 // Errors and warnings used to share one list, which made the list useless: on a normal day most
 // rows say "You've reached this album's upload limit" — the free cap doing its job, logged at warn
@@ -165,9 +165,23 @@ function MarkChip({ mark }: { mark: Mark }) {
 }
 
 export default function AdminErrorTabs(
-  { rows, seenBefore = [], buildId = '' }:
+  { rows: initialRows, seenBefore = [], buildId = '' }:
   { rows: ErrorRow[]; seenBefore?: string[]; buildId?: string },
 ) {
+  // LIVE ROWS RIDE THE SAME POLL AS THE STAT CARDS. AdminLiveStats broadcasts each payload it
+  // fetches, and this table swaps its server-rendered rows for the fresh ones — one poller feeding
+  // every live surface, instead of a second interval per component. When the realtime switch up
+  // top is off, the broadcast simply stops and the table stands still, exactly like the cards.
+  const [liveRows, setLiveRows] = useState<ErrorRow[] | null>(null)
+  useEffect(() => {
+    const onLive = (e: Event) => {
+      const detail = (e as CustomEvent).detail as { recentErrors?: ErrorRow[] } | undefined
+      if (Array.isArray(detail?.recentErrors)) setLiveRows(detail.recentErrors)
+    }
+    window.addEventListener('hushare-admin-live', onLive)
+    return () => window.removeEventListener('hushare-admin-live', onLive)
+  }, [])
+  const rows = liveRows ?? initialRows
   // Messages that have EVER been cleared. Membership is what separates "came back" from "new".
   const seen = useMemo(() => new Set(seenBefore), [seenBefore])
   const [tab, setTab] = useState<'error' | 'warn'>('error')

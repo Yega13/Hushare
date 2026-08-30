@@ -35,7 +35,11 @@ export async function GET(req: Request) {
   const admin = createAdminClient()
   const head = { count: 'exact' as const, head: true }
 
-  const [albums, photos, videos, subs, errors, users, backup] = await Promise.all([
+  // deep=1 adds the Analytics Engine query (downloads); polled less often than the cheap counts.
+  const deep = new URL(req.url).searchParams.get('deep') === '1'
+  const tenMinAgo = new Date(Date.now() - 10 * 60_000).toISOString()
+
+  const [albums, photos, videos, subs, errors, users, backup, warnings, uploads10m, payingSubs, recentErrors] = await Promise.all([
     admin.from('albums').select('id', head).is('retired_at', null),
     admin.from('photos').select('id', head).eq('media_type', 'image'),
     admin.from('photos').select('id', head).eq('media_type', 'video'),
@@ -53,6 +57,14 @@ export async function GET(req: Request) {
     // Supabase's free plan takes no backups of its own, so "how long since a real copy" is not a
     // nice-to-have number — it is the difference between an incident and the end of the product.
     admin.from('system_state').select('value, updated_at').eq('key', 'last_backup_at').maybeSingle(),
+    admin.from('error_events').select('id', head).eq('level', 'warn').is('resolved_at', null),
+    admin.from('photos').select('id', head).gte('created_at', tenMinAgo),
+    // Paying, not merely active: comp rows are ours, and counting them made the one number that
+    // means revenue mean something else.
+    admin.from('subscriptions').select('id', head).eq('status', 'active').not('polar_product_id', 'like', 'comp-%'),
+    // The rows the live error table swaps in - same columns the server render selects.
+    admin.from('error_events').select('created_at, level, source, message, album_id, ua, context')
+      .is('resolved_at', null).order('created_at', { ascending: false }).limit(30),
   ])
 
   const backupRow = backup.data as { updated_at?: string } | null
@@ -76,8 +88,35 @@ export async function GET(req: Request) {
       // The nightly job runs at 03:15 UTC. 36 hours means a night has been missed outright rather
       // than the run simply being a few hours late.
       backupStale: backupAgeHours === null || backupAgeHours > 36,
+      openWarnings: warnings.count ?? 0,
+      uploads10m: uploads10m.count ?? 0,
+      payingSubs: payingSubs.count ?? 0,
+      recentErrors: recentErrors.data ?? [],
+      // null = not asked for on this tick, or Analytics Engine unavailable - the card shows a
+      // dash rather than a stale zero pretending to be a fact.
+      downloads24h: deep ? await downloadsLast24h() : null,
       at: Date.now(),
     },
     { headers: NO_STORE },
   )
+}
+
+// Downloads live only in Workers Analytics Engine (media_downloaded events) - nothing in Postgres
+// records them. SUM(_sample_interval), not count(): AE samples under load and count() undercounts.
+async function downloadsLast24h(): Promise<number | null> {
+  const account = process.env.CLOUDFLARE_ACCOUNT_ID
+  const token = process.env.CLOUDFLARE_ANALYTICS_TOKEN
+  if (!account || !token) return null
+  try {
+    const res = await fetch(`https://api.cloudflare.com/client/v4/accounts/${account}/analytics_engine/sql`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}` },
+      body: "SELECT SUM(_sample_interval) AS c FROM Hushare_events WHERE blob1 = 'media_downloaded' AND timestamp > NOW() - INTERVAL '1' DAY",
+      signal: AbortSignal.timeout(4000),
+    })
+    if (!res.ok) return null
+    const json = await res.json() as { data?: { c?: number | string | null }[] }
+    const c = json.data?.[0]?.c
+    return c == null ? 0 : Number(c)
+  } catch { return null }
 }
