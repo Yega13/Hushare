@@ -48,11 +48,15 @@ const SIZE_BUDGET: Record<string, number> = {
   // clickable), and Face Finder and bib search stopped riding on the collections flag. Three
   // lines of reasoning for three gates that were wrong. Deliberate.
   'src/components/OwnerToolbar.tsx': 1783,
-  'src/app/[slug]/AlbumPageClient.tsx': 1450,
+  // +23 (2026-08-31): fallback-poll wiring for realtime REFUSAL — the cadence decision is in
+  // lib/realtime-fallback.ts; the timer must live beside the channel it covers (rule 15).
+  'src/app/[slug]/AlbumPageClient.tsx': 1473,
   'src/app/card-editor/CardEditorClient.tsx': 873,
   'src/components/PhotoGrid.tsx': 843,
   'src/components/AlbumDesigner.tsx': 774,
-  'src/components/photo-grid/LightboxOverlay.tsx': 646,
+  // +3 net (2026-08-31): deleted the duplicate ±1 prefetch loop, added strip windowing wired
+  // to lib/lightbox-plan.ts.
+  'src/components/photo-grid/LightboxOverlay.tsx': 649,
   // 518, down from 645: validatePhoto, hasTraversal and r2UrlPrefix moved to lib/photo-input,
   // where 22 tests now cover the boundary between a guest and this album's storage — including the
   // poisoned-thumbnail attack, which the mutation run confirmed they catch.

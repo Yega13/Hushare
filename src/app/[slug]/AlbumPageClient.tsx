@@ -9,6 +9,7 @@ import { createClient } from '@/lib/supabase/client'
 import { shouldHoldForOwnerCheck } from '@/lib/owner-view'
 import { applyPhotoWindow, mergePreservingExtras, shouldApplyRefresh } from '@/lib/photo-window'
 import { createSettingsSync, shouldCommitSettings } from '@/lib/settings-sync'
+import { fallbackPollDelay } from '@/lib/realtime-fallback'
 import type { Album, Photo, Tier } from '@/types'
 import AlbumSkeleton from '@/components/AlbumSkeleton'
 import PasswordGate from '@/components/PasswordGate'
@@ -785,6 +786,17 @@ export default function AlbumPageClient({ initialAlbum = null, initialPhotos, in
     let retryTimer: ReturnType<typeof setTimeout> | null = null
     let refetchTimer: ReturnType<typeof setTimeout> | null = null
     let currentChannel: RealtimeChannel | null = null
+    // Fallback poll — runs ONLY while the channel is down. The backoff below handles drops;
+    // this handles REFUSAL (venue networks that block websockets, or the realtime service at
+    // its concurrent-connection cap on a heavy day). Without it those clients retry forever,
+    // never reach SUBSCRIBED, never refetch — and the page silently freezes at first load.
+    // Cadence and jitter are owned by lib/realtime-fallback.ts.
+    let pollTimer: ReturnType<typeof setTimeout> | null = null
+    function pollWhileDown() {
+      if (!active) return
+      void fetchPhotos(albumId).then(r => { if (active) applyWindowRefresh(r) })
+      pollTimer = setTimeout(pollWhileDown, fallbackPollDelay())
+    }
 
     function connect() {
       if (!active) return
@@ -829,6 +841,8 @@ export default function AlbumPageClient({ initialAlbum = null, initialPhotos, in
             // The `active` guard on the .then() prevents updating state after cleanup.
             void fetchPhotos(albumId).then(r => { if (active) applyWindowRefresh(r) })
             retryCount = 0
+            // Realtime is back — the broadcast channel is the fresh-data path again.
+            if (pollTimer) { clearTimeout(pollTimer); pollTimer = null }
           } else if (
             status === 'CHANNEL_ERROR' ||
             status === 'TIMED_OUT' ||
@@ -848,6 +862,10 @@ export default function AlbumPageClient({ initialAlbum = null, initialPhotos, in
             const delay = Math.min(2000 * Math.pow(2, retryCount), 30_000) * (0.5 + Math.random() * 0.5)
             retryCount++
             retryTimer = setTimeout(connect, delay)
+            // First failure arms the fallback poll; `if (!pollTimer)` keeps reconnect attempts
+            // from stacking a second loop. First poll waits a full jittered interval — the
+            // initial page load already fetched, so there is nothing to catch up on yet.
+            if (!pollTimer) pollTimer = setTimeout(pollWhileDown, fallbackPollDelay())
           }
         })
 
@@ -860,6 +878,7 @@ export default function AlbumPageClient({ initialAlbum = null, initialPhotos, in
       active = false
       if (retryTimer) clearTimeout(retryTimer)
       if (refetchTimer) clearTimeout(refetchTimer)
+      if (pollTimer) clearTimeout(pollTimer)
       if (currentChannel) supabase.removeChannel(currentChannel)
     }
   }, [album?.id, supabase, fetchPhotos, applyWindowRefresh])
@@ -1313,9 +1332,13 @@ export default function AlbumPageClient({ initialAlbum = null, initialPhotos, in
         style={{ ...bgStyle, '--album-font': fontStack(album.title_font) } as CSSProperties}
         aria-label={album.title}
       >
+        {/* photoCount is `total` — the album's true count from the server. `photos.length` is
+            only the loaded WINDOW (500 + 500 per scroll page), and using it here told a visitor
+            to a 3,700-photo album that it held "1,500 photos". Rule 18: the window is not the
+            album. */}
         <AlbumHeader
           album={album}
-          photoCount={photos.length}
+          photoCount={total}
           isOwner={effectiveIsOwner}
           onAlbumUpdated={handleAlbumUpdated}
           coverUrl={coverUrl}

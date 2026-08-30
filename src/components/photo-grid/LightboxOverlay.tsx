@@ -4,6 +4,7 @@ import React, { type CSSProperties } from 'react'
 import { X, ChevronLeft, ChevronRight, Play, Pause, Download, Settings, Star, Trash2 } from 'lucide-react'
 import type { Photo } from '@/types'
 import { unmuteStreamVideo } from '@/lib/cloudflare/stream-player'
+import { stripWindow } from '@/lib/lightbox-plan'
 import { useT } from '@/i18n/LocaleProvider'
 
 function streamFrameSrc(photo: Photo, autoplay: boolean): string {
@@ -169,7 +170,11 @@ export default function LightboxOverlay({
     if (!slideshowMode) return
     const strip = stripRef.current
     if (!strip) return
-    const thumb = strip.children[lightboxIndex] as HTMLElement | undefined
+    // The strip renders a WINDOW of the album (stripWindow), so the child at position
+    // lightboxIndex - start is the active thumb — indexing by lightboxIndex alone would
+    // centre the wrong thumbnail the moment the window no longer starts at photo 0.
+    const { start } = stripWindow(lightboxIndex, viewerPhotos.length)
+    const thumb = strip.children[lightboxIndex - start] as HTMLElement | undefined
     if (!thumb) return
     // scrollTo on the CONTAINER, never scrollIntoView on the child. scrollIntoView walks up and
     // scrolls every scrollable ancestor it finds, and this strip lives inside a fixed full-screen
@@ -179,7 +184,7 @@ export default function LightboxOverlay({
       left: thumb.offsetLeft - (strip.clientWidth - thumb.clientWidth) / 2,
       behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth',
     })
-  }, [lightboxIndex, slideshowMode])
+  }, [lightboxIndex, slideshowMode, viewerPhotos.length])
 
   React.useEffect(() => {
     setVideoStarted(slideshowMode ? !slideshowPaused : videoAutoplay)
@@ -235,21 +240,10 @@ export default function LightboxOverlay({
     return () => { document.body.classList.remove('hush-overlay-open') }
   }, [])
 
-  // Preload the neighbouring lightbox items (image full-res / video poster) so moving to the
-  // next or previous one is instant instead of showing a blank frame while it downloads.
-  React.useEffect(() => {
-    if (lightboxIndex < 0) return
-    for (const i of [lightboxIndex - 1, lightboxIndex + 1]) {
-      const p = viewerPhotos[i]
-      if (!p) continue
-      const src = p.media_type === 'video' ? (p.poster_url || p.stream_thumbnail_url) : (p.url || p.thumb_url)
-      if (src) {
-        const img = new window.Image()
-        img.decoding = 'async'
-        img.src = src
-      }
-    }
-  }, [lightboxIndex, viewerPhotos])
+  // Image prefetch lives in ONE place: useLightboxMedia, driven by lib/lightbox-plan.ts.
+  // This component used to run a second ±1 preload loop on top of it — same fact, second
+  // author, and the duplicate re-fired on every viewerPhotos identity change, which during a
+  // live upload is every broadcast refetch. Rule 13; deleted.
 
   const videoBoxAspect = hasStoredDims ? current.width! / current.height! : (videoAspect ?? 16 / 9)
 
@@ -609,7 +603,15 @@ export default function LightboxOverlay({
 
         {slideshowMode && viewerPhotos.length > 1 && (
           <div ref={stripRef} className="hush-slideshow-strip" data-scroll-allowed="true" onClick={(e) => e.stopPropagation()}>
-            {viewerPhotos.map((photo, index) => {
+            {(() => {
+              // Render a WINDOW of the strip, not the album. Mapping all of viewerPhotos
+              // mounted 3,700+ <img> elements at once on a real event album — thousands of
+              // thumbnail requests and a hang on any phone. stripWindow (lib/lightbox-plan.ts)
+              // owns the bounds; `index` below stays ABSOLUTE so clicks and the active check
+              // keep meaning "photo N of the album", not "photo N of the slice".
+              const { start, end } = stripWindow(lightboxIndex, viewerPhotos.length)
+              return viewerPhotos.slice(start, end).map((photo, sliceIndex) => {
+              const index = start + sliceIndex
               const isActive = index === lightboxIndex
               // Distance from the current slide, capped. The strip reads as a carousel rather than
               // a row: the photo playing is full size and its neighbours fall away by how far they
@@ -637,7 +639,8 @@ export default function LightboxOverlay({
                   )}
                 </button>
               )
-            })}
+              })
+            })()}
           </div>
         )}
       </div>

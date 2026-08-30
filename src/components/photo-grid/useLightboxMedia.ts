@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react'
 import type { Photo } from '@/types'
+import { PREFETCH_DELTAS } from '@/lib/lightbox-plan'
 
 type Options = {
   lightbox: number | null
@@ -51,29 +52,39 @@ export function useLightboxMedia({ lightbox, currentId, viewerPhotos }: Options)
     }
   }, [lightboxMediaNode])
 
-  // Prefetch the current image + ±2 neighbor images so swipes paint from cache.
-  // Stream videos are skipped entirely — their iframe player manages buffering.
-  // Fetching a Stream iframe URL via fetch() would just download an HTML page, not video data.
+  // Prefetch per PREFETCH_DELTAS (lib/lightbox-plan.ts) so swipes paint from cache. This hook is
+  // the ONLY prefetcher — LightboxOverlay had a second loop doing ±1 again, and together they put
+  // up to seven full-res downloads in flight per swipe, which is what made big albums lag.
+  // For videos the poster image is prefetched (that is what paints on arrival); the Stream iframe
+  // manages its own buffering, and fetch()ing an iframe URL would just download an HTML page.
   useEffect(() => {
     if (lightbox === null) return
     if (typeof window === 'undefined') return
     const viewer = viewerPhotosRef.current
-    for (const delta of [0, 1, -1, 2, -2]) {
+    for (const delta of PREFETCH_DELTAS) {
       const i = lightbox + delta
       if (i < 0 || i >= viewer.length) continue
       const photo = viewer[i]
-      if (!photo || !photo.url || photo.media_type === 'video') continue
+      if (!photo) continue
+      const isVideo = photo.media_type === 'video'
+      const src = isVideo ? (photo.poster_url || photo.stream_thumbnail_url) : photo.url
+      if (!src) continue
       const loader = new window.Image()
+      loader.decoding = 'async'
       ;(loader as HTMLImageElement & { fetchPriority?: string }).fetchPriority = delta === 0 ? 'high' : 'low'
-      loader.onload = () => {
-        setLightboxOriginalLoadedIds((prev) => {
-          if (prev.has(photo.id)) return prev
-          const next = new Set(prev)
-          next.add(photo.id)
-          return next
-        })
+      if (!isVideo) {
+        // Only images join loadedIds — the overlay uses it to swap thumb → original, and a
+        // video's poster arriving must never mark the photo as "original loaded".
+        loader.onload = () => {
+          setLightboxOriginalLoadedIds((prev) => {
+            if (prev.has(photo.id)) return prev
+            const next = new Set(prev)
+            next.add(photo.id)
+            return next
+          })
+        }
       }
-      loader.src = photo.url
+      loader.src = src
     }
   }, [lightbox])
 
