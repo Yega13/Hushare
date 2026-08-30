@@ -14,7 +14,7 @@ type AlbumDeleteTarget = {
   background_theme: string | null
 }
 
-type PhotoToDelete = {
+export type PhotoToDelete = {
   storage_path: string | null
   storage_backend: 'r2' | 'stream'
   poster_url: string | null
@@ -61,6 +61,50 @@ export function r2KeyFromUrl(url: string | null): string | null {
   return url.slice(prefix.length).split('?')[0] || null
 }
 
+// WHICH FILES DOES DELETING THIS ALBUM REMOVE?
+//
+// Pulled out of deleteAlbumAssetsAndRows so it can be answered without a database. That function is
+// forty lines of paging, deleting and error handling wrapped around this decision, and while the
+// decision lived inside it the only way to check it was to mock Supabase — which proves the mock
+// behaves, not that the code does. So the I/O stays there and the judgement lives here, where a
+// test can hand it rows and read back exactly which keys it would destroy.
+//
+// The rules this encodes, each of which is a way to delete the wrong thing:
+//   - a Stream video has no R2 original; its bytes live at Cloudflare and only its POSTER is in R2.
+//     Reading storage_path for one would delete a file belonging to whatever else wrote that key.
+//   - an R2 photo has no stream_uid; treating one as Stream would leave its original behind forever
+//     and issue a delete against Cloudflare for a video that does not exist.
+//   - a URL that cannot be parsed yields NOTHING rather than a guess. Orphaning a file costs
+//     $0.015 per GB per month; deleting the wrong one costs somebody their wedding. See
+//     r2KeyFromUrl, which fails closed for exactly this reason.
+//   - the album's background image is an asset of the album, not of any photo, and is collected
+//     separately or it is billed forever.
+export function collectDeletionTargets(
+  photos: PhotoToDelete[],
+  backgroundTheme: string | null,
+): { r2Keys: Set<string>; streamUids: Set<string> } {
+  const r2Keys = new Set<string>()
+  const streamUids = new Set<string>()
+
+  for (const photo of photos) {
+    if (photo.storage_backend === 'stream') {
+      if (photo.stream_uid) streamUids.add(photo.stream_uid)
+      const posterKey = r2KeyFromUrl(photo.poster_url)
+      if (posterKey) r2Keys.add(posterKey)
+    } else {
+      if (photo.storage_path) r2Keys.add(photo.storage_path)
+      const thumbKey = r2KeyFromUrl(photo.thumb_url)
+      if (thumbKey) r2Keys.add(thumbKey)
+    }
+  }
+
+  // Only an uploaded background is a file; the built-in themes are names, not assets.
+  const bgKey = r2KeyFromUrl(backgroundTheme?.startsWith('image:') ? backgroundTheme.slice(6) : null)
+  if (bgKey) r2Keys.add(bgKey)
+
+  return { r2Keys, streamUids }
+}
+
 export async function deleteAlbumAssetsAndRows(
   admin: AdminClient,
   album: AlbumDeleteTarget,
@@ -98,26 +142,18 @@ export async function deleteAlbumAssetsAndRows(
       return { ok: false, error: 'Could not prepare album deletion' }
     }
 
-    for (const photo of batch ?? []) {
-      if (photo.storage_backend === 'stream') {
-        if (photo.stream_uid) streamUids.add(photo.stream_uid)
-        const posterKey = r2KeyFromUrl(photo.poster_url)
-        if (posterKey) r2Keys.add(posterKey)
-      } else {
-        if (photo.storage_path) r2Keys.add(photo.storage_path)
-        const thumbKey = r2KeyFromUrl(photo.thumb_url)
-        if (thumbKey) r2Keys.add(thumbKey)
-      }
-    }
+    // The decision itself lives in collectDeletionTargets, where it can be tested without a
+    // database. Only the paging is here.
+    const page = collectDeletionTargets(batch ?? [], null)
+    for (const k of page.r2Keys) r2Keys.add(k)
+    for (const u of page.streamUids) streamUids.add(u)
 
     if (!batch || batch.length < PAGE_SIZE) break
     offset += PAGE_SIZE
   }
 
-  const bgKey = r2KeyFromUrl(album.background_theme?.startsWith('image:')
-    ? album.background_theme.slice(6)
-    : null)
-  if (bgKey) r2Keys.add(bgKey)
+  // The album's own background, collected once rather than per page.
+  for (const k of collectDeletionTargets([], album.background_theme).r2Keys) r2Keys.add(k)
 
   // Step 2a: Delete pending_stream_uploads rows for this album. These may not have a DB-level
   // CASCADE (depending on schema migration order), so we clean them up explicitly. Best-effort.
