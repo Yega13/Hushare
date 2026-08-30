@@ -694,6 +694,12 @@ export const en = {
   // No longer says "open it in this same browser": /auth/confirm verifies the token server-side, so
   // the link now works from any device — including opening the mail on a phone.
   'login.sentExpiry': 'The link expires in 1 hour and works on any device. If this tab stays open, it will sign you in automatically. If you don’t see the email, check your spam folder.',
+  'login.codeLabel': 'Or type the 6-digit code from that email',
+  'login.codeSubmit': 'Sign in',
+  'login.codeChecking': 'Checking…',
+  'login.codeInvalid': 'The code is 6 digits',
+  'login.codeWrong': 'That code didn’t work — check the newest email, or send a fresh link.',
+  'login.codeWhy': 'Reading the email on your phone? The code signs you in on THIS device; the link signs in whichever device opens it.',
   'authConfirm.title': 'One last tap',
   'authConfirm.body': 'Tap the button below to finish signing in to Hushare.',
   'authConfirm.cta': 'Sign me in',

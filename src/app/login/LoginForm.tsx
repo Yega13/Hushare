@@ -48,6 +48,9 @@ export default function LoginForm() {
   const [status, setStatus] = useState<Status>('idle')
   const [errorMsg, setErrorMsg] = useState('')
   const [oauthBusy, setOauthBusy] = useState(false)
+  const [otpCode, setOtpCode] = useState('')
+  const [otpBusy, setOtpBusy] = useState(false)
+  const [otpError, setOtpError] = useState('')
 
   // Poll /api/me while waiting on a magic link so this tab follows when
   // the user clicks the link in another tab (cookies are shared).
@@ -64,9 +67,7 @@ export default function LoginForm() {
         if (!res.ok) return
         const data = (await res.json()) as { signedIn?: boolean; canAccessAccount?: boolean }
         if (cancelled || !data.signedIn) return
-        const params = new URLSearchParams(window.location.search)
-        const safeNext = parseSafeNext(params.get('next') ?? '')
-        window.location.href = safeNext || (data.canAccessAccount ? '/account' : '/')
+        continueSignedIn(data.canAccessAccount)
       } catch {
         // Transient errors — next tick retries.
       }
@@ -75,6 +76,38 @@ export default function LoginForm() {
     const interval = setInterval(check, 2500)
     return () => { cancelled = true; clearInterval(interval) }
   }, [status])
+
+  // Where a fresh session should land — the same answer whether it arrived via the poller (link
+  // opened in another tab of THIS browser) or via the code below (link opened on another DEVICE).
+  function continueSignedIn(canAccessAccount?: boolean) {
+    const params = new URLSearchParams(window.location.search)
+    const safeNext = parseSafeNext(params.get('next') ?? '')
+    window.location.href = safeNext || (canAccessAccount ? '/account' : '/')
+  }
+
+  // THE CROSS-DEVICE PATH. A magic link signs in whichever browser OPENS it — and people read
+  // email on their phone. Observed exactly: checkout started on a laptop, the link tapped on the
+  // phone, the PHONE landed in the Polar checkout while the laptop sat on "check your inbox"
+  // forever (cookies do not cross devices, so the poller can never see that session). Typing the
+  // six-digit code from the same email signs in THIS device — the one actually mid-purchase.
+  async function onSubmitCode(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault()
+    const token = otpCode.trim()
+    if (!/^[0-9]{6}$/.test(token)) {
+      setOtpError(t('login.codeInvalid'))
+      return
+    }
+    setOtpBusy(true)
+    setOtpError('')
+    const { error } = await supabase.auth.verifyOtp({ email: email.trim(), token, type: 'email' })
+    if (error) {
+      setOtpBusy(false)
+      // Supabase's raw message here is "Token has expired or is invalid" — ours says what to DO.
+      setOtpError(t('login.codeWrong'))
+      return
+    }
+    continueSignedIn()
+  }
 
   async function onGoogle() {
     if (oauthBusy || status === 'sending') return
@@ -134,6 +167,35 @@ export default function LoginForm() {
         <p className="text-xs mt-3" style={{ color: '#8B6F4E' }}>
           {t('login.sentExpiry')}
         </p>
+
+        <form onSubmit={onSubmitCode} className="mt-5 text-left">
+          <label htmlFor="otp" className="block text-sm font-medium mb-2" style={{ color: '#8B6F4E' }}>
+            {t('login.codeLabel')}
+          </label>
+          <div className="flex gap-2">
+            <input
+              id="otp"
+              inputMode="numeric"
+              autoComplete="one-time-code"
+              maxLength={6}
+              value={otpCode}
+              onChange={(e) => { setOtpCode(e.target.value.replace(/[^0-9]/g, '')); setOtpError('') }}
+              placeholder="123456"
+              className="flex-1 rounded-xl px-4 py-3 text-center text-lg tracking-widest"
+              style={{ background: '#FFFFFF', border: '1px solid #DDD5C5', color: '#3B2F25' }}
+            />
+            <button
+              type="submit"
+              disabled={otpBusy}
+              className="rounded-xl px-5 font-semibold transition hover:opacity-90 disabled:opacity-50"
+              style={{ background: '#630826', color: '#FDFAF5' }}
+            >
+              {otpBusy ? t('login.codeChecking') : t('login.codeSubmit')}
+            </button>
+          </div>
+          {otpError && <p className="text-xs mt-2" style={{ color: '#9B2C2C' }}>{otpError}</p>}
+          <p className="text-xs mt-2" style={{ color: '#8B6F4E' }}>{t('login.codeWhy')}</p>
+        </form>
       </div>
     )
   }
