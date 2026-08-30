@@ -3,7 +3,7 @@ import { deleteFaces } from '@/lib/rekognition'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { verifyOwnerViaCookieWithRateLimit } from '@/lib/album-owner-access'
 import { forbidCrossSiteRequest } from '@/lib/request-security'
-import { r2KeyFromUrl, deleteR2KeysChunked } from '@/lib/album-delete'
+import { deleteR2KeysChunked, collectDeletionTargets } from '@/lib/album-delete'
 import { deleteStreamVideo } from '@/lib/cloudflare/stream'
 import { getCloudflareContext } from '@opennextjs/cloudflare'
 import { track } from '@/lib/analytics'
@@ -83,14 +83,15 @@ export async function POST(req: Request) {
 
   // Collect R2 keys before any mutation
   const r2Keys: string[] = []
-  if (photo.storage_backend === 'stream') {
-    const posterKey = r2KeyFromUrl(photo.poster_url)
-    if (posterKey) r2Keys.push(posterKey)
-  } else {
-    if (photo.storage_path) r2Keys.push(photo.storage_path)
-    const thumbKey = r2KeyFromUrl(photo.thumb_url)
-    if (thumbKey) r2Keys.push(thumbKey)
-  }
+  // The SAME function album deletion uses. This was a hand-copy of it, and the copy was already a
+  // field behind — the shared version also collects mirror_url. More importantly, album-delete
+  // carries the reasoning for why a Stream row's storage_path must never be read (that key belongs
+  // to whatever else wrote it) and only that copy was tested. Three copies of a rule about which
+  // file to destroy is three chances to destroy the wrong one.
+  //
+  // .r2Keys ONLY. The shared function also returns streamUids, but this route deletes the Stream
+  // video itself further down — taking both here would issue the delete twice.
+  for (const key of collectDeletionTargets([photo], null).r2Keys) r2Keys.push(key)
 
   // Clear cover pointer before deleting the row — if DB delete later fails, the worst
   // case is no cover (acceptable), not a broken cover URL pointing at a deleted photo

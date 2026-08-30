@@ -16,7 +16,7 @@ import { snapshotFileRobust, readFileRobust, isFileReadFailure } from '@/lib/fil
 import { trackUploadStep } from '@/lib/engagement'
 import { showAppToast } from '@/components/AppToast'
 import { useT } from '@/i18n/LocaleProvider'
-import { detectKind, uploadCapsForTier, tooLargeMessage, generateVideoPoster, isAllowedImage } from '@/lib/media'
+import { detectKind, uploadCapsForTier, tooLargeMessage, generateVideoPoster, isAllowedImage, ALLOWED_IMAGE_TYPES, ALLOWED_VIDEO_TYPES } from '@/lib/media'
 import {
   UPLOAD_CONCURRENCY_MOBILE,
   UPLOAD_CONCURRENCY_DESKTOP,
@@ -1929,7 +1929,11 @@ type Props = {
 // .avi/.mkv/etc. that would pass the file picker but be rejected at upload
 // Extensions .heic,.heif added alongside MIME types: Windows file pickers may not
 // recognize HEIC by MIME type alone and need the extension to filter correctly.
-const FILE_ACCEPT = 'image/jpeg,image/png,image/gif,image/webp,image/heic,image/heif,.heic,.heif,video/mp4,video/quicktime,video/webm'
+// Built from the lists the server enforces. This was a fourth hand-written copy and had fallen two
+// formats behind — video/ogg and video/x-m4v uploaded fine but the picker greyed them out, while
+// drag-and-drop still worked. The .heic/.heif extensions stay: some Windows pickers match on
+// extension only and hide HEIC otherwise.
+const FILE_ACCEPT = [...ALLOWED_IMAGE_TYPES, ...ALLOWED_VIDEO_TYPES, '.heic', '.heif'].join(',')
 
 export default function UploadZone({ album, onPhotosUploaded }: Props) {
   const { t } = useT()

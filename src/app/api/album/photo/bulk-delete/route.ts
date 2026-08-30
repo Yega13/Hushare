@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { verifyOwnerViaCookieWithRateLimit } from '@/lib/album-owner-access'
 import { forbidCrossSiteRequest } from '@/lib/request-security'
-import { r2KeyFromUrl, deleteR2KeysChunked } from '@/lib/album-delete'
+import { deleteR2KeysChunked, collectDeletionTargets } from '@/lib/album-delete'
 import { deleteStreamVideo } from '@/lib/cloudflare/stream'
 import { deleteFaces } from '@/lib/rekognition'
 import { getCloudflareContext } from '@opennextjs/cloudflare'
@@ -101,16 +101,12 @@ export async function POST(req: Request) {
   const r2Keys: string[] = []
   const streamUids: string[] = []
 
-  for (const photo of validPhotos) {
-    if (photo.storage_backend === 'stream') {
-      if (photo.stream_uid) streamUids.push(photo.stream_uid)
-      const posterKey = r2KeyFromUrl(photo.poster_url)
-      if (posterKey) r2Keys.push(posterKey)
-    } else {
-      if (photo.storage_path) r2Keys.push(photo.storage_path)
-      const thumbKey = r2KeyFromUrl(photo.thumb_url)
-      if (thumbKey) r2Keys.push(thumbKey)
-    }
+  // The same shared decision as album deletion and single-photo deletion — see album-delete for
+  // why a Stream row's storage_path is never read. This was the third hand-copy of it.
+  {
+    const targets = collectDeletionTargets(validPhotos, null)
+    for (const key of targets.r2Keys) r2Keys.push(key)
+    for (const uid of targets.streamUids) streamUids.push(uid)
   }
 
   const deletedIds = validPhotos.map(p => p.id)

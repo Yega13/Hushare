@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { MEDIA_CAPTION_MAX, MEDIA_AUTHOR_MAX } from '@/lib/constants'
 import { verifyOwnerViaCookieWithRateLimit } from '@/lib/album-owner-access'
 import { forbidCrossSiteRequest } from '@/lib/request-security'
 import { queueAlbumChangedBroadcast } from '@/lib/broadcast'
@@ -9,8 +10,10 @@ export const runtime = 'nodejs'
 const NO_STORE = { 'Cache-Control': 'no-store' }
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
-const MAX_CAPTION_LEN = 30
-const MAX_AUTHOR_LEN = 16
+// The same two numbers the inputs use for maxLength and the character counter — imported so a
+// server-side change cannot leave the client accepting text the save then refuses.
+const MAX_CAPTION_LEN = MEDIA_CAPTION_MAX
+const MAX_AUTHOR_LEN = MEDIA_AUTHOR_MAX
 const VALID_FILTERS = new Set(['none', 'warm', 'cool', 'mono', 'vintage', 'soft'])
 
 export async function POST(req: Request) {

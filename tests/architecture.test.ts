@@ -35,7 +35,10 @@ function lineCount(rel: string): number {
 
 // The files already too large to reason about. Ratcheted so they can only shrink.
 const SIZE_BUDGET: Record<string, number> = {
-  'src/components/UploadZone.tsx': 2796,
+  // +4 on 2026-08-30: FILE_ACCEPT stopped being a fourth hand-written copy of the accepted
+  // MIME types and now builds from lib/media. An import and a comment cost four lines here
+  // and removed a list that had already fallen two formats behind. Deliberate.
+  'src/components/UploadZone.tsx': 2800,
   'src/components/OwnerToolbar.tsx': 1780,
   'src/app/[slug]/AlbumPageClient.tsx': 1450,
   'src/app/card-editor/CardEditorClient.tsx': 873,
@@ -43,7 +46,10 @@ const SIZE_BUDGET: Record<string, number> = {
   'src/components/AlbumDesigner.tsx': 774,
   'src/app/admin/page.tsx': 767,
   'src/components/photo-grid/LightboxOverlay.tsx': 646,
-  'src/app/api/album/photos/create/route.ts': 639,
+  // +6 on 2026-08-30: caption and author caps now import from lib/constants instead of being
+  // re-declared, and the length check trims first so it agrees with photo/settings. Two
+  // imports and the reasoning. Deliberate.
+  'src/app/api/album/photos/create/route.ts': 645,
   'src/components/FaceFinder.tsx': 542,
 }
 

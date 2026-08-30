@@ -320,3 +320,40 @@ describe('deletion can actually request every column it needs', () => {
     }
   })
 })
+
+// ONE RULE FOR WHICH FILE TO DESTROY, IN ONE PLACE.
+//
+// The logic for "which R2 keys does this photo own" was hand-copied into three routes. All three
+// agreed, which is exactly why it was dangerous: a change applied to one and missed in the others
+// starts orphaning files or deleting the wrong object, permanently, with no backups — and only one
+// copy had the reasoning attached (a Stream row's storage_path belongs to whatever else wrote that
+// key) and only one copy was tested.
+describe('every delete path uses the same rule', () => {
+  const read = (rel: string) => readFileSync(join(process.cwd(), 'src', ...rel.split('/')), 'utf8')
+
+  for (const route of [
+    'app/api/album/photo/delete/route.ts',
+    'app/api/album/photo/bulk-delete/route.ts',
+    'lib/album-delete.ts',
+  ]) {
+    it(`${route} derives its keys from collectDeletionTargets`, () => {
+      expect(
+        read(route).includes('collectDeletionTargets'),
+        `${route} decides which files to destroy. That decision belongs in one place — a private ` +
+          `copy here is a rule that can drift without anything noticing, about deleting customers' ` +
+          `photos.`,
+      ).toBe(true)
+    })
+  }
+
+  it('no route still hand-rolls the storage_backend branch', () => {
+    // The exact shape of the three copies. If it reappears, someone has written a fourth.
+    for (const route of ['app/api/album/photo/delete/route.ts', 'app/api/album/photo/bulk-delete/route.ts']) {
+      const src = read(route)
+      expect(
+        /storage_backend === 'stream'[\s\S]{0,200}?r2KeyFromUrl\(/.test(src),
+        `${route} has an inline copy of the key-derivation branch again`,
+      ).toBe(false)
+    }
+  })
+})

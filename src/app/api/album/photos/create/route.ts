@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { reportServerError } from '@/lib/report-server-error'
+import { MEDIA_CAPTION_MAX, MEDIA_AUTHOR_MAX } from '@/lib/constants'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { createClient } from '@/lib/supabase/server'
 import { checkRateLimit, clientIpKey } from '@/lib/rate-limit'
@@ -24,8 +25,10 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 const STREAM_UID_RE = /^[a-f0-9]{32}$/
 
 const MAX_PHOTOS_PER_CALL = 200
-const MAX_CAPTION_LEN = 30
-const MAX_AUTHOR_NAME_LEN = 16
+// Imported, not repeated: the same numbers set maxLength and the character counter on the input, so
+// a server copy drifting below the client one makes a caption vanish on save with a 400.
+const MAX_CAPTION_LEN = MEDIA_CAPTION_MAX
+const MAX_AUTHOR_NAME_LEN = MEDIA_AUTHOR_MAX
 
 type PhotoInput = {
   storage_backend: unknown
@@ -119,10 +122,13 @@ function validatePhoto(
   if (storage_backend === 'r2' && media_type !== 'image') {
     return `photos[${index}]: r2 backend only supports media_type "image"`
   }
-  if (typeof photo.caption === 'string' && photo.caption.length > MAX_CAPTION_LEN) {
+  // TRIMMED FIRST: the trimmed value is what gets stored, and it is what photo/settings measures.
+  // Raw-length here meant a 30-char caption ending in a space was accepted when edited and refused
+  // when uploaded — same caption, two answers, depending on the screen.
+  if (typeof photo.caption === 'string' && photo.caption.trim().length > MAX_CAPTION_LEN) {
     return `photos[${index}]: caption exceeds ${MAX_CAPTION_LEN} chars`
   }
-  if (typeof photo.author_name === 'string' && photo.author_name.length > MAX_AUTHOR_NAME_LEN) {
+  if (typeof photo.author_name === 'string' && photo.author_name.trim().length > MAX_AUTHOR_NAME_LEN) {
     return `photos[${index}]: author_name exceeds ${MAX_AUTHOR_NAME_LEN} chars`
   }
 
