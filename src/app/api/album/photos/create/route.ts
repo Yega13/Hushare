@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { reportServerError } from '@/lib/report-server-error'
-import { MEDIA_CAPTION_MAX, MEDIA_AUTHOR_MAX } from '@/lib/constants'
+import { validatePhoto, type PhotoInput } from '@/lib/photo-input'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { createClient } from '@/lib/supabase/server'
 import { checkRateLimit, clientIpKey } from '@/lib/rate-limit'
@@ -22,28 +22,11 @@ const NO_STORE = { 'Cache-Control': 'no-store' }
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 // Cloudflare Stream UIDs are always exactly 32 lowercase hex chars — no /i flag intentional
-const STREAM_UID_RE = /^[a-f0-9]{32}$/
 
 const MAX_PHOTOS_PER_CALL = 200
 // Imported, not repeated: the same numbers set maxLength and the character counter on the input, so
 // a server copy drifting below the client one makes a caption vanish on save with a 400.
-const MAX_CAPTION_LEN = MEDIA_CAPTION_MAX
-const MAX_AUTHOR_NAME_LEN = MEDIA_AUTHOR_MAX
 
-type PhotoInput = {
-  storage_backend: unknown
-  media_type: unknown
-  storage_path?: unknown
-  url?: unknown
-  thumb_url?: unknown
-  stream_uid?: unknown
-  poster_url?: unknown
-  duration_seconds?: unknown
-  width?: unknown
-  height?: unknown
-  caption?: unknown
-  author_name?: unknown
-}
 
 // Intrinsic pixel dimensions are optional; when present both must be positive integers within a
 // sane ceiling (guards against absurd/hostile values). Returns the pair or null.
@@ -90,120 +73,10 @@ const LEGACY_ALBUM_CAP = 1000
 // (or a compromised admin) can never create a runaway, unbounded-cost album.
 const MAX_MEDIA_CAP_OVERRIDE = 200_000
 
-function r2UrlPrefix(host: string, albumId: string, prefix: 'albums' | 'thumbs') {
-  return `https://${host}/${prefix}/${albumId}/`
-}
-
-function hasTraversal(s: string): boolean {
-  // Check literal "..", null bytes, backslash (Windows path separator), URL-encoded variants
-  if (s.includes('..') || s.includes('\x00') || s.includes('%00') || s.includes('\\')) return true
-  const lower = s.toLowerCase()
-  return lower.includes('%2e%2e') || lower.includes('%2e.') || lower.includes('.%2e')
-    || lower.includes('%25') || lower.includes('%2f') || lower.includes('%5c')
-}
-
-function validatePhoto(
-  photo: PhotoInput,
-  index: number,
-  albumId: string,
-  r2Host: string,
-): string | null {
-  const { storage_backend, media_type } = photo
-
-  if (storage_backend !== 'r2' && storage_backend !== 'stream') {
-    return `photos[${index}]: storage_backend must be "r2" or "stream"`
-  }
-  if (media_type !== 'image' && media_type !== 'video') {
-    return `photos[${index}]: media_type must be "image" or "video"`
-  }
-  if (storage_backend === 'stream' && media_type !== 'video') {
-    return `photos[${index}]: stream backend only supports media_type "video"`
-  }
-  if (storage_backend === 'r2' && media_type !== 'image') {
-    return `photos[${index}]: r2 backend only supports media_type "image"`
-  }
-  // TRIMMED FIRST: the trimmed value is what gets stored, and it is what photo/settings measures.
-  // Raw-length here meant a 30-char caption ending in a space was accepted when edited and refused
-  // when uploaded — same caption, two answers, depending on the screen.
-  if (typeof photo.caption === 'string' && photo.caption.trim().length > MAX_CAPTION_LEN) {
-    return `photos[${index}]: caption exceeds ${MAX_CAPTION_LEN} chars`
-  }
-  if (typeof photo.author_name === 'string' && photo.author_name.trim().length > MAX_AUTHOR_NAME_LEN) {
-    return `photos[${index}]: author_name exceeds ${MAX_AUTHOR_NAME_LEN} chars`
-  }
-
-  const albumsPrefix = r2UrlPrefix(r2Host, albumId, 'albums')
-  const thumbsPrefix = r2UrlPrefix(r2Host, albumId, 'thumbs')
-
-  if (storage_backend === 'r2') {
-    if (
-      typeof photo.storage_path !== 'string' ||
-      photo.storage_path.length > 512 ||
-      !photo.storage_path.startsWith(`albums/${albumId}/`) ||
-      hasTraversal(photo.storage_path)
-    ) {
-      return `photos[${index}]: storage_path must start with "albums/${albumId}/" and must not contain ".."`
-    }
-    if (
-      typeof photo.url !== 'string' ||
-      photo.url.length > 2048 ||
-      !photo.url.startsWith(albumsPrefix) ||
-      hasTraversal(photo.url)
-    ) {
-      return `photos[${index}]: url must start with "${albumsPrefix}" and must not contain ".."`
-    }
-    // THUMBNAILS LIVE UNDER thumbs/, AND ONLY THERE. Allowing albums/ as well turned a guest
-    // upload into a way to destroy the owner's real photos.
-    //
-    // The attack, which needed no account, no owner link and no uploaded bytes: read any public
-    // album's photo list (it returns the album id and every photo's public url), then POST rows
-    // whose storage_path is a fresh uuid — so the upsert inserts them — but whose thumb_url points
-    // at a REAL photo's file. The owner sees junk photos and deletes them. photo/delete and
-    // bulk-delete feed thumb_url straight into r2KeyFromUrl() and delete that key from R2, so the
-    // owner's own moderation click permanently destroys their originals. The rows survive, the
-    // bytes do not, and nothing records what happened. It is aimed at exactly the moment an owner
-    // is most likely to click delete.
-    //
-    // The permissive branch was never used: of 13,616 photo rows, 13,471 thumb_urls are under
-    // thumbs/ and ZERO under albums/ (poster_url: 84 under thumbs/, zero under albums/). It was
-    // dead code and pure attack surface. All 88 live albums accept guest uploads, and a check for
-    // prior abuse (thumb_url matching another row's url) returned zero — found before it was used.
-    if (
-      photo.thumb_url != null &&
-      (typeof photo.thumb_url !== 'string' ||
-        photo.thumb_url.length > 2048 ||
-        !photo.thumb_url.startsWith(thumbsPrefix) ||
-        hasTraversal(photo.thumb_url))
-    ) {
-      return `photos[${index}]: thumb_url must start with "${thumbsPrefix}" and must not contain ".."`
-    }
-  } else {
-    if (typeof photo.stream_uid !== 'string' || !STREAM_UID_RE.test(photo.stream_uid)) {
-      return `photos[${index}]: stream_uid must be a 32-character lowercase hex string`
-    }
-    // Same rule, same reason as thumb_url above — a video poster is written under thumbs/ too, and
-    // allowing albums/ let a poisoned poster_url delete a real photo on the owner's next cleanup.
-    if (
-      photo.poster_url != null &&
-      (typeof photo.poster_url !== 'string' ||
-        photo.poster_url.length > 2048 ||
-        !photo.poster_url.startsWith(thumbsPrefix) ||
-        hasTraversal(photo.poster_url))
-    ) {
-      return `photos[${index}]: poster_url must start with "${thumbsPrefix}" and must not contain ".."`
-    }
-    if (
-      photo.duration_seconds != null &&
-      (typeof photo.duration_seconds !== 'number' ||
-        !Number.isFinite(photo.duration_seconds) ||
-        photo.duration_seconds <= 0)
-    ) {
-      return `photos[${index}]: duration_seconds must be a positive number`
-    }
-  }
-
-  return null
-}
+// r2UrlPrefix / hasTraversal / validatePhoto now live in lib/photo-input, where they can be
+// tested. They are the entire boundary between a guest and this album's storage — including the
+// thumb_url rule whose comment describes a real attack — and they had no test while they sat in
+// this file.
 
 export async function POST(req: Request) {
   const csrfError = forbidCrossSiteRequest(req)

@@ -49,10 +49,10 @@ const SIZE_BUDGET: Record<string, number> = {
   'src/components/AlbumDesigner.tsx': 774,
   'src/app/admin/page.tsx': 767,
   'src/components/photo-grid/LightboxOverlay.tsx': 646,
-  // +6 on 2026-08-30: caption and author caps now import from lib/constants instead of being
-  // re-declared, and the length check trims first so it agrees with photo/settings. Two
-  // imports and the reasoning. Deliberate.
-  'src/app/api/album/photos/create/route.ts': 645,
+  // 518, down from 645: validatePhoto, hasTraversal and r2UrlPrefix moved to lib/photo-input,
+  // where 22 tests now cover the boundary between a guest and this album's storage — including the
+  // poisoned-thumbnail attack, which the mutation run confirmed they catch.
+  'src/app/api/album/photos/create/route.ts': 518,
   'src/components/FaceFinder.tsx': 542,
 }
 
