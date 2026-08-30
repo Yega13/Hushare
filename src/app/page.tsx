@@ -5,6 +5,8 @@ import Link from 'next/link'
 import AccountNavLink from '@/components/AccountNavLink'
 import HamburgerMenu from '@/components/HamburgerMenu'
 import FaqList from '@/components/FaqList'
+import { uploadCapsForTier, formatCapSize } from '@/lib/media'
+import { interpolate } from '@/i18n/get-dictionary'
 import HomeHeroInteractive from '@/components/HomeHeroInteractive'
 import HomeScrollButton from '@/components/HomeScrollButton'
 import MyDeviceAlbums from '@/components/MyDeviceAlbums'
@@ -24,9 +26,30 @@ export default async function HomePage() {
   ReactDOM.preload(NATURE_IMG, { as: 'image', fetchPriority: 'high' })
 
   const dict = getDictionary(await getServerLocale())
-  const homeFaq = Array.from({ length: 10 }, (_, i) => ({
+
+  // THE UPLOAD LIMITS COME FROM THE CODE THAT ENFORCES THEM.
+  //
+  // They used to be typed into each translation. English was corrected from 50 MB to 200 MB when
+  // the free video cap was raised; the Russian and Armenian answers kept the old number, so for
+  // months those visitors read that free video was capped at 50 MB — a quarter of the truth, and
+  // below an ordinary phone clip — on the page where someone decides whether to bother. The cap had
+  // been raised precisely because that number was turning people away.
+  //
+  // Interpolating from uploadCapsForTier means a cap change cannot leave a translation behind.
+  const caps = {
+    freePhoto: formatCapSize(uploadCapsForTier('free').image),
+    freeVideo: formatCapSize(uploadCapsForTier('free').video),
+    proPhoto: formatCapSize(uploadCapsForTier('pro').image),
+    proVideo: formatCapSize(uploadCapsForTier('pro').video),
+    maxVideo: formatCapSize(uploadCapsForTier('studio').video),
+  }
+
+  // FAQ_COUNT derived, not literal: a hardcoded 10 means adding home.faq.q11 renders nothing and
+  // says nothing about it. Same reasoning as PRICING_FAQ_COUNT on the pricing page.
+  const FAQ_COUNT = Object.keys(dict).filter((k) => /^home\.faq\.q\d+$/.test(k)).length
+  const homeFaq = Array.from({ length: FAQ_COUNT }, (_, i) => ({
     q: dict[`home.faq.q${i + 1}` as DictKey],
-    a: dict[`home.faq.a${i + 1}` as DictKey],
+    a: interpolate(dict[`home.faq.a${i + 1}` as DictKey], caps),
   }))
   return (
     <main style={{ background: '#FDFAF5', fontFamily: 'var(--font-sans)' }} className="min-h-screen">

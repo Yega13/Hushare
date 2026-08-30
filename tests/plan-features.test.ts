@@ -249,3 +249,45 @@ describe('the plan lists track the gates the server actually enforces', () => {
     }
   })
 })
+
+// WHAT THE HOMEPAGE PROMISES ABOUT UPLOAD LIMITS IS WHAT THE SERVER ENFORCES.
+//
+// The limits used to be typed into each translation by hand. English was corrected from 50 MB to
+// 200 MB when the free video cap was raised; Russian and Armenian kept the old number. So for
+// months those visitors read that free video was capped at 50 MB — a quarter of the truth, and
+// below an ordinary phone clip — on the page where someone decides whether to bother at all. The
+// cap had been raised precisely because that number was turning people away.
+//
+// The answer takes placeholders now and the page fills them from uploadCapsForTier. This asserts
+// the placeholders survive: a translator "helpfully" writing a number back in restores the bug.
+describe('the homepage FAQ cannot state a stale upload limit', () => {
+  const PLACEHOLDERS = ['{freePhoto}', '{freeVideo}', '{proPhoto}', '{proVideo}', '{maxVideo}']
+
+  for (const locale of ['en', 'ru', 'hy']) {
+    it(`${locale} states the caps as placeholders, not numbers`, () => {
+      const src = readFileSync(join(process.cwd(), 'src', 'i18n', 'dictionaries', `${locale}.ts`), 'utf8')
+      const line = /^ {2}'home\.faq\.a10': '(.*?)',$/m.exec(src)
+      expect(line, `${locale} is missing home.faq.a10`).not.toBeNull()
+      const answer = (line as RegExpExecArray)[1]
+      for (const p of PLACEHOLDERS) {
+        expect(answer.includes(p), `${locale} lost the ${p} placeholder — a hardcoded number is back`).toBe(true)
+      }
+      // Any size written as a literal is a number that will go stale. Unit words differ per
+      // language, so this looks for a digit followed by any of them.
+      const literals = answer.match(/\d+\s*(?:MB|GB|МБ|ГБ|ՄԲ|ԳԲ)/g) ?? []
+      expect(literals, `${locale} has hardcoded sizes again`).toEqual([])
+    })
+  }
+
+  it('the page fills them from the caps the server enforces', () => {
+    const page = readFileSync(join(process.cwd(), 'src', 'app', 'page.tsx'), 'utf8')
+    expect(page.includes('uploadCapsForTier'), 'the homepage must read the real caps').toBe(true)
+    expect(page.includes('interpolate('), 'and interpolate them into the answer').toBe(true)
+  })
+
+  it('renders every FAQ entry rather than a hardcoded ten', () => {
+    // A literal count means adding home.faq.q11 renders nothing and reports nothing.
+    const page = readFileSync(join(process.cwd(), 'src', 'app', 'page.tsx'), 'utf8')
+    expect(/Array\.from\(\{ length: 10 \}/.test(page), 'the FAQ length must be derived from the dictionary').toBe(false)
+  })
+})

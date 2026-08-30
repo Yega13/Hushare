@@ -273,7 +273,7 @@ export const en = {
   'home.faq.q9': 'What happens if I lose my owner link?',
   'home.faq.a9': 'The owner link is how Hushare recognises you as the album creator. Bookmark it as soon as you create an album, or forward it to yourself. If you do lose it, contact us with your album name and approximate creation date and we will verify you manually.',
   'home.faq.q10': 'What photo formats and sizes are supported?',
-  'home.faq.a10': 'Free albums support JPG, PNG, HEIC, and WebP images up to 25 MB each, plus MP4, MOV, or WebM videos up to 200 MB. Pro raises this to 200 MB photos and 1 GB video; Max allows 4 GB video.',
+  'home.faq.a10': 'Free albums support JPG, PNG, HEIC, and WebP images up to {freePhoto} each, plus MP4, MOV, or WebM videos up to {freeVideo}. Pro raises this to {proPhoto} photos and {proVideo} video; Max allows {maxVideo} video.',
 
   // home — closing CTA
   'home.cta.eyebrow': 'To — the keeper of moments',

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { readFileSync } from 'node:fs'
+import { readFileSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
 import {
   uploadCapsForTier, albumMediaCapForTier, albumMediaCapForAlbum, formatCapSize, tooLargeMessage,
@@ -9,7 +9,7 @@ import {
 } from '@/lib/media'
 import * as mediaModule from '@/lib/media'
 import { looksLikeStaleDeploy, looksLikeDomCorruption, isForeignError } from '@/lib/report-error'
-import { validateCustomSlug } from '@/lib/custom-slug'
+import { validateCustomSlug, RESERVED_SLUGS } from '@/lib/custom-slug'
 
 // Tier limits decide what a paying customer actually receives, and the classifiers decide what
 // reaches the Errors tab. Both are places where a silent bug is invisible until it costs something.
@@ -284,5 +284,53 @@ describe('rate-limit records are not kept longer than they can be used', () => {
 
   it('does not keep them for a month', () => {
     expect(days, 'raw IP keys with no reader must not be retained for weeks').toBeLessThanOrEqual(7)
+  })
+})
+
+// EVERY REAL ROUTE IS RESERVED — checked against the filesystem, not against memory.
+//
+// A custom album URL is a PAID feature, and in Next.js a static route always wins over /[slug]. So
+// a missing name here fails in the worst possible way: the owner sets it, it saves, nothing errors,
+// and the URL resolves to one of our own pages instead of their album. They find out from a guest,
+// probably after printing it.
+//
+// Six real pages were missing on 2026-08-30 — including /wall and /statement — because the list is
+// hand-maintained and nobody thinks about it when adding a page. The old test asserted five
+// hand-picked words (login, pricing, admin, api, account), so it could never have caught them.
+//
+// This walks src/app instead. Adding a page without reserving its name now fails here.
+describe('no page of ours can be claimed as a custom album URL', () => {
+  const appDir = join(process.cwd(), 'src', 'app')
+
+  const topLevelRoutes = readdirSync(appDir, { withFileTypes: true })
+    .filter((e) => e.isDirectory())
+    // [slug] is the album route itself; api has no page; styles is CSS, not a route.
+    .filter((e) => !e.name.startsWith('[') && !e.name.startsWith('(') && !['api', 'styles'].includes(e.name))
+    .map((e) => e.name)
+
+  it('finds the routes it is meant to be checking', () => {
+    // A guard on the guard: an empty list would make every assertion below vacuous, which is how a
+    // test like this rots into decoration.
+    expect(topLevelRoutes.length).toBeGreaterThan(10)
+    expect(topLevelRoutes).toContain('pricing')
+  })
+
+  for (const route of topLevelRoutes) {
+    it(`/${route} is reserved`, () => {
+      expect(
+        RESERVED_SLUGS.has(route),
+        `/${route} is a real page, so a custom URL of "${route}" would resolve to it instead of ` +
+          `the owner's album — silently, after saving successfully. Add it to RESERVED_SLUGS.`,
+      ).toBe(true)
+    })
+  }
+
+  it('rejects each of them through the real validator', () => {
+    // The set being right is not enough; validateCustomSlug is what the route actually calls.
+    for (const route of topLevelRoutes) {
+      if (route.length < 4) continue   // too short to be a valid slug anyway
+      const result = validateCustomSlug(route)
+      expect(result.ok, `validateCustomSlug accepted /${route}`).toBe(false)
+    }
   })
 })
