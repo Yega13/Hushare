@@ -8,6 +8,7 @@ import type { RealtimeChannel } from '@supabase/supabase-js'
 import { createClient } from '@/lib/supabase/client'
 import { shouldHoldForOwnerCheck } from '@/lib/owner-view'
 import { applyPhotoWindow, mergePreservingExtras, shouldApplyRefresh } from '@/lib/photo-window'
+import { onSettingsBroadcast, shouldCommitSettings } from '@/lib/settings-sync'
 import type { Album, Photo, Tier } from '@/types'
 import AlbumSkeleton from '@/components/AlbumSkeleton'
 import PasswordGate from '@/components/PasswordGate'
@@ -887,12 +888,12 @@ export default function AlbumPageClient({ initialAlbum = null, initialPhotos, in
       void fetch(`/api/album/resolve?slug=${encodeURIComponent(albumSlug)}&owner=${ownerTokenFromUrlRef.current ? '1' : '0'}`, { cache: 'no-store' })
         .then(r => r.ok ? r.json() : null)
         .then((data: Album | null) => {
-          if (disposed || !data || typeof data.id !== 'string') return
-          // An edit made in this tab AFTER this request went out is newer than anything the
-          // response can contain, so committing it would overwrite the owner's own change with
-          // the pre-change row. Dropping the response is always safe: whatever that edit was, it
-          // has already been applied optimistically and its own broadcast is still to come.
-          if (lastLocalAlbumPatchRef.current > startedAt) return
+          if (!shouldCommitSettings({
+            disposed,
+            hasValidData: !!data && typeof data.id === 'string',
+            requestStartedAt: startedAt,
+            lastLocalEditAt: lastLocalAlbumPatchRef.current,
+          })) return
           setAlbum(prev => prev ? { ...prev, ...data } : prev)
         })
         .catch(() => {})
@@ -903,17 +904,18 @@ export default function AlbumPageClient({ initialAlbum = null, initialPhotos, in
     const ch = supabase
       .channel(`album-settings-${albumId}`)
       .on('broadcast', { event: 'album_settings' }, () => {
-        // While the owner is in the Album Designer, their own edits broadcast here too — skip the
-        // self-refetch so it can't clobber the live optimistic preview (the fast-change glitch).
-        if (designerOpenRef.current) { settingsRefetchOwedRef.current = true; return }
-        // Same idea outside the Designer: a broadcast arriving on the heels of this tab's own edit
-        // is that edit echoing back, and the local state is already ahead of it. Refetching would
-        // only risk racing the next edit, so defer to one trailing refresh once the owner stops —
-        // which still picks up a genuine change made from another device during the quiet window.
-        const sinceLocalEdit = Date.now() - lastLocalAlbumPatchRef.current
-        if (sinceLocalEdit < SELF_EDIT_QUIET_MS) {
+        // The rules live in lib/settings-sync.ts, where they can be tested — see that file for why
+        // each branch exists and which glitch it prevents.
+        const action = onSettingsBroadcast({
+          designerOpen: designerOpenRef.current,
+          now: Date.now(),
+          lastLocalEditAt: lastLocalAlbumPatchRef.current,
+          quietMs: SELF_EDIT_QUIET_MS,
+        })
+        if (action.kind === 'owe') { settingsRefetchOwedRef.current = true; return }
+        if (action.kind === 'schedule') {
           if (settleTimer) clearTimeout(settleTimer)
-          settleTimer = setTimeout(refetchSettings, SELF_EDIT_QUIET_MS - sinceLocalEdit)
+          settleTimer = setTimeout(refetchSettings, action.delayMs)
           return
         }
         refetchSettings()
