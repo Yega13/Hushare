@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest'
 import {
   MAX_IMG_DIM, SHRINK_LADDER, needsReEncode, outputMimeFor, nextShrinkDim,
   backoffDelay, isNetworkClass, isExpectedRefusal, EXPECTED_REFUSAL_PREFIXES,
+  createRelayPolicy, verdictForResponse, verdictForThrow,
 } from '@/lib/upload-policy'
 
 // THE UPLOADER'S JUDGEMENTS ABOUT SOMEONE ELSE'S PHOTO.
@@ -184,5 +185,101 @@ describe('a refusal the product made on purpose is not an error', () => {
     expect(isExpectedRefusal('Upload crashed: Unsupported operation')).toBe(false)
     expect(isExpectedRefusal('Network error during upload')).toBe(false)
     expect(isExpectedRefusal('')).toBe(false)
+  })
+})
+
+// WHICH ROUTE DO THE BYTES TAKE — and the incident behind it.
+//
+// A photo normally goes straight to R2. Some networks block R2's upload domain, so there is a
+// fallback that streams the body through our own Worker. Choosing wrong is expensive: on
+// 2026-08-17 that fallback is what Cloudflare killed 328 requests for exceeding resources — 100% of
+// that day's Worker errors — because a single connectivity blip latched the flag on and every
+// remaining photo in the session took the slow path.
+//
+// The rule that prevents it is subtle enough to be worth pinning: a direct failure PROVES NOTHING,
+// because losing connectivity looks exactly like a blocked domain. Only a relay that SUCCEEDED
+// where the direct path failed is evidence. And the belief expires, because phones move between
+// wifi and cellular mid-event.
+describe('the expensive upload path is only taken on proof', () => {
+  const at = (t: number) => () => t
+
+  it('tries the direct path first, always, until something is proven', () => {
+    const p = createRelayPolicy(at(1000))
+    expect(p.shouldRelayFirst()).toBe(false)
+    expect(p.isRelayBelieved()).toBe(false)
+  })
+
+  it('believes a block only after the relay SUCCEEDED where direct failed', () => {
+    const p = createRelayPolicy(at(1000))
+    p.recordRelaySucceededAfterDirectFailure()
+    expect(p.shouldRelayFirst()).toBe(true)
+  })
+
+  it('stops believing once the probe window passes', () => {
+    // A phone that moved from a blocking network to a working one must not keep paying for the
+    // Worker path for the rest of the session.
+    let clock = 1000
+    const p = createRelayPolicy(() => clock, 60_000)
+    p.recordRelaySucceededAfterDirectFailure()
+    clock += 59_999
+    expect(p.shouldRelayFirst(), 'still inside the window').toBe(true)
+    clock += 2
+    expect(p.shouldRelayFirst(), 'window passed — try direct again').toBe(false)
+    expect(p.isRelayBelieved(), 'and the belief is actually cleared, not just skipped').toBe(false)
+  })
+
+  it('re-arms if the block is proven again after expiry', () => {
+    let clock = 1000
+    const p = createRelayPolicy(() => clock, 60_000)
+    p.recordRelaySucceededAfterDirectFailure()
+    clock += 100_000
+    expect(p.shouldRelayFirst()).toBe(false)
+    p.recordRelaySucceededAfterDirectFailure()
+    expect(p.shouldRelayFirst(), 'a network that still blocks re-proves it').toBe(true)
+  })
+
+  it('keeps two independent policies apart', () => {
+    // Stream's upload domain and R2's are different hosts. One being blocked says nothing about the
+    // other, and sharing a flag would send video through a relay on an R2 block alone.
+    const images = createRelayPolicy(at(1000))
+    const video = createRelayPolicy(at(1000))
+    images.recordRelaySucceededAfterDirectFailure()
+    expect(images.shouldRelayFirst()).toBe(true)
+    expect(video.shouldRelayFirst(), 'a block on one host must not implicate the other').toBe(false)
+  })
+})
+
+describe('is this failure worth another attempt', () => {
+  const base = { serverErrorsSoFar: 0, maxServerErrors: 4, withinDeadline: true }
+
+  it('never retries a 4xx — the answer will not change', () => {
+    // A deterministic verdict: too large, album locked, type refused. Retrying burns the deadline
+    // to arrive at the same refusal, and the guest waits for nothing.
+    for (const status of [400, 401, 403, 404, 413, 415, 429]) {
+      expect(verdictForResponse({ ...base, status }), `${status} must not retry`).toBe('accept')
+    }
+  })
+
+  it('retries a 5xx while there is budget and time', () => {
+    expect(verdictForResponse({ ...base, status: 500 })).toBe('retry')
+    expect(verdictForResponse({ ...base, status: 503 })).toBe('retry')
+  })
+
+  it('returns the 5xx rather than retrying forever', () => {
+    // Accept, not give-up: the caller returns the RESPONSE, so the failure surfaces with its real
+    // status instead of as a generic network error nobody can diagnose.
+    expect(verdictForResponse({ ...base, status: 500, serverErrorsSoFar: 3, maxServerErrors: 4 })).toBe('accept')
+    expect(verdictForResponse({ ...base, status: 500, withinDeadline: false })).toBe('accept')
+  })
+
+  it('treats a deliberate cancel as final, never as transient', () => {
+    // Without this, an abort surfaces as a plain DOMException, the network check says "not
+    // network", and the loop politely retries the exact request the user just cancelled.
+    expect(verdictForThrow({ aborted: true, withinDeadline: true })).toBe('give-up')
+  })
+
+  it('retries a dead connection while time remains, and stops when it does not', () => {
+    expect(verdictForThrow({ aborted: false, withinDeadline: true })).toBe('retry')
+    expect(verdictForThrow({ aborted: false, withinDeadline: false })).toBe('give-up')
   })
 })

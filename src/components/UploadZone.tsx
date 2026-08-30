@@ -9,7 +9,8 @@ import { stripExifFromJpeg, jpegOrientation, stripMetadataFromPng, stripMetadata
 // tested in tests/upload-policy.test.ts, because none of it was reachable from inside here.
 import {
   MAX_IMG_DIM, needsReEncode, outputMimeFor, nextShrinkDim,
-  backoffDelay, isNetworkClass, isExpectedRefusal,
+  backoffDelay, isNetworkClass, isExpectedRefusal, createRelayPolicy,
+  verdictForResponse, verdictForThrow,
 } from '@/lib/upload-policy'
 import { snapshotFileRobust, readFileRobust, isFileReadFailure } from '@/lib/file-read'
 import { trackUploadStep } from '@/lib/engagement'
@@ -902,16 +903,21 @@ async function fetchWithRetry(
     const attemptSignal = withTimeoutSignal(opts.signal, 20_000)
     try {
       const res = await fetch(url, { ...init, signal: attemptSignal.signal })
-      if (res.status >= 500) {
+      // Verdict and reasoning both live in lib/upload-policy, where they are tested.
+      const verdict = verdictForResponse({
+        status: res.status,
+        serverErrorsSoFar: serverErrors,
+        maxServerErrors: MAX_SERVER_ERROR_ATTEMPTS,
+        withinDeadline: Date.now() < deadline,
+      })
+      if (verdict === 'retry') {
         serverErrors++
-        if (serverErrors < MAX_SERVER_ERROR_ATTEMPTS && Date.now() < deadline) {
-          lastErr = new Error(`HTTP ${res.status}`)
-          // Keep only the newest; draining the one it replaces frees its connection instead of
-          // leaving it pinned until garbage collection.
-          void lastServerRes?.body?.cancel()
-          lastServerRes = res
-          continue
-        }
+        lastErr = new Error(`HTTP ${res.status}`)
+        // Keep only the newest; draining the one it replaces frees its connection instead of
+        // leaving it pinned until garbage collection.
+        void lastServerRes?.body?.cancel()
+        lastServerRes = res
+        continue
       }
       void lastServerRes?.body?.cancel()
       return res
@@ -919,14 +925,18 @@ async function fetchWithRetry(
       // A deliberate cancel is a final answer, not a transient failure. Without this the abort
       // surfaces as a plain DOMException, isNetworkClass says "not network", and the loop politely
       // backs off and tries again — retrying the exact request the caller just cancelled.
-      if (opts.signal?.aborted) {
+      const throwVerdict = verdictForThrow({
+        aborted: opts.signal?.aborted === true,
+        withinDeadline: Date.now() < deadline,
+      })
+      if (throwVerdict === 'give-up' && opts.signal?.aborted) {
         // Drain a retained 5xx on the way out, same as every other exit from this loop — otherwise
         // cancelling mid-retry is the one path that leaves a body pinning its connection.
         void lastServerRes?.body?.cancel()
         throw new DOMException('Upload aborted', 'AbortError')
       }
       lastErr = e instanceof Error ? e : new Error(String(e))
-      if (Date.now() >= deadline) break
+      if (throwVerdict === 'give-up') break
       // Nothing came back. Before spending another attempt (and another 20s timeout) on a
       // connection that may simply be gone, ask whether we can reach ourselves at all. While we
       // can't, poll cheaply rather than hammering the real endpoint — this is the part that turns
@@ -1055,20 +1065,10 @@ async function putWithRetry(
 // clustered in exactly the two hours that had relay switches. A single connectivity blip used to
 // set this permanently, so one bad moment turned the whole rest of the upload into the expensive,
 // failure-prone path. It also tripled the server authorization work per photo.
-let imageNetworkNeedsRelay = false
-let imageRelayProvenAt = 0
-// Re-probe the direct path periodically. Networks change (a phone moves between wifi and cellular
-// mid-event), and being wrong in this direction costs the Worker budget rather than the upload.
-const RELAY_REPROBE_MS = 60_000
-
-function shouldUseRelayFirst(): boolean {
-  if (!imageNetworkNeedsRelay) return false
-  if (Date.now() - imageRelayProvenAt > RELAY_REPROBE_MS) {
-    imageNetworkNeedsRelay = false
-    return false
-  }
-  return true
-}
+// Rules and expiry live in lib/upload-policy, with the incident that shaped them. Deliberately
+// SEPARATE from video's networkNeedsRelay: the two upload domains are distinct hosts, so a
+// confirmed block on one says nothing about the other.
+const imageRelay = createRelayPolicy()
 
 // Every relay attempt re-runs the FULL server-side authorization chain (both rate-limit checks +
 // album/tier lookups) — unlike a direct PUT retry, which just re-sends bytes to an already-signed
@@ -1143,7 +1143,7 @@ async function putImageWithRelay(
 ): Promise<{ key: string; publicUrl: string }> {
   let directFailed = false
   let lastDirectErr: unknown
-  if (!shouldUseRelayFirst()) {
+  if (!imageRelay.shouldRelayFirst()) {
     try {
       await putWithRetry(presignedUrl, body, relay.contentType, onProgress, signal)
       return { key: originalKey, publicUrl: originalPublicUrl }
@@ -1158,9 +1158,8 @@ async function putImageWithRelay(
     const result = await relayUploadImage(relay.albumId, relay.fileName, relay.contentType, relay.isThumb, body, onProgress, signal)
     // The relay working where the direct path did not is the ONLY evidence that this network
     // blocks R2 specifically. Recorded here, after the fact, rather than guessed at above.
-    if (directFailed && !imageNetworkNeedsRelay) {
-      imageNetworkNeedsRelay = true
-      imageRelayProvenAt = Date.now()
+    if (directFailed && !imageRelay.isRelayBelieved()) {
+      imageRelay.recordRelaySucceededAfterDirectFailure()
       reportClientEvent('warn', 'upload:image-relay', 'Switched to relay after direct upload was network-blocked', relay.albumId, { fileName: relay.fileName })
     }
     return result

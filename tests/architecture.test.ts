@@ -35,7 +35,7 @@ function lineCount(rel: string): number {
 
 // The files already too large to reason about. Ratcheted so they can only shrink.
 const SIZE_BUDGET: Record<string, number> = {
-  'src/components/UploadZone.tsx': 2797,
+  'src/components/UploadZone.tsx': 2796,
   'src/components/OwnerToolbar.tsx': 1780,
   'src/app/[slug]/AlbumPageClient.tsx': 1450,
   'src/app/card-editor/CardEditorClient.tsx': 873,

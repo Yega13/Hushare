@@ -127,3 +127,107 @@ export const EXPECTED_REFUSAL_PREFIXES = [
 export function isExpectedRefusal(message: string): boolean {
   return EXPECTED_REFUSAL_PREFIXES.some((prefix) => message.startsWith(prefix))
 }
+
+// ─────────────────────────────────────────────────────────────────────────────────────────────────
+// WHICH ROUTE DO THE BYTES TAKE?
+//
+// A photo normally goes straight to R2 on a presigned URL. Some networks block R2's upload domain
+// outright, so there is a fallback that streams the body through our own Worker instead.
+//
+// Choosing wrong is expensive rather than cosmetic. The fallback routes every remaining photo in
+// the session through the Worker, and on 2026-08-17 that is what Cloudflare killed 328 requests for
+// exceeding resources — 100% of that day's Worker errors, clustered in exactly the two hours that
+// had relay switches. It also triples the server authorization work per photo. A single
+// connectivity blip used to latch the flag permanently, so one bad moment made the whole rest of
+// the upload take the expensive, failure-prone path.
+//
+// The rule that avoids that: a direct failure PROVES NOTHING, because plain loss of connectivity
+// looks identical to a blocked domain. Only a relay that SUCCEEDED where the direct path failed is
+// evidence. And even then the belief expires, because a phone moves between wifi and cellular in
+// the middle of an event.
+//
+// This was module-level mutable state plus a `shouldUseRelayFirst()` that silently reset the flag
+// as a side effect of being read — a question that changed the answer by asking it, untestable and
+// surprising. Same rules, in something that can be handed a clock.
+
+/** How long a proven block is believed before the direct path is tried again. */
+export const RELAY_REPROBE_MS = 60_000
+
+export type RelayPolicy = {
+  /** Skip the direct attempt and go straight through the Worker? */
+  shouldRelayFirst: () => boolean
+  /**
+   * Record that the relay succeeded where the direct path failed — the only evidence that counts.
+   * A relay success WITHOUT a preceding direct failure proves nothing and is ignored.
+   */
+  recordRelaySucceededAfterDirectFailure: () => void
+  /** For tests and diagnostics. */
+  isRelayBelieved: () => boolean
+}
+
+export function createRelayPolicy(
+  now: () => number = Date.now,
+  reprobeMs: number = RELAY_REPROBE_MS,
+): RelayPolicy {
+  let believed = false
+  let provenAt = 0
+
+  return {
+    shouldRelayFirst() {
+      if (!believed) return false
+      // Expired: stop believing and try the direct path again. Being wrong in THIS direction costs
+      // one failed attempt; being wrong the other way costs the Worker budget for the whole session.
+      if (now() - provenAt > reprobeMs) {
+        believed = false
+        return false
+      }
+      return true
+    },
+    recordRelaySucceededAfterDirectFailure() {
+      believed = true
+      provenAt = now()
+    },
+    isRelayBelieved: () => believed,
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────────────────────────
+// IS THIS FAILURE WORTH ANOTHER ATTEMPT?
+//
+// The difference between a guest's photo arriving late and never arriving. A 4xx is a deterministic
+// verdict — the file is too large, the album is locked, the type is refused — and retrying it burns
+// the deadline to arrive at the same answer. A 5xx or a dead connection may well succeed next time.
+// And the deadline outranks everything: past it, the honest thing is to stop and say so.
+export type RetryVerdict = 'retry' | 'accept' | 'give-up'
+
+export function verdictForResponse(state: {
+  status: number
+  /** How many 5xx responses this request has already absorbed. */
+  serverErrorsSoFar: number
+  maxServerErrors: number
+  /** Is there still time on the overall deadline? */
+  withinDeadline: boolean
+}): RetryVerdict {
+  if (state.status < 500) return 'accept'
+  // A 5xx that we are out of budget for is still a RESPONSE — the caller returns it and the error
+  // surfaces with its real status, rather than as a generic network failure.
+  if (state.serverErrorsSoFar + 1 >= state.maxServerErrors) return 'accept'
+  if (!state.withinDeadline) return 'accept'
+  return 'retry'
+}
+
+/**
+ * A thrown failure — no response arrived at all.
+ *
+ * A deliberate cancel is a FINAL answer, not a transient one. Without that check an abort surfaces
+ * as a plain DOMException, `isNetworkClass` says "not network", and the loop politely backs off and
+ * retries the exact request the caller just cancelled.
+ */
+export function verdictForThrow(state: {
+  aborted: boolean
+  withinDeadline: boolean
+}): RetryVerdict {
+  if (state.aborted) return 'give-up'
+  if (!state.withinDeadline) return 'give-up'
+  return 'retry'
+}
