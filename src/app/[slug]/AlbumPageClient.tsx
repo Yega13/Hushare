@@ -6,6 +6,7 @@ import { useParams, notFound } from 'next/navigation'
 import dynamic from 'next/dynamic'
 import type { RealtimeChannel } from '@supabase/supabase-js'
 import { createClient } from '@/lib/supabase/client'
+import { shouldHoldForOwnerCheck } from '@/lib/owner-view'
 import type { Album, Photo, Tier } from '@/types'
 import AlbumSkeleton from '@/components/AlbumSkeleton'
 import PasswordGate from '@/components/PasswordGate'
@@ -211,7 +212,25 @@ export default function AlbumPageClient({ initialAlbum = null, initialPhotos, in
     // all — a far worse failure than the flash it was fixing. Reverted; do not reintroduce without
     // a reproduction of the gated-owner path (see /wog0op5z#owner=…).
   }, [])
-  const ownerUpgradePending = ownerHashPresent && !ownerTokenReady
+  // HOW LONG THE OWNER CHECK MAY HOLD THE PAGE BEFORE WE GIVE UP ON IT.
+  //
+  // This number is the entire difference between fixing the flash and repeating the outage. The
+  // earlier attempt (see the note above) held `loading` true until the owner check resolved, with
+  // no escape: on production it never resolved, so a gated album never opened at all. Waiting is
+  // only safe if it is bounded.
+  //
+  // 4s covers a round trip plus the one retry the owner-login call makes, on a venue connection.
+  // Past that the gate is shown — which is the correct answer for a guest and merely the old
+  // annoyance for an owner, rather than a page that never arrives.
+  const OWNER_CHECK_MAX_MS = 4000
+  const [ownerCheckTimedOut, setOwnerCheckTimedOut] = useState(false)
+  useEffect(() => {
+    if (!ownerHashPresent || ownerTokenReady) return
+    const t = window.setTimeout(() => setOwnerCheckTimedOut(true), OWNER_CHECK_MAX_MS)
+    return () => window.clearTimeout(t)
+  }, [ownerHashPresent, ownerTokenReady])
+
+  const ownerUpgradePending = ownerHashPresent && !ownerTokenReady && !ownerCheckTimedOut
 
   // The inline script in page.tsx flags <html> when the URL carries an #owner= fragment, so CSS can
   // stop the server's guest render (guest bar / gate) painting before React ever runs. Clear the
@@ -1138,7 +1157,21 @@ export default function AlbumPageClient({ initialAlbum = null, initialPhotos, in
   //
   // Three earlier fixes went to the revealGate, !album and main branches. The render never reached
   // any of them while this one was returning.
-  if (loading) {
+  // THE OWNER MUST NOT BE ASKED FOR THEIR OWN ALBUM'S PASSWORD.
+  //
+  // The owner token lives in the URL *fragment*, which browsers never send to a server. So the
+  // server render of a gated album is always the guest one — the password prompt, or "not revealed
+  // yet" — and the owner sees it for as long as the client takes to read the fragment and check the
+  // token. Their own album, telling them they cannot come in.
+  //
+  // Holding the skeleton over that window is safe now only because the wait is bounded above; the
+  // unbounded version of this is what took gated albums offline once already.
+  const holdingForOwnerCheck = shouldHoldForOwnerCheck({
+    ownerHashPresent, ownerTokenReady, ownerCheckTimedOut,
+    hasGate: passwordGate !== null || revealGate !== null,
+  })
+
+  if (loading || holdingForOwnerCheck) {
     return (
       <>
         <AlbumSkeleton />
