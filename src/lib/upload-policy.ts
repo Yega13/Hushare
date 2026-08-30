@@ -202,13 +202,25 @@ export type RetryVerdict = 'retry' | 'accept' | 'give-up'
 
 export function verdictForResponse(state: {
   status: number
-  /** How many 5xx responses this request has already absorbed. */
+  /** How many retryable responses (5xx or 429) this request has already absorbed. */
   serverErrorsSoFar: number
   maxServerErrors: number
   /** Is there still time on the overall deadline? */
   withinDeadline: boolean
 }): RetryVerdict {
-  if (state.status < 500) return 'accept'
+  // 429 IS RETRYABLE, everything else under 500 is not.
+  //
+  // A 429 means "slow down and try again", which is exactly what the backoff below does — it is a
+  // transient signal, not a verdict like 400/403/413. Treating it as final cost real photos: at an
+  // event the rate-limit ceiling cannot be reached by legitimate use (5,000 uploads against a
+  // 12,000/hour limit), so a 429 there is always a blip in the Supabase-backed limiter, and a blip
+  // was turning one photo into a manual retry the guest had to notice and perform. Retried with
+  // backoff and bounded by the deadline, that same blip becomes a two-second delay.
+  //
+  // 400, 403, 413, 415 stay final: they are deterministic refusals and retrying only burns the
+  // deadline to reach the same answer.
+  const retryable = state.status === 429 || state.status >= 500
+  if (!retryable) return 'accept'
   // A 5xx that we are out of budget for is still a RESPONSE — the caller returns it and the error
   // surfaces with its real status, rather than as a generic network failure.
   if (state.serverErrorsSoFar + 1 >= state.maxServerErrors) return 'accept'

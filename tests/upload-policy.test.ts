@@ -252,12 +252,27 @@ describe('the expensive upload path is only taken on proof', () => {
 describe('is this failure worth another attempt', () => {
   const base = { serverErrorsSoFar: 0, maxServerErrors: 4, withinDeadline: true }
 
-  it('never retries a 4xx — the answer will not change', () => {
-    // A deterministic verdict: too large, album locked, type refused. Retrying burns the deadline
-    // to arrive at the same refusal, and the guest waits for nothing.
-    for (const status of [400, 401, 403, 404, 413, 415, 429]) {
+  it('never retries a deterministic 4xx — the answer will not change', () => {
+    // Too large, album locked, type refused. Retrying burns the deadline to arrive at the same
+    // refusal, and the guest waits for nothing. 429 is NOT in this list — it is a "slow down"
+    // signal, not a verdict, and is covered separately below.
+    for (const status of [400, 401, 403, 404, 413, 415, 422]) {
       expect(verdictForResponse({ ...base, status }), `${status} must not retry`).toBe('accept')
     }
+  })
+
+  it('RETRIES a 429 — it is a slow-down signal, not a refusal', () => {
+    // The photo-losing bug: at an event the rate-limit ceiling cannot be reached legitimately
+    // (5,000 uploads against a 12,000/hour limit), so a 429 from presign is always a blip in the
+    // Supabase-backed limiter. Treating it as final turned that blip into a photo the guest had to
+    // notice was missing and manually re-add. Retried with backoff, it is a two-second delay.
+    expect(verdictForResponse({ ...base, status: 429 })).toBe('retry')
+  })
+
+  it('stops retrying a 429 once the budget or deadline is spent', () => {
+    // Bounded exactly like a 5xx: a genuine sustained rate limit must not be hammered forever.
+    expect(verdictForResponse({ ...base, status: 429, serverErrorsSoFar: 3, maxServerErrors: 4 })).toBe('accept')
+    expect(verdictForResponse({ ...base, status: 429, withinDeadline: false })).toBe('accept')
   })
 
   it('retries a 5xx while there is budget and time', () => {
