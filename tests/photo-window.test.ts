@@ -21,6 +21,17 @@ describe('a refresh does not take photos off the screen', () => {
     expect(ids(applyPhotoWindow(prev, fresh, 900, WINDOW))).toBe('a,b,tail1,tail2')
   })
 
+  it('empties the grid when the last photo is deleted', () => {
+    // Found by mutating the module: adding `if (!windowPhotos.length) return prev` — which reads
+    // like a sensible "an empty response must not blank the screen" guard — passed all nine tests,
+    // because every one of them handed in a non-empty window.
+    //
+    // What it breaks: the owner deletes the last photo, the fetch correctly returns none, and the
+    // grid keeps showing the deleted photos to every guest in the room with a count of 0 beside
+    // them, until they reload. It looks like deletion is broken.
+    expect(applyPhotoWindow([p('a'), p('b')], [], 0, WINDOW)).toEqual([])
+  })
+
   it('replaces outright when the window IS the whole album', () => {
     // The common case, and the only path on which a photo deleted somewhere else actually
     // disappears. If this merged instead, a deleted photo would linger until a reload.

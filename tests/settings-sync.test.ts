@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { onSettingsBroadcast, shouldCommitSettings } from '@/lib/settings-sync'
+import { onSettingsBroadcast, shouldCommitSettings, createSettingsSync, type Timers } from '@/lib/settings-sync'
 
 // THE FLICKER: "control moves to the new value, snaps back to the old one, then settles."
 //
@@ -66,26 +66,110 @@ describe('the Album Designer is never overwritten while it is open', () => {
 })
 
 describe('a response that arrived too late is not applied', () => {
-  const base = { disposed: false, hasValidData: true, requestStartedAt: NOW, lastLocalEditAt: NOW - 5000 }
+  const DATA = { id: 'album-1' }
+  const base = { disposed: false, requestStartedAt: NOW, lastLocalEditAt: NOW - 5000 }
 
   it('commits a response that nothing has superseded', () => {
-    expect(shouldCommitSettings(base)).toBe(true)
+    expect(shouldCommitSettings(DATA, base)).toBe(true)
   })
 
   it('drops a response overtaken by the owner\'s own edit', () => {
     // The actual overwrite. The edit happened after the request went out, so the response cannot
     // contain it — applying it puts the pre-edit value back on screen.
-    expect(shouldCommitSettings({ ...base, lastLocalEditAt: NOW + 1 })).toBe(false)
+    expect(shouldCommitSettings(DATA, { ...base, lastLocalEditAt: NOW + 1 })).toBe(false)
   })
 
   it('commits when the edit and the request are simultaneous', () => {
     // Same millisecond means the edit came first and the response already contains it. Treating
     // this as "too late" would drop a perfectly good response on every fast edit.
-    expect(shouldCommitSettings({ ...base, lastLocalEditAt: NOW })).toBe(true)
+    expect(shouldCommitSettings(DATA, { ...base, lastLocalEditAt: NOW })).toBe(true)
   })
 
   it('drops anything once the component is gone, or the data is unusable', () => {
-    expect(shouldCommitSettings({ ...base, disposed: true })).toBe(false)
-    expect(shouldCommitSettings({ ...base, hasValidData: false })).toBe(false)
+    expect(shouldCommitSettings(DATA, { ...base, disposed: true })).toBe(false)
+    expect(shouldCommitSettings(null, base)).toBe(false)
+    expect(shouldCommitSettings(undefined, base)).toBe(false)
+    expect(shouldCommitSettings({ id: 42 }, base), 'an id that is not a string is not an album').toBe(false)
+  })
+})
+
+// A CLOCK THAT GOES BACKWARDS.
+//
+// Date.now() is wall-clock: a phone waking to an NTP correction, or a timezone change, can move it
+// backwards between an edit and the next broadcast. sinceLocalEdit then goes negative, and the raw
+// arithmetic would schedule the refresh (quietMs + the size of the jump) into the future — an
+// hour-long jump defers it an hour, and every later broadcast re-defers it by another hour, so a
+// setting changed on another device never arrives again for the rest of that session.
+describe('a backwards clock cannot postpone the refresh forever', () => {
+  it('never waits longer than the quiet window, whatever the clock says', () => {
+    for (const jumpMs of [1, 5_000, 3_600_000, 86_400_000]) {
+      const a = onSettingsBroadcast({ designerOpen: false, now: NOW, lastLocalEditAt: NOW + jumpMs, quietMs: QUIET })
+      if (a.kind !== 'schedule') throw new Error('expected schedule')
+      expect(a.delayMs, jumpMs + 'ms backwards must not defer beyond the quiet window').toBeLessThanOrEqual(QUIET)
+      expect(a.delayMs).toBeGreaterThanOrEqual(0)
+    }
+  })
+})
+
+// EXACTLY ONE FETCH AFTER THE OWNER STOPS — the claim this file used to make in a comment and never
+// check.
+//
+// The decision said "schedule in 1,400ms". The CANCELLATION that makes it one fetch rather than one
+// per broadcast lived in the component, so deleting that single line broke the product and passed
+// every test here. The scheduler owns the timer now, which is what makes this assertable at all.
+describe('a dragged slider produces one refetch, not one per broadcast', () => {
+  function fakeTimers() {
+    let seq = 0
+    const live = new Map<number, () => void>()
+    const timers: Timers = {
+      set(fn) { const id = ++seq; live.set(id, fn); return id },
+      clear(id) { live.delete(id) },
+    }
+    const runAll = () => { const fns = [...live.values()]; live.clear(); fns.forEach((f) => f()) }
+    return { timers, runAll, pending: () => live.size }
+  }
+
+  it('collapses a burst of broadcasts into a single trailing fetch', () => {
+    const { timers, runAll, pending } = fakeTimers()
+    let fetches = 0
+    const sync = createSettingsSync({ quietMs: QUIET, refetch: () => { fetches++ }, markOwed: () => {}, timers })
+    for (let i = 0; i < 10; i++) sync.onBroadcast({ designerOpen: false, now: NOW + i, lastLocalEditAt: NOW + i })
+    expect(fetches, 'nothing fetches while the owner is still editing').toBe(0)
+    expect(pending(), 'and ONE fetch is queued, not ten').toBe(1)
+    runAll()
+    expect(fetches).toBe(1)
+  })
+
+  it('a genuine broadcast supersedes a queued echo instead of stacking', () => {
+    const { timers, runAll, pending } = fakeTimers()
+    let fetches = 0
+    const sync = createSettingsSync({ quietMs: QUIET, refetch: () => { fetches++ }, markOwed: () => {}, timers })
+    sync.onBroadcast({ designerOpen: false, now: NOW, lastLocalEditAt: NOW })
+    sync.onBroadcast({ designerOpen: false, now: NOW, lastLocalEditAt: NOW - 999_999 })
+    expect(fetches, 'the real one fetches immediately').toBe(1)
+    expect(pending(), 'and the queued echo is dropped, not left to fire again').toBe(0)
+    runAll()
+    expect(fetches).toBe(1)
+  })
+
+  it('drops a queued fetch when the page goes away', () => {
+    const { timers, runAll, pending } = fakeTimers()
+    let fetches = 0
+    const sync = createSettingsSync({ quietMs: QUIET, refetch: () => { fetches++ }, markOwed: () => {}, timers })
+    sync.onBroadcast({ designerOpen: false, now: NOW, lastLocalEditAt: NOW })
+    sync.dispose()
+    expect(pending()).toBe(0)
+    runAll()
+    expect(fetches, 'a fetch must not fire into an unmounted page').toBe(0)
+  })
+
+  it('owes rather than queues while the Designer is open', () => {
+    const { timers, pending } = fakeTimers()
+    let owed = 0, fetches = 0
+    const sync = createSettingsSync({ quietMs: QUIET, refetch: () => { fetches++ }, markOwed: () => { owed++ }, timers })
+    sync.onBroadcast({ designerOpen: true, now: NOW, lastLocalEditAt: NOW })
+    expect(owed).toBe(1)
+    expect(fetches).toBe(0)
+    expect(pending()).toBe(0)
   })
 })

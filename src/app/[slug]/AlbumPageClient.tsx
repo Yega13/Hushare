@@ -8,7 +8,7 @@ import type { RealtimeChannel } from '@supabase/supabase-js'
 import { createClient } from '@/lib/supabase/client'
 import { shouldHoldForOwnerCheck } from '@/lib/owner-view'
 import { applyPhotoWindow, mergePreservingExtras, shouldApplyRefresh } from '@/lib/photo-window'
-import { onSettingsBroadcast, shouldCommitSettings } from '@/lib/settings-sync'
+import { createSettingsSync, shouldCommitSettings } from '@/lib/settings-sync'
 import type { Album, Photo, Tier } from '@/types'
 import AlbumSkeleton from '@/components/AlbumSkeleton'
 import PasswordGate from '@/components/PasswordGate'
@@ -872,7 +872,6 @@ export default function AlbumPageClient({ initialAlbum = null, initialPhotos, in
     const albumSlug = album.custom_slug ?? album.slug
 
     let disposed = false
-    let settleTimer: ReturnType<typeof setTimeout> | null = null
 
     // Treat the broadcast as a trigger to re-fetch from the server rather than trusting the
     // payload directly. Supabase Realtime broadcast channels are unauthenticated — any tab that
@@ -881,16 +880,15 @@ export default function AlbumPageClient({ initialAlbum = null, initialPhotos, in
     // Pass owner mode so a gated album (reveal/password) the owner is viewing comes back as the
     // full album, not the guest gate response.
     const refetchSettings = () => {
-      // Re-checked here, not only at broadcast time: this runs from settleTimer up to
+      // Re-checked here, not only at broadcast time: this runs from the trailing timer up to
       // SELF_EDIT_QUIET_MS later, and the Designer may have been opened in between.
       if (designerOpenRef.current) { settingsRefetchOwedRef.current = true; return }
       const startedAt = Date.now()
       void fetch(`/api/album/resolve?slug=${encodeURIComponent(albumSlug)}&owner=${ownerTokenFromUrlRef.current ? '1' : '0'}`, { cache: 'no-store' })
         .then(r => r.ok ? r.json() : null)
         .then((data: Album | null) => {
-          if (!shouldCommitSettings({
+          if (!shouldCommitSettings(data, {
             disposed,
-            hasValidData: !!data && typeof data.id === 'string',
             requestStartedAt: startedAt,
             lastLocalEditAt: lastLocalAlbumPatchRef.current,
           })) return
@@ -901,24 +899,22 @@ export default function AlbumPageClient({ initialAlbum = null, initialPhotos, in
 
     refetchSettingsRef.current = refetchSettings
 
+    const sync = createSettingsSync({
+      quietMs: SELF_EDIT_QUIET_MS,
+      refetch: refetchSettings,
+      markOwed: () => { settingsRefetchOwedRef.current = true },
+    })
+
     const ch = supabase
       .channel(`album-settings-${albumId}`)
       .on('broadcast', { event: 'album_settings' }, () => {
-        // The rules live in lib/settings-sync.ts, where they can be tested — see that file for why
-        // each branch exists and which glitch it prevents.
-        const action = onSettingsBroadcast({
+        // Decision AND cancellation both live in lib/settings-sync.ts now — see that file for why
+        // keeping them apart meant neither could be tested.
+        sync.onBroadcast({
           designerOpen: designerOpenRef.current,
           now: Date.now(),
           lastLocalEditAt: lastLocalAlbumPatchRef.current,
-          quietMs: SELF_EDIT_QUIET_MS,
         })
-        if (action.kind === 'owe') { settingsRefetchOwedRef.current = true; return }
-        if (action.kind === 'schedule') {
-          if (settleTimer) clearTimeout(settleTimer)
-          settleTimer = setTimeout(refetchSettings, action.delayMs)
-          return
-        }
-        refetchSettings()
       })
       .subscribe(status => {
         if (status === 'SUBSCRIBED') settingsChannelRef.current = ch
@@ -928,7 +924,7 @@ export default function AlbumPageClient({ initialAlbum = null, initialPhotos, in
     return () => {
       disposed = true
       refetchSettingsRef.current = null
-      if (settleTimer) clearTimeout(settleTimer)
+      sync.dispose()
       settingsChannelRef.current = null
       supabase.removeChannel(ch)
     }
