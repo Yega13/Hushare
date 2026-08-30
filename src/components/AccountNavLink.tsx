@@ -3,11 +3,9 @@
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { CircleUserRound } from 'lucide-react'
-import { useAccountAvatar } from '@/lib/use-account-avatar'
+import { useAccountIdentity, clearAccountIdentityCache } from '@/lib/use-account-identity'
 import { createClient } from '@/lib/supabase/client'
 import { useT } from '@/i18n/LocaleProvider'
-
-type AuthState = 'loading' | 'signed-out' | 'signed-in'
 
 const linkClass = 'text-sm font-medium hover:underline'
 const linkStyle = { color: '#630826' } as const
@@ -15,44 +13,37 @@ const linkStyle = { color: '#630826' } as const
 export default function AccountNavLink() {
   const { t } = useT()
   const [supabase] = useState(() => createClient())
-  const [state, setState] = useState<AuthState>('loading')
+  // ONE request, both answers, one state transition. See lib/use-account-identity for the flicker
+  // this replaced: sign-in state and picture were fetched separately and in sequence, so the slot
+  // rendered three different shapes on the way to settling.
+  const { status, avatarUrl } = useAccountIdentity()
 
   useEffect(() => {
-    let cancelled = false
-
-    async function refresh() {
-      // Fast path: read the LOCAL session (no network) so the nav resolves immediately instead of
-      // popping in after a round-trip. Security is unaffected — the account page validates server-side.
-      const { data: { session } } = await supabase.auth.getSession()
-      if (cancelled) return
-      if (!session) { setState('signed-out'); return }
-      setState('signed-in')
-      // Confirm the session is still valid server-side; downgrade to signed-out if it's stale.
-      try {
-        const res = await fetch('/api/me', { cache: 'no-store' })
-        if (!cancelled && res.status === 401) setState('signed-out')
-      } catch { /* keep the optimistic signed-in state */ }
-    }
-
-    refresh()
-    // Skip INITIAL_SESSION — it fires on every mount and would double the refresh() work.
+    // ONLY a real change of identity. TOKEN_REFRESHED fires roughly hourly on its own, and
+    // INITIAL_SESSION fires on every mount — reacting to either would re-ask on a schedule for an
+    // answer that has not changed, and an earlier draft of this reloaded the page on them, which
+    // would have restarted someone's upload once an hour.
     const { data: sub } = supabase.auth.onAuthStateChange((event) => {
-      if (event === 'INITIAL_SESSION') return
-      void refresh()
+      if (event !== 'SIGNED_IN' && event !== 'SIGNED_OUT' && event !== 'USER_UPDATED') return
+      // Clearing notifies every control showing an identity, so they re-ask together and settle in
+      // one step — no reload, nothing interrupted.
+      clearAccountIdentityCache()
     })
-
-    return () => { cancelled = true; sub.subscription.unsubscribe() }
+    return () => { sub.subscription.unsubscribe() }
   }, [supabase])
 
-  // Asked for only once signed in, and shared with the compact mobile button so the two of them
-  // make one request between them rather than one each.
-  const avatarUrl = useAccountAvatar(state === 'signed-in')
+  const state = status
 
   if (state === 'loading') {
+    // Holds the space the resolved control will take, rather than the width of the word "Sign in".
+    // The old placeholder was text-width while the settled control is a 1.9rem circle, so every
+    // signed-in page load shifted the nav sideways as it resolved.
     return (
-      <span className={linkClass} aria-hidden="true" style={{ color: 'transparent' }}>
-        {t('nav.signIn')}
-      </span>
+      <span
+        className={linkClass}
+        aria-hidden="true"
+        style={{ display: 'inline-block', width: '1.9rem', height: '1.9rem', color: 'transparent' }}
+      />
     )
   }
 

@@ -4,7 +4,7 @@ import { useRef, useState } from 'react'
 import { CircleUserRound, Loader2 } from 'lucide-react'
 import { showAppToast } from '@/components/AppToast'
 import { snapshotFileRobust } from '@/lib/file-read'
-import { clearAvatarCache } from '@/lib/use-account-avatar'
+import { clearAccountIdentityCache } from '@/lib/use-account-identity'
 
 // Your picture, on your own account.
 //
@@ -105,7 +105,7 @@ export default function AvatarPicker({
       if (!save.ok) throw new Error((await save.json().catch(() => ({}))).error ?? 'Could not save')
 
       setUrl(publicUrl)
-      clearAvatarCache()
+      clearAccountIdentityCache()
       showAppToast('Picture updated.', 'success')
     } catch (e) {
       // A browser's own decode message ("The source image could not be decoded") is not a sentence
@@ -136,7 +136,7 @@ export default function AvatarPicker({
       })
       if (!res.ok) throw new Error('Could not remove')
       setUrl(null)
-      clearAvatarCache()
+      clearAccountIdentityCache()
       showAppToast('Picture removed.', 'success')
     } catch {
       showAppToast('Could not remove your picture.', 'error')

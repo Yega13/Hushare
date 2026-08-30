@@ -2,7 +2,7 @@
 
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { CircleUserRound } from 'lucide-react'
-import { useAccountAvatar } from '@/lib/use-account-avatar'
+import { useAccountIdentity } from '@/lib/use-account-identity'
 import { createPortal } from 'react-dom'
 import Image from 'next/image'
 import Link from 'next/link'
@@ -99,7 +99,7 @@ export default function HamburgerMenu({ children }: { children: React.ReactNode 
   )
 
   // Only asked for on mobile, where the compact button is the thing that shows it.
-  const avatarUrl = useAccountAvatar(isMobile)
+  const { avatarUrl } = useAccountIdentity(isMobile)
 
   return (
     <>
