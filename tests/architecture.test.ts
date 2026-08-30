@@ -98,7 +98,7 @@ describe('the big files do not get bigger', () => {
 const UNTESTED_LEGACY = new Set([
   'access', 'album-backgrounds', 'album-owner-access', 'analytics', 'auth',
   'broadcast', 'cf-analytics', 'constants', 'country-names', 'email', 'engagement', 'exif',
-  'heic-worker', 'media-display', 'my-albums', 'polls', 'provision-user', 'rate-limit',
+  'heic-worker', 'media-display', 'my-albums', 'polls', 'provision-user',
   'rekognition', 'report-server-error', 'require-tier', 'slideshow-motion', 'useIsNarrow', 'utils',
 ])
 
