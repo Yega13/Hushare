@@ -164,7 +164,10 @@ export default function AdminUsers({ users, cohorts }: { users: UserRow[]; cohor
         </div>
 
         <div style={{ overflowX: 'auto', maxHeight: 460, overflowY: 'auto' }}>
-          <table style={{ borderCollapse: 'collapse', width: '100%' }}>
+          {/* minWidth, or the seven columns shrink to fit a phone instead of scrolling — and the
+              email column, the one you actually came to read, is the one that loses. The parent has
+              scrolled horizontally all along; the table just never asked for the room. */}
+          <table style={{ borderCollapse: 'collapse', width: '100%', minWidth: 760 }}>
             <thead><tr>
               <th style={th}>Email</th><th style={th}>Joined</th><th style={th}>Plan</th>
               <th style={th}>Albums</th><th style={th}>Media</th><th style={th}>Last active</th><th style={th}></th>

@@ -254,6 +254,26 @@ export default async function AdminPage() {
     admin.rpc('admin_user_cohorts', { p_months: 6 }),
   ])
 
+  // WHO IS ACTUALLY PAYING, AND WHO IS US.
+  //
+  // Admin accounts resolve to Max in code (see computeUserTier) and some also carry a comped row,
+  // so both sat in the Subscriptions table looking exactly like revenue. A dashboard that counts
+  // its own operators as customers is worse than no dashboard: every number built on it is wrong in
+  // the flattering direction.
+  //
+  // Two signals, because either alone misses a case: a comp row is by definition not revenue, and
+  // an admin is not a customer even without one.
+  const isHouseAccount = (userId: string | null | undefined, productId: string | null | undefined): boolean => {
+    if (String(productId ?? '').startsWith('comp-')) return true
+    const email = userId ? emailById.get(userId) : null
+    return isAccountAdmin({ email })
+  }
+  const houseSubs = subs.filter((s) => isHouseAccount(
+    (s as { user_id?: string | null }).user_id,
+    (s as { polar_product_id?: string | null }).polar_product_id,
+  ))
+  const payingSubs = subs.filter((s) => !houseSubs.includes(s))
+
   const tierByUser = new Map<string, 'pro' | 'studio'>()
   for (const sub of subs) {
     const row = sub as { user_id?: string | null; tier?: string; status?: string; current_period_end?: string | null }
@@ -388,7 +408,10 @@ export default async function AdminPage() {
     // stats route returns the true total — another phantom jump on the first poll. The old card
     // carried a "200+" suffix admitting the cap; the live one has no way to.
     users: (usersRes.data as { total?: number } | null)?.total ?? allUsers.length,
-    subscriptions: subsCount.count ?? 0,
+    // Paying customers only. subsCount counts every active row, which includes comps and admins —
+    // see isHouseAccount. Counting ourselves as subscribers made the one number on this page that
+    // is supposed to mean revenue mean something else.
+    subscriptions: Math.max(0, (subsCount.count ?? 0) - houseSubs.length),
     openErrors: errors24Res.count ?? 0,
     // Included in the FIRST paint, not left to the poll 20 seconds later. This is the one line on
     // the page that says whether the database has a copy anywhere else, and a version of it that
@@ -702,10 +725,36 @@ export default async function AdminPage() {
               <table style={{ borderCollapse: 'collapse', width: '100%' }}>
                 <thead><tr><th style={th}>Email</th><th style={th}>Tier</th><th style={th}>Status</th></tr></thead>
                 <tbody>
-                  {subs.length === 0 && <tr><td style={td} colSpan={3}>No subscriptions yet.</td></tr>}
-                  {subs.map((s, i) => (
+                  {payingSubs.length === 0 && <tr><td style={td} colSpan={3}>No subscriptions yet.</td></tr>}
+                  {payingSubs.map((s, i) => (
                     <tr key={i}><td style={{ ...td, whiteSpace: 'normal' }}>{s.user_id ? (emailById.get(s.user_id) ?? '(user)') : '—'}</td><td style={td}>{s.tier}</td><td style={td}>{s.status}</td></tr>
                   ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          {/* Us. Shown rather than hidden, because an account with paid features still needs to be
+              findable when something goes wrong with it — it just is not revenue and must never be
+              counted as any. */}
+          <div>
+            <h2 style={{ fontSize: 15, fontWeight: 700, color: INK, margin: '0 0 10px' }}>Admins &amp; comped</h2>
+            <div style={scrollBox}>
+              <table style={{ borderCollapse: 'collapse', width: '100%' }}>
+                <thead><tr><th style={th}>Email</th><th style={th}>Tier</th><th style={th}>Why</th></tr></thead>
+                <tbody>
+                  {houseSubs.length === 0 && <tr><td style={td} colSpan={3}>None.</td></tr>}
+                  {houseSubs.map((s, i) => {
+                    const email = s.user_id ? (emailById.get(s.user_id) ?? '(user)') : '—'
+                    const comped = String((s as { polar_product_id?: string | null }).polar_product_id ?? '').startsWith('comp-')
+                    return (
+                      <tr key={i}>
+                        <td style={{ ...td, whiteSpace: 'normal' }}>{email}</td>
+                        <td style={td}>{s.tier}</td>
+                        <td style={{ ...td, color: MUTED }}>{comped ? 'comped' : 'admin'}</td>
+                      </tr>
+                    )
+                  })}
                 </tbody>
               </table>
             </div>
