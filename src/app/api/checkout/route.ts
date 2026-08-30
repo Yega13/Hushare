@@ -119,7 +119,16 @@ export async function POST(req: Request) {
       '| productId:', productId,
       '| discountId:', discountId ?? 'none',
     )
-    reportServerError('checkout', 'Could not start checkout. Please try again. (502)')
+    // The REASON rides along, because this exact failure once reached the owner while the panel
+    // stayed clean — the generic message alone cannot distinguish a bad API key from a deleted
+    // discount object from a Polar outage, and those have three different fixes.
+    reportServerError('checkout', 'Could not start checkout. Please try again. (502)', {
+      context: {
+        plan,
+        reason: (err instanceof Error ? err.message : String(err)).slice(0, 250),
+        discount: discountId ? 'applied' : 'none',
+      },
+    })
     return NextResponse.json(
       { error: 'Could not start checkout. Please try again.' },
       { status: 502, headers: NO_STORE },

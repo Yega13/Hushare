@@ -1,4 +1,5 @@
 import { createAdminClient } from '@/lib/supabase/admin'
+import { getCloudflareContext } from '@opennextjs/cloudflare'
 
 // Server-side failures, recorded where someone will actually see them.
 //
@@ -21,13 +22,26 @@ export function reportServerError(
 ): void {
   try {
     const admin = createAdminClient()
+    // KEPT ALIVE PAST THE RESPONSE, or it never happens at all.
+    //
+    // On Cloudflare Workers a pending promise is killed when the response returns unless it is
+    // handed to ctx.waitUntil. This function fired its insert and returned, so on production the
+    // report was a race the response usually won: checkout failed for the owner with a 502, the
+    // catch called this, and the admin panel stayed clean — the exact blindness this module was
+    // written to end, reintroduced by the runtime. waitUntil is the contract for "finish this
+    // after the response"; the dev-server fallback (no CF context) keeps the old fire-and-forget.
+    const keepAlive = (p: PromiseLike<unknown>) => {
+      try {
+        getCloudflareContext().ctx.waitUntil(Promise.resolve(p))
+      } catch { /* dev / non-Workers: no context to attach to — fire-and-forget as before */ }
+    }
     // Through the SAME coalescing the client path uses, not a raw insert.
     //
     // A raw insert reintroduced on the server exactly the problem coalescing was built to solve: a
     // broken presign during an event writes one row per failed request, unbounded, hammering the
     // database hardest at the worst possible moment and turning one incident into a hundred rows.
     // The RPC merges repeats within five minutes and counts them instead.
-    void admin
+    keepAlive(admin
       .rpc('coalesce_error_event', {
         p_level: 'error',
         p_source: `server:${source}`.slice(0, 60),
@@ -39,8 +53,9 @@ export function reportServerError(
       .then(({ error }) => {
         if (!error) return
         console.error('[report-server-error] coalesce failed, inserting directly:', error.message)
-        // Never lose a report because the coalescing failed.
-        void admin.from('error_events').insert({
+        // Never lose a report because the coalescing failed — RETURNED into the chain so the
+        // waitUntil above keeps the rescue insert alive too.
+        return admin.from('error_events').insert({
           level: 'error',
           source: `server:${source}`.slice(0, 60),
           message: String(message).slice(0, 500),
@@ -48,7 +63,7 @@ export function reportServerError(
           context: opts.context ?? null,
           ua: null,
         }).then(({ error: e2 }) => { if (e2) console.error('[report-server-error] insert failed:', e2.message) })
-      })
+      }))
 
   } catch (e) {
     console.error('[report-server-error] threw:', e instanceof Error ? e.message : String(e))
