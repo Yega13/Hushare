@@ -159,9 +159,15 @@ async function computeUserTier(userId: string): Promise<{ tier: Tier; cacheable:
   // DB hit for every free-tier user when the admin override feature is not in use
   if (!process.env.ADMIN_EMAILS) return { tier: 'free', cacheable }
 
-  const { data: authData } = await admin.auth.admin.getUserById(userId)
+  const { data: authData, error: authErr } = await admin.auth.admin.getUserById(userId)
   if (isAccountAdmin({ email: authData?.user?.email })) return { tier: 'studio', cacheable }
-  return { tier: 'free', cacheable }
+  // A FAILED AUTH LOOKUP IS A GUESS, exactly like a failed subscriptions query, and must not be
+  // remembered. Without this, a single blip in getUserById returned 'free' for an admin account
+  // — and because the subscriptions query had SUCCEEDED (an admin has no row), cacheable was true,
+  // so that wrong 'free' was cached for the full 30s TTL. For those 30s the account's per-photo
+  // size cap dropped from Max's 200MB to free's 25MB, refusing large photos mid-event. Not caching
+  // it means the next call re-resolves instead of trusting the blip.
+  return { tier: 'free', cacheable: cacheable && !authErr }
 }
 
 // RETENTION grace for lapsed paying customers. Policy: a paid album is kept while the
