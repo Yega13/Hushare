@@ -1,5 +1,7 @@
 import { describe, it, expect, beforeAll } from 'vitest'
-import { r2KeyFromUrl, collectDeletionTargets, albumAssetKeys, type PhotoToDelete } from '@/lib/album-delete'
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
+import { r2KeyFromUrl, collectDeletionTargets, albumAssetKeys, ALBUM_ASSET_COLUMNS, type PhotoToDelete } from '@/lib/album-delete'
 import { r2PublicUrl } from '@/lib/cloudflare/r2'
 
 // r2KeyFromUrl decides WHICH FILE GETS DELETED. Everything about album and photo deletion
@@ -265,6 +267,56 @@ describe('an album owns more than its photos', () => {
     })
     for (const prefix of ['backgrounds/', 'headers/', 'logos/', 'sponsors/']) {
       expect(keys.some((k) => k.startsWith(prefix)), `${prefix} is not collected`).toBe(true)
+    }
+  })
+})
+
+// THE OWNER-ACCESS ALLOWLIST DROPS UNKNOWN COLUMNS SILENTLY.
+//
+// verifyOwnerViaCookie filters requested columns against ALLOWED_EXTRA_COLUMNS — correct, it stops
+// caller-supplied names reaching .select(). But the filter DISCARDS what it does not recognise
+// rather than complaining, so a typo in a column name compiles, runs, returns an album with that
+// field undefined, and quietly stops deleting whichever asset it named.
+//
+// That is precisely the bug this file was just written for: album deletion leaving logos, headers
+// and sponsor marks in the bucket forever. Getting it back through a misspelling would be silent in
+// exactly the same way.
+describe('deletion can actually request every column it needs', () => {
+  const access = readFileSync(join(process.cwd(), 'src', 'lib', 'album-owner-access.ts'), 'utf8')
+  const allowlist = /const ALLOWED_EXTRA_COLUMNS = new Set\(\[([\s\S]*?)\]\)/.exec(access)
+
+  it('finds the allowlist it is checking', () => {
+    expect(allowlist, 'ALLOWED_EXTRA_COLUMNS must stay a literal Set').not.toBeNull()
+  })
+
+  for (const column of ['background_theme', 'logo_url', 'header_image', 'sponsor_logos']) {
+    it(`${column} is allowed through to the delete route`, () => {
+      expect(
+        (allowlist as RegExpExecArray)[1].includes(`'${column}'`),
+        `api/album/delete asks for ${column} so it can remove that file. The allowlist drops ` +
+          `unknown names without a word, so leaving it out means the file is never deleted and ` +
+          `nothing anywhere says so.`,
+      ).toBe(true)
+    })
+  }
+
+  it('ALBUM_ASSET_COLUMNS names only real album columns', () => {
+    // The other three delete callers select this string straight against Postgres, where an unknown
+    // column IS an error — but api/album/delete routes it through the allowlist above, where it is
+    // silently dropped instead. Checking against the schema catches both cases.
+    //
+    // Parsed by splitting, not by regex: the first version used one built from a template string,
+    // the escapes were mangled before it reached disk, and it reported every column as missing
+    // including `id`. That is rule 24, hit while writing the test for rule 13.
+    const schema = readFileSync(join(process.cwd(), 'schema.sql'), 'utf8')
+    const from = schema.indexOf('create table if not exists public.albums (')
+    expect(from, 'albums table not found in schema.sql').toBeGreaterThan(-1)
+    const body = schema.slice(from, schema.indexOf(String.fromCharCode(10) + ');', from))
+    const declared = new Set(
+      body.split(String.fromCharCode(10)).map((l) => l.trim().split(' ')[0]),
+    )
+    for (const col of ALBUM_ASSET_COLUMNS.split(',').map((c) => c.trim())) {
+      expect(declared.has(col), `${col} is not a column on albums`).toBe(true)
     }
   })
 })
