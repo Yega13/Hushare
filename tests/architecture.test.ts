@@ -50,7 +50,9 @@ const SIZE_BUDGET: Record<string, number> = {
   'src/components/OwnerToolbar.tsx': 1783,
   // +23 (2026-08-31): fallback-poll wiring for realtime REFUSAL — the cadence decision is in
   // lib/realtime-fallback.ts; the timer must live beside the channel it covers (rule 15).
-  'src/app/[slug]/AlbumPageClient.tsx': 1473,
+  // +17 (2026-08-31, review finding): channel-identity guard + timer hygiene in the reconnect
+  // loop, so a replaced channel's CLOSED echo cannot breed reconnect loops on venue WiFi.
+  'src/app/[slug]/AlbumPageClient.tsx': 1490,
   'src/app/card-editor/CardEditorClient.tsx': 873,
   'src/components/PhotoGrid.tsx': 843,
   'src/components/AlbumDesigner.tsx': 774,

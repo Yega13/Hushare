@@ -86,7 +86,12 @@ export function useLightboxMedia({ lightbox, currentId, viewerPhotos }: Options)
       }
       loader.src = src
     }
-  }, [lightbox])
+    // currentId is a dep because the photo AT an index can change while the index doesn't —
+    // a realtime refetch after the owner deletes or reorders replaces the array underneath an
+    // open lightbox. Depending on the index alone left the new current photo unprefetched and,
+    // worse, permanently absent from loadedIds, so the overlay held its dimmed thumbnail until
+    // the guest swiped away and back.
+  }, [lightbox, currentId])
 
   return {
     lightboxMediaNode,

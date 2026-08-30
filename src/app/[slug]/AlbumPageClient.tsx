@@ -800,7 +800,16 @@ export default function AlbumPageClient({ initialAlbum = null, initialPhotos, in
 
     function connect() {
       if (!active) return
-      if (currentChannel) supabase.removeChannel(currentChannel)
+      // Null out currentChannel BEFORE removing it. removeChannel makes the old channel fire
+      // CLOSED into its own subscribe callback — SYNCHRONOUSLY when the socket can't push,
+      // which is exactly the refused-websocket state. The identity guard in that callback
+      // (`ch !== currentChannel`) only silences the echo if the reassignment has already
+      // happened; with the old order, every retry's own teardown scheduled one MORE connect,
+      // and reconnect loops accumulated for as long as a websocket-blocking network kept the
+      // page open — then all drained as a refetch herd the moment connectivity returned.
+      const prev = currentChannel
+      currentChannel = null
+      if (prev) supabase.removeChannel(prev)
 
       const ch = supabase
         // Channel name IS the broadcast topic the server sends to (`album:<id>`).
@@ -832,8 +841,15 @@ export default function AlbumPageClient({ initialAlbum = null, initialPhotos, in
         // contentless `changed` broadcast that uploads already used, and the debounced refetch above
         // applies them. Costs a sub-second delay on the owner's own action. Do not reintroduce
         // postgres_changes here without a way to scope table reads to one album.
-        .subscribe(status => {
-          if (!active) return
+
+      // Assigned BEFORE subscribe so the identity guard below can never mistake this channel's
+      // own first status event for a stale echo, however promptly the callback fires.
+      currentChannel = ch
+      ch.subscribe(status => {
+          // The identity check is load-bearing: a channel replaced by a newer connect() still
+          // fires CLOSED (and stray errors) into THIS callback. Without the check, a dead
+          // channel's echo re-arms retry/poll timers that belong to its successor.
+          if (!active || ch !== currentChannel) return
           if (status === 'SUBSCRIBED') {
             // Always refetch on subscribe: closes the race window between the initial
             // fetchPhotos call and when the channel becomes SUBSCRIBED. Photos uploaded
@@ -861,6 +877,9 @@ export default function AlbumPageClient({ initialAlbum = null, initialPhotos, in
             // smear. Same reasoning, and the same 0.5 + random() form, as the upload retry path.
             const delay = Math.min(2000 * Math.pow(2, retryCount), 30_000) * (0.5 + Math.random() * 0.5)
             retryCount++
+            // Clear before reassigning: CHANNEL_ERROR and TIMED_OUT can both arrive for one
+            // failed join, and an overwritten-but-live timer is one extra reconnect loop. Each.
+            if (retryTimer) clearTimeout(retryTimer)
             retryTimer = setTimeout(connect, delay)
             // First failure arms the fallback poll; `if (!pollTimer)` keeps reconnect attempts
             // from stacking a second loop. First poll waits a full jittered interval — the
@@ -868,8 +887,6 @@ export default function AlbumPageClient({ initialAlbum = null, initialPhotos, in
             if (!pollTimer) pollTimer = setTimeout(pollWhileDown, fallbackPollDelay())
           }
         })
-
-      currentChannel = ch
     }
 
     connect()
