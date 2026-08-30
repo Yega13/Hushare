@@ -15,7 +15,20 @@ const NO_STORE = { 'Cache-Control': 'no-store' }
 // Before it, "IP address (kept briefly)" was a claim nothing implemented: rate_limit_events had a
 // probabilistic sweep scoped to the SAME key, so a key that never recurred was never swept. On
 // 2026-08-17 the table held 28,663 rows going back seven weeks.
-const IP_LOG_DAYS = 30
+// 2, not 30. NOTHING EVER READS A ROW OLDER THAN THE RATE-LIMIT WINDOW.
+//
+// lib/rate-limit.ts is the only reader and it asks for `created_at >= now() - windowSeconds`. The
+// longest window anywhere in the app is 3600s. So a row is dead one hour after it is written, and
+// it was being kept for a month: 107,009 rows and 24 MB of a 53 MB database on 2026-08-30 — half
+// the database — every row of it a raw IP-derived key that could not affect a single decision.
+//
+// The published policy says request metadata is kept 30 days, and this stays well inside that. It
+// could now promise something considerably better; that is a change to the policy text, which is
+// the owner's to make.
+//
+// Two days rather than one hour, because the window this must never undercut is the longest rate
+// limit, and a 48x margin costs nothing at this size.
+const IP_LOG_DAYS = 2
 const ERROR_LOG_DAYS = 30
 // Matches the 24-hour cutoff api/upload/stream already intended for these — this route just makes
 // it actually happen. Long enough that a genuinely slow upload finishing overnight still redeems.

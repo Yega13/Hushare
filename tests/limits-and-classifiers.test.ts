@@ -1,4 +1,6 @@
 import { describe, it, expect } from 'vitest'
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
 import {
   uploadCapsForTier, albumMediaCapForTier, albumMediaCapForAlbum, formatCapSize, tooLargeMessage,
   isAllowedImage, isAllowedVideo,
@@ -254,5 +256,33 @@ describe('free album allowance and grandfathering', () => {
     for (const key of Object.keys(media)) {
       expect(key, `${key} looks like a separate video-count cap`).not.toMatch(/VIDEO_COUNT|MAX_VIDEOS|VIDEO_LIMIT/)
     }
+  })
+})
+
+// RAW IP KEYS MUST NOT OUTLIVE THE DECISION THEY EXIST FOR.
+//
+// rate_limit_events is written on every limited request and read by exactly one query:
+// `created_at >= now() - windowSeconds`. The longest window in the app is an hour, so a row is
+// dead an hour after it is written. It was being kept for 30 days — 107,009 rows, 24 MB of a 53 MB
+// database on 2026-08-30, every row a raw IP-derived key that could no longer affect anything.
+//
+// This pins the relationship rather than the number: whatever the retention is, it must comfortably
+// exceed the longest rate-limit window (or limits break) and must not stretch into a month (or the
+// product is storing IPs it has no use for).
+describe('rate-limit records are not kept longer than they can be used', () => {
+  const prune = readFileSync(join(process.cwd(), 'src', 'app', 'api', 'cron', 'prune-data', 'route.ts'), 'utf8')
+  const marker = 'const IP_LOG_DAYS = '
+  const at = prune.indexOf(marker)
+  const days = Number(prune.slice(at + marker.length).slice(0, prune.slice(at + marker.length).search(/[^0-9]/)))
+
+  it('keeps them longer than the longest rate-limit window', () => {
+    const LONGEST_WINDOW_SECONDS = 3600
+    expect(at, 'IP_LOG_DAYS must stay a named constant').toBeGreaterThan(-1)
+    expect(days * 86400, `${days} days must exceed the ${LONGEST_WINDOW_SECONDS}s window`)
+      .toBeGreaterThan(LONGEST_WINDOW_SECONDS)
+  })
+
+  it('does not keep them for a month', () => {
+    expect(days, 'raw IP keys with no reader must not be retained for weeks').toBeLessThanOrEqual(7)
   })
 })
