@@ -112,7 +112,32 @@ export async function POST(req: Request) {
       metadata: { userId: user.id, tier, cycle },
       discountId,
     })
-  } catch (err) {
+  } catch (firstErr) {
+    // A BROKEN COUPON MUST NEVER BLOCK A SALE. This exact failure reached a customer: the intro
+    // discount object died at Polar (422 on checkout creation) and everyone still ELIGIBLE for the
+    // intro was refused checkout entirely — the people most likely to be first-time buyers. The
+    // discount is a marketing nicety; the purchase is the product. Retry once without it, and
+    // report loudly that the intro is broken so it gets fixed — at full price, not silently.
+    if (discountId) {
+      try {
+        checkout = await createCheckout({
+          productId,
+          successUrl,
+          customerEmail: user.email,
+          metadata: { userId: user.id, tier, cycle },
+        })
+        reportServerError('checkout', 'Intro discount failed at Polar — checkout completed at FULL PRICE', {
+          context: {
+            plan,
+            reason: (firstErr instanceof Error ? firstErr.message : String(firstErr)).slice(0, 250),
+            action: 'check the discount object in the Polar dashboard: exists, not expired, redemption limit, attached products',
+          },
+        })
+        track({ name: 'checkout_started', userId: user.id, tier, cycle })
+        return NextResponse.redirect(checkout.url, { status: 303, headers: NO_STORE })
+      } catch { /* fall through to the normal failure report with the ORIGINAL error */ }
+    }
+    const err = firstErr
     console.error(
       '[checkout] Polar createCheckout failed:', err instanceof Error ? err.message : String(err),
       '| plan:', plan,

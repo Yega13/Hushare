@@ -47,7 +47,10 @@ export async function createCheckout(input: CheckoutInput): Promise<CheckoutResu
   if (!res.ok) {
     const text = await res.text()
     console.error('[polar] checkout failed:', res.status, text.slice(0, 200))
-    throw new Error(`Polar checkout creation failed: ${res.status}`)
+    // The BODY rides in the error. A bare "422" cost a debugging round trip through a customer:
+    // Polar's body names the exact invalid field (a dead discount id, a detached product), and
+    // console.error alone goes to a log stream nobody reads.
+    throw new Error(`Polar checkout creation failed: ${res.status} ${text.slice(0, 180)}`)
   }
 
   const data = (await res.json()) as { id: string; url: string }
