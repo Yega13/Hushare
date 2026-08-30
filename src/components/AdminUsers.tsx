@@ -1,6 +1,7 @@
 'use client'
 
 import { useMemo, useState } from 'react'
+import { useIsNarrow } from '@/lib/useIsNarrow'
 
 // The registered users, and whether they are actually here.
 //
@@ -80,6 +81,10 @@ function Card({ label, value, hint, tone }: { label: string; value: string; hint
 
 export default function AdminUsers({ users, cohorts }: { users: UserRow[]; cohorts: Cohort[] }) {
   const [onlyFlagged, setOnlyFlagged] = useState(false)
+  // On a phone the 760px table meant the owner saw an email, a clipped date, and a horizontal
+  // scrollbar they never found — plan, activity and the FLAGS (the whole point of this view)
+  // were invisible. Narrow screens get each user as a stacked card with everything on it.
+  const narrow = useIsNarrow()
 
   const rows = useMemo(() => {
     return users.map((u) => ({ u, flags: flagsFor(u) }))
@@ -172,6 +177,48 @@ export default function AdminUsers({ users, cohorts }: { users: UserRow[]; cohor
           </button>
         </div>
 
+        {narrow ? (
+          <div style={{ maxHeight: 520, overflowY: 'auto', display: 'grid', gap: 8 }}>
+            {shown.length === 0 && <div style={{ fontSize: 12.5, color: MUTED, padding: '6px 2px' }}>Nobody to show.</div>}
+            {shown.map(({ u, flags }) => {
+              const idle = daysSince(u.lastActive)
+              return (
+                <div key={u.id} style={{ border: '1px solid #F0E8DA', borderRadius: 10, padding: '9px 11px', display: 'grid', gap: 5 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 8 }}>
+                    <div style={{ fontSize: 12.5, fontWeight: 600, color: INK, overflowWrap: 'anywhere' }}>{u.email || '(no email)'}</div>
+                    <span style={{
+                      flex: 'none', fontSize: 11, fontWeight: 600, padding: '2px 7px', borderRadius: 999,
+                      background: u.tier === 'free' ? '#F2ECE1' : 'rgba(99,8,38,0.09)',
+                      color: u.tier === 'free' ? MUTED : BRAND,
+                    }}>
+                      {u.tier === 'studio' ? 'Max' : u.tier === 'pro' ? 'Pro' : 'Free'}
+                    </span>
+                  </div>
+                  <div style={{ fontSize: 11.5, color: MUTED, display: 'flex', flexWrap: 'wrap', gap: '2px 10px', fontVariantNumeric: 'tabular-nums' }}>
+                    <span>joined {u.joined}</span>
+                    <span>{u.albums}<span> / {u.albumCap} albums</span></span>
+                    <span>{u.media.toLocaleString('en-US')} media</span>
+                    <span style={{ color: idle !== null && idle > 30 ? '#9B2C2C' : MUTED }}>
+                      {idle === null ? 'never active' : idle === 0 ? 'active today' : `active ${idle}d ago`}
+                    </span>
+                  </div>
+                  {flags.length > 0 && (
+                    <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+                      {flags.map((f) => (
+                        <span key={f.text} style={{
+                          fontSize: 10.5, fontWeight: 600, padding: '2px 7px', borderRadius: 999,
+                          background: TONE[f.tone].bg, color: TONE[f.tone].fg, whiteSpace: 'nowrap',
+                        }}>
+                          {f.text}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )
+            })}
+          </div>
+        ) : (
         <div style={{ overflowX: 'auto', maxHeight: 460, overflowY: 'auto' }}>
           {/* minWidth, or the seven columns shrink to fit a phone instead of scrolling — and the
               email column, the one you actually came to read, is the one that loses. The parent has
@@ -223,6 +270,7 @@ export default function AdminUsers({ users, cohorts }: { users: UserRow[]; cohor
             </tbody>
           </table>
         </div>
+        )}
       </div>
     </div>
   )
