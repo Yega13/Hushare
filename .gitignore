@@ -83,3 +83,6 @@ next-env.d.ts
 .audit-*
 _tmp-*
 scripts/_tmp-*
+
+# Scratch watchers, same reasoning as .audit-*
+.watch-*
