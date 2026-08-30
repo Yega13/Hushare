@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { RETIRE_AFTER_DAYS, WARN_BEFORE_DAYS } from '@/lib/retention'
 import { deleteAlbumAssetsAndRows } from '@/lib/album-delete'
 import { getUserTierById, getPaidRetentionUntil } from '@/lib/subscriptions'
 import { timingSafeEqual } from '@/lib/timing-safe'
@@ -19,11 +20,11 @@ const NO_STORE = { 'Cache-Control': 'no-store' }
 // said 3 months for five days after this constant changed, which meant the privacy policy stated a
 // retention period four times shorter than the one actually enforced. If this number ever changes
 // again, grep for "1 year of inactivity" and change all of them in the same commit.
-const RETIRE_AFTER_DAYS = 365
+// RETIRE_AFTER_DAYS and WARN_BEFORE_DAYS come from lib/retention, shared with notify-expiry —
+// the two are a safety interlock and must move together.
 // Must mirror notify-expiry. The owner is warned this many days before the album expires, and it is
 // not eligible for deletion until that long has actually passed since the warning was sent —
 // otherwise "30 days' notice" would mean "a warning, then possibly deletion the same night".
-const WARN_BEFORE_DAYS = 30
 // Raised from 25. At 30+ new albums a week the old rate could not drain the queue, so albums that
 // had passed their retention date simply accumulated -- storage paid for indefinitely. Ordered
 // oldest-first, so whatever the cap is, the longest-expired go first. Deletion is now gated on a

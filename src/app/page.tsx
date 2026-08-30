@@ -25,7 +25,8 @@ export default async function HomePage() {
   // real byte savings need pre-optimized assets or a Cloudflare Images loader, not next/image.
   ReactDOM.preload(NATURE_IMG, { as: 'image', fetchPriority: 'high' })
 
-  const dict = getDictionary(await getServerLocale())
+  const locale = await getServerLocale()
+  const dict = getDictionary(locale)
 
   // THE UPLOAD LIMITS COME FROM THE CODE THAT ENFORCES THEM.
   //
@@ -36,12 +37,14 @@ export default async function HomePage() {
   // been raised precisely because that number was turning people away.
   //
   // Interpolating from uploadCapsForTier means a cap change cannot leave a translation behind.
+  // The locale goes with the size, or the Russian and Armenian answers get Latin "MB" — the unit
+  // regression that rode in when these numbers switched from hand-typed to interpolated.
   const caps = {
-    freePhoto: formatCapSize(uploadCapsForTier('free').image),
-    freeVideo: formatCapSize(uploadCapsForTier('free').video),
-    proPhoto: formatCapSize(uploadCapsForTier('pro').image),
-    proVideo: formatCapSize(uploadCapsForTier('pro').video),
-    maxVideo: formatCapSize(uploadCapsForTier('studio').video),
+    freePhoto: formatCapSize(uploadCapsForTier('free').image, locale),
+    freeVideo: formatCapSize(uploadCapsForTier('free').video, locale),
+    proPhoto: formatCapSize(uploadCapsForTier('pro').image, locale),
+    proVideo: formatCapSize(uploadCapsForTier('pro').video, locale),
+    maxVideo: formatCapSize(uploadCapsForTier('studio').video, locale),
   }
 
   // FAQ_COUNT derived, not literal: a hardcoded 10 means adding home.faq.q11 renders nothing and

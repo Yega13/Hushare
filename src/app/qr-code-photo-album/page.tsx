@@ -98,7 +98,7 @@ export default function QrCodePhotoAlbumPage() {
         },
         {
           title: 'Real-time photos, highest quality',
-          body: 'Photos appear in the album the moment guests upload them. Large photos are resized to 2560px on the long edge so the album stays quick on a phone; videos are kept exactly as uploaded. Download the full album as a ZIP at any time.',
+          body: 'Photos appear in the album the moment guests upload them. Photos up to 3500px are kept exactly as shot and larger ones are resized to 3500px — enough for a full-page print — while lightweight thumbnails keep the album quick on a phone; videos are kept exactly as uploaded. Download the full album as a ZIP at any time.',
         },
       ]}
       faq={[

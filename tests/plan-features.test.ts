@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest'
+import { MAX_IMG_DIM } from '@/lib/upload-policy'
 import { readFileSync, readdirSync } from 'node:fs'
 import { join, sep } from 'node:path'
 import { planFeatures } from '@/lib/plan-features'
@@ -330,4 +331,76 @@ describe('every interpolated string is called with the vars it needs', () => {
       ).toEqual([])
     })
   }
+})
+
+// THE QUALITY PROMISE MATCHES THE PIXELS THE CODE KEEPS.
+//
+// The About page and four landing pages described a 2560px resize for months after the limit moved
+// to 3500px — underselling the product on the exact pages that argue for it. Worse, the Russian and
+// Armenian About copy promised "no compression whatsoever", which the code has never done for
+// photos over the limit. A promise a photographer can falsify with one exiftool call, on the trust
+// page.
+//
+// Pinned to MAX_IMG_DIM itself: raise the limit and every one of these fails until the copy
+// follows, which is precisely the drift that already happened once.
+describe('the copy describes the real resize limit', () => {
+  const COPY_FILES = [
+    'i18n/dictionaries/en.ts', 'i18n/dictionaries/ru.ts', 'i18n/dictionaries/hy.ts',
+    'app/event-photo-sharing/page.tsx', 'app/qr-code-photo-album/page.tsx',
+    'app/shared-photo-album/page.tsx', 'app/wedding-photo-sharing/page.tsx',
+  ]
+
+  for (const rel of COPY_FILES) {
+    it(`${rel} states ${MAX_IMG_DIM}px and nothing stale`, () => {
+      const src = readFileSync(join(process.cwd(), 'src', ...rel.split('/')), 'utf8')
+      expect(src.includes(`${MAX_IMG_DIM}px`), `must describe the real ${MAX_IMG_DIM}px limit`).toBe(true)
+      expect(src.includes('2560px'), 'the stale 2560px claim is back').toBe(false)
+    })
+  }
+})
+
+// THE SEARCH-ENGINE FAQ IS THE PAGE'S FAQ.
+//
+// layout.tsx served a hand-typed FAQPage JSON-LD that had already drifted twice: two questions the
+// homepage renders were missing entirely, and the retention answer was quietly reworded. Search
+// engines got the older, shorter copy. pricing/page.tsx fixed this same defect for itself months
+// ago; the layout never adopted it.
+describe('the JSON-LD FAQ cannot drift from the homepage FAQ', () => {
+  const layout = readFileSync(join(process.cwd(), 'src', 'app', 'layout.tsx'), 'utf8')
+
+  it('builds from the dictionary, not from hand-typed entries', () => {
+    expect(layout.includes('homeFaqJsonLd'), 'must build the FAQ from the dictionary').toBe(true)
+    expect(layout.includes('HOME_FAQ_COUNT'), 'and derive the count, not hardcode it').toBe(true)
+    // The shape of the old hand-typed block: a Question literal with a name string inline. One
+    // remaining means somebody re-added a manual entry beside the generated ones.
+    const manual = layout.match(/"@type": "Question",\s*\n\s*name: "/g) ?? []
+    expect(manual, 'no hand-typed Question entries may remain').toEqual([])
+  })
+
+  it('interpolates the upload caps so the emitted answer has no raw {token}', () => {
+    expect(layout.includes('interpolate('), 'the a10 placeholders must be filled').toBe(true)
+    expect(layout.includes('uploadCapsForTier('), 'from the caps the server enforces').toBe(true)
+  })
+})
+
+// THE SUPPORT BOT'S NUMBERS COME FROM THE CODE THAT ENFORCES THEM.
+//
+// The system prompt answers people deciding whether to pay, and its numbers were hand-typed — an
+// audit found six wrong at once (free video 50 MB vs the real 200, item counts, features on the
+// wrong plans). It is a template literal in a Node route, so there was never a reason for
+// literals. This guards against one being "helpfully" typed back in.
+describe('the support prompt interpolates its limits', () => {
+  const route = readFileSync(join(process.cwd(), 'src', 'app', 'api', 'support', 'chat', 'route.ts'), 'utf8')
+
+  it('reads caps and counts from lib/media', () => {
+    for (const marker of ['uploadCapsForTier(', 'formatCapSize(', '${ANON_ALBUM_LIMIT}', '${n(STUDIO_ALBUM_MEDIA)}']) {
+      expect(route.includes(marker), `${marker} must feed the prompt`).toBe(true)
+    }
+  })
+
+  it('has no hand-typed plan numbers left', () => {
+    for (const stale of ['up to 250 items', 'up to 500 items', 'up to 3,000 items', 'up to 10,000 items', 'up to 25 MB', 'up to 200 MB']) {
+      expect(route.includes(stale), `"${stale}" is a literal again — it will drift`).toBe(false)
+    }
+  })
 })

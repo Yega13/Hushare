@@ -5,7 +5,9 @@ import PresenceBeacon from "@/components/PresenceBeacon";
 import SiteFooter from "@/components/SiteFooter";
 import ScrollReveal from "@/components/ScrollReveal";
 import { getServerLocale } from "@/i18n/server";
-import { getDictionary } from "@/i18n/get-dictionary";
+import { getDictionary, interpolate } from "@/i18n/get-dictionary";
+import { en } from "@/i18n/dictionaries/en";
+import { uploadCapsForTier, formatCapSize } from "@/lib/media";
 import { LocaleProvider } from "@/i18n/LocaleProvider";
 import ErrorReporter from "@/components/ErrorReporter";
 import InitialPreloader from "@/components/InitialPreloader";
@@ -170,6 +172,31 @@ export const viewport: Viewport = {
   initialScale: 1,
 };
 
+// ONE SOURCE FOR BOTH COPIES OF THE HOMEPAGE FAQ — the same fix pricing/page.tsx already made
+// for its own JSON-LD, adopted here two drifts late. The hand-typed copy this replaces was missing
+// two questions the page renders (album customization and Collections) and had quietly reworded
+// the retention answer; search engines were served the older, shorter FAQ. Reading the English
+// dictionary directly removes the second place to forget.
+//
+// The upload-limit answer takes placeholders, so it is interpolated from the caps the server
+// enforces — English units, since structured data is emitted once for the canonical page.
+const HOME_FAQ_COUNT = Object.keys(en).filter((k) => /^home\.faq\.q\d+$/.test(k)).length
+const homeFaqCaps = {
+  freePhoto: formatCapSize(uploadCapsForTier("free").image),
+  freeVideo: formatCapSize(uploadCapsForTier("free").video),
+  proPhoto: formatCapSize(uploadCapsForTier("pro").image),
+  proVideo: formatCapSize(uploadCapsForTier("pro").video),
+  maxVideo: formatCapSize(uploadCapsForTier("studio").video),
+}
+const homeFaqJsonLd = Array.from({ length: HOME_FAQ_COUNT }, (_, i) => ({
+  "@type": "Question",
+  name: en[`home.faq.q${i + 1}` as keyof typeof en] as string,
+  acceptedAnswer: {
+    "@type": "Answer",
+    text: interpolate(en[`home.faq.a${i + 1}` as keyof typeof en] as string, homeFaqCaps),
+  },
+}))
+
 const jsonLd = {
   "@context": "https://schema.org",
   "@graph": [
@@ -284,72 +311,7 @@ const jsonLd = {
     {
       "@type": "FAQPage",
       "@id": `${SITE_URL}#faq`,
-      mainEntity: [
-        {
-          "@type": "Question",
-          name: "Do guests need an account to add photos?",
-          acceptedAnswer: {
-            "@type": "Answer",
-            text: "No. Anyone with your album link can view and add photos - no sign-up, no app, no download. Hushare is designed so the only friction between a guest and the album is tapping the link.",
-          },
-        },
-        {
-          "@type": "Question",
-          name: "How long does Hushare keep my photos?",
-          acceptedAnswer: {
-            "@type": "Answer",
-            text: "Free albums are preserved as long as they remain active. If an album sits untouched by everyone for 1 year, it is automatically retired and its media is deleted. If the album was made while signed in, we email a warning first; albums made without an account have no address to warn. Active albums live on. Paid tiers remove this inactivity rule and keep albums a year after cancellation.",
-          },
-        },
-        {
-          "@type": "Question",
-          name: "Is Hushare really free?",
-          acceptedAnswer: {
-            "@type": "Answer",
-            text: "Yes. Free albums are free to create, share, upload to, and download from, with no credit card required - and password protection is free too. Paid tiers add custom URLs, removing the Hushare mark, larger uploads, Collections, and no inactivity retirement.",
-          },
-        },
-        {
-          "@type": "Question",
-          name: "Can I use a QR code at a wedding or event?",
-          acceptedAnswer: {
-            "@type": "Answer",
-            text: "Yes. Every album has a unique link you can turn into a QR code and print on table cards, invitations, programs, or a welcome sign. Guests scan it and start adding photos instantly.",
-          },
-        },
-        {
-          "@type": "Question",
-          name: "Can I download all the photos at once?",
-          acceptedAnswer: {
-            "@type": "Answer",
-            text: "Yes. From the owner view of your album, you can download the full collection as a single ZIP file - originals, not compressed thumbnails.",
-          },
-        },
-        {
-          "@type": "Question",
-          name: "Who can see my album?",
-          acceptedAnswer: {
-            "@type": "Answer",
-            text: "Only people with the link. Albums are unlisted - they are not indexed by search engines and cannot be discovered by browsing the site. Share the link only with the people you want to invite.",
-          },
-        },
-        {
-          "@type": "Question",
-          name: "What happens if I lose my owner link?",
-          acceptedAnswer: {
-            "@type": "Answer",
-            text: "The owner link is how Hushare recognises you as the album creator. Bookmark it as soon as you create an album, or forward it to yourself. If you do lose it, contact us with your album name and approximate creation date and we will verify you manually.",
-          },
-        },
-        {
-          "@type": "Question",
-          name: "What photo formats and sizes are supported?",
-          acceptedAnswer: {
-            "@type": "Answer",
-            text: "Free albums support JPG, PNG, HEIC, and WebP images up to 25 MB each, plus MP4, MOV, or WebM videos up to 200 MB. Pro raises this to 200 MB photos and 1 GB video; Max allows 4 GB video.",
-          },
-        },
-      ],
+      mainEntity: homeFaqJsonLd,
     },
   ],
 };

@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { RETIRE_AFTER_DAYS, WARN_AFTER_DAYS } from '@/lib/retention'
 import { getUserTierById, getPaidRetentionUntil } from '@/lib/subscriptions'
 import { sendExpiryWarningEmail } from '@/lib/email'
 import { timingSafeEqual } from '@/lib/timing-safe'
@@ -7,11 +8,8 @@ import { timingSafeEqual } from '@/lib/timing-safe'
 export const runtime = 'nodejs'
 
 const NO_STORE = { 'Cache-Control': 'no-store' }
-// Must mirror retire-albums: FREE albums expire after 365 days (1 year) of inactivity. Owners are
-// warned 30 days before (i.e. once the album has been inactive 335–365 days) so they can download first.
-const RETIRE_AFTER_DAYS = 365
-const WARN_BEFORE_DAYS = 30
-const WARN_AFTER_DAYS = RETIRE_AFTER_DAYS - WARN_BEFORE_DAYS  // 335
+// The clock is shared with retire-albums through lib/retention — the old "must mirror" comment
+// was the only thing holding the two copies together, and a comment is not a mechanism.
 // Raised from 50, and kept comfortably ahead of retire-albums' rate so the warning queue drains
 // faster than the deletion queue consumes it -- otherwise the interlock turns into a permanent
 // backlog rather than a safety net.

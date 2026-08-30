@@ -108,7 +108,7 @@ export const en = {
   'about.feat2.title': 'Full Album Customization',
   'about.feat2.desc': 'Your own background, your colors, your layout. Albums look the way you want — not the way a template decided.',
   'about.feat3.title': 'Highest Quality, Always',
-  'about.feat3.desc': 'No watermarks, ever. Large photos are resized to 2560px on the long edge so an album of hundreds still opens instantly on a phone. Videos are kept exactly as uploaded.',
+  'about.feat3.desc': 'No watermarks, ever. Photos up to 3500px are kept exactly as shot; larger ones are resized to 3500px on the long edge — enough for a full-page print — and lightweight thumbnails mean an album of hundreds still opens instantly on a phone. Videos are kept exactly as uploaded.',
   'about.feat4.title': 'AI Photo Recovery',
   'about.feat4.desc': 'Blurry shot? Bad lighting? We’re building AI tools to recover and enhance photos right inside your album.',
   'about.horizon': 'On the horizon',

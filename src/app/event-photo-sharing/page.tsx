@@ -98,7 +98,7 @@ export default function EventPhotoSharingPage() {
         },
         {
           title: 'Walk away with everything',
-          body: 'At the end of the event, download a ZIP of every photo in one go. No watermarks, no chasing people to send you their shots. Large photos are resized to 2560px on the long edge so albums stay quick on a phone; videos are kept exactly as uploaded.',
+          body: 'At the end of the event, download a ZIP of every photo in one go. No watermarks, no chasing people to send you their shots. Photos up to 3500px are kept exactly as shot and larger ones are resized to 3500px — enough for a full-page print — while lightweight thumbnails keep albums quick on a phone; videos are kept exactly as uploaded.',
         },
       ]}
       faq={[

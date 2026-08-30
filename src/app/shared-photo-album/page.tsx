@@ -98,7 +98,7 @@ export default function SharedPhotoAlbumPage() {
         },
         {
           title: 'Highest quality, always',
-          body: 'No watermarks, ever. Large photos are resized to 2560px on the long edge so the album loads quickly on a phone; videos are kept exactly as uploaded. Download the full album as a ZIP whenever you want.',
+          body: 'No watermarks, ever. Photos up to 3500px are kept exactly as shot and larger ones are resized to 3500px — enough for a full-page print — while lightweight thumbnails keep the album loading quickly on a phone; videos are kept exactly as uploaded. Download the full album as a ZIP whenever you want.',
         },
       ]}
       faq={[

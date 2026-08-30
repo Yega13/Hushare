@@ -58,12 +58,25 @@ export const STUDIO_VIDEO_BYTES = 4 * GB
 
 // Human-readable size for a cap in an error message. A 4 GB studio video cap read as "4096 MB",
 // which nobody parses as a generous limit. Whole GB above the 1 GB mark, MB below it.
-export function formatCapSize(bytes: number): string {
+//
+// LOCALE-AWARE UNITS, because this string gets interpolated into translated copy. When the homepage
+// FAQ switched from hand-typed numbers to interpolation (the hand-typed Russian said 50 MB while
+// the code allowed 200), the fix quietly swapped the Cyrillic and Armenian unit words for Latin
+// "MB" — a regression riding in on a correction. The unit table keeps the interpolation honest in
+// every language it feeds. Default stays 'en' so error messages and existing callers are unchanged.
+const SIZE_UNITS: Record<string, { mb: string; gb: string }> = {
+  en: { mb: 'MB', gb: 'GB' },
+  ru: { mb: String.fromCharCode(1052, 1041), gb: String.fromCharCode(1043, 1041) },          // МБ / ГБ
+  hy: { mb: String.fromCharCode(1348, 1330), gb: String.fromCharCode(1331, 1330) },          // ՄԲ / ԳԲ
+}
+
+export function formatCapSize(bytes: number, locale: string = 'en'): string {
+  const units = SIZE_UNITS[locale] ?? SIZE_UNITS.en
   if (bytes >= GB) {
     const gb = bytes / GB
-    return `${Number.isInteger(gb) ? gb : gb.toFixed(1)} GB`
+    return `${Number.isInteger(gb) ? gb : gb.toFixed(1)} ${units.gb}`
   }
-  return `${Math.round(bytes / MB)} MB`
+  return `${Math.round(bytes / MB)} ${units.mb}`
 }
 
 // The refusal a guest actually reads when a file is over this album's cap. Kept in ONE place so the

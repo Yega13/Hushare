@@ -35,15 +35,20 @@ export default function AccountNavLink() {
   const state = status
 
   if (state === 'loading') {
-    // Holds the space the resolved control will take, rather than the width of the word "Sign in".
-    // The old placeholder was text-width while the settled control is a 1.9rem circle, so every
-    // signed-in page load shifted the nav sideways as it resolved.
+    // Sized for the MAJORITY outcome. Most visitors on the pages that render this are signed out
+    // and resolve to the "Sign in" text — so the placeholder is that text, invisible, exactly as
+    // wide as what will replace it: zero shift for most people. The minimums keep at least the
+    // avatar circle's box, so a signed-in resolve shrinks gracefully instead of jumping height.
+    // (A fixed 1.9rem square here optimised for the signed-in case and moved the shift onto
+    // everyone else — the wrong trade, caught in review.)
     return (
       <span
         className={linkClass}
         aria-hidden="true"
-        style={{ display: 'inline-block', width: '1.9rem', height: '1.9rem', color: 'transparent' }}
-      />
+        style={{ display: 'inline-block', minWidth: '1.9rem', minHeight: '1.9rem', color: 'transparent' }}
+      >
+        {t('nav.signIn')}
+      </span>
     )
   }
 

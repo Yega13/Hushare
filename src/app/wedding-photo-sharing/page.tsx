@@ -98,7 +98,7 @@ export default function WeddingPhotoSharingPage() {
         },
         {
           title: 'Download everything after',
-          body: 'When the night is over, download all guest photos as a single ZIP. Every candid, every detail shot, every tearful hug. Large photos are resized to 2560px on the long edge so the album stays quick on a phone; videos are kept exactly as uploaded.',
+          body: 'When the night is over, download all guest photos as a single ZIP. Every candid, every detail shot, every tearful hug. Photos up to 3500px are kept exactly as shot and larger ones are resized to 3500px — enough for a full-page print — while lightweight thumbnails keep the album quick on a phone; videos are kept exactly as uploaded.',
         },
       ]}
       faq={[

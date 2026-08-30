@@ -334,3 +334,27 @@ describe('no page of ours can be claimed as a custom album URL', () => {
     }
   })
 })
+
+// THE UNIT GOES WITH THE LANGUAGE.
+//
+// formatCapSize output is interpolated into translated copy. When the homepage FAQ switched from
+// hand-typed numbers to interpolation, the correction quietly replaced the Cyrillic and Armenian
+// unit words with Latin "MB" — a regression riding in on a fix. Checked by code point so the
+// expectation cannot itself be mangled on the way to disk.
+describe('cap sizes carry the units of the language they appear in', () => {
+  const MB = 1024 * 1024
+  const GB = 1024 * MB
+  const RU_MB = String.fromCharCode(1052, 1041)
+  const HY_GB = String.fromCharCode(1331, 1330)
+
+  it('renders Cyrillic and Armenian units for those locales', () => {
+    expect(formatCapSize(25 * MB, 'ru')).toBe(`25 ${RU_MB}`)
+    expect(formatCapSize(4 * GB, 'hy')).toBe(`4 ${HY_GB}`)
+  })
+
+  it('defaults to English so error messages and old callers are unchanged', () => {
+    expect(formatCapSize(25 * MB)).toBe('25 MB')
+    expect(formatCapSize(4 * GB)).toBe('4 GB')
+    expect(formatCapSize(25 * MB, 'de'), 'an unknown locale falls back to English, never throws').toBe('25 MB')
+  })
+})
