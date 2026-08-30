@@ -82,18 +82,27 @@ export default function AdminUsers({ users, cohorts }: { users: UserRow[]; cohor
   const [onlyFlagged, setOnlyFlagged] = useState(false)
 
   const rows = useMemo(() => {
-    const withFlags = users.map((u) => ({ u, flags: flagsFor(u) }))
-    // Anything needing attention first; within that, the most recently active, because a person who
-    // was here yesterday is worth a message today.
-    return withFlags.sort((a, b) => {
-      const sev = (f: Flag[]) => (f.some((x) => x.tone === 'bad') ? 0 : f.length > 0 ? 1 : 2)
-      const d = sev(a.flags) - sev(b.flags)
-      if (d !== 0) return d
-      return (b.u.lastActive ?? '').localeCompare(a.u.lastActive ?? '')
-    })
+    return users.map((u) => ({ u, flags: flagsFor(u) }))
   }, [users])
 
-  const shown = onlyFlagged ? rows.filter((r) => r.flags.length > 0) : rows
+  // TWO ORDERS, ONE PER MODE. The default list reads newest signup first — the owner asked "who
+  // registered lately?" and found the answer shuffled by an urgency sort they had not asked for.
+  // The urgency sort still exists, exactly where it earns its place: behind "Show only flagged",
+  // which is the view you open when the question IS "who needs attention?" — worst first, then
+  // most recently active, because someone here yesterday is worth a message today.
+  const shown = useMemo(() => {
+    if (onlyFlagged) {
+      const sev = (f: Flag[]) => (f.some((x) => x.tone === 'bad') ? 0 : f.length > 0 ? 1 : 2)
+      return rows
+        .filter((r) => r.flags.length > 0)
+        .sort((a, b) => {
+          const d = sev(a.flags) - sev(b.flags)
+          if (d !== 0) return d
+          return (b.u.lastActive ?? '').localeCompare(a.u.lastActive ?? '')
+        })
+    }
+    return [...rows].sort((a, b) => (b.u.joined ?? '').localeCompare(a.u.joined ?? ''))
+  }, [rows, onlyFlagged])
   const total = users.length
   const activated = users.filter((u) => u.albums > 0).length
   const active30 = users.filter((u) => { const d = daysSince(u.lastActive); return d !== null && d <= 30 }).length

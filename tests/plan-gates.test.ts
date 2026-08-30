@@ -184,3 +184,26 @@ describe('the owner toolbar reads the same table as the server', () => {
     ).toBe(true)
   })
 })
+
+// A FILTER ON AN UNSELECTED COLUMN IS A FILTER ON UNDEFINED.
+//
+// The admin page classifies subscription rows as house accounts partly by polar_product_id
+// starting with "comp-" — and the query did not select that column. No error, no warning: the
+// field was undefined, startsWith never matched, and a comped Max row sat in the Subscriptions
+// table looking exactly like revenue while "Admins & comped" said None.
+describe('the admin page selects what its filters read', () => {
+  const page = readFileSync(join(process.cwd(), 'src', 'app', 'admin', 'page.tsx'), 'utf8')
+
+  it('the subscriptions query includes polar_product_id', () => {
+    const m = /from\('subscriptions'\)\.select\('([^']*user_id[^']*)'\)/.exec(page)
+    expect(m, 'the row-level subscriptions select must exist').not.toBeNull()
+    expect((m as RegExpExecArray)[1].includes('polar_product_id'),
+      'isHouseAccount filters on polar_product_id — dropping it from the select turns comp rows into revenue, silently').toBe(true)
+  })
+
+  it('the house section is built from people, not only from subscription rows', () => {
+    // An admin's Max comes from code, so an admin with no row must still appear.
+    expect(page.includes('for (const u of allUsers)'), 'admins without rows must be listed').toBe(true)
+    expect(page.includes("'admin · comped'"), 'an admin who also holds a comp row shows once, labelled with both').toBe(true)
+  })
+})

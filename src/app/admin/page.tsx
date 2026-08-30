@@ -143,7 +143,7 @@ export default async function AdminPage() {
     admin.from('subscriptions').select('id', { count: 'exact', head: true }).eq('status', 'active'),
     admin.from('albums').select('id, slug, custom_slug, title, user_id, created_at, retired_at')
       .order('created_at', { ascending: false }).limit(300).returns<AlbumRow[]>(),
-    admin.from('subscriptions').select('user_id, tier, status, current_period_end, created_at')
+    admin.from('subscriptions').select('user_id, tier, status, current_period_end, polar_product_id, created_at')
       .order('created_at', { ascending: false }).limit(200),
     getStreamUsage(),
     getR2Usage(),
@@ -268,11 +268,34 @@ export default async function AdminPage() {
     const email = userId ? emailById.get(userId) : null
     return isAccountAdmin({ email })
   }
+  // The section lists PEOPLE, not subscription rows: an admin's Max comes from code (see
+  // computeUserTier), so the owner's own account has no row at all and a row-based section showed
+  // "None." while alinagnuni3's comp row sat in Subscriptions looking like revenue — because the
+  // query above didn't even select polar_product_id, and a filter on an unselected column is a
+  // filter on undefined. Both halves of that failure were silent.
   const houseSubs = subs.filter((s) => isHouseAccount(
     (s as { user_id?: string | null }).user_id,
     (s as { polar_product_id?: string | null }).polar_product_id,
   ))
   const payingSubs = subs.filter((s) => !houseSubs.includes(s))
+
+  const houseRows: { email: string; tier: string; why: string }[] = []
+  {
+    const seen = new Set<string>()
+    for (const u of allUsers) {
+      if (!isAccountAdmin(u)) continue
+      const email = u.email ?? '(no email)'
+      seen.add(email)
+      const hasComp = houseSubs.some((x) => (x as { user_id?: string | null }).user_id === u.id)
+      houseRows.push({ email, tier: 'studio', why: hasComp ? 'admin · comped' : 'admin' })
+    }
+    for (const x of houseSubs) {
+      const uid = (x as { user_id?: string | null }).user_id
+      const email = uid ? (emailById.get(uid) ?? '(user)') : '—'
+      if (seen.has(email)) continue
+      houseRows.push({ email, tier: String((x as { tier?: string }).tier ?? ''), why: 'comped' })
+    }
+  }
 
   const tierByUser = new Map<string, 'pro' | 'studio'>()
   for (const sub of subs) {
@@ -743,18 +766,14 @@ export default async function AdminPage() {
               <table style={{ borderCollapse: 'collapse', width: '100%' }}>
                 <thead><tr><th style={th}>Email</th><th style={th}>Tier</th><th style={th}>Why</th></tr></thead>
                 <tbody>
-                  {houseSubs.length === 0 && <tr><td style={td} colSpan={3}>None.</td></tr>}
-                  {houseSubs.map((s, i) => {
-                    const email = s.user_id ? (emailById.get(s.user_id) ?? '(user)') : '—'
-                    const comped = String((s as { polar_product_id?: string | null }).polar_product_id ?? '').startsWith('comp-')
-                    return (
-                      <tr key={i}>
-                        <td style={{ ...td, whiteSpace: 'normal' }}>{email}</td>
-                        <td style={td}>{s.tier}</td>
-                        <td style={{ ...td, color: MUTED }}>{comped ? 'comped' : 'admin'}</td>
-                      </tr>
-                    )
-                  })}
+                  {houseRows.length === 0 && <tr><td style={td} colSpan={3}>None.</td></tr>}
+                  {houseRows.map((r, i) => (
+                    <tr key={i}>
+                      <td style={{ ...td, whiteSpace: 'normal' }}>{r.email}</td>
+                      <td style={td}>{r.tier}</td>
+                      <td style={{ ...td, color: MUTED }}>{r.why}</td>
+                    </tr>
+                  ))}
                 </tbody>
               </table>
             </div>

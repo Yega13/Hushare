@@ -35,6 +35,11 @@ function lineCount(rel: string): number {
 
 // The files already too large to reason about. Ratcheted so they can only shrink.
 const SIZE_BUDGET: Record<string, number> = {
+  // 786 on 2026-08-30: the Admins & comped section now lists PEOPLE rather than subscription
+  // rows — an admin's Max comes from code, not a row, so the owner's own account could never
+  // appear — and the query gained the polar_product_id column its filter was silently reading as
+  // undefined. Owner-requested fix; the lines are the loop that merges admins with comp rows.
+  'src/app/admin/page.tsx': 786,
   // +4 on 2026-08-30: FILE_ACCEPT stopped being a fourth hand-written copy of the accepted
   // MIME types and now builds from lib/media. An import and a comment cost four lines here
   // and removed a list that had already fallen two formats behind. Deliberate.
@@ -47,7 +52,6 @@ const SIZE_BUDGET: Record<string, number> = {
   'src/app/card-editor/CardEditorClient.tsx': 873,
   'src/components/PhotoGrid.tsx': 843,
   'src/components/AlbumDesigner.tsx': 774,
-  'src/app/admin/page.tsx': 767,
   'src/components/photo-grid/LightboxOverlay.tsx': 646,
   // 518, down from 645: validatePhoto, hasTraversal and r2UrlPrefix moved to lib/photo-input,
   // where 22 tests now cover the boundary between a guest and this album's storage — including the
