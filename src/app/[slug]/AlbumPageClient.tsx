@@ -7,6 +7,7 @@ import dynamic from 'next/dynamic'
 import type { RealtimeChannel } from '@supabase/supabase-js'
 import { createClient } from '@/lib/supabase/client'
 import { shouldHoldForOwnerCheck } from '@/lib/owner-view'
+import { applyPhotoWindow, mergePreservingExtras, shouldApplyRefresh } from '@/lib/photo-window'
 import type { Album, Photo, Tier } from '@/types'
 import AlbumSkeleton from '@/components/AlbumSkeleton'
 import PasswordGate from '@/components/PasswordGate'
@@ -71,15 +72,6 @@ const BIB_RESULT_LIMIT = 300
 // "control moves to the new value, snaps back to the old one, then settles" glitch, and it is why
 // it only showed up on a phone: the race window is one network round trip wide.
 const SELF_EDIT_QUIET_MS = 2500
-
-// Refresh the FIRST window in place while preserving any already-loaded tail (pages fetched via
-// "Load more"). Small album → windowPhotos IS everything, extras is empty, so this is a plain
-// replace (identical to the old behaviour). Big album → the tail survives a realtime refetch.
-function mergeWindow(prev: Photo[], windowPhotos: Photo[]): Photo[] {
-  const inWindow = new Set(windowPhotos.map(p => p.id))
-  const extras = prev.filter(p => !inWindow.has(p.id))
-  return extras.length ? [...windowPhotos, ...extras] : windowPhotos
-}
 
 export default function AlbumPageClient({ initialAlbum = null, initialPhotos, initialTotal, initialGate }: Props = {}) {
   const { slug } = useParams<{ slug: string }>()
@@ -491,9 +483,9 @@ export default function AlbumPageClient({ initialAlbum = null, initialPhotos, in
   // the pre-pagination behaviour. Big album → merge so the already-loaded tail survives the refresh.
   const applyWindowRefresh = useCallback((r: { photos: Photo[]; total: number } | null) => {
     // A failed fetch is not an empty album — see fetchPage. Keep what is on screen.
-    if (!r) return
+    if (!shouldApplyRefresh(r)) return
     setTotal(r.total)
-    setPhotos(prev => (r.total <= ALBUM_FIRST_WINDOW ? r.photos : mergeWindow(prev, r.photos)))
+    setPhotos(prev => applyPhotoWindow(prev, r.photos, r.total, ALBUM_FIRST_WINDOW))
   }, [])
 
   // ─── fetchAlbum ─────────────────────────────────────────────────────────────
@@ -1097,8 +1089,11 @@ export default function AlbumPageClient({ initialAlbum = null, initialPhotos, in
       void fetchPhotos(albumId).then(r => {
         // Null on failure — the uploader's own tiles are already on screen, so keeping them beats
         // replacing them with nothing.
-        if (!r) return
-        setPhotos(prev => mergeWindow(prev, r.photos))
+        if (!shouldApplyRefresh(r)) return
+        // ALWAYS merges, unlike the refresh above, and that difference is deliberate: realtime may
+        // have delivered photos after this query was issued but before it resolved, and a replace
+        // would briefly remove the uploader's own tiles from under them.
+        setPhotos(prev => mergePreservingExtras(prev, r.photos))
         setTotal(r.total)
       })
     }, 3000)
