@@ -1,7 +1,6 @@
 'use client'
 
 import { useState } from 'react'
-import { Check, X } from 'lucide-react'
 import { showAppToast } from '@/components/AppToast'
 import { useT } from '@/i18n/LocaleProvider'
 import type { Photo } from '@/types'
@@ -34,7 +33,6 @@ export default function PendingReview({ slug, photos, onAccepted, onDeclined }: 
   // shape as deleting an album from the account page — declining destroys the file, and there is
   // no backup of storage, so one stray tap must not be enough (rule 19).
   const [confirmingId, setConfirmingId] = useState<string | null>(null)
-  const [confirmingAll, setConfirmingAll] = useState(false)
   const [busy, setBusy] = useState(false)
 
   if (photos.length === 0) return null
@@ -64,7 +62,6 @@ export default function PendingReview({ slug, photos, onAccepted, onDeclined }: 
     } finally {
       setBusy(false)
       setConfirmingId(null)
-      setConfirmingAll(false)
     }
   }
 
@@ -88,11 +85,8 @@ export default function PendingReview({ slug, photos, onAccepted, onDeclined }: 
     } finally {
       setBusy(false)
       setConfirmingId(null)
-      setConfirmingAll(false)
     }
   }
-
-  const ids = photos.map((p) => p.id)
 
   return (
     <div className="hush-container pb-4">
@@ -100,39 +94,12 @@ export default function PendingReview({ slug, photos, onAccepted, onDeclined }: 
         aria-label={t('review.title')}
         style={{ background: '#FFF6E9', border: '1px solid #E8CFA6', borderRadius: 16, padding: '14px 16px' }}
       >
-        <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
+        <div className="mb-3">
           <div>
             <h2 style={{ fontFamily: 'var(--font-serif)', color: '#7C4A2D', fontSize: 17, fontWeight: 700, margin: 0 }}>
               {t('review.title')} · {photos.length}
             </h2>
             <p style={{ color: '#96703F', fontSize: 12.5, margin: '2px 0 0' }}>{t('review.sub')}</p>
-          </div>
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              disabled={busy}
-              onClick={() => void accept(ids)}
-              className="hush-press rounded-lg px-3 py-2 text-xs font-bold disabled:opacity-50"
-              style={{ background: '#1F5136', color: '#FDFAF5', border: 'none' }}
-            >
-              {t('review.acceptAll')}
-            </button>
-            <button
-              type="button"
-              disabled={busy}
-              onClick={() => (confirmingAll ? void decline(ids) : setConfirmingAll(true))}
-              onBlur={() => setConfirmingAll(false)}
-              className="hush-press rounded-lg px-3 py-2 text-xs font-bold disabled:opacity-50"
-              style={{
-                background: confirmingAll ? '#C0392B' : '#FDFAF5',
-                color: confirmingAll ? '#FDFAF5' : '#C0392B',
-                border: '1px solid #C0392B',
-              }}
-            >
-              {confirmingAll
-                ? t('review.declineAllSure').replace('{n}', String(photos.length))
-                : t('review.declineAll')}
-            </button>
           </div>
         </div>
 
@@ -158,10 +125,9 @@ export default function PendingReview({ slug, photos, onAccepted, onDeclined }: 
                   disabled={busy}
                   onClick={() => void accept([photo.id])}
                   aria-label={t('review.accept')}
-                  className="hush-press flex-1 rounded-lg py-2 text-xs font-bold disabled:opacity-50 flex items-center justify-center gap-1"
-                  style={{ background: '#1F5136', color: '#FDFAF5', border: 'none' }}
+                  className="hush-press flex-1 rounded-lg py-2 font-bold disabled:opacity-50"
+                  style={{ background: '#1F5136', color: '#FDFAF5', border: 'none', fontSize: 11, whiteSpace: 'nowrap' }}
                 >
-                  <Check className="w-3.5 h-3.5" />
                   {t('review.accept')}
                 </button>
                 <button
@@ -170,14 +136,16 @@ export default function PendingReview({ slug, photos, onAccepted, onDeclined }: 
                   onClick={() => (confirmingId === photo.id ? void decline([photo.id]) : setConfirmingId(photo.id))}
                   onBlur={() => setConfirmingId((cur) => (cur === photo.id ? null : cur))}
                   aria-label={t('review.decline')}
-                  className="hush-press flex-1 rounded-lg py-2 text-xs font-bold disabled:opacity-50 flex items-center justify-center gap-1"
+                  className="hush-press flex-1 rounded-lg py-2 font-bold disabled:opacity-50"
                   style={{
                     background: confirmingId === photo.id ? '#C0392B' : '#FDFAF5',
                     color: confirmingId === photo.id ? '#FDFAF5' : '#C0392B',
                     border: '1px solid #C0392B',
+                    fontSize: 11,
+                    whiteSpace: 'nowrap',
                   }}
                 >
-                  {confirmingId === photo.id ? t('review.declineSure') : (<><X className="w-3.5 h-3.5" />{t('review.decline')}</>)}
+                  {confirmingId === photo.id ? t('review.declineSure') : t('review.decline')}
                 </button>
               </div>
             </div>

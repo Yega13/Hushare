@@ -67,13 +67,13 @@ describe('PendingReview', () => {
     expect(onDeclined).toHaveBeenCalledWith(['p1'])
   })
 
-  it('DECLINE ALL needs two taps as well', async () => {
-    const { onDeclined } = setup()
-    fireEvent.click(byText(en['review.declineAll'])[0])
-    expect(global.fetch).not.toHaveBeenCalled()
-    // And it names the number, so "all" is never a surprise.
-    expect(byText(en['review.declineAllSure'].replace('{n}', '2')).length).toBe(1)
-    expect(onDeclined).not.toHaveBeenCalled()
+  it('has NO bulk actions — every photo is a deliberate decision', () => {
+    // Accept all / Decline all were built and then removed on purpose. A single tap that
+    // publishes or destroys twenty strangers' photos at once is the wrong thing to make easy,
+    // and the queue exists precisely because each one needs looking at.
+    setup()
+    const all = Array.from(document.querySelectorAll('button')).map(b => (b.textContent ?? '').trim())
+    expect(all.every(l => l === en['review.accept'] || l === en['review.decline'])).toBe(true)
   })
 
   it('ACCEPT is one tap — publishing is reversible, deleting is not', () => {
@@ -100,8 +100,8 @@ describe('PendingReview', () => {
 
   it('offers exactly two actions per photo, and no album toolbar', () => {
     // Download, favourite, settings and delete are meaningless for a photo that is not in the
-    // album yet. One decision, two buttons — plus the two bulk controls.
+    // album yet. One decision, two buttons, nothing else on the tile.
     setup([photo('p1')])
-    expect(document.querySelectorAll('button')).toHaveLength(4)
+    expect(document.querySelectorAll('button')).toHaveLength(2)
   })
 })
