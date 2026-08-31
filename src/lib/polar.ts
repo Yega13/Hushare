@@ -245,3 +245,40 @@ export function productIdForPlan(
   const [tier, cycle] = plan.split('_') as ['pro' | 'studio', 'monthly' | 'yearly']
   return { productId, tier, cycle }
 }
+
+// ── Are the advertised intro discounts actually alive at Polar? ───────────────
+//
+// The pricing page promises "$1.99 first month" in six places across three languages, and that
+// promise depends on a discount OBJECT living in someone else's dashboard. When one was deleted,
+// nothing here knew: eligible buyers were charged full price, and the only signal was an error
+// filed AFTER a customer had already overpaid. A promise this app makes but cannot keep should
+// be visible to the owner before a customer discovers it (rule 20's shape, in money).
+//
+// Read-only. Never repairs anything, and a network failure reports 'unknown' rather than
+// claiming a live discount is dead — a false alarm here would send the owner into the Polar
+// dashboard to fix nothing.
+export type DiscountHealth = { plan: string; id: string | null; state: 'ok' | 'missing' | 'unset' | 'unknown' }
+
+export async function checkIntroDiscounts(): Promise<DiscountHealth[]> {
+  const wanted: Array<{ plan: string; id: string | undefined }> = [
+    { plan: 'Pro monthly', id: process.env.POLAR_DISCOUNT_PRO_FIRST_MONTH },
+    { plan: 'Max monthly', id: process.env.POLAR_DISCOUNT_STUDIO_FIRST_MONTH },
+  ]
+  return Promise.all(wanted.map(async ({ plan, id }): Promise<DiscountHealth> => {
+    if (!id) return { plan, id: null, state: 'unset' }
+    try {
+      const res = await fetch(`${apiBase()}/v1/discounts/${id}`, {
+        headers: { Authorization: `Bearer ${apiKey()}` },
+        cache: 'no-store',
+        signal: AbortSignal.timeout(4000),
+      })
+      // 404 is the answer this exists to catch: the id in our secrets names something Polar no
+      // longer has. Any other non-OK status is a question we could not ask, not a dead discount.
+      if (res.status === 404) return { plan, id, state: 'missing' }
+      if (!res.ok) return { plan, id, state: 'unknown' }
+      return { plan, id, state: 'ok' }
+    } catch {
+      return { plan, id, state: 'unknown' }
+    }
+  }))
+}

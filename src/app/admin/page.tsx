@@ -21,6 +21,7 @@ import AdminClockHeatmap from '@/components/AdminClockHeatmap'
 import AdminFunnel from '@/components/AdminFunnel'
 import AdminUsers, { type UserRow, type Cohort } from '@/components/AdminUsers'
 import { isSubActive } from '@/lib/subscriptions'
+import { checkIntroDiscounts } from '@/lib/polar'
 import { attachAlbumOwners } from '@/lib/server/error-attribution'
 import { albumCountLimitForTier, albumMediaCapForTier } from '@/lib/media'
 import AdminAreaChartLazy from '@/components/AdminAreaChartLazy'
@@ -131,7 +132,7 @@ export default async function AdminPage() {
 
   const [
     albumsActive, albumsRetired, imgCount, vidCount, subsCount,
-    recentAlbumsRes, subsRes, streamUsage, r2Usage, usersRes, errors24Res, recentErrorsRes,
+    recentAlbumsRes, subsRes, streamUsage, r2Usage, discountHealth, usersRes, errors24Res, recentErrorsRes,
     clearedMsgsRes, backupRes,
   ] = await Promise.all([
     admin.from('albums').select('id', { count: 'exact', head: true }).is('retired_at', null),
@@ -148,6 +149,7 @@ export default async function AdminPage() {
       .order('created_at', { ascending: false }).limit(200),
     getStreamUsage(),
     getR2Usage(),
+    checkIntroDiscounts(),
     // 500, not 200. This one result feeds the signups list, the growth counts and the email lookup
     // for the albums table, so the page cap is the real ceiling on all three. At 33 users there is
     // plenty of head-room; past 500 this needs a paged query rather than a bigger number.
@@ -692,6 +694,30 @@ export default async function AdminPage() {
           </div>
           <AdminPublishStatement />
         </div>
+
+        {/* Shown ONLY when an advertised intro price cannot be honoured. A green "all good" row
+            here every day would be one more thing to scroll past; silence is the healthy state.
+            'unknown' is excluded on purpose — it means Polar could not be reached, not that a
+            discount is dead, and crying wolf sends the owner to fix nothing. */}
+        {discountHealth.some(d => d.state === 'missing' || d.state === 'unset') && (
+          <div style={{ background: '#FBE8E7', border: '1px solid #EFCFCC', borderRadius: 12, padding: '12px 16px', marginBottom: 14 }}>
+            <div style={{ fontSize: 13, fontWeight: 700, color: '#B3261E' }}>
+              The pricing page is advertising an intro price we cannot charge
+            </div>
+            <p style={{ fontSize: 12, color: '#7A4B47', margin: '4px 0 6px' }}>
+              Eligible first-time buyers are being charged full price. Recreate the discount in
+              Polar, then set the secret to its new id.
+            </p>
+            {discountHealth.filter(d => d.state !== 'ok').map(d => (
+              <div key={d.plan} style={{ fontSize: 12, color: INK }}>
+                <strong>{d.plan}</strong>{' — '}
+                {d.state === 'missing' ? 'the id in our secrets no longer exists at Polar'
+                  : d.state === 'unset' ? 'no discount id is configured'
+                  : 'could not be checked just now'}
+              </div>
+            ))}
+          </div>
+        )}
 
         {/* Errors and warnings, split — see AdminErrorTabs for why they were separated. */}
         <h2 id="errors" style={{ fontSize: 15, fontWeight: 700, color: INK, margin: '0 0 10px', scrollMarginTop: 64 }}>

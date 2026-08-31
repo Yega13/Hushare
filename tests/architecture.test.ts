@@ -42,7 +42,8 @@ const SIZE_BUDGET: Record<string, number> = {
   // +3 (2026-08-31): drop deleted-album rows from Top albums.
   // +6 (2026-08-31): error rows carry which album and owner to contact (the join itself lives
   // in lib/server/error-attribution, shared with the live poll).
-  'src/app/admin/page.tsx': 795,
+  // +26 (2026-08-31): the card that says an advertised intro price cannot be charged.
+  'src/app/admin/page.tsx': 821,
   // +4 on 2026-08-30: FILE_ACCEPT stopped being a fourth hand-written copy of the accepted
   // MIME types and now builds from lib/media. An import and a comment cost four lines here
   // and removed a list that had already fallen two formats behind. Deliberate.
