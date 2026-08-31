@@ -2,6 +2,7 @@
 
 import dynamic from 'next/dynamic'
 import type { GlobeMarker } from './3d-globe'
+import { retryImport } from '@/lib/lazy-retry'
 
 // Lazy-load the three.js globe with ssr:false so the ~558 KB three.js bundle:
 //   1. never enters the SSR/worker bundle (smaller worker, faster cold start), and
@@ -9,7 +10,7 @@ import type { GlobeMarker } from './3d-globe'
 //      mounts — it no longer blocks first paint.
 // `ssr:false` dynamic imports are only allowed inside client components, hence this
 // thin wrapper (the about page is a server component).
-const Globe3D = dynamic(() => import('./3d-globe').then((m) => m.Globe3D), {
+const Globe3D = dynamic(retryImport(() => import('./3d-globe').then((m) => m.Globe3D)), {
   ssr: false,
   loading: () => (
     <div style={{ width: '100%', aspectRatio: '1 / 1' }} aria-hidden />

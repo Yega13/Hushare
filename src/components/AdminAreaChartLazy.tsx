@@ -1,6 +1,7 @@
 'use client'
 
 import dynamic from 'next/dynamic'
+import { retryImport } from '@/lib/lazy-retry'
 
 // Lazy wrapper so Recharts (~450KB) stays OUT of the server bundle and out of every other route.
 //
@@ -14,7 +15,7 @@ import dynamic from 'next/dynamic'
 // and for the same two reasons.
 //
 // The placeholder reserves the chart's real height so the dashboard does not jump when it loads.
-const AdminAreaChart = dynamic(() => import('./AdminAreaChart'), {
+const AdminAreaChart = dynamic(retryImport(() => import('./AdminAreaChart')), {
   ssr: false,
   loading: () => (
     <div style={{ background: '#FFFFFF', border: '1px solid #E4DAC9', borderRadius: 12, padding: '14px 16px' }}>

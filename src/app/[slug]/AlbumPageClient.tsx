@@ -23,6 +23,7 @@ import { rememberOwnedAlbum, getMyAlbums } from '@/lib/my-albums'
 import SignInPrompt from '@/components/SignInPrompt'
 import BibSearchBar, { bibMatches } from '@/components/BibSearchBar'
 import { fontStack, isImageBackground, getBackgroundImageUrl, getBackgroundColorStyle, resolveHeaderImageUrl, resolveHeaderVideo } from '@/lib/album-design'
+import { retryImport } from '@/lib/lazy-retry'
 
 // Code-split out of the shared album bundle: OwnerToolbar (+ tus/JSZip-adjacent upload code),
 // FaceFinder, and AlbumDesigner are only ever needed by the owner or by guests who opt in, never
@@ -34,10 +35,10 @@ import { fontStack, isImageBackground, getBackgroundImageUrl, getBackgroundColor
 // server-side — yet server-rendering the component still bundled it into the Worker, and that
 // alone pushed the Worker past Cloudflare's size limit and blocked deploys. Uploading is a
 // click-driven, browser-only flow with nothing to pre-render, so there is nothing to lose here.
-const UploadZone = dynamic(() => import('@/components/UploadZone'), { ssr: false })
-const OwnerToolbar = dynamic(() => import('@/components/OwnerToolbar'))
-const FaceFinder = dynamic(() => import('@/components/FaceFinder'))
-const AlbumDesigner = dynamic(() => import('@/components/AlbumDesigner'))
+const UploadZone = dynamic(retryImport(() => import('@/components/UploadZone')), { ssr: false })
+const OwnerToolbar = dynamic(retryImport(() => import('@/components/OwnerToolbar')))
+const FaceFinder = dynamic(retryImport(() => import('@/components/FaceFinder')))
+const AlbumDesigner = dynamic(retryImport(() => import('@/components/AlbumDesigner')))
 
 const SITE_ORIGIN = (process.env.NEXT_PUBLIC_SITE_URL ?? 'https://hushare.space').replace(/\/+$/, '')
 
