@@ -126,7 +126,14 @@ export async function POST(req: Request) {
           customerEmail: user.email,
           metadata: { userId: user.id, tier, cycle },
         })
-        reportServerError('checkout', 'Intro discount failed at Polar — checkout completed at FULL PRICE', {
+        // "Sent to the payment page at full price" — NOT "paid full price". createCheckout
+        // builds a Polar checkout SESSION; whether anyone completes it is a separate question the
+        // subscriptions table answers. The old wording said "checkout completed at FULL PRICE",
+        // which reads as a completed purchase, and it cost real time: three of these were read as
+        // three overcharged customers and a refund was nearly issued to people who had not paid.
+        // An error report is a claim about the world and has to be exactly as strong as the
+        // evidence behind it (rule 20).
+        reportServerError('checkout', 'Intro discount rejected by Polar — buyer sent to the payment page at FULL PRICE', {
           account: user.email,
           context: {
             plan,
