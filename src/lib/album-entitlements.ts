@@ -152,43 +152,53 @@ export function capNudge(input: AlbumCapInput): CapNudge {
 // ── HOW MUCH VIDEO MAY THIS ALBUM HOLD ───────────────────────────────────────────
 //
 // Until this shipped there was NO limit on video at all — not on how long a clip could be, not on
-// how many an album could hold. The only video control in the code was per-file SIZE. So one Pro
+// how much an album could hold. The only video control in the code was per-file SIZE. So one Pro
 // album could legally hold 3,000 clips of ten minutes each: 30,000 stored minutes, about $150 a
-// month, against a $4 plan. Nothing came close only because the average clip people actually
-// upload is 14.5 seconds.
+// month, against a $4 plan.
 //
-// Two numbers, not a pooled budget. "Clips up to 2 minutes, up to 30 videos" is something a guest
-// can hold in their head at the moment they are refused; "300 pooled minutes remaining" is not.
+// A BUDGET OF MINUTES, NOT A COUNT OF VIDEOS.
 //
-// WHY VIDEO GETS ITS OWN LIMITS AT ALL, when photos share one allowance: Cloudflare Stream bills
-// per MINUTE STORED, every month, plus again per minute watched — while R2 bills per byte and
-// charges nothing for delivery. Measured on this library, one minute of video costs the same as
-// 300 photos per year. An item cap alone therefore does not bound cost, because a video item is
-// ~300x a photo item.
+// I first built this as "up to N videos, each up to M seconds" and it was the wrong shape twice
+// over. Cost is minutes — a budget bounds it exactly, where count x length only bounds the
+// worst case and is wrong for everyone below it. And a count takes the choice away: somebody with
+// twelve 20-second clips and one long speech is refused for reasons that have nothing to do with
+// what they are costing. A budget lets the owner spend it however suits their event, and lets them
+// make room by deleting rather than by arguing with a rule.
+//
+// The clip limit stays alongside it, doing a different job: stopping a single three-hour upload
+// from consuming an album's entire allowance in one go, and giving a clear per-file answer at the
+// moment somebody picks a file.
+//
+// WHY VIDEO IS BUDGETED AT ALL, when photos share one allowance: Cloudflare Stream bills per
+// MINUTE STORED, every month, plus again per minute watched — while R2 bills per byte and charges
+// nothing for delivery. Measured on this library, one minute of video costs what 300 photos cost
+// per year. Worse, Stream storage is a PURCHASED CEILING (1,000 minutes per $5 unit) and exceeding
+// it does not cost more, it makes every video upload fail for every album. So this budget is not
+// really about money; it is about how much of a shared, hard limit one album may take.
 
 export type VideoCaps = {
-  /** Longest single clip, in seconds. Enforced by Cloudflare at upload, not just in the UI. */
+  /** Longest single clip, in seconds. */
   maxClipSeconds: number
-  /** How many videos this album may hold in total. */
-  maxVideos: number
+  /** The album's whole video allowance, in seconds — spend it on many short clips or a few long. */
+  maxTotalSeconds: number
 }
 
-// 60 seconds, not 30. Measured against every video on the platform: the longest clip any free
-// album has ever held is 54s, the median is 13s and the 90th percentile is 33s. A 30-second cap
-// would have refused 13% of real free uploads and 19% at 20 seconds — to save money that is not
-// there. At 2,900 free albums, today's actual behaviour costs about $6/month; even a tenfold
-// increase is $57. The COUNT is what bounds this, not the length.
-const FREE_VIDEO_CAPS: VideoCaps = { maxClipSeconds: 60, maxVideos: 20 }
-const PRO_VIDEO_CAPS: VideoCaps = { maxClipSeconds: 120, maxVideos: 30 }
-const STUDIO_VIDEO_CAPS: VideoCaps = { maxClipSeconds: 600, maxVideos: 40 }
+// The busiest album on the platform today holds 7.2 minutes of video and the average holds 0.39,
+// so free at 10 minutes is above everything real that exists. The per-account exposure is what
+// these are actually sized against: albums-per-plan x this budget, against a 1,000-minute quota.
+//   Free    3 albums x 10 min =    30 min
+//   Pro    15 albums x 20 min =   300 min
+//   Max    40 albums x 50 min = 2,000 min
+const FREE_VIDEO_CAPS: VideoCaps = { maxClipSeconds: 60, maxTotalSeconds: 10 * 60 }
+const PRO_VIDEO_CAPS: VideoCaps = { maxClipSeconds: 120, maxTotalSeconds: 20 * 60 }
+const STUDIO_VIDEO_CAPS: VideoCaps = { maxClipSeconds: 600, maxTotalSeconds: 50 * 60 }
 
 /**
  * Video limits for one album.
  *
  * An album with no account behind it gets the free limits rather than something tighter: its 250
  * ITEM cap already stops it long before video cost becomes interesting, and a guest album is the
- * first thing anybody tries — making it meaner than free buys nothing and teaches the wrong
- * lesson about the product.
+ * first thing anybody tries — making it meaner than free buys nothing.
  */
 export function videoCaps(ownerTier: Tier | null | undefined): VideoCaps {
   if (ownerTier === 'studio') return STUDIO_VIDEO_CAPS
@@ -196,22 +206,44 @@ export function videoCaps(ownerTier: Tier | null | undefined): VideoCaps {
   return FREE_VIDEO_CAPS
 }
 
-/** Is this clip short enough for the album? `null` duration means we could not measure it. */
+/** Is this clip too long on its own, whatever budget is left? */
 export function clipTooLong(seconds: unknown, caps: VideoCaps): boolean {
   // `unknown`, not `number`, because the only caller gets this straight off a request body. Typing
   // it as a number would move the lie one layer up rather than removing it.
-  // An unmeasurable clip is NOT refused here. The upload path already bounds it separately, and
-  // refusing something we could not measure would turn a failed metadata read on someone's phone
-  // into "your video is too long", which is both wrong and unfixable by them.
+  //
+  // An unmeasurable clip is NOT refused here. Measured on the live library, 25 of 155 videos have
+  // no duration because the browser could not decode them — one album is 15 for 15. Refusing what
+  // we could not measure would turn a failed metadata read on someone's phone into "your video is
+  // too long", which is wrong and unfixable by them.
   if (typeof seconds !== 'number' || !Number.isFinite(seconds) || seconds <= 0) return false
-  // A whole second of slack: browsers report duration as a float and a 30.02s read of a 30s clip
+  // A whole second of slack: browsers report duration as a float and a 60.02s read of a 60s clip
   // is a measurement artefact, not a rule being broken.
   return seconds > caps.maxClipSeconds + 1
 }
 
-/** Is the album already holding as many videos as it may? */
-export function videoAlbumFull(existingVideos: number, caps: VideoCaps): boolean {
-  return existingVideos >= caps.maxVideos
+/**
+ * Would adding this clip take the album past its budget?
+ *
+ * An unmeasured clip counts as zero, deliberately and in the album's favour — the same direction
+ * clipTooLong errs, and for the same reason. It means the budget can be overrun by roughly the
+ * length of the unmeasured clips, which is bounded by maxClipSeconds each and is a far smaller
+ * harm than refusing an upload we cannot even size.
+ */
+export function videoBudgetExceeded(usedSeconds: number, newClipSeconds: unknown, caps: VideoCaps): boolean {
+  const used = Number.isFinite(usedSeconds) && usedSeconds > 0 ? usedSeconds : 0
+  const add = typeof newClipSeconds === 'number' && Number.isFinite(newClipSeconds) && newClipSeconds > 0
+    ? newClipSeconds
+    : 0
+  // Already at or past the budget: refuse even a clip we could not measure, because the album has
+  // demonstrably had its allowance. Below the budget, an unmeasured clip is let through.
+  if (used >= caps.maxTotalSeconds) return true
+  return used + add > caps.maxTotalSeconds
+}
+
+/** Seconds of allowance left, never negative — for telling somebody what they have room for. */
+export function videoBudgetLeft(usedSeconds: number, caps: VideoCaps): number {
+  const used = Number.isFinite(usedSeconds) && usedSeconds > 0 ? usedSeconds : 0
+  return Math.max(0, caps.maxTotalSeconds - used)
 }
 
 /** "2 minutes", "30 seconds" — for a refusal message that names the limit it hit. */
@@ -231,8 +263,7 @@ export function formatClipLimit(seconds: number): string {
 //
 //   1. An unrecognised refusal is filed at 'error' level, so it lands in the admin Errors tab.
 //      A 103 MB video refused twice once accounted for two of the four outstanding "errors" while
-//      nothing was wrong. About 11% of recent free-tier videos are over 30 seconds, so this alone
-//      would have buried the panel.
+//      nothing was wrong.
 //   2. Worse, an unrecognised video failure calls noteVideoOutcome(false), which collapses that
 //      guest's video upload lane to serial FOR THE REST OF THE SESSION. One refused clip would
 //      have slowed every later video that person uploaded.
@@ -240,13 +271,19 @@ export function formatClipLimit(seconds: number): string {
 // So the prefix and the message must be the same fact. They are built here, and upload-policy
 // imports the prefixes rather than retyping them.
 export const VIDEO_TOO_LONG_PREFIX = 'Videos in this album can be up to'
-export const VIDEO_ALBUM_FULL_PREFIX = 'This album is full of videos'
+export const VIDEO_ALBUM_FULL_PREFIX = 'This album is out of video time'
 
 export function videoTooLongMessage(caps: VideoCaps): string {
   return `${VIDEO_TOO_LONG_PREFIX} ${formatClipLimit(caps.maxClipSeconds)} long. `
     + 'Trim it shorter in your phone, then try again.'
 }
 
-export function videoAlbumFullMessage(caps: VideoCaps): string {
-  return `${VIDEO_ALBUM_FULL_PREFIX} — it holds ${caps.maxVideos}. Photos can still be added.`
+export function videoAlbumFullMessage(caps: VideoCaps, usedSeconds: number): string {
+  const left = videoBudgetLeft(usedSeconds, caps)
+  const total = formatClipLimit(caps.maxTotalSeconds)
+  return left > 0
+    ? `${VIDEO_ALBUM_FULL_PREFIX} — ${total} in total, and only ${formatClipLimit(Math.floor(left))} left. `
+      + 'Delete a video to make room, or add it as a photo.'
+    : `${VIDEO_ALBUM_FULL_PREFIX} — it holds ${total} of video. `
+      + 'Delete a video to make room. Photos can still be added.'
 }

@@ -8,7 +8,7 @@ import { uploadCapsForTier, tooLargeMessage, STUDIO_VIDEO_BYTES } from '@/lib/me
 import { getUserTierById } from '@/lib/subscriptions'
 import { resolveMaxDurationSeconds } from '@/lib/stream-duration'
 import {
-  videoCaps, clipTooLong, videoAlbumFull, videoTooLongMessage, videoAlbumFullMessage,
+  videoCaps, clipTooLong, videoBudgetExceeded, videoTooLongMessage, videoAlbumFullMessage,
 } from '@/lib/album-entitlements'
 import { forbidCrossSiteRequest } from '@/lib/request-security'
 import { gateAllowsContribution, ALBUM_GATE_COLS } from '@/lib/server/album-access'
@@ -151,36 +151,44 @@ export async function POST(req: Request) {
     )
   }
 
-  // The count is read once and the insert happens later, so a burst of simultaneous uploads can
-  // overshoot by roughly the number of requests in flight. Same bounded, cheap overshoot the item
-  // cap accepts in photos/create — enforcing it exactly needs a database constraint, and a handful
-  // of extra clips costs cents where a constraint costs an outage risk on the upload path.
-  // media_type, not storage_backend: it is how /api/admin/stats and the rest of the product
-  // define "a video", it is the column the 20260831 migration indexed, and schema.sql still
-  // permits a third storage_backend value. Two definitions of one fact is how they drift.
-  const { count: videoCount, error: videoCountErr } = await admin
+  // HOW MUCH VIDEO TIME THIS ALBUM HAS ALREADY SPENT.
+  //
+  // Summed, not counted: the budget is minutes, so minutes are what has to be measured. The rows
+  // are small (durations only) and video is 1.4% of everything uploaded, so this reads a handful
+  // of numbers even on the busiest album.
+  //
+  // The read happens once and the insert happens later, so simultaneous uploads can overshoot by
+  // roughly what is in flight — the same bounded overshoot the item cap accepts, and the reason
+  // the budget is not the last word on cost. Enforcing it exactly needs a database constraint,
+  // which costs an outage risk on the upload path; the overshoot costs pennies.
+  const { data: durations, error: videoSumErr } = await admin
     .from('photos')
-    .select('id', { count: 'exact', head: true })
+    .select('duration_seconds')
     .eq('album_id', albumId)
     .eq('media_type', 'video')
+    .limit(1000)
+    .returns<{ duration_seconds: number | null }[]>()
 
-  if (videoCountErr) {
-    // Same direction as every other counted limit here: a count we could not take does not block
-    // the upload. Letting a few extra clips through during a database blip is far cheaper than
-    // refusing every guest at a live event.
-    console.error('[stream] video count failed, cap NOT enforced for album', albumId, ':', videoCountErr.message)
-    reportServerError('stream', 'Video count cap NOT enforced — the count query failed', {
+  if (videoSumErr) {
+    // Fails open, in the same direction as every other counted limit here: a total we could not
+    // read does not block the upload. Letting a few extra minutes through during a database blip
+    // is far cheaper than refusing every guest at a live event — but a budget that has silently
+    // stopped being enforced belongs in the panel, not only in a log nobody reads.
+    console.error('[stream] video budget NOT enforced — sum failed for album', albumId, ':', videoSumErr.message)
+    reportServerError('stream', 'Video budget NOT enforced — the duration query failed', {
       albumId,
-      context: { reason: videoCountErr.message.slice(0, 200) },
+      context: { reason: videoSumErr.message.slice(0, 200) },
     })
-  } else if (videoAlbumFull(videoCount ?? 0, vcaps)) {
-    // 403, NOT 429. lib/upload-policy treats 429 as retryable and runs the whole route four more
-    // times behind a backoff — for a refusal that is permanent and deterministic. The guest waits
-    // out the retries to be told the same thing, and the album pays five tier lookups for it.
-    return NextResponse.json(
-      { code: 'album_video_full', error: videoAlbumFullMessage(vcaps) },
-      { status: 403, headers: NO_STORE },
-    )
+  } else {
+    const usedSeconds = (durations ?? []).reduce((total, row) => total + (row.duration_seconds ?? 0), 0)
+    if (videoBudgetExceeded(usedSeconds, durationSeconds, vcaps)) {
+      // 403, NOT 429. lib/upload-policy treats 429 as retryable and runs the whole route four more
+      // times behind a backoff — for a refusal that is permanent until somebody deletes something.
+      return NextResponse.json(
+        { code: 'album_video_full', error: videoAlbumFullMessage(vcaps, usedSeconds) },
+        { status: 403, headers: NO_STORE },
+      )
+    }
   }
 
   let uploadUrl: string

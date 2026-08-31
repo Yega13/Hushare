@@ -1,59 +1,78 @@
 import { describe, it, expect } from 'vitest'
 import {
-  videoCaps, clipTooLong, videoAlbumFull, formatClipLimit, type VideoCaps,
+  videoCaps, clipTooLong, videoBudgetExceeded, videoBudgetLeft, formatClipLimit,
+  videoAlbumFullMessage, type VideoCaps,
 } from '../src/lib/album-entitlements'
 import { FREE_ALBUM_LIMIT, PRO_ALBUM_LIMIT, STUDIO_ALBUM_LIMIT } from '../src/lib/media'
 
 describe('videoCaps — the agreed ladder', () => {
-  it('gives each paid plan at least as much as the one below it, on BOTH axes', () => {
-    // The rule the owner set, in his own words: a higher plan giving less than a lower one is
-    // incoherent whatever the cost maths says. A single number regressing here would be invisible
-    // on the pricing page until a customer noticed they had paid for less.
+  it('gives each plan at least as much as the one below it, on BOTH axes', () => {
+    // A higher plan giving less than a lower one is incoherent whatever the cost maths says, and
+    // it would be invisible on the pricing page until a customer noticed they had paid for less.
     const free = videoCaps('free')
     const pro = videoCaps('pro')
     const max = videoCaps('studio')
 
     expect(pro.maxClipSeconds).toBeGreaterThanOrEqual(free.maxClipSeconds)
-    expect(pro.maxVideos).toBeGreaterThanOrEqual(free.maxVideos)
+    expect(pro.maxTotalSeconds).toBeGreaterThanOrEqual(free.maxTotalSeconds)
     expect(max.maxClipSeconds).toBeGreaterThanOrEqual(pro.maxClipSeconds)
-    expect(max.maxVideos).toBeGreaterThanOrEqual(pro.maxVideos)
+    expect(max.maxTotalSeconds).toBeGreaterThanOrEqual(pro.maxTotalSeconds)
   })
 
   it('is exactly what was agreed', () => {
-    expect(videoCaps('free')).toEqual({ maxClipSeconds: 60, maxVideos: 20 })
-    expect(videoCaps('pro')).toEqual({ maxClipSeconds: 120, maxVideos: 30 })
-    expect(videoCaps('studio')).toEqual({ maxClipSeconds: 600, maxVideos: 40 })
+    expect(videoCaps('free')).toEqual({ maxClipSeconds: 60, maxTotalSeconds: 600 })
+    expect(videoCaps('pro')).toEqual({ maxClipSeconds: 120, maxTotalSeconds: 1200 })
+    expect(videoCaps('studio')).toEqual({ maxClipSeconds: 600, maxTotalSeconds: 3000 })
+  })
+
+  it('never lets one clip consume the whole allowance in a single upload', () => {
+    // The clip limit and the budget do different jobs. If one clip could fill the album, the
+    // budget would stop being a budget and become a second way of saying "one video".
+    for (const tier of ['free', 'pro', 'studio'] as const) {
+      const c = videoCaps(tier)
+      expect(c.maxTotalSeconds, tier).toBeGreaterThan(c.maxClipSeconds)
+    }
+  })
+
+  it('leaves the busiest album that actually exists inside the FREE budget', () => {
+    // Measured across all 97 live albums: the most video any album holds is 7.2 minutes, average
+    // 0.39. A budget below this would refuse real behaviour to save nothing.
+    expect(videoCaps('free').maxTotalSeconds).toBeGreaterThan(7.2 * 60)
   })
 
   it('treats an album with no account as free, not as something tighter', () => {
-    // Its 250-item cap already stops it long before video cost matters, and a guest album is the
-    // first thing anybody tries.
     expect(videoCaps(null)).toEqual(videoCaps('free'))
     expect(videoCaps(undefined)).toEqual(videoCaps('free'))
   })
 
-  it('states the worst case per ACCOUNT, which is how plans are actually billed', () => {
-    // The earlier version of this test claimed to bound cost and did not: it multiplied one
-    // album, while a plan buys many, and its thresholds left room for 13x the Pro caps before
-    // failing. Named honestly now, and asserting the real arithmetic.
+  it('states the worst case per ACCOUNT, which is how the shared quota is actually spent', () => {
+    // Cloudflare Stream storage is a PURCHASED ceiling — 1,000 minutes per $5 unit — and running
+    // out blocks video for every album, not just the greedy one. So what matters is how much of
+    // that shared ceiling one account can take: albums-per-plan x the per-album budget.
+    const accountMinutes = (c: VideoCaps, albums: number) => (c.maxTotalSeconds / 60) * albums
+
+    expect(accountMinutes(videoCaps('free'), FREE_ALBUM_LIMIT)).toBe(30)
+    expect(accountMinutes(videoCaps('pro'), PRO_ALBUM_LIMIT)).toBe(300)
+    expect(accountMinutes(videoCaps('studio'), STUDIO_ALBUM_LIMIT)).toBe(2000)
+
+    // At $0.005 per stored minute per month, the THEORETICAL worst case against what each plan
+    // earns. These are written down rather than asserted comfortable, because two of them are not:
     //
-    // Cloudflare Stream: $0.005 per stored minute per month.
-    const perAccount = (c: VideoCaps, albums: number) => (c.maxVideos * c.maxClipSeconds / 60) * 0.005 * albums
-    const free = perAccount(videoCaps('free'), FREE_ALBUM_LIMIT)
-    const pro = perAccount(videoCaps('pro'), PRO_ALBUM_LIMIT)
-    const max = perAccount(videoCaps('studio'), STUDIO_ALBUM_LIMIT)
+    //   Free  30 min  = $0.15  against $0
+    //   Pro  300 min  = $1.50  against $4     ok
+    //   Max 2000 min  = $10.00 against $10    the entire plan, before photos or anything else
+    //
+    // Max is not survivable at its own maximum. It survives only because nobody fills 40 albums
+    // with video — the whole platform holds 37 minutes today. That is a bet, not a design, and it
+    // is the reason capping is a holding position rather than an answer: the multiplier is the
+    // album limit, and no per-album number fixes it while video costs what it costs on Stream.
+    expect(accountMinutes(videoCaps('free'), FREE_ALBUM_LIMIT) * 0.005).toBeLessThan(0.20)
+    expect(accountMinutes(videoCaps('pro'), PRO_ALBUM_LIMIT) * 0.005).toBeLessThan(4)
+    expect(accountMinutes(videoCaps('studio'), STUDIO_ALBUM_LIMIT) * 0.005).toBe(10)
 
-    expect(free).toBeCloseTo(0.30, 2)   // 3 albums x 20 min
-    expect(pro).toBeCloseTo(4.50, 2)    // 15 albums x 60 min
-    expect(max).toBeCloseTo(80.00, 2)   // 40 albums x 400 min
-
-    // AND THE POINT: at the theoretical maximum both paid plans cost more than they earn. That is
-    // survivable only because nobody fills 15 or 40 albums with maximum-length video — the whole
-    // platform holds 37 minutes today. It is written down as a number rather than a comment so
-    // that raising a cap makes the gap move in front of somebody.
-    expect(pro).toBeGreaterThan(4)      // $4/mo plan
-    expect(max).toBeGreaterThan(10)     // $10/mo plan
-    expect(free).toBeLessThan(0.40)     // free earns nothing, so it must stay near nothing
+    // What a REALISTIC heavy account costs — five active albums, all full of video. This is the
+    // one that has to stay inside revenue, and does.
+    expect(accountMinutes(videoCaps('studio'), 5) * 0.005).toBeLessThan(2)
   })
 })
 
@@ -63,55 +82,101 @@ describe('clipTooLong', () => {
   it('refuses a clip over the limit', () => {
     expect(clipTooLong(600, caps)).toBe(true)
     expect(clipTooLong(120.6, caps)).toBe(false)   // inside the one-second slack
-    expect(clipTooLong(121.5, caps)).toBe(true)    // past it
-    // A FRACTION past the slack still counts. This is the case that catches a rounding version of
-    // this check: round(121.2) is 121, which would read as inside the slack when it is not.
-    expect(clipTooLong(121.2, caps)).toBe(true)
-    expect(clipTooLong(125, caps)).toBe(true)
+    expect(clipTooLong(121.2, caps)).toBe(true)    // a fraction past it still counts
+    expect(clipTooLong(121.5, caps)).toBe(true)
   })
 
   it('allows a clip exactly at the limit', () => {
-    // An off-by-one here refuses precisely the clip somebody trimmed to fit, which is the most
-    // annoying possible failure: they did what they were told and it still said no.
+    // An off-by-one here refuses precisely the clip somebody trimmed to fit.
     expect(clipTooLong(120, caps)).toBe(false)
     expect(clipTooLong(119.9, caps)).toBe(false)
   })
 
-  it('forgives a fraction over, because browsers report duration as a float', () => {
-    // A 30-second clip commonly measures 30.02. Refusing that is refusing a correct video over a
-    // rounding artefact.
-    expect(clipTooLong(60.02, videoCaps('free'))).toBe(false)
-    expect(clipTooLong(61, videoCaps('free'))).toBe(false)
-    expect(clipTooLong(75, videoCaps('free'))).toBe(true)
-    // The longest video any free album has ever held is 54s. Nothing real is refused.
+  it('accepts every free-tier clip that has ever been uploaded', () => {
+    // The longest is 54s. A 30s cap would have refused 13% of them; 60s refuses none.
     expect(clipTooLong(54, videoCaps('free'))).toBe(false)
+    expect(clipTooLong(60.02, videoCaps('free'))).toBe(false)
+    expect(clipTooLong(75, videoCaps('free'))).toBe(true)
   })
 
   it('NEVER refuses a clip it could not measure', () => {
-    // The duration comes from the browser and a failed metadata read is common on older phones.
-    // Turning "we could not read this" into "your video is too long" is both wrong and something
-    // the person cannot act on. The upload path bounds unmeasured clips separately.
+    // 25 of 155 real videos have no duration; one album is 15 for 15. Turning "we could not read
+    // this" into "your video is too long" is wrong and unfixable by the person holding the phone.
     for (const bad of [null, undefined, 0, -5, NaN, Infinity, 'abc', {}, []]) {
       expect(clipTooLong(bad, caps), String(bad)).toBe(false)
     }
   })
 })
 
-describe('videoAlbumFull', () => {
-  const caps = videoCaps('pro')   // 30 videos
+describe('videoBudgetExceeded', () => {
+  const caps = videoCaps('free')   // 60s clips, 600s budget
 
-  it('is full AT the limit, not one past it', () => {
-    expect(videoAlbumFull(29, caps)).toBe(false)
-    expect(videoAlbumFull(30, caps)).toBe(true)
-    expect(videoAlbumFull(31, caps)).toBe(true)
+  it('lets an album spend its allowance however it likes', () => {
+    // THE POINT OF A BUDGET over a count: ten one-minute clips or forty fifteen-second ones cost
+    // the same, so both are allowed. A count cap would have refused the second.
+    expect(videoBudgetExceeded(9 * 60, 60, caps)).toBe(false)     // 10th minute-long clip
+    expect(videoBudgetExceeded(39 * 15, 15, caps)).toBe(false)    // 40th 15-second clip
   })
 
-  it('an empty album is never full', () => {
-    expect(videoAlbumFull(0, caps)).toBe(false)
+  it('refuses the clip that would take it past the budget', () => {
+    expect(videoBudgetExceeded(595, 30, caps)).toBe(true)
+    expect(videoBudgetExceeded(570, 30, caps)).toBe(false)        // lands exactly on 600
+  })
+
+  it('is not full one second early or one second late', () => {
+    expect(videoBudgetExceeded(599, 1, caps)).toBe(false)
+    expect(videoBudgetExceeded(599, 2, caps)).toBe(true)
+    expect(videoBudgetExceeded(600, 0, caps)).toBe(true)
+  })
+
+  it('an empty album can always take a clip', () => {
+    expect(videoBudgetExceeded(0, 60, caps)).toBe(false)
+  })
+
+  it('lets an unmeasured clip through while there is room, and refuses it when there is not', () => {
+    // Errs in the album's favour below the budget — the same direction clipTooLong errs. Once the
+    // allowance is demonstrably spent, an unmeasurable clip is refused rather than being an
+    // unlimited hole.
+    expect(videoBudgetExceeded(100, undefined, caps)).toBe(false)
+    expect(videoBudgetExceeded(100, null, caps)).toBe(false)
+    expect(videoBudgetExceeded(600, undefined, caps)).toBe(true)
+    expect(videoBudgetExceeded(700, undefined, caps)).toBe(true)
+  })
+
+  it('treats nonsense usage as zero rather than locking an album out', () => {
+    expect(videoBudgetExceeded(NaN, 60, caps)).toBe(false)
+    expect(videoBudgetExceeded(-100, 60, caps)).toBe(false)
   })
 })
 
-describe('formatClipLimit — the number in the refusal must read like the number advertised', () => {
+describe('videoBudgetLeft', () => {
+  const caps = videoCaps('free')
+
+  it('reports what is left, and never a negative', () => {
+    expect(videoBudgetLeft(0, caps)).toBe(600)
+    expect(videoBudgetLeft(240, caps)).toBe(360)
+    expect(videoBudgetLeft(600, caps)).toBe(0)
+    expect(videoBudgetLeft(900, caps)).toBe(0)
+  })
+})
+
+describe('the refusal message tells them what to do about it', () => {
+  const caps = videoCaps('free')
+
+  it('names the remaining time when some is left', () => {
+    const msg = videoAlbumFullMessage(caps, 570)
+    expect(msg).toContain('30 seconds')
+    expect(msg).toContain('Delete a video')
+  })
+
+  it('does not offer a remainder when there is none', () => {
+    const msg = videoAlbumFullMessage(caps, 600)
+    expect(msg).toContain('10 minutes')
+    expect(msg).not.toContain('left')
+  })
+})
+
+describe('formatClipLimit', () => {
   it('says minutes when the limit is whole minutes', () => {
     expect(formatClipLimit(120)).toBe('2 minutes')
     expect(formatClipLimit(600)).toBe('10 minutes')
@@ -123,9 +188,10 @@ describe('formatClipLimit — the number in the refusal must read like the numbe
     expect(formatClipLimit(45)).toBe('45 seconds')
   })
 
-  it('formats every real cap the way the pricing page writes it', () => {
+  it('formats every real limit the way a customer would read it', () => {
     expect(formatClipLimit(videoCaps('free').maxClipSeconds)).toBe('1 minute')
-    expect(formatClipLimit(videoCaps('pro').maxClipSeconds)).toBe('2 minutes')
-    expect(formatClipLimit(videoCaps('studio').maxClipSeconds)).toBe('10 minutes')
+    expect(formatClipLimit(videoCaps('free').maxTotalSeconds)).toBe('10 minutes')
+    expect(formatClipLimit(videoCaps('pro').maxTotalSeconds)).toBe('20 minutes')
+    expect(formatClipLimit(videoCaps('studio').maxTotalSeconds)).toBe('50 minutes')
   })
 })
