@@ -8,7 +8,7 @@ import { normalizeSlideshowMotion } from '@/lib/slideshow-motion'
 
 export const runtime = 'nodejs'
 
-import { isMobileColumns, isDesktopColumns, MOBILE_COLUMN_CHOICES, DESKTOP_COLUMN_CHOICES } from '@/lib/grid-columns'
+import { isMobileColumns, isDesktopColumns, resolveGridColumns, MOBILE_COLUMN_CHOICES, DESKTOP_COLUMN_CHOICES } from '@/lib/grid-columns'
 import { isPhotoOrder, PHOTO_ORDER_CHOICES } from '@/lib/photo-order'
 
 const NO_STORE = { 'Cache-Control': 'no-store' }
@@ -146,6 +146,34 @@ export async function POST(req: Request) {
   }
 
   const admin = createAdminClient()
+  // PIN DESKTOP BEFORE MOVING THE PHONE, or one setting silently drags the other.
+  //
+  // An album with no desktop choice CARRIES its phone number to desktop, so nothing looked
+  // rearranged when per-device columns shipped (see lib/grid-columns). The consequence nobody
+  // saw: while desktop is unset the two ARE the same number, so an owner changing "photos per
+  // row — phone" from 6 to 3 watched their desktop layout change with it. Reported exactly that
+  // way, on the live event album.
+  //
+  // The carry only ever meant "preserve what this album already showed". The moment an owner
+  // deliberately moves the phone setting, desktop stops following and keeps what it was
+  // displaying. Written only when desktop has no value of its own, so an explicit choice is
+  // never overwritten, and only alongside a phone change, so nothing else touches it.
+  if (updates.mobile_grid_columns !== undefined && updates.desktop_grid_columns === undefined) {
+    // Read rather than assume: the owner-access row is deliberately narrow and carries neither
+    // column. One small query, and only when the phone setting is actually being changed.
+    const { data: cur } = await admin
+      .from('albums')
+      .select('mobile_grid_columns, desktop_grid_columns')
+      .eq('id', access.album.id)
+      .maybeSingle<{ mobile_grid_columns: number | null; desktop_grid_columns: number | null }>()
+    // A failed read leaves desktop alone. The old coupling is a cosmetic surprise; overwriting a
+    // choice the owner made would be worse, and this is not worth guessing about.
+    if (cur && !isDesktopColumns(cur.desktop_grid_columns)) {
+      const carried = resolveGridColumns(cur).desktop
+      if (isDesktopColumns(carried)) updates.desktop_grid_columns = carried
+    }
+  }
+
   const { error } = await admin.from('albums').update(updates).eq('id', access.album.id)
   if (error) {
     console.error('[album/media-settings] update failed:', error.message)

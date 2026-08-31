@@ -73,3 +73,30 @@ describe('resolveGridColumns', () => {
     expect(resolveGridColumns({ desktop_grid_columns: 7 })).toEqual({ mobile: 3, desktop: 7 })
   })
 })
+
+describe('the phone and desktop settings must not drag each other', () => {
+  it('while desktop is unset, it carries the phone number — which is the coupling', () => {
+    // This is deliberate on DEPLOY: an album that had one number keeps looking the same. But it
+    // means the two ARE the same value until desktop is chosen, so moving the phone setting moved
+    // the desktop layout with it. An owner reported exactly that on the live event album.
+    expect(resolveGridColumns({ mobile_grid_columns: 6 }).desktop).toBe(6)
+    expect(resolveGridColumns({ mobile_grid_columns: 3 }).desktop).toBe(3)
+  })
+
+  it('once desktop is pinned, the phone moves alone', () => {
+    // What api/album/media-settings now writes before changing the phone setting: the desktop
+    // value the album was ALREADY displaying, so it stops following.
+    const pinned = { mobile_grid_columns: 3, desktop_grid_columns: 6 }
+    expect(resolveGridColumns(pinned)).toEqual({ mobile: 3, desktop: 6 })
+    // And changing the phone again leaves desktop exactly where the owner pinned it.
+    expect(resolveGridColumns({ ...pinned, mobile_grid_columns: 2 }).desktop).toBe(6)
+  })
+
+  it('a 2-across phone album pins desktop to a legal value, never to 2', () => {
+    // 2 is a phone-only choice, so the carried value has to clamp — otherwise the pin would
+    // write a desktop number no picker offers and nothing can render.
+    const carried = resolveGridColumns({ mobile_grid_columns: 2 }).desktop
+    expect(carried).toBe(3)
+    expect(isDesktopColumns(carried)).toBe(true)
+  })
+})
