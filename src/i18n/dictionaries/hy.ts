@@ -676,6 +676,7 @@ export const hy: Partial<Record<DictKey, string>> = {
   'login.codeSubmit': 'Մուտք',
   'login.codeChecking': 'Ստուգում ենք…',
   'login.codeInvalid': 'Կոդը 6 նիշ է',
+  'login.codeStartOver': 'Ուղարկել նորը',
   'login.codeWrong': 'Կոդը չաշխատեց — ստուգեք ամենաթարմ նամակը կամ ուղարկեք նոր հղում։',
   'login.codeWhy': 'Նամակը հեռախոսո՞ւմ եք կարդում։ Կոդը մուտք է անում ԱՅՍ սարքում, իսկ հղումը՝ այնտեղ, որտեղ բացվել է։',
   'authConfirm.title': 'Եւս մեկ հպում',

@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useMemo, useState, useSyncExternalStore } from 'react'
+import { mergeLiveRows } from '@/lib/error-rows'
 
 // Errors and warnings used to share one list, which made the list useless: on a normal day most
 // rows say "You've reached this album's upload limit" — the free cap doing its job, logged at warn
@@ -181,7 +182,13 @@ export default function AdminErrorTabs(
     window.addEventListener('hushare-admin-live', onLive)
     return () => window.removeEventListener('hushare-admin-live', onLive)
   }, [])
-  const rows = liveRows ?? initialRows
+  // MERGE, don't swap. The live payload is only the newest 30 rows; replacing the whole
+  // server-rendered 200 with it shrank the table five seconds after load and made every count
+  // derived from it disagree with the stat cards. lib/error-rows.ts owns the merge rule.
+  const rows = useMemo(
+    () => (liveRows ? mergeLiveRows(liveRows, initialRows) : initialRows),
+    [liveRows, initialRows],
+  )
   // Messages that have EVER been cleared. Membership is what separates "came back" from "new".
   const seen = useMemo(() => new Set(seenBefore), [seenBefore])
   const [tab, setTab] = useState<'error' | 'warn'>('error')

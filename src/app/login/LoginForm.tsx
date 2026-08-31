@@ -106,7 +106,15 @@ export default function LoginForm() {
       setOtpError(t('login.codeWrong'))
       return
     }
-    continueSignedIn()
+    // Same landing rule as the link path: /account for someone who can use it, home otherwise.
+    // Without this, code sign-in dumped a registered user on the homepage while link sign-in
+    // took them to their albums. If /api/me hiccups, home is the safe landing.
+    let canAccessAccount: boolean | undefined
+    try {
+      const res = await fetch('/api/me')
+      if (res.ok) canAccessAccount = ((await res.json()) as { canAccessAccount?: boolean }).canAccessAccount
+    } catch { /* fall through */ }
+    continueSignedIn(canAccessAccount)
   }
 
   async function onGoogle() {
@@ -193,7 +201,21 @@ export default function LoginForm() {
               {otpBusy ? t('login.codeChecking') : t('login.codeSubmit')}
             </button>
           </div>
-          {otpError && <p className="text-xs mt-2" style={{ color: '#9B2C2C' }}>{otpError}</p>}
+          {otpError && (
+            <p className="text-xs mt-2" style={{ color: '#9B2C2C' }}>
+              {otpError}{' '}
+              {/* The error copy tells them to get a fresh link/code — this is the way to do it.
+                  Without it the sent screen was a dead end reachable only through a reload. */}
+              <button
+                type="button"
+                onClick={() => { setOtpCode(''); setOtpError(''); setStatus('idle') }}
+                className="underline font-semibold"
+                style={{ color: '#630826' }}
+              >
+                {t('login.codeStartOver')}
+              </button>
+            </p>
+          )}
           <p className="text-xs mt-2" style={{ color: '#8B6F4E' }}>{t('login.codeWhy')}</p>
         </form>
       </div>

@@ -175,7 +175,13 @@ function CountUp({ value, from }: { value: number; from?: number }) {
 export default function AdminLiveStats({ initial }: { initial: LiveStats }) {
   const [live, setLive] = useState<LiveStats>(initial)
   const [stale, setStale] = useState(false)
-  const [rt, setRt] = useState(rtInitial)
+  // Starts true UNCONDITIONALLY, stored preference applied after mount. The server always
+  // renders the switch "on" (it cannot read localStorage), so reading storage in the useState
+  // initializer made the first client render disagree with the SSR text whenever the switch
+  // was off — a React hydration error reported into the very panel this dashboard displays,
+  // on every admin reload. Same pattern as useIsNarrow, for the same reason.
+  const [rt, setRt] = useState(true)
+  useEffect(() => { setRt(rtInitial()) }, [])
   const tick = useRef(0)
   const mounted = useRef(true)
 

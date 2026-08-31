@@ -698,6 +698,7 @@ export const en = {
   'login.codeSubmit': 'Sign in',
   'login.codeChecking': 'Checking…',
   'login.codeInvalid': 'The code is 6 digits',
+  'login.codeStartOver': 'Send a new one',
   'login.codeWrong': 'That code didn’t work — check the newest email, or send a fresh link.',
   'login.codeWhy': 'Reading the email on your phone? The code signs you in on THIS device; the link signs in whichever device opens it.',
   'authConfirm.title': 'One last tap',

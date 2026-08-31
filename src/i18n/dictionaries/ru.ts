@@ -676,6 +676,7 @@ export const ru: Partial<Record<DictKey, string>> = {
   'login.codeSubmit': 'Войти',
   'login.codeChecking': 'Проверяем…',
   'login.codeInvalid': 'Код состоит из 6 цифр',
+  'login.codeStartOver': 'Отправить новый',
   'login.codeWrong': 'Код не подошёл — проверьте самое свежее письмо или запросите новую ссылку.',
   'login.codeWhy': 'Читаете почту на телефоне? Код выполнит вход на ЭТОМ устройстве, а ссылка — на том, где её открыли.',
   'authConfirm.title': 'Ещё одно нажатие',

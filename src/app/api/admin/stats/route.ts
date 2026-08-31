@@ -91,7 +91,10 @@ export async function GET(req: Request) {
       openWarnings: warnings.count ?? 0,
       uploads10m: uploads10m.count ?? 0,
       payingSubs: payingSubs.count ?? 0,
-      recentErrors: recentErrors.data ?? [],
+      // null, not [] — a FAILED query must not impersonate an empty one. `?? []` turned any
+      // transient DB error into "No errors reported 🎉" on the owner's screen (rule 20: a
+      // negative the data cannot back). The client keeps its previous rows on null.
+      recentErrors: recentErrors.error ? null : (recentErrors.data ?? []),
       // null = not asked for on this tick, or Analytics Engine unavailable - the card shows a
       // dash rather than a stale zero pretending to be a fact.
       downloads24h: deep ? await downloadsLast24h() : null,
