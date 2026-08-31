@@ -71,7 +71,9 @@ const SIZE_BUDGET: Record<string, number> = {
   // +1 (2026-08-31): pass the true total to the toolbar.
   // +59 (2026-08-31, audit): the cheap freshness probe — every refresh now asks a ~40-byte
   // question before pulling a ~228 KB window, and the window is seeded from the server render.
-  'src/app/[slug]/AlbumPageClient.tsx': 1540,
+  // +23 (2026-08-31): pending guest uploads move to their own review strip and out of the
+  // album grid — see PendingReview.
+  'src/app/[slug]/AlbumPageClient.tsx': 1565,
   'src/app/card-editor/CardEditorClient.tsx': 873,
   // +1 (2026-08-31): pass collectionTotal to the lightbox counter.
   // +2 (2026-08-31): morphAllowed gate on open and close.

@@ -21,6 +21,7 @@ import AlbumHeader from '@/components/AlbumHeader'
 import GuestActionsBar from '@/components/GuestActionsBar'
 import { rememberOwnedAlbum, getMyAlbums } from '@/lib/my-albums'
 import SignInPrompt from '@/components/SignInPrompt'
+import PendingReview from '@/components/PendingReview'
 import BibSearchBar, { bibMatches } from '@/components/BibSearchBar'
 import { fontStack, isImageBackground, getBackgroundImageUrl, getBackgroundColorStyle, resolveHeaderImageUrl, resolveHeaderVideo } from '@/lib/album-design'
 import { retryImport } from '@/lib/lazy-retry'
@@ -1356,9 +1357,24 @@ export default function AlbumPageClient({ initialAlbum = null, initialPhotos, in
   // The server's answer for THIS query wins; the local filter covers the moment before it lands
   // and the case where the request failed. bibResult is tagged with the query it answers, so a
   // stale response for an earlier number can never be shown against a newer one.
+  // PENDING PHOTOS COME OUT OF THE ALBUM ENTIRELY, and go to their own strip above it.
+  //
+  // Only an owner ever receives hidden rows (fetchAuthorizedPhotos filters them for everyone
+  // else), and mixing them into the grid behind a small badge is what let a real queue build up
+  // unnoticed on a live event album — with every photo in it invisible to bib and face search,
+  // so a runner searching for one was told there was nothing.
+  //
+  // Gated on require_approval, because `hidden` carries TWO meanings: "a guest added this and
+  // nobody has approved it" and "the owner deliberately hid this one". Without the gate, hiding a
+  // photo on purpose would drop it into a review queue that nags to approve it forever. When
+  // approval is off there is no queue, and a hidden photo stays where it always was — in the grid
+  // with its badge, owner-only. Distinguishing them properly needs a column of its own; until
+  // there is one, the album's own setting is the honest signal for which meaning applies.
+  const pendingPhotos = effectiveIsOwner && album.require_approval ? photos.filter((p) => p.hidden) : []
+  const publishedPhotos = pendingPhotos.length > 0 ? photos.filter((p) => !p.hidden) : photos
   const visiblePhotos = album.bib_search_enabled && bibDigits
-    ? (bibServerAnswered ? bibServerPhotos : photos.filter((p) => bibMatches(p, bibQuery, bibRange)))
-    : photos
+    ? (bibServerAnswered ? bibServerPhotos : publishedPhotos.filter((p) => bibMatches(p, bibQuery, bibRange)))
+    : publishedPhotos
   // Progress figures for the "still reading photos" note — indexing happens in the background
   // after upload, so a guest can arrive before every photo has been read.
   //
@@ -1469,6 +1485,15 @@ export default function AlbumPageClient({ initialAlbum = null, initialPhotos, in
 
         {(album.guest_uploads_enabled || effectiveIsOwner) && (
           <UploadZone album={album} onPhotosUploaded={handlePhotosUploaded} />
+        )}
+
+        {effectiveIsOwner && pendingPhotos.length > 0 && (
+          <PendingReview
+            slug={album.custom_slug ?? album.slug}
+            photos={pendingPhotos}
+            onAccepted={(ids) => { for (const id of ids) handlePhotoUpdated(id, { hidden: false }) }}
+            onDeclined={(ids) => { for (const id of ids) handlePhotoDeleted(id) }}
+          />
         )}
 
         <div className="hush-container pb-6">
