@@ -32,8 +32,10 @@ out.push('-- This is the file the database is rebuilt from. It was hand-maintain
 out.push('-- by which point it was missing 12 of 18 tables and 64 columns, so a restore of a good')
 out.push('-- backup would have failed. Generated from the live database instead of remembered.')
 out.push('--')
-out.push('-- Row-level security is enabled on every table and NO permissive policies are created:')
-out.push('-- the application reaches these through the service-role client after its own checks.')
+out.push('-- Row-level security is enabled on every table; the application reaches these through the')
+out.push('-- service-role client after its own checks. Any policy that DOES exist is emitted below,')
+out.push('-- read from pg_policies — this line used to assert there were none, which was a hardcoded')
+out.push('-- claim in the generator rather than a fact read from the database, and it was wrong.')
 out.push('-- Grants to anon/authenticated are deliberately absent — see')
 out.push('-- supabase/migrations/20260826_revoke_anon_select.sql.')
 out.push('-- ============================================================')
@@ -64,6 +66,59 @@ for (const t of tables) {
   out.push(`alter table public.${t} enable row level security;`)
   out.push('')
 }
+
+// ─── Constraints ───
+//
+// FOREIGN KEYS AND CHECKS WERE MISSING ENTIRELY, and that is the one omission that makes this
+// file dangerous rather than merely incomplete. Rebuild from a version without them and the
+// database comes up looking correct — then `delete from albums` stops cascading to photos, and
+// lib/album-delete's "delete the row FIRST, it cascades" (which is true today) silently leaves
+// every photo row behind pointing at bytes that were destroyed. Nothing throws. The storage
+// audit then counts those destroyed keys as referenced, so real orphans hide behind them.
+//
+// Emitted after the tables so every referenced table exists, and each is guarded by a DO block
+// rather than "if not exists" — Postgres has no such form for ADD CONSTRAINT.
+// ─── Policies ───
+// Read, never asserted. A restore that silently drops a policy grants less than production does
+// (a locked-out feature) or, if one is ever permissive, more than it should.
+out.push('-- ─── Row-level security policies ───')
+const pols = await q(`select tablename, policyname, cmd, roles, qual, with_check
+  from pg_policies where schemaname='public' order by tablename, policyname`)
+if (pols.length === 0) {
+  out.push('-- (none)')
+} else {
+  for (const r of pols) {
+    out.push(`drop policy if exists "${r.policyname}" on public.${r.tablename};`)
+    const rawRoles = r.roles
+    const roles = (Array.isArray(rawRoles)
+      ? rawRoles
+      : String(rawRoles ?? '').replace(/^\{|\}$/g, '').split(',').filter(Boolean)
+    ).join(', ') || 'public'
+    let stmt = `create policy "${r.policyname}" on public.${r.tablename} for ${String(r.cmd).toLowerCase()} to ${roles}`
+    if (r.qual) stmt += ` using (${r.qual})`
+    if (r.with_check) stmt += ` with check (${r.with_check})`
+    out.push(stmt + ';')
+  }
+}
+out.push('')
+
+out.push('-- ─── Constraints (foreign keys, checks, unique) ───')
+const cons = await q(`select c.conrelid::regclass::text as tbl, c.conname,
+    pg_get_constraintdef(c.oid) as def
+  from pg_constraint c
+  join pg_class rel on rel.oid = c.conrelid
+  join pg_namespace n on n.oid = rel.relnamespace
+  where n.nspname = 'public' and c.contype in ('f','c','u')
+  order by c.conrelid::regclass::text, c.conname`)
+for (const r of cons) {
+  out.push(`do $$ begin`)
+  out.push(`  if not exists (select 1 from pg_constraint where conname = '${r.conname}'`)
+  out.push(`    and conrelid = '${r.tbl}'::regclass) then`)
+  out.push(`    alter table ${r.tbl} add constraint ${r.conname} ${r.def};`)
+  out.push(`  end if;`)
+  out.push(`end $$;`)
+}
+out.push('')
 
 out.push('-- ─── Indexes ───')
 const idx = await q(`select indexdef from pg_indexes where schemaname='public'

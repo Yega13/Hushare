@@ -161,6 +161,36 @@ export function collectDeletionTargets(
   return { r2Keys, streamUids }
 }
 
+/**
+ * Remove from a delete set any key a SURVIVING row still points at.
+ *
+ * A photo row and the file it references are not one-to-one, and nothing in the schema makes them
+ * so. Two rows in the same album may name the same thumbnail — and that is reachable on purpose:
+ * a guest can post rows whose storage_path is a fresh uuid (so they insert) but whose thumb_url
+ * copies a REAL photo's file. The rows render as broken tiles, which is precisely what makes an
+ * owner delete them, and deleting them then destroyed the thumbnails of the photos they copied.
+ * The owner's own moderation click was the weapon.
+ *
+ * Validation alone cannot close it: two uploads racing each other can both pass a
+ * "not already used" check, and a rule enforced only at write time does nothing about rows
+ * already stored. So the last word belongs here, at the moment of destruction, where the question
+ * is simply "is anything still using this file?".
+ *
+ * Errs toward KEEPING bytes. A file left behind costs $0.015 per GB per month; a file destroyed
+ * while a live row still points at it is a photo missing from somebody's wedding, and there is no
+ * backup of R2 (rule 19).
+ */
+export function withoutStillReferenced(
+  targets: { r2Keys: Set<string>; streamUids: Set<string> },
+  surviving: PhotoToDelete[],
+): { r2Keys: Set<string>; streamUids: Set<string> } {
+  const kept = collectDeletionTargets(surviving, null)
+  return {
+    r2Keys: new Set([...targets.r2Keys].filter((k) => !kept.r2Keys.has(k))),
+    streamUids: new Set([...targets.streamUids].filter((u) => !kept.streamUids.has(u))),
+  }
+}
+
 export async function deleteAlbumAssetsAndRows(
   admin: AdminClient,
   album: AlbumDeleteTarget,

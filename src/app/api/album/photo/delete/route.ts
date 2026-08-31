@@ -3,7 +3,7 @@ import { deleteFaces } from '@/lib/rekognition'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { verifyOwnerViaCookieWithRateLimit } from '@/lib/album-owner-access'
 import { forbidCrossSiteRequest } from '@/lib/request-security'
-import { deleteR2KeysChunked, collectDeletionTargets } from '@/lib/album-delete'
+import { deleteR2KeysChunked, collectDeletionTargets, withoutStillReferenced } from '@/lib/album-delete'
 import { deleteStreamVideo } from '@/lib/cloudflare/stream'
 import { getCloudflareContext } from '@opennextjs/cloudflare'
 import { track } from '@/lib/analytics'
@@ -118,8 +118,37 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: 'Could not delete photo' }, { status: 500, headers: NO_STORE })
   }
 
+  // NOTHING THAT A SURVIVING ROW STILL POINTS AT.
+  //
+  // Two rows in the same album can name the same file, and that is reachable on purpose: a guest
+  // can post rows whose storage_path is a fresh uuid but whose thumb_url copies a real photo's
+  // file. They render broken, which is exactly what makes an owner delete them — and the delete
+  // took the real photo's thumbnail with it. Asked AFTER the row is gone, so what comes back is
+  // precisely the survivors. A lookup that fails deletes nothing: keeping bytes costs cents,
+  // destroying somebody's photo is unrecoverable (rule 19).
+  const surviveCols = 'id, storage_backend, storage_path, thumb_url, poster_url, stream_uid'
+  // One query per column that actually has a value, using .in() so PostgREST escapes the values.
+  // An .or() string would be parsed as filter syntax, and these values are URLs full of dots and
+  // slashes — the sort of thing that fails silently rather than loudly.
+  const lookups: PromiseLike<{ data: unknown[] | null; error: unknown }>[] = []
+  const base = () => admin.from('photos').select(surviveCols).eq('album_id', access.album.id).limit(50)
+  if (photo.storage_path) lookups.push(base().in('storage_path', [photo.storage_path]))
+  if (photo.thumb_url) lookups.push(base().in('thumb_url', [photo.thumb_url]))
+  if (photo.poster_url) lookups.push(base().in('poster_url', [photo.poster_url]))
+  if (photo.stream_uid) lookups.push(base().in('stream_uid', [photo.stream_uid]))
+  const results = await Promise.all(lookups)
+  const survErr = results.find(r => r.error)?.error
+  const survivors = results.flatMap(r => (r.data ?? [])) as Parameters<typeof withoutStillReferenced>[1]
+  const safe = survErr
+    ? { r2Keys: new Set<string>(), streamUids: new Set<string>() }
+    : withoutStillReferenced({ r2Keys: new Set(r2Keys), streamUids: new Set<string>() }, survivors)
+  if (survErr) {
+    console.error('[photo/delete] survivor check failed — deleting no files:',
+      survErr instanceof Error ? survErr.message : String(survErr))
+  }
+
   // Best-effort asset cleanup — non-fatal after DB row is gone
-  await deleteR2Keys(r2Keys)
+  await deleteR2Keys([...safe.r2Keys])
 
   if (photo.storage_backend === 'stream' && photo.stream_uid) {
     deleteStreamVideo(photo.stream_uid).catch(e =>

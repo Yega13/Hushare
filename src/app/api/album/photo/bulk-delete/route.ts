@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { verifyOwnerViaCookieWithRateLimit } from '@/lib/album-owner-access'
 import { forbidCrossSiteRequest } from '@/lib/request-security'
-import { deleteR2KeysChunked, collectDeletionTargets } from '@/lib/album-delete'
+import { deleteR2KeysChunked, collectDeletionTargets, withoutStillReferenced } from '@/lib/album-delete'
 import { deleteStreamVideo } from '@/lib/cloudflare/stream'
 import { deleteFaces } from '@/lib/rekognition'
 import { getCloudflareContext } from '@opennextjs/cloudflare'
@@ -136,9 +136,41 @@ export async function POST(req: Request) {
   }
 
   // Best-effort asset cleanup — non-fatal after DB rows are gone
-  await deleteR2Keys(r2Keys)
+  // NOTHING A SURVIVING ROW STILL POINTS AT — the same guard as single-photo deletion, and this
+  // is the route that matters most: a guest can post many junk rows all copying real thumbnails,
+  // and bulk-delete is exactly how an owner clears junk. Asked AFTER the rows are gone, so what
+  // comes back is precisely the survivors, and a failed lookup deletes nothing (rule 19).
+  const surviveCols = 'id, storage_backend, storage_path, thumb_url, poster_url, stream_uid'
+  const values = <K extends 'storage_path' | 'thumb_url' | 'poster_url' | 'stream_uid'>(k: K) =>
+    [...new Set(validPhotos.map(p => p[k]).filter((v): v is string => !!v))]
+  const lookups: PromiseLike<{ data: unknown[] | null; error: unknown }>[] = []
+  for (const col of ['storage_path', 'thumb_url', 'poster_url', 'stream_uid'] as const) {
+    const vals = values(col)
+    // Chunked: an .in() carrying 500 URLs builds a request line long enough to be truncated,
+    // and a truncated filter silently matches fewer survivors than exist.
+    for (let i = 0; i < vals.length; i += 50) {
+      lookups.push(
+        admin.from('photos').select(surviveCols).eq('album_id', access.album.id)
+          .in(col, vals.slice(i, i + 50)).limit(500),
+      )
+    }
+  }
+  const results = await Promise.all(lookups)
+  const survErr = results.find(r => r.error)?.error
+  const survivors = results.flatMap(r => (r.data ?? [])) as Parameters<typeof withoutStillReferenced>[1]
+  const safe = survErr
+    ? { r2Keys: new Set<string>(), streamUids: new Set<string>() }
+    : withoutStillReferenced({ r2Keys: new Set(r2Keys), streamUids: new Set(streamUids) }, survivors)
+  if (survErr) {
+    console.error('[photo/bulk-delete] survivor check failed — deleting no files:',
+      survErr instanceof Error ? survErr.message : String(survErr))
+  }
 
-  await Promise.all(streamUids.map(uid =>
+  await deleteR2Keys([...safe.r2Keys])
+
+  // The guarded set here too — a Stream video another surviving row still names must not be
+  // destroyed, and it is the one asset with no copy anywhere.
+  await Promise.all([...safe.streamUids].map(uid =>
     deleteStreamVideo(uid).catch(e =>
       console.error('[photo/bulk-delete] Stream remove failed:', e instanceof Error ? e.message : String(e))
     )

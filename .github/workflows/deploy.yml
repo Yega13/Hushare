@@ -50,6 +50,11 @@ jobs:
         run: |
           if [ -n "$SUPABASE_DB_URL" ]; then
             npm run db:migrate && npm run db:check
+            # The dumper's --check mode existed and nothing ever ran it, so schema.sql could drift
+            # from the live database indefinitely — which is how it came to be missing every
+            # foreign key without anyone noticing. Warns rather than fails: a stale recovery file
+            # must be visible, but it must never block shipping a fix during an incident.
+            node scripts/dump-schema.mjs --check || echo '::warning::schema.sql has drifted — run node scripts/dump-schema.mjs and commit it'
           else
             echo "::warning::SUPABASE_DB_URL secret not set — skipping DB migration + drift check"
           fi

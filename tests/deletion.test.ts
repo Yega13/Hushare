@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeAll } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { r2KeyFromUrl, collectDeletionTargets, albumAssetKeys, ALBUM_ASSET_COLUMNS, type PhotoToDelete } from '@/lib/album-delete'
+import { r2KeyFromUrl, collectDeletionTargets, albumAssetKeys, ALBUM_ASSET_COLUMNS, type PhotoToDelete, withoutStillReferenced } from '@/lib/album-delete'
 import { r2PublicUrl } from '@/lib/cloudflare/r2'
 
 // r2KeyFromUrl decides WHICH FILE GETS DELETED. Everything about album and photo deletion
@@ -355,5 +355,64 @@ describe('every delete path uses the same rule', () => {
         `${route} has an inline copy of the key-derivation branch again`,
       ).toBe(false)
     }
+  })
+})
+
+describe('withoutStillReferenced — a delete must never destroy a file still in use', () => {
+  const img = (id: string, path: string, thumb: string | null) => ({
+    id, storage_backend: 'r2' as const, storage_path: path,
+    thumb_url: thumb, poster_url: null, stream_uid: null,
+  })
+  const vid = (id: string, uid: string, poster: string | null) => ({
+    id, storage_backend: 'stream' as const, storage_path: null,
+    thumb_url: null, poster_url: poster, stream_uid: uid,
+  })
+  const T = (name: string) => `https://${HOST}/thumbs/alb/${name}`
+
+  it('THE ATTACK: junk rows copying a real photo thumbnail cannot destroy it', () => {
+    // A guest posts rows with a fresh storage_path (so they insert) whose thumb_url points at a
+    // real photo's file. They render broken, the owner deletes them, and the real photo's
+    // thumbnail went with them — the owner's own moderation click as the weapon.
+    const victimThumb = T('real.jpg')
+    const junk = [img('j1', 'albums/alb/junk1.jpg', victimThumb), img('j2', 'albums/alb/junk2.jpg', victimThumb)]
+    const survivors = [img('real', 'albums/alb/real.jpg', victimThumb)]
+    const targets = collectDeletionTargets(junk, null)
+    const safe = withoutStillReferenced(targets, survivors)
+    expect([...safe.r2Keys]).toEqual(expect.arrayContaining(['albums/alb/junk1.jpg', 'albums/alb/junk2.jpg']))
+    expect([...safe.r2Keys].some((k) => k.includes('real.jpg'))).toBe(false)
+  })
+
+  it('still deletes everything when nothing survives that references it', () => {
+    const gone = [img('a', 'albums/alb/a.jpg', T('a.jpg'))]
+    const safe = withoutStillReferenced(collectDeletionTargets(gone, null), [])
+    expect(safe.r2Keys.has('albums/alb/a.jpg')).toBe(true)
+    expect([...safe.r2Keys].some((k) => k.includes('a.jpg') && k.startsWith('thumbs/'))).toBe(true)
+  })
+
+  it('protects a Stream video whose uid another surviving row still names', () => {
+    const uid = 'a'.repeat(32)
+    const safe = withoutStillReferenced(
+      collectDeletionTargets([vid('v1', uid, T('p.jpg'))], null),
+      [vid('v2', uid, null)],
+    )
+    expect(safe.streamUids.has(uid)).toBe(false)
+  })
+
+  it('protects a survivor whose ORIGINAL is the file being deleted', () => {
+    // Same shape one level up: a junk row can name another row's storage_path only if the upsert
+    // let it through, but the guard must not depend on that being impossible.
+    const safe = withoutStillReferenced(
+      collectDeletionTargets([img('j', 'albums/alb/shared.jpg', null)], null),
+      [img('real', 'albums/alb/shared.jpg', null)],
+    )
+    expect(safe.r2Keys.has('albums/alb/shared.jpg')).toBe(false)
+  })
+
+  it('leaves an unrelated survivor unable to block an unrelated delete', () => {
+    const safe = withoutStillReferenced(
+      collectDeletionTargets([img('a', 'albums/alb/a.jpg', T('a.jpg'))], null),
+      [img('b', 'albums/alb/b.jpg', T('b.jpg'))],
+    )
+    expect(safe.r2Keys.has('albums/alb/a.jpg')).toBe(true)
   })
 })

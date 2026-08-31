@@ -8,8 +8,10 @@
 -- by which point it was missing 12 of 18 tables and 64 columns, so a restore of a good
 -- backup would have failed. Generated from the live database instead of remembered.
 --
--- Row-level security is enabled on every table and NO permissive policies are created:
--- the application reaches these through the service-role client after its own checks.
+-- Row-level security is enabled on every table; the application reaches these through the
+-- service-role client after its own checks. Any policy that DOES exist is emitted below,
+-- read from pg_policies — this line used to assert there were none, which was a hardcoded
+-- claim in the generator rather than a fact read from the database, and it was wrong.
 -- Grants to anon/authenticated are deliberately absent — see
 -- supabase/migrations/20260826_revoke_anon_select.sql.
 -- ============================================================
@@ -36,7 +38,7 @@ create table if not exists public.albums (
   last_activity_at timestamp with time zone default now() not null,
   retired_at timestamp with time zone,
   media_radius integer default 16 not null,
-  video_autoplay boolean default false not null,
+  video_autoplay boolean default true not null,
   media_filter text default 'none'::text not null,
   mobile_grid_columns smallint default 3 not null,
   slideshow_interval_ms integer default 4200 not null,
@@ -71,6 +73,8 @@ create table if not exists public.albums (
   face_consent_at timestamp with time zone,
   face_consent_by uuid,
   branding_locked boolean default false not null,
+  desktop_grid_columns smallint,
+  photo_order text default 'newest'::text not null,
   primary key (id)
 );
 alter table public.albums enable row level security;
@@ -244,6 +248,248 @@ create table if not exists public.system_state (
   primary key (key)
 );
 alter table public.system_state enable row level security;
+
+-- ─── Row-level security policies ───
+drop policy if exists "statements_public_read" on public.statements;
+create policy "statements_public_read" on public.statements for select to public using (true);
+drop policy if exists "users can read own subscription" on public.subscriptions;
+create policy "users can read own subscription" on public.subscriptions for select to public using ((auth.uid() = user_id));
+
+-- ─── Constraints (foreign keys, checks, unique) ───
+do $$ begin
+  if not exists (select 1 from pg_constraint where conname = 'albums_background_theme_check'
+    and conrelid = 'albums'::regclass) then
+    alter table albums add constraint albums_background_theme_check CHECK (((background_theme IS NULL) OR (char_length(background_theme) <= 2048)));
+  end if;
+end $$;
+do $$ begin
+  if not exists (select 1 from pg_constraint where conname = 'albums_bib_range_valid'
+    and conrelid = 'albums'::regclass) then
+    alter table albums add constraint albums_bib_range_valid CHECK ((((bib_min IS NULL) OR (bib_min > 0)) AND ((bib_max IS NULL) OR (bib_max > 0)) AND ((bib_min IS NULL) OR (bib_max IS NULL) OR (bib_min <= bib_max))));
+  end if;
+end $$;
+do $$ begin
+  if not exists (select 1 from pg_constraint where conname = 'albums_cover_photo_id_fkey'
+    and conrelid = 'albums'::regclass) then
+    alter table albums add constraint albums_cover_photo_id_fkey FOREIGN KEY (cover_photo_id) REFERENCES photos(id) ON DELETE SET NULL;
+  end if;
+end $$;
+do $$ begin
+  if not exists (select 1 from pg_constraint where conname = 'albums_desktop_grid_columns_check'
+    and conrelid = 'albums'::regclass) then
+    alter table albums add constraint albums_desktop_grid_columns_check CHECK (((desktop_grid_columns IS NULL) OR (desktop_grid_columns = ANY (ARRAY[3, 4, 5, 6, 7, 8]))));
+  end if;
+end $$;
+do $$ begin
+  if not exists (select 1 from pg_constraint where conname = 'albums_media_filter_check'
+    and conrelid = 'albums'::regclass) then
+    alter table albums add constraint albums_media_filter_check CHECK ((media_filter = ANY (ARRAY['none'::text, 'warm'::text, 'cool'::text, 'mono'::text, 'vintage'::text, 'soft'::text])));
+  end if;
+end $$;
+do $$ begin
+  if not exists (select 1 from pg_constraint where conname = 'albums_media_radius_check'
+    and conrelid = 'albums'::regclass) then
+    alter table albums add constraint albums_media_radius_check CHECK (((media_radius >= 0) AND (media_radius <= 10000)));
+  end if;
+end $$;
+do $$ begin
+  if not exists (select 1 from pg_constraint where conname = 'albums_mobile_grid_columns_check'
+    and conrelid = 'albums'::regclass) then
+    alter table albums add constraint albums_mobile_grid_columns_check CHECK ((mobile_grid_columns = ANY (ARRAY[2, 3, 4, 5, 6])));
+  end if;
+end $$;
+do $$ begin
+  if not exists (select 1 from pg_constraint where conname = 'albums_photo_layout_check'
+    and conrelid = 'albums'::regclass) then
+    alter table albums add constraint albums_photo_layout_check CHECK ((photo_layout = ANY (ARRAY['grid'::text, 'justified'::text])));
+  end if;
+end $$;
+do $$ begin
+  if not exists (select 1 from pg_constraint where conname = 'albums_photo_order_check'
+    and conrelid = 'albums'::regclass) then
+    alter table albums add constraint albums_photo_order_check CHECK ((photo_order = ANY (ARRAY['newest'::text, 'oldest'::text, 'manual'::text])));
+  end if;
+end $$;
+do $$ begin
+  if not exists (select 1 from pg_constraint where conname = 'albums_slideshow_animation_check'
+    and conrelid = 'albums'::regclass) then
+    alter table albums add constraint albums_slideshow_animation_check CHECK ((slideshow_animation = ANY (ARRAY['none'::text, 'fade'::text, 'rise'::text, 'zoom'::text])));
+  end if;
+end $$;
+do $$ begin
+  if not exists (select 1 from pg_constraint where conname = 'albums_slideshow_interval_ms_check'
+    and conrelid = 'albums'::regclass) then
+    alter table albums add constraint albums_slideshow_interval_ms_check CHECK (((slideshow_interval_ms >= 2000) AND (slideshow_interval_ms <= 10000)));
+  end if;
+end $$;
+do $$ begin
+  if not exists (select 1 from pg_constraint where conname = 'albums_slug_key'
+    and conrelid = 'albums'::regclass) then
+    alter table albums add constraint albums_slug_key UNIQUE (slug);
+  end if;
+end $$;
+do $$ begin
+  if not exists (select 1 from pg_constraint where conname = 'albums_title_check'
+    and conrelid = 'albums'::regclass) then
+    alter table albums add constraint albums_title_check CHECK (((char_length(title) >= 1) AND (char_length(title) <= 120)));
+  end if;
+end $$;
+do $$ begin
+  if not exists (select 1 from pg_constraint where conname = 'albums_user_id_fkey'
+    and conrelid = 'albums'::regclass) then
+    alter table albums add constraint albums_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE SET NULL;
+  end if;
+end $$;
+do $$ begin
+  if not exists (select 1 from pg_constraint where conname = 'collection_albums_album_id_fkey'
+    and conrelid = 'collection_albums'::regclass) then
+    alter table collection_albums add constraint collection_albums_album_id_fkey FOREIGN KEY (album_id) REFERENCES albums(id) ON DELETE CASCADE;
+  end if;
+end $$;
+do $$ begin
+  if not exists (select 1 from pg_constraint where conname = 'collection_albums_collection_id_fkey'
+    and conrelid = 'collection_albums'::regclass) then
+    alter table collection_albums add constraint collection_albums_collection_id_fkey FOREIGN KEY (collection_id) REFERENCES collections(id) ON DELETE CASCADE;
+  end if;
+end $$;
+do $$ begin
+  if not exists (select 1 from pg_constraint where conname = 'collections_name_check'
+    and conrelid = 'collections'::regclass) then
+    alter table collections add constraint collections_name_check CHECK (((char_length(name) >= 1) AND (char_length(name) <= 80)));
+  end if;
+end $$;
+do $$ begin
+  if not exists (select 1 from pg_constraint where conname = 'collections_slug_key'
+    and conrelid = 'collections'::regclass) then
+    alter table collections add constraint collections_slug_key UNIQUE (slug);
+  end if;
+end $$;
+do $$ begin
+  if not exists (select 1 from pg_constraint where conname = 'collections_user_id_fkey'
+    and conrelid = 'collections'::regclass) then
+    alter table collections add constraint collections_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE;
+  end if;
+end $$;
+do $$ begin
+  if not exists (select 1 from pg_constraint where conname = 'error_events_level_check'
+    and conrelid = 'error_events'::regclass) then
+    alter table error_events add constraint error_events_level_check CHECK ((level = ANY (ARRAY['error'::text, 'warn'::text])));
+  end if;
+end $$;
+do $$ begin
+  if not exists (select 1 from pg_constraint where conname = 'error_events_message_check'
+    and conrelid = 'error_events'::regclass) then
+    alter table error_events add constraint error_events_message_check CHECK (((char_length(message) >= 1) AND (char_length(message) <= 500)));
+  end if;
+end $$;
+do $$ begin
+  if not exists (select 1 from pg_constraint where conname = 'error_events_source_check'
+    and conrelid = 'error_events'::regclass) then
+    alter table error_events add constraint error_events_source_check CHECK ((char_length(source) <= 60));
+  end if;
+end $$;
+do $$ begin
+  if not exists (select 1 from pg_constraint where conname = 'error_events_ua_check'
+    and conrelid = 'error_events'::regclass) then
+    alter table error_events add constraint error_events_ua_check CHECK (((ua IS NULL) OR (char_length(ua) <= 300)));
+  end if;
+end $$;
+do $$ begin
+  if not exists (select 1 from pg_constraint where conname = 'pending_stream_uploads_album_id_fkey'
+    and conrelid = 'pending_stream_uploads'::regclass) then
+    alter table pending_stream_uploads add constraint pending_stream_uploads_album_id_fkey FOREIGN KEY (album_id) REFERENCES albums(id) ON DELETE CASCADE;
+  end if;
+end $$;
+do $$ begin
+  if not exists (select 1 from pg_constraint where conname = 'pending_stream_uploads_stream_uid_check'
+    and conrelid = 'pending_stream_uploads'::regclass) then
+    alter table pending_stream_uploads add constraint pending_stream_uploads_stream_uid_check CHECK ((stream_uid ~ '^[a-f0-9]{32}$'::text));
+  end if;
+end $$;
+do $$ begin
+  if not exists (select 1 from pg_constraint where conname = 'photos_album_id_fkey'
+    and conrelid = 'photos'::regclass) then
+    alter table photos add constraint photos_album_id_fkey FOREIGN KEY (album_id) REFERENCES albums(id) ON DELETE CASCADE;
+  end if;
+end $$;
+do $$ begin
+  if not exists (select 1 from pg_constraint where conname = 'photos_album_stream_uid_unique'
+    and conrelid = 'photos'::regclass) then
+    alter table photos add constraint photos_album_stream_uid_unique UNIQUE (album_id, stream_uid);
+  end if;
+end $$;
+do $$ begin
+  if not exists (select 1 from pg_constraint where conname = 'photos_display_filter_check'
+    and conrelid = 'photos'::regclass) then
+    alter table photos add constraint photos_display_filter_check CHECK (((display_filter IS NULL) OR (display_filter = ANY (ARRAY['none'::text, 'warm'::text, 'cool'::text, 'mono'::text, 'vintage'::text, 'soft'::text]))));
+  end if;
+end $$;
+do $$ begin
+  if not exists (select 1 from pg_constraint where conname = 'photos_display_radius_check'
+    and conrelid = 'photos'::regclass) then
+    alter table photos add constraint photos_display_radius_check CHECK (((display_radius IS NULL) OR ((display_radius >= 0) AND (display_radius <= 10000))));
+  end if;
+end $$;
+do $$ begin
+  if not exists (select 1 from pg_constraint where conname = 'photos_media_type_check'
+    and conrelid = 'photos'::regclass) then
+    alter table photos add constraint photos_media_type_check CHECK ((media_type = ANY (ARRAY['image'::text, 'video'::text])));
+  end if;
+end $$;
+do $$ begin
+  if not exists (select 1 from pg_constraint where conname = 'photos_r2_requires_storage_path'
+    and conrelid = 'photos'::regclass) then
+    alter table photos add constraint photos_r2_requires_storage_path CHECK (((storage_backend <> 'r2'::text) OR (storage_path IS NOT NULL)));
+  end if;
+end $$;
+do $$ begin
+  if not exists (select 1 from pg_constraint where conname = 'photos_storage_backend_check'
+    and conrelid = 'photos'::regclass) then
+    alter table photos add constraint photos_storage_backend_check CHECK ((storage_backend = ANY (ARRAY['supabase'::text, 'r2'::text, 'stream'::text])));
+  end if;
+end $$;
+do $$ begin
+  if not exists (select 1 from pg_constraint where conname = 'photos_stream_requires_stream_uid'
+    and conrelid = 'photos'::regclass) then
+    alter table photos add constraint photos_stream_requires_stream_uid CHECK (((storage_backend <> 'stream'::text) OR (stream_uid IS NOT NULL)));
+  end if;
+end $$;
+do $$ begin
+  if not exists (select 1 from pg_constraint where conname = 'profiles_user_id_fkey'
+    and conrelid = 'profiles'::regclass) then
+    alter table profiles add constraint profiles_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE;
+  end if;
+end $$;
+do $$ begin
+  if not exists (select 1 from pg_constraint where conname = 'statements_slug_key'
+    and conrelid = 'statements'::regclass) then
+    alter table statements add constraint statements_slug_key UNIQUE (slug);
+  end if;
+end $$;
+do $$ begin
+  if not exists (select 1 from pg_constraint where conname = 'subscriptions_polar_subscription_id_key'
+    and conrelid = 'subscriptions'::regclass) then
+    alter table subscriptions add constraint subscriptions_polar_subscription_id_key UNIQUE (polar_subscription_id);
+  end if;
+end $$;
+do $$ begin
+  if not exists (select 1 from pg_constraint where conname = 'subscriptions_status_check'
+    and conrelid = 'subscriptions'::regclass) then
+    alter table subscriptions add constraint subscriptions_status_check CHECK ((status = ANY (ARRAY['active'::text, 'trialing'::text, 'canceled'::text, 'past_due'::text, 'unpaid'::text, 'incomplete'::text, 'incomplete_expired'::text])));
+  end if;
+end $$;
+do $$ begin
+  if not exists (select 1 from pg_constraint where conname = 'subscriptions_tier_check'
+    and conrelid = 'subscriptions'::regclass) then
+    alter table subscriptions add constraint subscriptions_tier_check CHECK ((tier = ANY (ARRAY['pro'::text, 'studio'::text])));
+  end if;
+end $$;
+do $$ begin
+  if not exists (select 1 from pg_constraint where conname = 'subscriptions_user_id_fkey'
+    and conrelid = 'subscriptions'::regclass) then
+    alter table subscriptions add constraint subscriptions_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE;
+  end if;
+end $$;
 
 -- ─── Indexes ───
 create index if not exists active_sessions_last_seen_idx ON public.active_sessions USING btree (last_seen);
