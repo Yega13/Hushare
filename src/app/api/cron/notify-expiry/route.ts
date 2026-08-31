@@ -50,7 +50,17 @@ export async function POST(req: Request) {
     .select('id, user_id, title, slug, custom_slug, last_activity_at, last_notification_at')
     .is('retired_at', null)
     .is('last_notification_at', null)  // only notify once
-    .not('user_id', 'is', null)
+    // ANONYMOUS ALBUMS ARE INCLUDED, and they were the majority.
+    //
+    // This filtered them out because there is no address to email — which is true, and the
+    // privacy policy says so in as many words. But last_notification_at is ALSO what starts the
+    // retirement countdown, and nothing else ever sets it, so filtering them here made every
+    // album created without an account permanently un-retirable. The policy promises those are
+    // deleted after a year of being untouched; the code could not reach them at all.
+    //
+    // They now pass through and get stamped without an email, so the same countdown applies. A
+    // stamp means "the clock started", not "somebody was told" — the two were the same thing
+    // only while every candidate had an inbox.
     .lt('last_activity_at', warnCutoffNew)
     // NO lower bound. It used to require last_activity_at > (now - 365d), so once inflow exceeded
     // BATCH_SIZE per day the backlog grew and an album that waited past 365 days of inactivity
@@ -74,7 +84,24 @@ export async function POST(req: Request) {
   let skippedPaid = 0
   let failed = 0
 
+  let startedAnonymous = 0
+
   for (const album of candidates ?? []) {
+    // No account means no tier to look up, no paid grace to respect, and nobody to write to.
+    // Start the clock and move on — the album is still protected by the same 30-day window
+    // before retire-albums will touch it, which is a returning visitor's chance to bump it.
+    if (!album.user_id) {
+      const { error: stampErr } = await admin
+        .from('albums').update({ last_notification_at: new Date().toISOString() }).eq('id', album.id)
+      if (stampErr) {
+        console.error('[notify-expiry] could not start the clock for anonymous album', album.id, ':', stampErr.message)
+        failed += 1
+      } else {
+        startedAnonymous += 1
+      }
+      continue
+    }
+
     let tier: Awaited<ReturnType<typeof getUserTierById>>
     try {
       tier = await getUserTierById(album.user_id)
@@ -132,7 +159,9 @@ export async function POST(req: Request) {
   }
 
   return NextResponse.json(
-    { ok: true, scanned: candidates?.length ?? 0, notified, skippedPaid, failed },
+    // startedAnonymous counted separately from notified: one means an email went to a person,
+    // the other means a clock started with nobody to tell. Merging them would hide which.
+    { ok: true, scanned: candidates?.length ?? 0, notified, startedAnonymous, skippedPaid, failed },
     { headers: NO_STORE },
   )
 }

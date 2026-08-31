@@ -89,6 +89,11 @@ const worker = {
       // aged out at 30 days, and face collections deleted 90 days after an album's last upload.
       // Without this the policy's retention numbers are aspirations.
       callCronRoute(baseUrl, '/api/cron/prune-data', secret),
+      // Asks Polar what every customer actually owns and writes it down. Entitlements come from
+      // webhooks, and a webhook can simply never arrive — after which a paying customer silently
+      // drops to free once the 7-day grace runs out, while Polar keeps charging them. This is the
+      // safety net; a normal night changes nothing.
+      callCronRoute(baseUrl, '/api/cron/reconcile-subscriptions', secret),
     ]))
   },
 }

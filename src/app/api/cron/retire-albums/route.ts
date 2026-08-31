@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { RETIRE_AFTER_DAYS, WARN_BEFORE_DAYS } from '@/lib/retention'
 import { deleteAlbumAssetsAndRows } from '@/lib/album-delete'
-import { getUserTierById, getPaidRetentionUntil } from '@/lib/subscriptions'
+import { getUserTierResolved, getPaidRetentionUntil } from '@/lib/subscriptions'
 import { timingSafeEqual } from '@/lib/timing-safe'
 import { track } from '@/lib/analytics'
 
@@ -97,11 +97,23 @@ export async function POST(req: Request) {
   let failed = 0
 
   for (const album of candidates ?? []) {
-    let tier: Awaited<ReturnType<typeof getUserTierById>>
+    // "NEVER DELETE ON UNCERTAINTY" HAS TO BE ABLE TO DETECT UNCERTAINTY.
+    //
+    // This was a try/catch around getUserTierById, which does not throw on a database error — it
+    // logs and RETURNS 'free'. So the catch never fired, and a failed subscriptions query looked
+    // exactly like a genuinely free owner, on the one code path that permanently deletes an
+    // album and every photo in it. getUserTierResolved answers the question the guard was always
+    // asking: is this answer trustworthy?
+    let tier: Awaited<ReturnType<typeof getUserTierResolved>>['tier']
     try {
-      tier = await getUserTierById(album.user_id)
+      const resolved = await getUserTierResolved(album.user_id)
+      if (!resolved.authoritative) {
+        console.error('[retire-albums] tier not authoritative for album', album.slug, '— skipping')
+        failed += 1
+        continue
+      }
+      tier = resolved.tier
     } catch (err) {
-      // If tier check fails for any reason, skip — never delete on uncertainty.
       console.error('[retire-albums] tier check failed for album', album.slug, ':', err instanceof Error ? err.message : String(err))
       failed += 1
       continue

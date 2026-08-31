@@ -1,16 +1,13 @@
 import { NextResponse } from 'next/server'
-import { randomUUID } from 'node:crypto'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { isAccountAdmin } from '@/lib/auth'
 import { forbidCrossSiteRequest } from '@/lib/request-security'
-import { listAllSubscriptions, getCustomerEmail, tierFromProduct, subProductId, subCustomerId } from '@/lib/polar'
-import { findOrCreateUserByEmail } from '@/lib/provision-user'
+import { reconcilePolarSubscriptions } from '@/lib/server/polar-reconcile'
 
 export const runtime = 'nodejs'
 
 const NO_STORE = { 'Cache-Control': 'no-store' }
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
 // Admin-only: pull every subscription from Polar and reconcile it into our DB — provisioning an
 // account by the customer's email when needed. This backfills payments the webhook never persisted
@@ -28,73 +25,25 @@ export async function POST(req: Request) {
 
   const admin = createAdminClient()
 
-  let subs
+  // The reconciliation itself lives in lib/server/polar-reconcile, shared with the nightly cron.
+  // Two implementations of "what has this customer actually paid for" is the shape that ends with
+  // them disagreeing, and this one decides whether somebody gets what they paid for.
+  let result
   try {
-    subs = await listAllSubscriptions()
+    result = await reconcilePolarSubscriptions(admin)
   } catch (err) {
     // Admin-only route — surface the real Polar error (status + body) so the exact cause
     // (wrong key, sandbox/prod mismatch, missing scope, endpoint shape) is visible, not hidden.
     const detail = err instanceof Error ? err.message : String(err)
-    console.error('[admin/sync-polar] list failed:', detail)
+    console.error('[admin/sync-polar] reconcile failed:', detail)
     return NextResponse.json(
       { error: `Could not reach Polar — ${detail}` },
       { status: 502, headers: NO_STORE },
     )
   }
 
-  let created = 0, updated = 0, skipped = 0
-  const notes: string[] = []
-
-  for (const sub of subs) {
-    const productId = subProductId(sub)
-    const customerId = subCustomerId(sub)
-    const tierMatch = productId ? tierFromProduct(productId) : null
-    if (!tierMatch) { skipped++; notes.push(`skip ${sub.id}: unknown product ${productId ?? '(none)'}`); continue }
-
-    // Resolve the account: in-app userId metadata first, else provision/find by customer email.
-    let userId = sub.metadata?.userId
-    // A metadata userId can be STALE — e.g. it points at a user from the old (deleted) Supabase
-    // project, so writing it violates the user_id foreign key. Only trust it if that user still
-    // exists; otherwise fall through to email-based provisioning below.
-    if (userId && UUID_RE.test(userId)) {
-      const { data: existsUser } = await admin.auth.admin.getUserById(userId)
-      if (!existsUser?.user) userId = undefined
-    }
-    if (!userId || !UUID_RE.test(userId)) {
-      const email = sub.customer?.email ?? (customerId ? await getCustomerEmail(customerId) : null)
-      userId = email ? (await findOrCreateUserByEmail(email)) ?? undefined : undefined
-      if (!userId) { skipped++; notes.push(`skip ${sub.id}: no email (customer ${customerId ?? '(none)'})`); continue }
-    }
-
-    const fields = {
-      user_id: userId,
-      polar_subscription_id: sub.id,
-      polar_customer_id: customerId ?? '',
-      polar_product_id: productId,
-      tier: tierMatch.tier,
-      status: sub.status,
-      current_period_end: sub.current_period_end,
-      cancel_at_period_end: sub.cancel_at_period_end ?? false,
-      updated_at: new Date().toISOString(),
-    }
-
-    const { data: existing } = await admin
-      .from('subscriptions').select('id').eq('polar_subscription_id', sub.id).maybeSingle<{ id: string }>()
-
-    const { error } = existing
-      ? await admin.from('subscriptions').update(fields).eq('polar_subscription_id', sub.id)
-      : await admin.from('subscriptions').insert({ id: randomUUID(), ...fields })
-
-    if (error) { skipped++; notes.push(`skip ${sub.id}: write ${error.message}`); continue }
-    if (existing) updated++; else created++
-
-    // A real Polar row now exists for this user — clear any manual-recovery placeholder we inserted.
-    await admin.from('subscriptions')
-      .delete().eq('user_id', userId).like('polar_subscription_id', 'manual-recovery-%')
-  }
-
   return NextResponse.json(
-    { ok: true, total: subs.length, created, updated, skipped, notes: notes.slice(0, 20) },
+    { ok: true, ...result, notes: result.notes.slice(0, 20) },
     { headers: NO_STORE },
   )
 }
