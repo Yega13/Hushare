@@ -173,7 +173,12 @@ export type VideoCaps = {
   maxVideos: number
 }
 
-const FREE_VIDEO_CAPS: VideoCaps = { maxClipSeconds: 30, maxVideos: 20 }
+// 60 seconds, not 30. Measured against every video on the platform: the longest clip any free
+// album has ever held is 54s, the median is 13s and the 90th percentile is 33s. A 30-second cap
+// would have refused 13% of real free uploads and 19% at 20 seconds — to save money that is not
+// there. At 2,900 free albums, today's actual behaviour costs about $6/month; even a tenfold
+// increase is $57. The COUNT is what bounds this, not the length.
+const FREE_VIDEO_CAPS: VideoCaps = { maxClipSeconds: 60, maxVideos: 20 }
 const PRO_VIDEO_CAPS: VideoCaps = { maxClipSeconds: 120, maxVideos: 30 }
 const STUDIO_VIDEO_CAPS: VideoCaps = { maxClipSeconds: 600, maxVideos: 40 }
 

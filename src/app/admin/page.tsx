@@ -25,6 +25,7 @@ import { checkIntroDiscounts, checkPlanProducts } from '@/lib/polar'
 import { discountBanner, discountRowsToShow } from '@/lib/discount-health'
 import { attachAlbumOwners } from '@/lib/server/error-attribution'
 import { albumCountLimitForTier, albumMediaCapForTier } from '@/lib/media'
+import { streamQuotaLevel, streamUnitsNeeded } from '@/lib/stream-quota'
 import AdminAreaChartLazy from '@/components/AdminAreaChartLazy'
 import { getTrafficAnalytics } from '@/lib/cf-analytics'
 import AdminSupportLookup from '@/components/AdminSupportLookup'
@@ -453,8 +454,17 @@ export default async function AdminPage() {
   }
 
   const cards: { label: string; value: string; hint?: string }[] = [
+    // Stream storage is BOUGHT in 1,000-minute units at $5/month, and running out does not cost
+    // more — it makes every video upload fail everywhere. So this card says how close the ceiling
+    // is and what to do, rather than two numbers whose relationship nobody remembers.
     streamUsage
-      ? { label: 'Stream video', value: `${streamUsage.minutes} / ${streamUsage.limit} min`, hint: `${streamUsage.videos} videos stored` }
+      ? {
+          label: 'Stream video',
+          value: `${streamUsage.minutes} / ${streamUsage.limit} min`,
+          hint: streamQuotaLevel(streamUsage.minutes, streamUsage.limit) === 'ok'
+            ? `${streamUsage.videos} videos stored`
+            : `${streamUsage.videos} stored — buy ${streamUnitsNeeded(streamUsage.minutes)} x 1,000 min ($${streamUnitsNeeded(streamUsage.minutes) * 5}/mo) before uploads start failing`,
+        }
       : { label: 'Stream video', value: 'n/a', hint: 'CF token missing' },
     r2Usage
       ? { label: 'Photo storage', value: `${r2Usage.gb.toFixed(2)} GB`, hint: `${r2Usage.objects.toLocaleString('en-US')} files · ~$${r2Usage.usd.toFixed(2)}/mo` }

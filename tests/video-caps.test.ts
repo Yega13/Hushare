@@ -20,7 +20,7 @@ describe('videoCaps — the agreed ladder', () => {
   })
 
   it('is exactly what was agreed', () => {
-    expect(videoCaps('free')).toEqual({ maxClipSeconds: 30, maxVideos: 20 })
+    expect(videoCaps('free')).toEqual({ maxClipSeconds: 60, maxVideos: 20 })
     expect(videoCaps('pro')).toEqual({ maxClipSeconds: 120, maxVideos: 30 })
     expect(videoCaps('studio')).toEqual({ maxClipSeconds: 600, maxVideos: 40 })
   })
@@ -43,7 +43,7 @@ describe('videoCaps — the agreed ladder', () => {
     const pro = perAccount(videoCaps('pro'), PRO_ALBUM_LIMIT)
     const max = perAccount(videoCaps('studio'), STUDIO_ALBUM_LIMIT)
 
-    expect(free).toBeCloseTo(0.15, 2)   // 3 albums x 10 min
+    expect(free).toBeCloseTo(0.30, 2)   // 3 albums x 20 min
     expect(pro).toBeCloseTo(4.50, 2)    // 15 albums x 60 min
     expect(max).toBeCloseTo(80.00, 2)   // 40 albums x 400 min
 
@@ -53,7 +53,7 @@ describe('videoCaps — the agreed ladder', () => {
     // that raising a cap makes the gap move in front of somebody.
     expect(pro).toBeGreaterThan(4)      // $4/mo plan
     expect(max).toBeGreaterThan(10)     // $10/mo plan
-    expect(free).toBeLessThan(0.20)     // free earns nothing, so it must stay near nothing
+    expect(free).toBeLessThan(0.40)     // free earns nothing, so it must stay near nothing
   })
 })
 
@@ -80,9 +80,11 @@ describe('clipTooLong', () => {
   it('forgives a fraction over, because browsers report duration as a float', () => {
     // A 30-second clip commonly measures 30.02. Refusing that is refusing a correct video over a
     // rounding artefact.
-    expect(clipTooLong(30.02, videoCaps('free'))).toBe(false)
-    expect(clipTooLong(31, videoCaps('free'))).toBe(false)
-    expect(clipTooLong(45, videoCaps('free'))).toBe(true)
+    expect(clipTooLong(60.02, videoCaps('free'))).toBe(false)
+    expect(clipTooLong(61, videoCaps('free'))).toBe(false)
+    expect(clipTooLong(75, videoCaps('free'))).toBe(true)
+    // The longest video any free album has ever held is 54s. Nothing real is refused.
+    expect(clipTooLong(54, videoCaps('free'))).toBe(false)
   })
 
   it('NEVER refuses a clip it could not measure', () => {
@@ -122,7 +124,7 @@ describe('formatClipLimit — the number in the refusal must read like the numbe
   })
 
   it('formats every real cap the way the pricing page writes it', () => {
-    expect(formatClipLimit(videoCaps('free').maxClipSeconds)).toBe('30 seconds')
+    expect(formatClipLimit(videoCaps('free').maxClipSeconds)).toBe('1 minute')
     expect(formatClipLimit(videoCaps('pro').maxClipSeconds)).toBe('2 minutes')
     expect(formatClipLimit(videoCaps('studio').maxClipSeconds)).toBe('10 minutes')
   })
