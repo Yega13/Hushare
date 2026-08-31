@@ -153,7 +153,13 @@ await c.end()
 const text = out.join('\n')
 if (CHECK) {
   const current = fs.existsSync('schema.sql') ? fs.readFileSync('schema.sql', 'utf8') : ''
-  if (current.trim() !== text.trim()) {
+  // Compared with line endings normalised. The repository stores LF, a Windows checkout has CRLF,
+  // and this generator always writes LF — so a byte comparison reported DRIFT on a file that
+  // matched the database perfectly, which it did on this check's very first CI run. A drift
+  // warning that fires when nothing has drifted is worse than no warning: it is the one people
+  // learn to scroll past, and then the real drift goes with it.
+  const normalise = (s) => s.replace(/\r\n/g, '\n').trim()
+  if (normalise(current) !== normalise(text)) {
     console.error('[dump-schema] schema.sql is OUT OF DATE with the live database.')
     console.error('  Run: node scripts/dump-schema.mjs')
     process.exit(1)
