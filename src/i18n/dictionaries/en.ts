@@ -396,7 +396,7 @@ export const en = {
   'ot.downloading': 'Downloading {n}%…',
   'ot.creatingZip': 'Creating zip…',
   'ot.downloadAll': 'Download all ({n})',
-  'ot.allowUploads': 'Guests can add photos',
+  'ot.allowUploads': 'Guest photo upload',
   'ot.allowUploadsSub': 'Turn this off and only you can add \u2014 everyone else can still view and download.',
   'ot.allowDownloads': 'Allow guest downloads',
   'ot.allowDownloadsSub': 'Guests can download all photos as a zip file.',
