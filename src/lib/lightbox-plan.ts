@@ -25,3 +25,16 @@ export function stripWindow(index: number, total: number, span = 20): { start: n
   const i = Math.min(Math.max(index, 0), total - 1)
   return { start: Math.max(0, i - span), end: Math.min(total, i + span + 1) }
 }
+
+/** Whether the open/close morph animation is worth running at this album size.
+ *
+ *  startViewTransition snapshots the WHOLE page twice — cost scales with mounted DOM, and an
+ *  event album mounts thousands of image tiles. At 4,500 photos the snapshot alone was a
+ *  visible stall on every open and close, on the most-tapped interaction in the product. The
+ *  morph is polish; past this many loaded photos the plain cut is the faster, better
+ *  experience. 600 keeps the morph for every ordinary album (weddings, parties) and drops it
+ *  only where the page is too heavy to animate. */
+export const MORPH_TILE_LIMIT = 600
+export function morphAllowed(loadedPhotoCount: number): boolean {
+  return loadedPhotoCount <= MORPH_TILE_LIMIT
+}

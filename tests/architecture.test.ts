@@ -56,7 +56,8 @@ const SIZE_BUDGET: Record<string, number> = {
   'src/app/[slug]/AlbumPageClient.tsx': 1490,
   'src/app/card-editor/CardEditorClient.tsx': 873,
   // +1 (2026-08-31): pass collectionTotal to the lightbox counter.
-  'src/components/PhotoGrid.tsx': 844,
+  // +2 (2026-08-31): morphAllowed gate on open and close.
+  'src/components/PhotoGrid.tsx': 847,
   'src/components/AlbumDesigner.tsx': 774,
   // +3 net (2026-08-31): deleted the duplicate ±1 prefetch loop, added strip windowing wired
   // to lib/lightbox-plan.ts.
@@ -64,7 +65,8 @@ const SIZE_BUDGET: Record<string, number> = {
   // one leaving) and the collectionTotal counter fix.
   // +5 (2026-08-31, review fold-in): slideshow counter uses its own complete set; the swipe
   // pane stays mounted through the failed-swipe return.
-  'src/components/photo-grid/LightboxOverlay.tsx': 697,
+  // +6 (2026-08-31): swipe pane matches the real photo's box and vertical centre.
+  'src/components/photo-grid/LightboxOverlay.tsx': 703,
   // 518, down from 645: validatePhoto, hasTraversal and r2UrlPrefix moved to lib/photo-input,
   // where 22 tests now cover the boundary between a guest and this album's storage — including the
   // poisoned-thumbnail attack, which the mutation run confirmed they catch.

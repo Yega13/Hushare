@@ -43,7 +43,10 @@ export default function BibSearchBar({ query, onQueryChange, matchCount, totalMa
   // Both counts come from the server and cover the whole album, so they no longer agree with each
   // other by accident on a partly-loaded one — that bug had a runner at bib 3,400 told with total
   // confidence that they were not photographed.
-  const stillIndexing = indexedCount < totalImages
+  // Only when photos are GENUINELY unread. "4,565 of 4,565" is a finished album, and telling a
+  // runner it is still reading makes them wait for something that already happened — the mirror
+  // of rule 20's forbidden negative: an unbacked "not yet".
+  const stillIndexing = totalImages > 0 && indexedCount < totalImages
   // NOTHING NEGATIVE MAY BE STATED UNTIL THE REAL ANSWER IS IN. While the request is in flight the
   // grid is showing a local filter over the photos this phone happens to hold, which on a big album
   // is not the answer — and if the request failed, there is no answer at all.
@@ -81,7 +84,15 @@ export default function BibSearchBar({ query, onQueryChange, matchCount, totalMa
             {searching && (
               <button
                 type="button" onClick={() => onQueryChange('')} aria-label={t('bib.clear')}
-                style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: MUTED, display: 'flex' }}
+                style={{
+                  position: 'absolute', right: 6, top: '50%', transform: 'translateY(-50%)',
+                  // A real centred square: the icon used to sit flush against the input's right
+                  // padding, which read as "not in the middle" of its own button. 28px is also a
+                  // findable tap target on a phone; the icon centres inside it.
+                  width: 28, height: 28, padding: 0,
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  background: 'none', border: 'none', cursor: 'pointer', color: MUTED,
+                }}
               >
                 <X className="w-4 h-4" />
               </button>

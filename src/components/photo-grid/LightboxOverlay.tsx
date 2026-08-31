@@ -339,7 +339,7 @@ export default function LightboxOverlay({
             style={{
               transform: `translateX(calc(${swipeOffset}px + ${swipeOffset < 0 ? '100vw' : '-100vw'}))`,
               transition: swipeAnimating ? 'transform 170ms cubic-bezier(0.4, 0, 0.2, 1)' : 'none',
-              padding: 16,
+              paddingBottom: 88,
             }}
           >
             {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -347,7 +347,12 @@ export default function LightboxOverlay({
               src={src}
               alt=""
               draggable={false}
-              style={{ maxWidth: 'min(96vw, 1100px)', maxHeight: 'min(95svh, 90vh)', objectFit: 'contain', borderRadius: previewRadiusFor(neighbor) }}
+              // Mirror the REAL photo's box (w-[min(92vw,1100px)], max-h-[min(70vh,760px)]) so the
+              // arriving preview is the size the photo will actually render at. The wrapper's
+              // paddingBottom biases it upward by half the ~88px of controls the content column
+              // stacks under its image — without it the preview rode ~44px lower and visibly
+              // jumped up at the moment of the swap.
+              style={{ width: 'min(92vw, 1100px)', maxHeight: 'min(70vh, 760px)', objectFit: 'contain', borderRadius: previewRadiusFor(neighbor) }}
             />
           </div>
         )

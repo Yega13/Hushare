@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { PREFETCH_DELTAS, stripWindow } from '../src/lib/lightbox-plan'
+import { PREFETCH_DELTAS, stripWindow, morphAllowed } from '../src/lib/lightbox-plan'
 
 describe('PREFETCH_DELTAS', () => {
   it('is current + one ahead + one behind, current first', () => {
@@ -42,5 +42,14 @@ describe('stripWindow', () => {
 
   it('a small album renders in full', () => {
     expect(stripWindow(2, 5, 20)).toEqual({ start: 0, end: 5 })
+  })
+})
+
+describe('morphAllowed', () => {
+  it('keeps the morph for ordinary albums and drops it for event-scale ones', () => {
+    expect(morphAllowed(1)).toBe(true)
+    expect(morphAllowed(600)).toBe(true)
+    expect(morphAllowed(601)).toBe(false)
+    expect(morphAllowed(4565)).toBe(false)
   })
 })

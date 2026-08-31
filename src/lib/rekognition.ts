@@ -209,6 +209,9 @@ export async function deleteCollection(albumId: string) {
 // decide how strict to be. Bib numbers are 1–6 digits; longer runs are timestamps/sponsor text.
 export type DetectedBib = { number: string; confidence: number }
 
+export const REKOGNITION_IMAGE_BYTES_MAX = 5 * 1024 * 1024
+export const IMAGE_TOO_LARGE = 'rekognition-image-too-large'
+
 export async function detectBibNumbers(imageUrl: string, minConfidence = 80): Promise<DetectedBib[]> {
   // Same SSRF guard as indexPhotoFaces — only our own R2 CDN is fetchable.
   const rawR2Host = process.env.R2_PUBLIC_HOST
@@ -219,7 +222,16 @@ export async function detectBibNumbers(imageUrl: string, minConfidence = 80): Pr
 
   const imgRes = await fetch(imageUrl)
   if (!imgRes.ok) throw new Error(`Failed to fetch image: ${imgRes.status}`)
-  const base64Image = uint8ToBase64(new Uint8Array(await imgRes.arrayBuffer()))
+  const bytes = new Uint8Array(await imgRes.arrayBuffer())
+  // Rekognition rejects Image.Bytes over 5MB with the SAME error every time — retrying the
+  // identical bytes can never succeed. Thrown as a TAGGED error so the caller can tell "this
+  // image will never work" (fall back to the thumbnail) from a transient AWS failure (leave
+  // NULL and retry later). One 5.05MB race photo sat in the index queue for a day, failing
+  // once per cron pass, keeping "still reading photos" on screen for a fully-indexed album.
+  if (bytes.byteLength > REKOGNITION_IMAGE_BYTES_MAX) {
+    throw new Error(IMAGE_TOO_LARGE)
+  }
+  const base64Image = uint8ToBase64(bytes)
 
   type TextResult = {
     TextDetections?: Array<{ DetectedText?: string; Type?: string; Confidence?: number }>

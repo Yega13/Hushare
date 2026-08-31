@@ -1,7 +1,7 @@
 import { getCloudflareContext } from '@opennextjs/cloudflare'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { getUserTierById } from '@/lib/subscriptions'
-import { detectBibNumbers } from '@/lib/rekognition'
+import { detectBibNumbers, IMAGE_TOO_LARGE } from '@/lib/rekognition'
 
 // Bib indexing runs AFTER the response has been sent (waitUntil), never inside it. Upload speed is
 // the product's first priority and OCR is ~1s per photo, so it must never sit in the request path.
@@ -44,7 +44,19 @@ async function indexOne(admin: ReturnType<typeof createAdminClient>, photo: Pend
   const imageUrl = photo.url ?? photo.thumb_url
   if (!imageUrl) return
   try {
-    const bibs = await detectBibNumbers(imageUrl)
+    let bibs
+    try {
+      bibs = await detectBibNumbers(imageUrl)
+    } catch (e) {
+      // An original over Rekognition's byte cap fails IDENTICALLY forever — retrying it each
+      // pass wedges the queue and keeps "still reading photos" on screen for good. The 600px
+      // thumbnail reads fewer distant bibs, but a partial answer beats an eternal NULL. Only
+      // the tagged permanent error takes this path; transient failures still fall through to
+      // the retry-later catch below.
+      const tooLarge = e instanceof Error && e.message === IMAGE_TOO_LARGE
+      if (!tooLarge || !photo.thumb_url || photo.thumb_url === imageUrl) throw e
+      bibs = await detectBibNumbers(photo.thumb_url)
+    }
     // [] is written on success-with-no-bibs, which is a real answer and must be distinguishable
     // from NULL ("never looked at") or the sweep would revisit this photo forever.
     await admin.from('photos').update({ bib_numbers: bibs.map((b) => b.number) }).eq('id', photo.id)
