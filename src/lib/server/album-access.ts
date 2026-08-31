@@ -342,7 +342,7 @@ export type PhotosResult =
   | { kind: 'notfound' }
   | { kind: 'reveal' }
   | { kind: 'password' }
-  | { kind: 'ok'; photos: Photo[]; total?: number; bibStats?: { indexed: number; totalImages: number } }
+  | { kind: 'ok'; photos: Photo[]; total?: number; latest?: string | null; bibStats?: { indexed: number; totalImages: number } }
   // COULD NOT ANSWER — not "the answer is nothing". Returned when the owner's tier could not be
   // determined, so the caller reports a failure the guest can retry instead of an empty result they
   // will read as final. See getUserTierResolved.
@@ -366,7 +366,7 @@ export const ALBUM_PAGE_SIZE = 500
 export async function fetchAuthorizedPhotos(
   albumId: string,
   cookieStore: CookieStore,
-  opts: { recentLimit?: number; offset?: number; limit?: number; bib?: string; bibStats?: boolean; statsOnly?: boolean } = {},
+  opts: { recentLimit?: number; offset?: number; limit?: number; bib?: string; bibStats?: boolean; statsOnly?: boolean; probe?: boolean } = {},
 ): Promise<PhotosResult> {
   if (!UUID_RE.test(albumId)) return { kind: 'invalid' }
 
@@ -445,6 +445,28 @@ export async function fetchAuthorizedPhotos(
   // progress note would refetch the entire album on every page load.
   if (opts.statsOnly) {
     return { kind: 'ok', photos: [], total: 0, bibStats: await countBibStats(albumId, isOwner) }
+  }
+
+  // THE CHEAP QUESTION. "How many photos, and when was the newest added?" — answered by two
+  // index lookups and about forty bytes, instead of the ~228 KB the 500-row window costs.
+  //
+  // The client asks this before every refresh and pulls the window only when the answer moved.
+  // Almost every refresh returns what the client already has, and at event scale those wasted
+  // fetches are what exhausts the database plan's transfer allowance — which throttles every
+  // album on the platform, not only the busy one. Runs AFTER the same gate and tier checks as
+  // the real fetch, so it cannot leak a count a password is withholding.
+  if (opts.probe) {
+    const visible = () => {
+      const q = admin.from('photos').select('id', { count: 'exact', head: true }).eq('album_id', albumId)
+      return isOwner ? q : q.eq('hidden', false)
+    }
+    const newest = () => {
+      const q = admin.from('photos').select('created_at').eq('album_id', albumId)
+      return (isOwner ? q : q.eq('hidden', false))
+        .order('created_at', { ascending: false }).limit(1).maybeSingle<{ created_at: string }>()
+    }
+    const [{ count }, { data: last }] = await Promise.all([visible(), newest()])
+    return { kind: 'ok', photos: [], total: count ?? 0, latest: last?.created_at ?? null }
   }
 
   // ASKING FOR A BIB SEARCH AND ASKING FOR THE ALBUM ARE DIFFERENT REQUESTS.

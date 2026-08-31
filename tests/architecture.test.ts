@@ -66,7 +66,9 @@ const SIZE_BUDGET: Record<string, number> = {
   // +17 (2026-08-31, review finding): channel-identity guard + timer hygiene in the reconnect
   // loop, so a replaced channel's CLOSED echo cannot breed reconnect loops on venue WiFi.
   // +1 (2026-08-31): pass the true total to the toolbar.
-  'src/app/[slug]/AlbumPageClient.tsx': 1491,
+  // +59 (2026-08-31, audit): the cheap freshness probe — every refresh now asks a ~40-byte
+  // question before pulling a ~228 KB window, and the window is seeded from the server render.
+  'src/app/[slug]/AlbumPageClient.tsx': 1539,
   'src/app/card-editor/CardEditorClient.tsx': 873,
   // +1 (2026-08-31): pass collectionTotal to the lightbox counter.
   // +2 (2026-08-31): morphAllowed gate on open and close.

@@ -62,10 +62,12 @@ export async function GET(req: Request) {
   // Counts without rows. Sent while the search box is empty, so asking how far OCR has got does
   // not drag the whole album across the wire to answer it.
   const statsOnly = url.searchParams.get('statsOnly') === '1'
+  // The cheap freshness question — see lib/album-freshness.ts. Returns two numbers, no rows.
+  const probe = url.searchParams.get('probe') === '1'
   const cookieStore = await cookies()
 
   try {
-    const result = await fetchAuthorizedPhotos(albumId, cookieStore, { recentLimit, offset, limit, bib, bibStats, statsOnly })
+    const result = await fetchAuthorizedPhotos(albumId, cookieStore, { recentLimit, offset, limit, bib, bibStats, statsOnly, probe })
     switch (result.kind) {
       case 'invalid':
         return NextResponse.json({ error: 'Invalid album id' }, { status: 400, headers: NO_STORE })
@@ -82,7 +84,11 @@ export async function GET(req: Request) {
         return NextResponse.json({ error: 'Could not search right now' }, { status: 503, headers: NO_STORE })
       case 'ok':
         return NextResponse.json(
-          { photos: result.photos, total: result.total, bibStats: result.bibStats },
+          probe
+            // Deliberately just the two fields. Sending photos: [] alongside them would let a
+            // caller that forgot to check `probe` read an empty album as a real answer.
+            ? { total: result.total ?? 0, latest: result.latest ?? null }
+            : { photos: result.photos, total: result.total, bibStats: result.bibStats },
           { headers: NO_STORE },
         )
     }

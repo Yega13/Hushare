@@ -10,6 +10,7 @@ import { shouldHoldForOwnerCheck } from '@/lib/owner-view'
 import { applyPhotoWindow, mergePreservingExtras, shouldApplyRefresh } from '@/lib/photo-window'
 import { createSettingsSync, shouldCommitSettings } from '@/lib/settings-sync'
 import { fallbackPollDelay } from '@/lib/realtime-fallback'
+import { albumChanged, type AlbumFreshness } from '@/lib/album-freshness'
 import type { Album, Photo, Tier } from '@/types'
 import AlbumSkeleton from '@/components/AlbumSkeleton'
 import PasswordGate from '@/components/PasswordGate'
@@ -313,6 +314,49 @@ export default function AlbumPageClient({ initialAlbum = null, initialPhotos, in
 
   // First-window fetch (offset 0) — used by the initial load and every realtime refetch.
   const fetchPhotos = useCallback((albumId: string) => fetchPage(albumId, 0, ALBUM_FIRST_WINDOW), [fetchPage])
+
+  // What the album looked like the last time we actually pulled the window. Compared against the
+  // cheap probe so an unchanged album costs ~40 bytes instead of ~228 KB — see lib/album-freshness.
+  // SEEDED FROM THE SERVER RENDER. The page arrives with the window already in its HTML, so the
+  // client knows exactly how fresh it is — and the refetch that fires the moment realtime
+  // subscribes then finds nothing changed and skips, instead of pulling the same ~228 KB a second
+  // time one second after load. At 400 arrivals that duplicate alone was ~90 MB and 400 heavy
+  // queries in the arrival window.
+  const seenFreshnessRef = useRef<AlbumFreshness | null>(
+    initialPhotos && typeof initialTotal === 'number'
+      ? {
+          total: initialTotal,
+          // max, not [0] — the seed must not assume which end of the album the order puts first.
+          latest: initialPhotos.reduce<string | null>(
+            (max, p) => (!max || p.created_at > max ? p.created_at : max), null),
+        }
+      : null,
+  )
+
+  const probeAlbum = useCallback(async (albumId: string): Promise<AlbumFreshness | null> => {
+    try {
+      const res = await fetch(`/api/album/photos?albumId=${encodeURIComponent(albumId)}&probe=1`, { cache: 'no-store' })
+      if (!res.ok) return null
+      const j = await res.json() as { total?: number; latest?: string | null }
+      if (typeof j.total !== 'number') return null
+      return { total: j.total, latest: j.latest ?? null }
+    } catch {
+      // A probe that did not come back knows nothing; albumChanged treats null as "fetch".
+      return null
+    }
+  }, [])
+
+  // Refresh the window, but ask the cheap question first. Returns nothing — callers only care
+  // that the screen ends up current.
+  const refreshIfChanged = useCallback(async (albumId: string, apply: (r: { photos: Photo[]; total: number } | null) => void) => {
+    const probe = await probeAlbum(albumId)
+    if (!albumChanged(seenFreshnessRef.current, probe)) return
+    const r = await fetchPhotos(albumId)
+    // Only record freshness on a fetch that actually succeeded, or a failed window would be
+    // remembered as the current state and the next probe would skip the retry.
+    if (r && probe) seenFreshnessRef.current = probe
+    apply(r)
+  }, [probeAlbum, fetchPhotos])
 
   // Load the next page of a BIG album's tail (appended after what's loaded). Self-gates on refs so
   // it's safe from a button or a scroll observer without stale-closure bugs. No-op once caught up.
@@ -794,7 +838,7 @@ export default function AlbumPageClient({ initialAlbum = null, initialPhotos, in
     let pollTimer: ReturnType<typeof setTimeout> | null = null
     function pollWhileDown() {
       if (!active) return
-      void fetchPhotos(albumId).then(r => { if (active) applyWindowRefresh(r) })
+      void refreshIfChanged(albumId, r => { if (active) applyWindowRefresh(r) })
       pollTimer = setTimeout(pollWhileDown, fallbackPollDelay())
     }
 
@@ -827,10 +871,14 @@ export default function AlbumPageClient({ initialAlbum = null, initialPhotos, in
           //
           // The cost is that a new photo can take up to 2.5s to appear instead of 0.5s. Nobody
           // watching an album notices two seconds; everybody notices the album refusing to load.
+          // JITTERED. Every viewer receives the broadcast within milliseconds of every other, so a
+          // fixed delay makes 400 phones fetch in the same instant — the one hot path here that
+          // had no jitter, while the reconnect backoff and the fallback poll both explain why
+          // they do. The probe in refreshIfChanged means most of those wake-ups cost ~40 bytes.
           if (refetchTimer) clearTimeout(refetchTimer)
           refetchTimer = setTimeout(() => {
-            void fetchPhotos(albumId).then(r => { if (active) applyWindowRefresh(r) })
-          }, REFETCH_DEBOUNCE_MS)
+            void refreshIfChanged(albumId, r => { if (active) applyWindowRefresh(r) })
+          }, Math.round(REFETCH_DEBOUNCE_MS * (0.75 + Math.random() * 0.5)))
         })
         // DELETE and UPDATE used to arrive on postgres_changes for instant per-row feedback. They
         // no longer do, and this is a SECURITY fix rather than a refactor: Supabase only delivers
@@ -855,7 +903,7 @@ export default function AlbumPageClient({ initialAlbum = null, initialPhotos, in
             // fetchPhotos call and when the channel becomes SUBSCRIBED. Photos uploaded
             // in that gap would be missed if we only refetch on reconnect.
             // The `active` guard on the .then() prevents updating state after cleanup.
-            void fetchPhotos(albumId).then(r => { if (active) applyWindowRefresh(r) })
+            void refreshIfChanged(albumId, r => { if (active) applyWindowRefresh(r) })
             retryCount = 0
             // Realtime is back — the broadcast channel is the fresh-data path again.
             if (pollTimer) { clearTimeout(pollTimer); pollTimer = null }
@@ -898,7 +946,7 @@ export default function AlbumPageClient({ initialAlbum = null, initialPhotos, in
       if (pollTimer) clearTimeout(pollTimer)
       if (currentChannel) supabase.removeChannel(currentChannel)
     }
-  }, [album?.id, supabase, fetchPhotos, applyWindowRefresh])
+  }, [album?.id, supabase, refreshIfChanged, applyWindowRefresh])
 
   // ─── Effect 4: Realtime settings broadcast channel ──────────────────────────
   useEffect(() => {
