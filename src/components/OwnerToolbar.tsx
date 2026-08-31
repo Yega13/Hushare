@@ -257,6 +257,17 @@ export default function OwnerToolbar({ album, photos, albumPhotoCount, ownerToke
   const canUseCollections = tierAllows(userTier, 'collections')
   const showLockedCustomUrl = showsAsLocked(userTier, 'customUrl')
   const showLockedModeration = showsAsLocked(userTier, 'photoModeration')
+  // APPROVAL ONLY MEANS SOMETHING WHILE GUESTS CAN ADD PHOTOS.
+  //
+  // With uploads off, nothing can ever arrive to be approved, so the switch below governs an empty
+  // set — it looks live, it saves, and it changes nothing anybody will ever see. Greying it out
+  // says that in the only way a control can: by not pretending to work.
+  //
+  // It is only DISABLED, never switched off. The stored value is left exactly as it was, so
+  // turning guest uploads back on restores the album's real moderation setting rather than
+  // silently publishing the next guest photo straight into a wedding album.
+  const moderationIsMoot = !guestUploadsEnabled
+  const moderationDisabled = !canModeratePhotos || moderationIsMoot
   const showLockedCollections = showsAsLocked(userTier, 'collections')
   // Branding removal is gated by api/album/branding, and it had NO badge and NO dimming — a free
   // owner saw an ordinary switch, flipped it, and learned it was paid from the error that came
@@ -1261,12 +1272,14 @@ export default function OwnerToolbar({ album, photos, albumPhotoCount, ownerToke
                       />
                     </label>
 
-                    <label className="flex items-center justify-between gap-4 rounded-xl px-3 py-3" style={{ background: '#FDFAF5', border: '1px solid #DDD5C5', ...gatedRowStyle(showLockedModeration) }}>
+                    <label className="flex items-center justify-between gap-4 rounded-xl px-3 py-3" style={{ background: '#FDFAF5', border: '1px solid #DDD5C5', ...gatedRowStyle(showLockedModeration || moderationIsMoot) }}>
                       <span>
                         <span className="block text-sm font-semibold" style={{ color: '#630826' }}>
                           {t('ot.requireApproval')} <PlanBadge need="pro" tier={userTier} />
                         </span>
-                        <span className="block text-xs" style={{ color: '#7C5C3E' }}>{t('ot.requireApprovalSub')}</span>
+                        <span className="block text-xs" style={{ color: '#7C5C3E' }}>
+                          {moderationIsMoot ? t('ot.requireApprovalMoot') : t('ot.requireApprovalSub')}
+                        </span>
                       </span>
                       <input
                         type="checkbox"
@@ -1289,7 +1302,7 @@ export default function OwnerToolbar({ album, photos, albumPhotoCount, ownerToke
                           }
                         }}
                         className="h-4 w-4"
-                        disabled={!canModeratePhotos}
+                        disabled={moderationDisabled}
                       />
                     </label>
                   </div>

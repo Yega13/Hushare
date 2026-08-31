@@ -45,7 +45,7 @@ const SIZE_BUDGET: Record<string, number> = {
   // +26 (2026-08-31): the card that says an advertised intro price cannot be charged.
   // +25 (2026-08-31): the card that says a Polar plan charges something other than the
   // advertised price or interval (lib/plan-catalogue + checkPlanProducts).
-  'src/app/admin/page.tsx': 876,
+  'src/app/admin/page.tsx': 882,
   // +4 on 2026-08-30: FILE_ACCEPT stopped being a fourth hand-written copy of the accepted
   // MIME types and now builds from lib/media. An import and a comment cost four lines here
   // and removed a list that had already fallen two formats behind. Deliberate.
@@ -63,7 +63,7 @@ const SIZE_BUDGET: Record<string, number> = {
   // 1827 (2026-08-31): the photo-order control was added and then removed the same day —
   // newest-first is right for essentially every album and dragging already covers the rest, so
   // the switch was not worth the room it took in Settings. Back to where it started.
-  'src/components/OwnerToolbar.tsx': 1868,
+  'src/components/OwnerToolbar.tsx': 1881,
   // +23 (2026-08-31): fallback-poll wiring for realtime REFUSAL — the cadence decision is in
   // lib/realtime-fallback.ts; the timer must live beside the channel it covers (rule 15).
   // +17 (2026-08-31, review finding): channel-identity guard + timer hygiene in the reconnect

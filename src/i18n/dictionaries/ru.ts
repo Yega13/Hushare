@@ -384,6 +384,7 @@ export const ru: Partial<Record<DictKey, string>> = {
   'ot.allowDownloads': 'Разрешить скачивание гостям',
   'ot.allowDownloadsSub': 'Гости могут скачать все фото одним архивом.',
   'ot.requireApproval': 'Требовать одобрения',
+  'ot.requireApprovalMoot': 'Нечего проверять, пока загрузка фото гостями выключена.',
   'ot.requireApprovalSub': 'Фото гостей скрыты, пока вы их не одобрите. Ожидающие помечены в вашем виде.',
   'ot.faceFinder': 'ИИ-поиск по лицу',
   'ot.faceFinderSub': 'Гости могут загрузить селфи и найти все свои фото.',

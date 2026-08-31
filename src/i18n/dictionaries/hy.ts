@@ -384,6 +384,7 @@ export const hy: Partial<Record<DictKey, string>> = {
   'ot.allowDownloads': 'Թույլատրել հյուրերի ներբեռնումը',
   'ot.allowDownloadsSub': 'Հյուրերը կարող են ներբեռնել բոլոր լուսանկարները մեկ արխիվով։',
   'ot.requireApproval': 'Պահանջել հաստատում',
+  'ot.requireApprovalMoot': 'Հյուրերի վերբեռնումը անջատված է։',
   'ot.requireApprovalSub': 'Հյուրերի լուսանկարները թաքնված են, մինչև հաստատեք։ Սպասողները նշված են ձեր տեսքում։',
   'ot.faceFinder': 'AI դեմքի որոնում',
   'ot.faceFinderSub': 'Հյուրերը կարող են վերբեռնել սելֆի և գտնել իրենց բոլոր լուսանկարները։',

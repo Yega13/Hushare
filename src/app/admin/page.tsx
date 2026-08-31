@@ -828,7 +828,13 @@ export default async function AdminPage() {
         {/* Replaced a two-column list of joined-date and email, which could not answer a single
             question worth asking about a customer. */}
         <div style={{ marginBottom: 20 }}>
-          <AdminUsers users={userRows} cohorts={cohorts} />
+          {/* registeredTotal is the SAME figure the live Overview card starts from, so the two
+              cannot show different totals on one screen. */}
+          <AdminUsers
+            users={userRows}
+            cohorts={cohorts}
+            registeredTotal={(usersRes.data as { total?: number } | null)?.total ?? allUsers.length}
+          />
         </div>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(300px, 100%), 1fr))', gap: 20 }}>
           <div>

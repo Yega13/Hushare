@@ -401,6 +401,7 @@ export const en = {
   'ot.allowDownloads': 'Allow guest downloads',
   'ot.allowDownloadsSub': 'Guests can download all photos as a zip file.',
   'ot.requireApproval': 'Require approval',
+  'ot.requireApprovalMoot': 'Nothing to approve while guest photo upload is off.',
   'ot.requireApprovalSub': "Guest photos stay hidden until you approve them. You'll see pending ones marked in your view.",
   'ot.faceFinder': 'AI Face Finder',
   'ot.faceFinderSub': 'Guests can upload a selfie to find every photo they appear in.',

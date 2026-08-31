@@ -79,7 +79,10 @@ function Card({ label, value, hint, tone }: { label: string; value: string; hint
   )
 }
 
-export default function AdminUsers({ users, cohorts }: { users: UserRow[]; cohorts: Cohort[] }) {
+export default function AdminUsers(
+  { users, cohorts, registeredTotal }:
+  { users: UserRow[]; cohorts: Cohort[]; registeredTotal: number },
+) {
   const [onlyFlagged, setOnlyFlagged] = useState(false)
   // On a phone the 760px table meant the owner saw an email, a clipped date, and a horizontal
   // scrollbar they never found — plan, activity and the FLAGS (the whole point of this view)
@@ -108,7 +111,19 @@ export default function AdminUsers({ users, cohorts }: { users: UserRow[]; cohor
     }
     return [...rows].sort((a, b) => (b.u.joined ?? '').localeCompare(a.u.joined ?? ''))
   }, [rows, onlyFlagged])
-  const total = users.length
+  // ONE ANSWER TO "HOW MANY PEOPLE HAVE SIGNED UP".
+  //
+  // This card counted the rows it happened to be given, while the Overview card at the top of the
+  // page counted auth users — and the Overview card polls live every 5 seconds. So the moment
+  // somebody registered with the page open, the top said 66 and this said 65, on the same screen,
+  // with nothing to explain the difference. Both now start from the same server figure; only the
+  // live one moves, which is what "realtime" already tells the reader.
+  //
+  // The percentages below stay relative to the ROWS, because "made an album" can only be counted
+  // from rows we actually have — and the row query is bounded. They are labelled as a share of
+  // signups, so if the two ever diverge at scale that reads as an undercount, never as over 100%.
+  const total = registeredTotal
+  const counted = users.length
   const activated = users.filter((u) => u.albums > 0).length
   const active30 = users.filter((u) => { const d = daysSince(u.lastActive); return d !== null && d <= 30 }).length
   const paying = users.filter((u) => u.tier !== 'free').length
@@ -121,10 +136,10 @@ export default function AdminUsers({ users, cohorts }: { users: UserRow[]; cohor
         <Card
           label="Made an album"
           value={`${activated}`}
-          hint={total ? `${Math.round((activated / total) * 100)}% of signups` : undefined}
-          tone={total > 0 && activated / total < 0.5 ? 'warn' : undefined}
+          hint={counted ? `${Math.round((activated / counted) * 100)}% of signups` : undefined}
+          tone={counted > 0 && activated / counted < 0.5 ? 'warn' : undefined}
         />
-        <Card label="Active in 30 days" value={`${active30}`} hint={total ? `${Math.round((active30 / total) * 100)}% of signups` : undefined} />
+        <Card label="Active in 30 days" value={`${active30}`} hint={counted ? `${Math.round((active30 / counted) * 100)}% of signups` : undefined} />
         <Card label="Paying" value={`${paying}`} />
       </div>
 
