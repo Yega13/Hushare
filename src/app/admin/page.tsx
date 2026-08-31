@@ -21,6 +21,7 @@ import AdminClockHeatmap from '@/components/AdminClockHeatmap'
 import AdminFunnel from '@/components/AdminFunnel'
 import AdminUsers, { type UserRow, type Cohort } from '@/components/AdminUsers'
 import { isSubActive } from '@/lib/subscriptions'
+import { attachAlbumOwners } from '@/lib/server/error-attribution'
 import { albumCountLimitForTier, albumMediaCapForTier } from '@/lib/media'
 import AdminAreaChartLazy from '@/components/AdminAreaChartLazy'
 import { getTrafficAnalytics } from '@/lib/cf-analytics'
@@ -191,6 +192,11 @@ export default async function AdminPage() {
   // id → email map for owners + recent signups (one listUsers call, no N+1)
   const emailById = new Map<string, string>()
   for (const u of allUsers) if (u.id) emailById.set(u.id, u.email ?? '(no email)')
+
+  // WHOSE album an error came from, so the owner can be helped rather than just counted.
+  // Shared with the live-stats poll that replaces these rows every few seconds — enriching only
+  // here would fill the column on load and empty it moments later (lib/server/error-attribution).
+  const errorsWithOwner = await attachAlbumOwners(admin, recentErrors, emailById)
 
   // Per-album media counts for the recent list, aggregated in JS. PostgREST caps a single
   // response at max_rows (default 1000), and the recent albums together hold far MORE than 1000
@@ -692,7 +698,7 @@ export default async function AdminPage() {
           Reported from guest devices
         </h2>
         <AdminErrorTabs
-          rows={recentErrors}
+          rows={errorsWithOwner}
           seenBefore={[...new Set((clearedMsgsRes.data ?? []).map(r => r.message as string))]}
           // The build this page was served by. A report stamped with anything else came from a
           // browser running code we no longer ship.

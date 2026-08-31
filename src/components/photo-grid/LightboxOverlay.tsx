@@ -155,10 +155,19 @@ export default function LightboxOverlay({
   onToggleSlideshowPause,
 }: Props) {
   const { t } = useT()
+  // The chevrons sit at the VIEWPORT's vertical centre, but the content column centres the image
+  // PLUS the controls row beneath it — so the image's own centre rides about half the chrome
+  // height higher, and the arrows read as sitting below the photo. Nudging the column down by
+  // that half aligns them.
+  //
+  // Clamped to the free space that actually exists: on a short landscape phone the image and its
+  // controls nearly fill the screen, and an unconditional shift would push the controls off the
+  // bottom edge. Where there is no room, the shift is zero and nothing moves.
+  const LB_SHIFT = 'clamp(0px, calc((100svh - min(70vh, 760px) - 96px) / 2), 44px)'
+  const shownTotal = Math.max(collectionTotal ?? 0, viewerPhotos.length)
   // Video aspect ratio drives the player box so it fills with no black bars. Prefer the exact
   // dimensions captured at upload (instant, reliable); fall back to measuring the poster for
   // legacy rows that predate the width/height columns.
-  const shownTotal = Math.max(collectionTotal ?? 0, viewerPhotos.length)
   const hasStoredDims = current.width != null && current.height != null && current.width > 0 && current.height > 0
   const [videoAspect, setVideoAspect] = React.useState<number | null>(null)
   // Whether the current video's player has been mounted. Starts as the album's autoplay setting
@@ -337,7 +346,7 @@ export default function LightboxOverlay({
             aria-hidden
             className="absolute inset-0 z-10 flex items-center justify-center pointer-events-none"
             style={{
-              transform: `translateX(calc(${swipeOffset}px + ${swipeOffset < 0 ? '100vw' : '-100vw'}))`,
+              transform: `translate(calc(${swipeOffset}px + ${swipeOffset < 0 ? '100vw' : '-100vw'}), ${LB_SHIFT})`,
               transition: swipeAnimating ? 'transform 170ms cubic-bezier(0.4, 0, 0.2, 1)' : 'none',
               paddingBottom: 88,
             }}
@@ -369,7 +378,7 @@ export default function LightboxOverlay({
           touchAction: 'pan-y',
           // Clean horizontal slide that tracks the finger 1:1 (no scale — the scale-wobble read
           // as dated). A light fade near the end keeps it feeling smooth as the item leaves.
-          transform: `translateX(${swipeOffset}px)`,
+          transform: `translate(${swipeOffset}px, ${LB_SHIFT})`,
           opacity: 1 - Math.min(Math.abs(swipeOffset), 520) / 1600,
           transition: swipeAnimating ? 'transform 170ms cubic-bezier(0.4, 0, 0.2, 1), opacity 170ms ease-out' : 'none',
         }}

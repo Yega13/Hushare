@@ -40,7 +40,9 @@ const SIZE_BUDGET: Record<string, number> = {
   // appear — and the query gained the polar_product_id column its filter was silently reading as
   // undefined. Owner-requested fix; the lines are the loop that merges admins with comp rows.
   // +3 (2026-08-31): drop deleted-album rows from Top albums.
-  'src/app/admin/page.tsx': 789,
+  // +6 (2026-08-31): error rows carry which album and owner to contact (the join itself lives
+  // in lib/server/error-attribution, shared with the live poll).
+  'src/app/admin/page.tsx': 795,
   // +4 on 2026-08-30: FILE_ACCEPT stopped being a fourth hand-written copy of the accepted
   // MIME types and now builds from lib/media. An import and a comment cost four lines here
   // and removed a list that had already fallen two formats behind. Deliberate.
@@ -69,7 +71,8 @@ const SIZE_BUDGET: Record<string, number> = {
   // +5 (2026-08-31, review fold-in): slideshow counter uses its own complete set; the swipe
   // pane stays mounted through the failed-swipe return.
   // +6 (2026-08-31): swipe pane matches the real photo's box and vertical centre.
-  'src/components/photo-grid/LightboxOverlay.tsx': 703,
+  // +8 (2026-08-31): the clamped downward nudge that puts the chevrons on the photo's centre.
+  'src/components/photo-grid/LightboxOverlay.tsx': 711,
   // 518, down from 645: validatePhoto, hasTraversal and r2UrlPrefix moved to lib/photo-input,
   // where 22 tests now cover the boundary between a guest and this album's storage — including the
   // poisoned-thumbnail attack, which the mutation run confirmed they catch.

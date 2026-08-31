@@ -21,3 +21,8 @@ alter table albums add constraint albums_desktop_grid_columns_check
 alter table albums drop constraint if exists albums_mobile_grid_columns_check;
 alter table albums add constraint albums_mobile_grid_columns_check
   check (mobile_grid_columns = any (array[2, 3, 4, 5, 6]));
+
+-- Videos autoplay in NEW albums. An event album full of clips that all sit on a poster waiting
+-- to be tapped reads as broken; the owner asked for the opposite default. Existing albums keep
+-- whatever they have — nothing here can tell an owner who chose "off" from one who never looked.
+alter table albums alter column video_autoplay set default true;

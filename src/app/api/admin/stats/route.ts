@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { attachAlbumOwners } from '@/lib/server/error-attribution'
 import { isAccountAdmin } from '@/lib/auth'
 import { checkRateLimit, clientIpKey } from '@/lib/rate-limit'
 
@@ -94,7 +95,12 @@ export async function GET(req: Request) {
       // null, not [] — a FAILED query must not impersonate an empty one. `?? []` turned any
       // transient DB error into "No errors reported 🎉" on the owner's screen (rule 20: a
       // negative the data cannot back). The client keeps its previous rows on null.
-      recentErrors: recentErrors.error ? null : (recentErrors.data ?? []),
+      // Enriched with album + owner, exactly as the server-rendered page does — these rows
+      // REPLACE those, so skipping it here would fill the column on load and blank it seconds
+      // later (lib/server/error-attribution owns the one implementation).
+      recentErrors: recentErrors.error
+        ? null
+        : await attachAlbumOwners(admin, recentErrors.data ?? [], new Map()),
       // null = not asked for on this tick, or Analytics Engine unavailable - the card shows a
       // dash rather than a stale zero pretending to be a fact.
       downloads24h: deep ? await downloadsLast24h() : null,

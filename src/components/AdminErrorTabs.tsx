@@ -15,6 +15,10 @@ export type ErrorRow = {
   source: string
   message: string
   album_id: string | null
+  // Resolved server-side from album_id (see admin/page.tsx). Present only when the report named
+  // an album that still exists — so the owner can be CONTACTED, not merely counted. Nothing here
+  // identifies the guest: guests are not signed in and nothing about them is stored.
+  album?: { title: string; slug: string; email: string } | null
   ua: string | null
   context?: unknown
 }
@@ -282,7 +286,7 @@ export default function AdminErrorTabs(
           )}
           <div style={{ overflowX: 'auto', background: CARD, border: `1px solid ${BORDER}`, borderRadius: 12 }}>
             <table style={{ borderCollapse: 'collapse', width: '100%', minWidth: 860 }}>
-              <thead><tr><th style={th}></th><th style={th}>Area</th><th style={th}>When</th><th style={th}>Source</th><th style={th}>Message</th><th style={th}>Device</th></tr></thead>
+              <thead><tr><th style={th}></th><th style={th}>Area</th><th style={th}>When</th><th style={th}>Source</th><th style={th}>Message</th><th style={th}>Album / owner</th><th style={th}>Device</th></tr></thead>
               <tbody>
                 {shown.map((e, i) => (
                   <tr key={i}>
@@ -316,6 +320,21 @@ export default function AdminErrorTabs(
                           </>
                         )
                       })()}
+                    </td>
+                    <td style={{ ...td, whiteSpace: 'normal', maxWidth: 200, fontSize: 11 }}>
+                      {e.album ? (
+                        <>
+                          <a href={`/${e.album.slug}`} target="_blank" rel="noreferrer" style={{ color: BRAND, fontWeight: 600 }}>
+                            {e.album.title}
+                          </a>
+                          <div style={{ color: MUTED }}>{e.album.email}</div>
+                        </>
+                      ) : (
+                        // Two different facts, never merged: a report with no album at all (a
+                        // checkout, a signup) versus one naming an album that has since been
+                        // deleted. "—" for the first would claim the second never had one.
+                        <span style={{ color: MUTED }}>{e.album_id ? 'album deleted' : '—'}</span>
+                      )}
                     </td>
                     <td style={{ ...td, whiteSpace: 'normal', maxWidth: 180, fontSize: 11, color: MUTED }}>
                       {(e.ua ?? '').replace(/Mozilla\/[\d.]+ /, '').slice(0, 60)}

@@ -93,7 +93,11 @@ export default function LoginForm() {
   async function onSubmitCode(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault()
     const token = otpCode.trim()
-    if (!/^[0-9]{6}$/.test(token)) {
+    // 6 to 10 digits, NOT exactly 6. Supabase's OTP length is a project setting, and this
+    // project issues EIGHT — so a hardcoded 6 rejected every real code before it was ever
+    // sent, and the input's maxLength meant the last two digits could not even be typed.
+    // The server is the authority on whether a code is right; this only catches obvious typos.
+    if (!/^[0-9]{6,10}$/.test(token)) {
       setOtpError(t('login.codeInvalid'))
       return
     }
@@ -185,7 +189,7 @@ export default function LoginForm() {
               id="otp"
               inputMode="numeric"
               autoComplete="one-time-code"
-              maxLength={6}
+              maxLength={10}
               value={otpCode}
               onChange={(e) => { setOtpCode(e.target.value.replace(/[^0-9]/g, '')); setOtpError('') }}
               placeholder="123456"
@@ -216,7 +220,6 @@ export default function LoginForm() {
               </button>
             </p>
           )}
-          <p className="text-xs mt-2" style={{ color: '#8B6F4E' }}>{t('login.codeWhy')}</p>
         </form>
       </div>
     )
