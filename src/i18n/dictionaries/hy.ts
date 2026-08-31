@@ -464,6 +464,8 @@ export const hy: Partial<Record<DictKey, string>> = {
   'common.networkError': 'Ցանցի սխալ',
 
   'guest.slideshow': 'Սլայդշոու',
+  'guest.findMeCta': 'Գտնել ինձ',
+  'upload.contributeHint': 'Այստեղ ԱՎԵԼԱՑՆՈՒՄ եք ՁԵՐ լուսանկարները՝ բոլորին տեսանելի։',
   'guest.faceFinder': 'Դեմքի որոնում',
   'guest.downloadAll': 'Ներբեռնել բոլորը',
   'guest.zipping': 'Փաթեթավորում…',

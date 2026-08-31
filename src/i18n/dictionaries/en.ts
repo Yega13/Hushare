@@ -483,6 +483,8 @@ export const en = {
 
   // guest actions bar (view/share/download an album)
   'guest.slideshow': 'Slideshow',
+  'guest.findMeCta': 'Find my photos',
+  'upload.contributeHint': 'This adds YOUR photos to the album for everyone to see.',
   'guest.faceFinder': 'Face Finder',
   'guest.downloadAll': 'Download all',
   'guest.zipping': 'Zipping…',

@@ -36,6 +36,23 @@ const btnBase: React.CSSProperties = {
   whiteSpace: 'nowrap' as const,
 }
 
+// The ONE filled button in the row.
+//
+// Every button here looked identical, so the loudest thing on a phone was the uploader's
+// full-width solid "Take Photo" button further down — and runners who came to find themselves
+// did the obvious thing: photographed their face and uploaded it. Twenty-one private selfies
+// landed in one event album that way, and were face-indexed, making a runner's selfie
+// searchable by anybody else's search.
+//
+// The fix is order and contrast, not size: this is first in the row and the only filled one, so
+// it outranks the uploader without costing a single pixel of height.
+const btnPrimary: React.CSSProperties = {
+  ...btnBase,
+  background: '#630826',
+  color: '#FDFAF5',
+  border: '1px solid #630826',
+}
+
 export default function GuestActionsBar({ album, photos, shareUrl, onOpenSlideshow, onOpenFaceFinder }: Props) {
   const { t } = useT()
   const { zipping, zipProgress, zipStatus, downloadZip } = useZipDownload(photos, album)
@@ -133,6 +150,19 @@ export default function GuestActionsBar({ album, photos, shareUrl, onOpenSlidesh
     <div className="hush-guest-actions" style={{ background: '#F5F0E8', borderBottom: '1px solid #DDD5C5' }}>
       <div className="hush-container py-3 flex flex-wrap items-center justify-center sm:justify-start gap-2" style={{ paddingInline: 'clamp(14px, 4vw, 20px)' }}>
 
+        {/* FIRST in the row, and filled — see btnPrimary. What a guest at an event actually
+            came to do is find themselves, so that is the button they meet first. */}
+        {hasFaceFinder && (
+          <button
+            className="hush-press"
+            style={btnPrimary}
+            onClick={onOpenFaceFinder}
+          >
+            <ScanFace className="w-3.5 h-3.5" />
+            {t('guest.findMeCta')}
+          </button>
+        )}
+
         {/* Slideshow */}
         <button
           className="hush-press"
@@ -148,18 +178,6 @@ export default function GuestActionsBar({ album, photos, shareUrl, onOpenSlidesh
           <Play className="w-3.5 h-3.5" />
           {t('guest.slideshow')}
         </button>
-
-        {/* Find my photos — AI face finder (owner-enabled, Max) */}
-        {hasFaceFinder && (
-          <button
-            className="hush-press"
-            style={btnBase}
-            onClick={onOpenFaceFinder}
-          >
-            <ScanFace className="w-3.5 h-3.5" />
-            {t('guest.faceFinder')}
-          </button>
-        )}
 
         {/* Download All — only if owner allows it and there are downloadable items */}
         {album.allow_guest_downloads && (

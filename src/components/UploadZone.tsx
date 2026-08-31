@@ -2648,6 +2648,11 @@ export default function UploadZone({ album, onPhotosUploaded }: Props) {
           </p>
           <p className="text-xs sm:text-[0.8rem]" style={{ color: '#8A7A66', marginTop: 2 }}>
             {t('upload.dragdrop')} <span style={{ color: '#630826', fontWeight: 600 }}>{t('upload.browse')}</span>
+            {/* Says what this DOES, because the box above says what it does. A guest who wants
+                to find themselves must be able to tell the two apart at a glance. */}
+            {album.face_finder_enabled && (
+              <span className="block text-xs mt-1" style={{ color: '#8B6F4E' }}>{t('upload.contributeHint')}</span>
+            )}
           </p>
         </div>
         {/* Format pills — hidden on mobile to keep the drop zone compact */}
@@ -2667,12 +2672,25 @@ export default function UploadZone({ album, onPhotosUploaded }: Props) {
       {/* In-app camera — mobile only (sm:hidden). `capture="environment"` opens the phone's rear
           camera directly; the captured photo flows into the exact same upload path as a picked
           file. Pure CSS gating (no JS/userAgent conditional) so there's no SSR hydration mismatch.
-          On the rare narrow desktop it degrades to a normal file dialog (capture is ignored). */}
+          On the rare narrow desktop it degrades to a normal file dialog (capture is ignored).
+
+          OUTLINE WHEN FACE FINDER IS ON, FILLED OTHERWISE. Solid maroon and full width, this was
+          the largest and loudest control on a phone — roughly 2.7x the area of anything in the
+          actions bar, and in the same colour. Making "Find my photos" the one filled pill was not
+          enough on its own: two maroon buttons competed and the bigger one still won, which is
+          exactly how runners ended up photographing their faces into the album.
+
+          Only on face-finder albums. Where the album's whole purpose IS collecting photos — a
+          wedding, a party — the camera button is the right thing to shout, and it keeps shouting.
+          One filled maroon control per screen, and it is the one that matches why the visitor
+          came. */}
       <button
         type="button"
         onClick={() => cameraInputRef.current?.click()}
         className="mt-2 flex w-full items-center justify-center gap-2 rounded-2xl py-3 font-semibold transition-transform active:scale-[0.99] sm:hidden"
-        style={{ background: '#630826', color: '#FDFAF5' }}
+        style={album.face_finder_enabled
+          ? { background: '#FDFAF5', color: '#630826', border: '1.5px solid #630826' }
+          : { background: '#630826', color: '#FDFAF5' }}
       >
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
           <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" />

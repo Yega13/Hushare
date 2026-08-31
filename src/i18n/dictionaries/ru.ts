@@ -464,6 +464,8 @@ export const ru: Partial<Record<DictKey, string>> = {
   'common.networkError': 'Ошибка сети',
 
   'guest.slideshow': 'Слайд-шоу',
+  'guest.findMeCta': 'Найти мои фото',
+  'upload.contributeHint': 'Это добавит ВАШИ фото в альбом — их увидят все.',
   'guest.faceFinder': 'Поиск по лицу',
   'guest.downloadAll': 'Скачать всё',
   'guest.zipping': 'Архивируем…',

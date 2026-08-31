@@ -51,7 +51,9 @@ const SIZE_BUDGET: Record<string, number> = {
   // and removed a list that had already fallen two formats behind. Deliberate.
   // +18 (2026-08-31, audit): the parked-row retry now reads the server's refused list instead
   // of ticking every video green, including ones that were never written.
-  'src/components/UploadZone.tsx': 2818,
+  // +4 (2026-08-31): the camera button explains what it does on a face-finder album, and goes
+  // outline there so it stops outshouting "Find my photos".
+  'src/components/UploadZone.tsx': 2835,
   // +3 on 2026-08-30: the branding toggle gained a real plan check (it was dimmed but still
   // clickable), and Face Finder and bib search stopped riding on the collections flag. Three
   // lines of reasoning for three gates that were wrong. Deliberate.

@@ -27,6 +27,13 @@ export default defineConfig({
     // loudly rather than silently hashing without it. That behaviour is asserted in the suite.
     env: {
       ALBUM_PASSWORD_PEPPER: 'dGVzdC1wZXBwZXItbm90LXRoZS1yZWFsLW9uZS0zMmJ5dGVzIQ==',
+      // Obvious placeholders, not credentials. A rendered component reaches the browser Supabase
+      // client on import and that client refuses to construct without these — so without them a
+      // component test fails on configuration rather than on the thing it is asserting. Both
+      // values are public by design in the real app (the anon key ships in the page source), and
+      // nothing here ever opens a connection: these tests render markup and read it back.
+      NEXT_PUBLIC_SUPABASE_URL: 'https://test.invalid',
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: 'test-anon-key-not-a-real-one',
     },
   },
   resolve: {
