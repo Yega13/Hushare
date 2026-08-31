@@ -10,7 +10,7 @@ import { shouldHoldForOwnerCheck } from '@/lib/owner-view'
 import { applyPhotoWindow, mergePreservingExtras, shouldApplyRefresh } from '@/lib/photo-window'
 import { createSettingsSync, shouldCommitSettings } from '@/lib/settings-sync'
 import { fallbackPollDelay } from '@/lib/realtime-fallback'
-import { albumChanged, type AlbumFreshness } from '@/lib/album-freshness'
+import { albumChanged, deltaRowsNeeded, type AlbumFreshness } from '@/lib/album-freshness'
 import type { Album, Photo, Tier } from '@/types'
 import AlbumSkeleton from '@/components/AlbumSkeleton'
 import PasswordGate from '@/components/PasswordGate'
@@ -61,6 +61,9 @@ type Props = {
 // Full album view server-renders the first window; a BIG album (> first window) loads its tail on
 // demand. Small albums (every album today) load fully in the first window — pagination never engages.
 const ALBUM_FIRST_WINDOW = 500 // must match ALBUM_PAGE_SIZE in lib/server/album-access.ts
+// Above this many new photos a delta stops being cheaper than just taking the window again, and
+// the merge has more chances to be wrong. 100 rows is roughly 85 KB against the window's 424 KB.
+const ALBUM_DELTA_MAX = 100
 // How long to collapse a burst of realtime pings into one refetch. See the note at the debounce.
 const REFETCH_DEBOUNCE_MS = 2500
 const LOAD_MORE_PAGE = 500
@@ -93,6 +96,7 @@ export default function AlbumPageClient({ initialAlbum = null, initialPhotos, in
   const photosLenRef = useRef(photos.length); photosLenRef.current = photos.length
   const totalRef = useRef(total); totalRef.current = total
   const albumIdRef = useRef<string | null>(initialAlbum?.id ?? null); albumIdRef.current = album?.id ?? null
+  const albumOrderRef = useRef<string | undefined>(initialAlbum?.photo_order); albumOrderRef.current = album?.photo_order
 
   // Loading gates — not loading when the server already provided album or gate state.
   const [loading, setLoading] = useState(!initialAlbum && !initialGate)
@@ -325,10 +329,19 @@ export default function AlbumPageClient({ initialAlbum = null, initialPhotos, in
   // time one second after load. At 400 arrivals that duplicate alone was ~90 MB and 400 heavy
   // queries in the arrival window.
   const seenFreshnessRef = useRef<AlbumFreshness | null>(
-    initialPhotos && typeof initialTotal === 'number'
+    // ONLY when the server-rendered window is known to contain the newest photo.
+    //
+    // initialPhotos is the first WINDOW (500), ordered by the album's own photo_order. On a
+    // newest-first album that window holds the newest row, so its max created_at is the album's.
+    // On an oldest-first or hand-arranged album past 500 photos it is the 500 OLDEST rows, whose
+    // max is nowhere near — seeding from it guaranteed a mismatch on the very first probe and
+    // pulled the whole window anyway, which is precisely the duplicate fetch the seed exists to
+    // avoid. Below the window size every ordering holds the whole album, so any of them is safe.
+    initialPhotos && typeof initialTotal === 'number' &&
+    (album?.photo_order === 'newest' || initialPhotos.length >= initialTotal)
       ? {
           total: initialTotal,
-          // max, not [0] — the seed must not assume which end of the album the order puts first.
+          // max, not [0] — even a newest-first window must not assume the array's own order.
           latest: initialPhotos.reduce<string | null>(
             (max, p) => (!max || p.created_at > max ? p.created_at : max), null),
         }
@@ -348,11 +361,84 @@ export default function AlbumPageClient({ initialAlbum = null, initialPhotos, in
     }
   }, [])
 
-  // Refresh the window, but ask the cheap question first. Returns nothing — callers only care
-  // that the screen ends up current.
-  const refreshIfChanged = useCallback(async (albumId: string, apply: (r: { photos: Photo[]; total: number } | null) => void) => {
+  const fetchSince = useCallback(async (albumId: string, since: string, limit: number): Promise<{ photos: Photo[]; total: number } | null> => {
+    try {
+      const res = await fetch(
+        `/api/album/photos?albumId=${encodeURIComponent(albumId)}&since=${encodeURIComponent(since)}&limit=${limit}`,
+        { cache: 'no-store' },
+      )
+      if (!res.ok) return null
+      const json = await res.json() as { photos?: Photo[]; total?: number }
+      if (typeof json.total !== 'number') return null
+      return { photos: (json.photos ?? []).filter(p => !isRecentlyDeleted(p.id)), total: json.total }
+    } catch {
+      return null
+    }
+  }, [isRecentlyDeleted])
+
+  // Merge new arrivals into what is already on screen, WITHOUT reordering anything else.
+  //
+  // mergePreservingExtras puts the incoming rows first, which is right for a newest-first album
+  // and wrong for every other order — so the merged list is sorted the way the album is. The
+  // window path does not need this because the server returns it already ordered.
+  const applyDelta = useCallback((fresh: { photos: Photo[]; total: number }) => {
+    setTotal(fresh.total)
+    setPhotos(prev => {
+      const have = new Set(prev.map(p => p.id))
+      const added = fresh.photos.filter(p => !have.has(p.id))
+      if (added.length === 0) return prev
+      const merged = [...added, ...prev]
+      if (albumOrderRef.current === 'oldest') {
+        merged.sort((a, b) => a.created_at.localeCompare(b.created_at) || a.id.localeCompare(b.id))
+      } else if (albumOrderRef.current !== 'manual') {
+        merged.sort((a, b) => b.created_at.localeCompare(a.created_at) || b.id.localeCompare(a.id))
+      }
+      return merged
+    })
+  }, [])
+
+  // Refresh the window, asking the cheap question first EXCEPT when we were told something
+  // changed.
+  //
+  // The probe compares {total, latest}, which catches arrivals and departures but not an edit in
+  // place — and a REORDER moves neither. So a broadcast, which only ever fires because something
+  // actually changed, must not be answered with "the counts look the same, never mind": an owner
+  // rearranging an album would have had every other viewer keep the old order for the rest of
+  // their session, with nothing to heal it until the next upload.
+  //
+  // This costs almost nothing. An upload moves the count, so the probe would have fetched anyway;
+  // the only broadcasts this adds a fetch for are reorders and settings changes, which are rare
+  // and deliberate. The polling path — the one running on every viewer past the realtime cap, and
+  // the reason the probe exists — still probes.
+  const refreshIfChanged = useCallback(async (
+    albumId: string,
+    apply: (r: { photos: Photo[]; total: number } | null) => void,
+    opts: { force?: boolean } = {},
+  ) => {
     const probe = await probeAlbum(albumId)
-    if (!albumChanged(seenFreshnessRef.current, probe)) return
+    if (!opts.force && !albumChanged(seenFreshnessRef.current, probe)) return
+
+    // ASK FOR WHAT IS MISSING, NOT FOR EVERYTHING.
+    //
+    // The probe made an idle album free; measuring a real event showed the live case was still
+    // pulling the whole 500-row window — 424 KB — on nearly every check, because during an event
+    // the album genuinely has changed. At a thousand guests that is the entire monthly database
+    // transfer allowance in one afternoon. When the only difference is a few new photos, this
+    // fetches those few. deltaRowsNeeded returns null for anything it cannot express safely —
+    // a deletion, an edit in place, a gap too large — and then the window is fetched as before.
+    const delta = deltaRowsNeeded(seenFreshnessRef.current, probe, ALBUM_DELTA_MAX)
+    if (delta !== null && seenFreshnessRef.current?.latest) {
+      const fresh = await fetchSince(albumId, seenFreshnessRef.current.latest, delta)
+      // A delta that came back with exactly what the probe promised is trustworthy; anything else
+      // (a short read, a failure, a count that moved underneath) falls through to the full window
+      // rather than leaving the grid quietly wrong.
+      if (fresh && fresh.photos.length === delta && fresh.total === probe?.total) {
+        seenFreshnessRef.current = probe
+        applyDelta(fresh)
+        return
+      }
+    }
+
     const r = await fetchPhotos(albumId)
     // Only record freshness on a fetch that actually succeeded, or a failed window would be
     // remembered as the current state and the next probe would skip the retry.
@@ -879,7 +965,10 @@ export default function AlbumPageClient({ initialAlbum = null, initialPhotos, in
           // they do. The probe in refreshIfChanged means most of those wake-ups cost ~40 bytes.
           if (refetchTimer) clearTimeout(refetchTimer)
           refetchTimer = setTimeout(() => {
-            void refreshIfChanged(albumId, r => { if (active) applyWindowRefresh(r) })
+            // force: a broadcast means something DID change, and a reorder changes neither of the
+            // two fields the probe compares. Skipping on "counts look the same" left every other
+            // viewer on the old order until the next upload.
+            void refreshIfChanged(albumId, r => { if (active) applyWindowRefresh(r) }, { force: true })
           }, Math.round(REFETCH_DEBOUNCE_MS * (0.75 + Math.random() * 0.5)))
         })
         // DELETE and UPDATE used to arrive on postgres_changes for instant per-row feedback. They
@@ -987,7 +1076,15 @@ export default function AlbumPageClient({ initialAlbum = null, initialPhotos, in
 
     const sync = createSettingsSync({
       quietMs: SELF_EDIT_QUIET_MS,
-      refetch: refetchSettings,
+      // JITTERED. For a guest `lastLocalEditAt` is 0, so settings-sync answers "refetch" the
+      // instant the broadcast lands — with no debounce and no spread. Every viewer receives that
+      // broadcast within milliseconds of every other, so one owner nudging a Designer slider threw
+      // a thousand simultaneous requests at a 900/minute ceiling and a share of the room got 429s.
+      // Every other hot path in this file carries this reasoning; this one was missed.
+      refetch: () => {
+        const delay = Math.round(700 * (0.5 + Math.random() * 1.5))
+        window.setTimeout(refetchSettings, delay)
+      },
       markOwed: () => { settingsRefetchOwedRef.current = true },
     })
 
@@ -1170,7 +1267,10 @@ export default function AlbumPageClient({ initialAlbum = null, initialPhotos, in
       uploadRefetchTimerRef.current = null
       // Merge instead of replace: Realtime may have delivered photos after the query was
       // issued but before it resolves — a full replace would briefly remove them
-      void fetchPhotos(albumId).then(r => {
+      // Through refreshIfChanged with force, rather than a bare fetch: forcing is right (an upload
+      // definitely changed something) but the bare call never updated seenFreshnessRef, so the
+      // uploader's very next probe disagreed with itself and pulled a full window for nothing.
+      void refreshIfChanged(albumId, r => {
         // Null on failure — the uploader's own tiles are already on screen, so keeping them beats
         // replacing them with nothing.
         if (!shouldApplyRefresh(r)) return
@@ -1179,7 +1279,7 @@ export default function AlbumPageClient({ initialAlbum = null, initialPhotos, in
         // would briefly remove the uploader's own tiles from under them.
         setPhotos(prev => mergePreservingExtras(prev, r.photos))
         setTotal(r.total)
-      })
+      }, { force: true })
     }, 3000)
   }, [album?.id, fetchPhotos])
 
@@ -1372,9 +1472,19 @@ export default function AlbumPageClient({ initialAlbum = null, initialPhotos, in
   // there is one, the album's own setting is the honest signal for which meaning applies.
   const pendingPhotos = effectiveIsOwner && album.require_approval ? photos.filter((p) => p.hidden) : []
   const publishedPhotos = pendingPhotos.length > 0 ? photos.filter((p) => !p.hidden) : photos
+  const pendingIds = pendingPhotos.length > 0 ? new Set(pendingPhotos.map((p) => p.id)) : null
   const visiblePhotos = album.bib_search_enabled && bibDigits
-    ? (bibServerAnswered ? bibServerPhotos : publishedPhotos.filter((p) => bibMatches(p, bibQuery, bibRange)))
+    // The SERVER returns hidden rows to an owner, so a bib search re-admitted the very photos the
+    // review strip just took out of the grid — the same photo in both places, the one below
+    // reading as already published.
+    ? (bibServerAnswered
+        ? (pendingIds ? bibServerPhotos.filter((p) => !pendingIds.has(p.id)) : bibServerPhotos)
+        : publishedPhotos.filter((p) => bibMatches(p, bibQuery, bibRange)))
     : publishedPhotos
+  // `total` counts hidden rows for an owner (the server does not filter them from the count), and
+  // since pending photos left the grid it no longer describes what is on screen: the lightbox
+  // read "1 / 10" over seven photos and wrapped at seven.
+  const publishedTotal = Math.max(0, total - pendingPhotos.length)
   // Progress figures for the "still reading photos" note — indexing happens in the background
   // after upload, so a guest can arrive before every photo has been read.
   //
@@ -1431,6 +1541,8 @@ export default function AlbumPageClient({ initialAlbum = null, initialPhotos, in
           <OwnerToolbar
             album={album}
             photos={photos}
+            // total, not publishedTotal: this labels "Download all", which really does fetch every
+            // row in the album, pending ones included.
             albumPhotoCount={total}
             ownerToken={ownerToken}
             userTier={userTier}
@@ -1500,7 +1612,9 @@ export default function AlbumPageClient({ initialAlbum = null, initialPhotos, in
           <PhotoGrid
             // The unfiltered count: bib search narrows `visiblePhotos`, and without this the grid
             // would collapse to one wide column whenever a search matched a single photo.
-            albumPhotoCount={total}
+            // publishedTotal, not total: an owner's `total` includes photos awaiting review, which
+            // the grid no longer shows — the lightbox counter read "1 / 10" over seven photos.
+            albumPhotoCount={publishedTotal}
             album={album}
             photos={visiblePhotos}
             filtered={bibFilterActive}

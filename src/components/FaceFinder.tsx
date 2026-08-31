@@ -92,73 +92,79 @@ export default function FaceFinder({ albumSlug, photos, onClose }: Props) {
     indexingAbort.current = abort
     const { signal } = abort
 
-    let ids: string[] = []
-    let dbTotal = imagePhotos.length
-    // What the SERVER says is still unindexed. Undefined only against an older deploy, where the
-    // old inference is the honest fallback.
-    let dbRemaining: number | undefined
-    try {
-      const res = await fetch(`/api/album/face-index?slug=${encodeURIComponent(albumSlug)}`, { signal })
-      if (!res.ok) {
-        const errBody = await res.json().catch(() => ({})) as { error?: string }
+    // ONE PAGE AT A TIME, UNTIL THE SERVER SAYS THERE ARE NO MORE.
+    //
+    // The unindexed list is capped at 1,000 rows by PostgREST, and the server reports `more` for
+    // exactly this reason. Indexing one page and then searching as though the job were finished
+    // gave a runner on a fresh event album a confident "no photos found" over two thousand photos
+    // nobody had looked at — the failure this feature was fixed for, wearing an honest progress
+    // bar. Bounded, because a photo that fails on every attempt returns in every page: after
+    // PAGE_LIMIT passes the cron sweep finishes the rest, which is what it is for.
+    const PAGE_LIMIT = 8
+    const CONCURRENT = 8
+
+    for (let page = 0; page < PAGE_LIMIT; page++) {
+      let ids: string[] = []
+      let dbTotal = imagePhotos.length
+      let dbRemaining: number | undefined
+      let hasMore = false
+      try {
+        const res = await fetch(`/api/album/face-index?slug=${encodeURIComponent(albumSlug)}`, { signal })
+        if (!res.ok) {
+          const errBody = await res.json().catch(() => ({})) as { error?: string }
+          errorOrigin.current = 'indexing'
+          setStep('error')
+          setErrorMsg(errBody.error ?? t('ff.errIndexStart'))
+          return
+        }
+        const data = (await res.json()) as { ids: string[]; total: number; remaining?: number; more?: boolean }
+        ids = data.ids
+        dbTotal = data.total || imagePhotos.length
+        dbRemaining = data.remaining
+        hasMore = data.more === true
+      } catch (err) {
+        if ((err as { name?: string }).name === 'AbortError') return
         errorOrigin.current = 'indexing'
         setStep('error')
-        setErrorMsg(errBody.error ?? t('ff.errIndexStart'))
+        setErrorMsg(t('ff.errIndexNetwork'))
         return
       }
-      const data = (await res.json()) as { ids: string[]; total: number; remaining?: number }
-      ids = data.ids
-      dbTotal = data.total || imagePhotos.length
-      dbRemaining = data.remaining
-    } catch (err) {
-      if ((err as { name?: string }).name === 'AbortError') return
-      errorOrigin.current = 'indexing'
-      setStep('error')
-      setErrorMsg(t('ff.errIndexNetwork'))
-      return
-    }
 
-    // From the server's own count of what is LEFT, never inferred from the id list — that list
-    // is a capped page, and treating a truncated page as the whole job reported "100% indexed"
-    // on an album with two thousand photos never looked at.
-    const alreadyIndexed = Math.max(0, dbTotal - (dbRemaining ?? ids.length))
-    setTotal(dbTotal)
-    setIndexed(alreadyIndexed)
+      // From the server's own count of what is LEFT, never inferred from the id list — that list
+      // is a capped page, and treating a truncated page as the whole job reported "100% indexed"
+      // on an album with two thousand photos never looked at.
+      const alreadyIndexed = Math.max(0, dbTotal - (dbRemaining ?? ids.length))
+      setTotal(dbTotal)
+      setIndexed(alreadyIndexed)
 
-    if (ids.length === 0) {
-      indexingDone.current = true
-      setStep('selfie')
-      return
-    }
+      if (ids.length === 0) break
 
-    // Concurrent workers, each assigned every Nth photo (interleaved). Higher = faster
-    // indexing; well within Rekognition's per-account TPS limits for typical album sizes.
-    const CONCURRENT = 8
-    let done = 0
-
-    async function indexWorker(startIdx: number) {
-      for (let i = startIdx; i < ids.length; i += CONCURRENT) {
-        if (signal.aborted) return
-        try {
-          await fetch('/api/album/face-index', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            credentials: 'include',
-            body: JSON.stringify({ slug: albumSlug, photoId: ids[i] }),
-            signal,
-          })
-        } catch (err) {
-          if ((err as { name?: string }).name === 'AbortError') return
-          // network error on a single photo — continue with the rest
+      let done = 0
+      async function indexWorker(startIdx: number) {
+        for (let i = startIdx; i < ids.length; i += CONCURRENT) {
+          if (signal.aborted) return
+          try {
+            await fetch('/api/album/face-index', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              credentials: 'include',
+              body: JSON.stringify({ slug: albumSlug, photoId: ids[i] }),
+              signal,
+            })
+          } catch (err) {
+            if ((err as { name?: string }).name === 'AbortError') return
+            // network error on a single photo — continue with the rest
+          }
+          done++
+          setIndexed(alreadyIndexed + done)
         }
-        done++
-        setIndexed(alreadyIndexed + done)
       }
+
+      await Promise.all(Array.from({ length: CONCURRENT }, (_, i) => indexWorker(i)))
+      if (signal.aborted) return
+      if (!hasMore) break
     }
 
-    await Promise.all(Array.from({ length: CONCURRENT }, (_, i) => indexWorker(i)))
-
-    if (signal.aborted) return
     indexingDone.current = true
     setStep('selfie')
     // eslint-disable-next-line react-hooks/exhaustive-deps

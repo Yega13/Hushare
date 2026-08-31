@@ -73,12 +73,17 @@ const SIZE_BUDGET: Record<string, number> = {
   // question before pulling a ~228 KB window, and the window is seeded from the server render.
   // +23 (2026-08-31): pending guest uploads move to their own review strip and out of the
   // album grid — see PendingReview.
-  'src/app/[slug]/AlbumPageClient.tsx': 1565,
+  // +26 (2026-08-31, final audit): broadcasts bypass the probe, and pending photos are kept
+  // out of the bib results and the counts that describe the grid.
+  // +45 (2026-08-31, capacity audit): delta refresh — a live album fetches the few new photos
+  // instead of the whole 500-row window, which measured 424 KB and was the real egress bill.
+  'src/app/[slug]/AlbumPageClient.tsx': 1680,
   'src/app/card-editor/CardEditorClient.tsx': 873,
   // +1 (2026-08-31): pass collectionTotal to the lightbox counter.
   // +2 (2026-08-31): morphAllowed gate on open and close.
   // +7 (2026-08-31): per-device column resolution feeding grid, masonry and the eager row.
-  'src/components/PhotoGrid.tsx': 859,
+  // +5 (2026-08-31, final audit): the close morph measures mounted tiles, not the slideshow subset.
+  'src/components/PhotoGrid.tsx': 864,
   'src/components/AlbumDesigner.tsx': 774,
   // +3 net (2026-08-31): deleted the duplicate ±1 prefetch loop, added strip windowing wired
   // to lib/lightbox-plan.ts.
@@ -97,7 +102,9 @@ const SIZE_BUDGET: Record<string, number> = {
   'src/app/api/album/photos/create/route.ts': 518,
   // +6 (2026-08-31, audit): progress comes from the server's outstanding count, not from the
   // length of a page that PostgREST had silently truncated.
-  'src/components/FaceFinder.tsx': 549,
+  // +24 (2026-08-31, final audit): indexing pages until the server says it is finished, instead
+  // of stopping after the first 1,000 and searching as though the job were done.
+  'src/components/FaceFinder.tsx': 573,
 }
 
 describe('the big files do not get bigger', () => {

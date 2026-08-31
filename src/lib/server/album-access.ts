@@ -366,7 +366,7 @@ export const ALBUM_PAGE_SIZE = 500
 export async function fetchAuthorizedPhotos(
   albumId: string,
   cookieStore: CookieStore,
-  opts: { recentLimit?: number; offset?: number; limit?: number; bib?: string; bibStats?: boolean; statsOnly?: boolean; probe?: boolean } = {},
+  opts: { recentLimit?: number; offset?: number; limit?: number; bib?: string; bibStats?: boolean; statsOnly?: boolean; probe?: boolean; since?: string } = {},
 ): Promise<PhotosResult> {
   if (!UUID_RE.test(albumId)) return { kind: 'invalid' }
 
@@ -487,7 +487,26 @@ export async function fetchAuthorizedPhotos(
     return { kind: 'ok', photos: [], total: 0, bibStats: opts.bibStats ? await countBibStats(albumId, isOwner) : undefined }
   }
 
+  // DELTA READ. `since` asks only for rows newer than what the client already has, which during
+  // an event is a handful instead of the whole 500-row window. Measured: the window is 424 KB on
+  // the real event album, and at a thousand guests that was the entire monthly database transfer
+  // allowance in one afternoon. Deliberately NOT combined with a bib search or the recent feed —
+  // those answer different questions and a delta of a filtered set is not a delta of the album.
   let query = admin.from('photos').select(PHOTO_SELECT_COLS).eq('album_id', albumId)
+  if (opts.since && opts.bib === undefined && !opts.recentLimit) {
+    const rows = await (isOwner ? query : query.eq('hidden', false))
+      .gt('created_at', opts.since)
+      .order('created_at', { ascending: false })
+      .order('id', { ascending: false })
+      .limit(Math.min(opts.limit ?? 100, 200))
+      .returns<Photo[]>()
+    if (rows.error) return { kind: 'ok', photos: [], total: 0 }
+    // The count comes back with it, so a client applying a delta still learns the true size and
+    // can tell that its own arithmetic agreed with the database.
+    const countQ = admin.from('photos').select('id', { count: 'exact', head: true }).eq('album_id', albumId)
+    const { count } = await (isOwner ? countQ : countQ.eq('hidden', false))
+    return { kind: 'ok', photos: rows.data ?? [], total: count ?? 0 }
+  }
   if (!isOwner) query = query.eq('hidden', false)
   if (bibCandidates) query = query.overlaps('bib_numbers', bibCandidates)
   // recentLimit (the live wall): fetch only the newest N — the wall shows a bounded window, so
@@ -503,7 +522,7 @@ export async function fetchAuthorizedPhotos(
       // lib/photo-order.ts owns the clauses and guarantees a unique tiebreak.
     : orderClausesFor(isPhotoOrder(album.photo_order) ? album.photo_order : 'oldest')
         .reduce(
-          (q, c) => q.order(c.column, { ascending: c.ascending, nullsFirst: false }),
+          (q, c) => q.order(c.column, { ascending: c.ascending, nullsFirst: c.nullsFirst ?? false }),
           query,
         )
         .range(offset, offset + limit - 1)

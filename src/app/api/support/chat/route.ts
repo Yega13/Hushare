@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { clientIpKey } from '@/lib/rate-limit'
 import { getCloudflareContext } from '@opennextjs/cloudflare'
 import { forbidCrossSiteRequest } from '@/lib/request-security'
 import { track } from '@/lib/analytics'
@@ -102,9 +103,11 @@ category is one of: refund, billing, lost-link, broken-album, partnership, other
 
 HANDOFF RULES: Only output the tag once you actually have their email address. The tag is invisible plumbing — never mention it, never show its format, never ask the user to type it, never explain it. If the user refuses to give an email, tell them to reach us at hushare.space/support (and output no tag). Never use HANDOFF for a self-harm/crisis situation — follow the SAFETY rules at the very top instead.`
 
-function clientIp(req: Request): string {
-  return req.headers.get('cf-connecting-ip') || req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || 'anon'
-}
+// Was a hand-rolled copy that got both halves wrong on the one route that spends AI budget: it
+// keyed on the FULL IPv6 address, so a routed /64 gave one host 18 quintillion buckets and the
+// limit was per-request for anyone who wanted around it — and it read the FIRST x-forwarded-for
+// entry, which is client-controlled, where clientIpKey takes the last, the one our own edge adds.
+// Rule 13: one answer to "who is this request from", in lib/rate-limit.
 
 // Pull the hidden [[HANDOFF|...]] tag out of the model's reply. Returns the cleaned reply (tag
 // removed) and, when the tag carried a valid email, the parsed escalation info.
@@ -261,7 +264,7 @@ export async function POST(req: Request): Promise<Response> {
   try {
     const limiter = env?.SUPPORT_CHAT_LIMITER
     if (limiter) {
-      const { success } = await limiter.limit({ key: clientIp(req) })
+      const { success } = await limiter.limit({ key: clientIpKey(req, 'support_chat') })
       if (!success) {
         return NextResponse.json({ error: "You're sending messages a little fast — give it a moment." }, { status: 429, headers: NO_STORE })
       }

@@ -20,8 +20,9 @@ describe('orderClausesFor', () => {
 
   it('manual leads on sort_order, so a hand-arranged album keeps its arrangement', () => {
     const [primary] = orderClausesFor('manual')
-    expect(primary).toEqual({ column: 'sort_order', ascending: true })
-    expect(newPhotosLandInFirstWindow('manual')).toBe(false)
+    expect(primary).toMatchObject({ column: 'sort_order', ascending: true })
+    // Unplaced photos sort FIRST — see the "still shows new uploads" block below for why.
+    expect(newPhotosLandInFirstWindow('manual')).toBe(true)
   })
 
   it('EVERY order ends on a unique column, or paging can duplicate and drop photos', () => {
@@ -60,5 +61,32 @@ describe('PHOTO_ORDER_CHOICES', () => {
     // row — an album in no particular order at all.
     expect(PHOTO_ORDER_CHOICES).not.toContain('manual')
     expect([...PHOTO_ORDER_CHOICES].sort()).toEqual(['newest', 'oldest'])
+  })
+})
+
+describe('a hand-arranged album still shows new uploads', () => {
+  it('sorts UNPLACED photos first, not last', () => {
+    // The same bug as oldest-first, one layer along: a photo the owner has not placed has a NULL
+    // sort_order, and putting those last on a 906-photo album meant new uploads landed beyond the
+    // 500-photo window every refresh reloads, so nobody ever saw them arrive.
+    const [primary] = orderClausesFor('manual')
+    expect(primary.column).toBe('sort_order')
+    expect(primary.nullsFirst).toBe(true)
+  })
+
+  it('newest unplaced photo comes before older unplaced ones', () => {
+    // Within the unplaced group the order is newest-first, matching what an arriving visitor
+    // wants — the tiebreaks run the same direction.
+    const clauses = orderClausesFor('manual')
+    expect(clauses[1]).toMatchObject({ column: 'created_at', ascending: false })
+    expect(clauses[2]).toMatchObject({ column: 'id', ascending: false })
+  })
+
+  it('and the page can now say so', () => {
+    // newPhotosLandInFirstWindow was written to warn a visitor when new photos are NOT reachable,
+    // and had drifted into describing behaviour that no longer matched.
+    expect(newPhotosLandInFirstWindow('manual')).toBe(true)
+    expect(newPhotosLandInFirstWindow('newest')).toBe(true)
+    expect(newPhotosLandInFirstWindow('oldest')).toBe(false)
   })
 })

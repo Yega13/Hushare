@@ -41,7 +41,7 @@ export async function GET(req: Request) {
   // throttled: blob (ZIP) 20000/hr, single-photo 600/30s.
   const isBlobMode = url.searchParams.get('blob') === '1'
   const rl = isBlobMode
-    ? await checkRateLimit(clientIpKey(req, 'download_blob'), 3600, 20000, { failOpen: false })
+    ? await checkRateLimit(clientIpKey(req, 'download_blob'), 3600, 200000, { failOpen: false })
     : await checkRateLimit(clientIpKey(req, 'download_photo'), 30, 600, { failOpen: false })
   if (!rl.ok) {
     return NextResponse.json(

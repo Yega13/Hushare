@@ -29,7 +29,7 @@ export function isPhotoOrder(v: unknown): v is PhotoOrder {
   return typeof v === 'string' && (PHOTO_ORDERS as readonly string[]).includes(v)
 }
 
-export type OrderClause = { column: string; ascending: boolean }
+export type OrderClause = { column: string; ascending: boolean; nullsFirst?: boolean }
 
 /**
  * The ORDER BY the photo query should use, as a list applied in sequence.
@@ -42,12 +42,21 @@ export type OrderClause = { column: string; ascending: boolean }
  */
 export function orderClausesFor(order: PhotoOrder): OrderClause[] {
   if (order === 'manual') {
-    // Hand-arranged albums keep their arrangement. Rows added after the arranging have a NULL
-    // sort_order and fall to the end, which is where a newly uploaded photo belongs.
+    // Hand-arranged albums keep their arrangement, and a photo the owner has NOT placed yet sorts
+    // FIRST rather than last.
+    //
+    // "Last" is where an unplaced photo intuitively belongs, and it was wrong for the same reason
+    // oldest-first was: the album page loads a 500-photo window and refreshes that window, so on a
+    // hand-arranged album past 500 photos a new upload sorted beyond it and no visitor ever saw it
+    // arrive. Two such albums are live, the largest 906 photos.
+    //
+    // Sorting unplaced photos first means new uploads are visible immediately, and the owner's
+    // arrangement is untouched below them — dragging one into position is what moves it out of
+    // the unplaced group, which is the same gesture that arranged the album in the first place.
     return [
-      { column: 'sort_order', ascending: true },
-      { column: 'created_at', ascending: true },
-      { column: 'id', ascending: true },
+      { column: 'sort_order', ascending: true, nullsFirst: true },
+      { column: 'created_at', ascending: false },
+      { column: 'id', ascending: false },
     ]
   }
   const ascending = order === 'oldest'
@@ -64,5 +73,8 @@ export function orderClausesFor(order: PhotoOrder): OrderClause[] {
  * Used to decide whether the page must tell a visitor that newer photos exist further down.
  */
 export function newPhotosLandInFirstWindow(order: PhotoOrder): boolean {
-  return order === 'newest'
+  // 'manual' qualifies because unplaced photos sort first (see orderClausesFor). 'oldest' does
+  // not, and that is the honest answer: on an oldest-first album past one window, a new upload
+  // is genuinely not on screen until the visitor loads more.
+  return order === 'newest' || order === 'manual'
 }

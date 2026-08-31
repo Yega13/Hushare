@@ -264,7 +264,12 @@ export default function PhotoGrid({ album, photos, albumPhotoCount, isOwner, slu
     const returningTo = lightbox != null ? viewerPhotos[lightbox]?.id : undefined
     // An empty id forces the plain cut: past MORPH_TILE_LIMIT loaded photos the page is too
     // heavy to snapshot, and the morph itself was the close-lag (lib/lightbox-plan.ts).
-    morphPhotoClosed(gridRef.current, morphAllowed(viewerPhotos.length) ? (returningTo ?? '') : '', () => {
+    // photos.length, not viewerPhotos.length. The limit is about how many TILES are mounted for
+    // the browser to snapshot, and the grid always renders `photos` — a slideshow narrows
+    // viewerPhotos to a handful while four thousand tiles stay mounted behind it, so closing a
+    // ten-photo slideshow on a big album ran the very transition MORPH_TILE_LIMIT exists to
+    // prevent. Open already measures it this way; close disagreed.
+    morphPhotoClosed(gridRef.current, morphAllowed(photos.length) ? (returningTo ?? '') : '', () => {
       // clearSlideshow lives INSIDE the callback with the rest. Left outside, it flushed on its own
       // and changed viewerPhotos while `lightbox` was still set — so for one commit the lightbox
       // showed a different photo, remounted on its key, fetched a full-size image nobody asked for,

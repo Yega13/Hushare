@@ -64,10 +64,14 @@ export async function GET(req: Request) {
   const statsOnly = url.searchParams.get('statsOnly') === '1'
   // The cheap freshness question — see lib/album-freshness.ts. Returns two numbers, no rows.
   const probe = url.searchParams.get('probe') === '1'
+  // Only rows newer than this ISO timestamp — the cheap half of a refresh. Length-capped because
+  // it is interpolated into a query filter and a caller has no reason to send anything longer.
+  const sinceRaw = url.searchParams.get('since')
+  const since = sinceRaw && sinceRaw.length <= 40 ? sinceRaw : undefined
   const cookieStore = await cookies()
 
   try {
-    const result = await fetchAuthorizedPhotos(albumId, cookieStore, { recentLimit, offset, limit, bib, bibStats, statsOnly, probe })
+    const result = await fetchAuthorizedPhotos(albumId, cookieStore, { recentLimit, offset, limit, bib, bibStats, statsOnly, probe, since })
     switch (result.kind) {
       case 'invalid':
         return NextResponse.json({ error: 'Invalid album id' }, { status: 400, headers: NO_STORE })

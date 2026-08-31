@@ -265,7 +265,15 @@ async function handlePost(req: Request) {
       const name = (err as { name?: string }).name ?? 'Unknown'
       const message = err instanceof Error ? err.message : String(err)
       console.error('[face-index/fallback] indexPhotoFaces failed:', photo.id, name, message)
-      await admin.from('photos').update({ face_ids: [] }).eq('id', photo.id)
+      // LEFT NULL so a later pass retries. [] means "looked at, found nobody" — writing it on a
+      // thrown error marks a photo face-free forever, and nothing ever revisits a non-NULL
+      // face_ids, so a runner in that photo can never be found in it again.
+      //
+      // THIRD copy of this rule. lib/server/face-sweep.ts fixed it and explained why; the
+      // targeted branch above was fixed today and its comment claimed the consolidation was
+      // complete; this scan still had it. The two writes that DO set [] here are correct — a
+      // photo with no url and no thumb_url can never be indexed, which is a real permanent
+      // answer rather than a failure.
     }
   }
 

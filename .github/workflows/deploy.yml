@@ -52,9 +52,11 @@ jobs:
             npm run db:migrate && npm run db:check
             # The dumper's --check mode existed and nothing ever ran it, so schema.sql could drift
             # from the live database indefinitely — which is how it came to be missing every
-            # foreign key without anyone noticing. Warns rather than fails: a stale recovery file
-            # must be visible, but it must never block shipping a fix during an incident.
-            node scripts/dump-schema.mjs --check || echo '::warning::schema.sql has drifted — run node scripts/dump-schema.mjs and commit it'
+            # foreign key without anyone noticing. Raised from ::warning:: to ::error:: after an
+            # audit pointed out that an annotation on a passing build is precisely the signal
+            # everyone learns to scroll past. It still does not fail the JOB — a stale recovery
+            # file must never block shipping a fix during an incident — but it is now red.
+            node scripts/dump-schema.mjs --check || echo '::error::schema.sql has drifted from the live database — run node scripts/dump-schema.mjs and commit it. The recovery file is stale.'
           else
             echo "::warning::SUPABASE_DB_URL secret not set — skipping DB migration + drift check"
           fi
