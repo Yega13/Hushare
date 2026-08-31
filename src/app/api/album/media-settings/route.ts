@@ -9,6 +9,7 @@ import { normalizeSlideshowMotion } from '@/lib/slideshow-motion'
 export const runtime = 'nodejs'
 
 import { isMobileColumns, isDesktopColumns, MOBILE_COLUMN_CHOICES, DESKTOP_COLUMN_CHOICES } from '@/lib/grid-columns'
+import { isPhotoOrder, PHOTO_ORDER_CHOICES } from '@/lib/photo-order'
 
 const NO_STORE = { 'Cache-Control': 'no-store' }
 
@@ -26,6 +27,7 @@ export async function POST(req: Request) {
     media_filter?: unknown
     mobile_grid_columns?: unknown
     desktop_grid_columns?: unknown
+    photo_order?: unknown
     slideshow_interval_ms?: unknown
     slideshow_animation?: unknown
     slideshow_motion?: unknown
@@ -62,6 +64,15 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: `mobile_grid_columns must be one of: ${MOBILE_COLUMN_CHOICES.join(', ')}` }, { status: 400, headers: NO_STORE })
     }
     updates.mobile_grid_columns = body.mobile_grid_columns
+  }
+  if (body.photo_order !== undefined) {
+    // 'manual' is deliberately NOT settable here. An album becomes manual by being dragged into
+    // an order (see photos/reorder); accepting it from a menu would claim an arrangement that
+    // does not exist and leave every row's sort_order NULL — an album in no order at all.
+    if (!isPhotoOrder(body.photo_order) || body.photo_order === 'manual') {
+      return NextResponse.json({ error: `photo_order must be one of: ${PHOTO_ORDER_CHOICES.join(', ')}` }, { status: 400, headers: NO_STORE })
+    }
+    updates.photo_order = body.photo_order
   }
   if (body.desktop_grid_columns !== undefined) {
     if (!isDesktopColumns(body.desktop_grid_columns)) {
@@ -155,6 +166,7 @@ export async function POST(req: Request) {
     video_autoplay: updates.video_autoplay,
     media_filter: updates.media_filter,
     mobile_grid_columns: updates.mobile_grid_columns,
+    photo_order: updates.photo_order,
     desktop_grid_columns: updates.desktop_grid_columns,
     slideshow_interval_ms: updates.slideshow_interval_ms,
     slideshow_animation: updates.slideshow_animation,

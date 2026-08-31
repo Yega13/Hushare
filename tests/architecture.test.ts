@@ -58,7 +58,9 @@ const SIZE_BUDGET: Record<string, number> = {
   // +40 (2026-08-31): the desktop columns picker — a second, independent grid choice with
   // its own single-field save (lib/grid-columns.ts owns the values).
   // +4 (2026-08-31): albumPhotoCount prop so Download-all names the album, not the window.
-  'src/components/OwnerToolbar.tsx': 1827,
+  // +41 (2026-08-31, audit): the photo-order control, so an owner can fix a large album's
+  // ordering themselves instead of it needing a database edit.
+  'src/components/OwnerToolbar.tsx': 1874,
   // +23 (2026-08-31): fallback-poll wiring for realtime REFUSAL — the cadence decision is in
   // lib/realtime-fallback.ts; the timer must live beside the channel it covers (rule 15).
   // +17 (2026-08-31, review finding): channel-identity guard + timer hygiene in the reconnect

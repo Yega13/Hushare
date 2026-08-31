@@ -18,9 +18,12 @@ export type PhotoOrder = 'newest' | 'oldest' | 'manual'
 
 export const PHOTO_ORDERS: readonly PhotoOrder[] = ['newest', 'oldest', 'manual']
 
-/** 'manual' is not offered as a choice — an album becomes manual by being dragged into an order,
- *  and picking it from a menu would claim an arrangement that does not exist. */
-export const PHOTO_ORDER_CHOICES: readonly PhotoOrder[] = ['newest', 'oldest']
+/** What an owner may PICK. 'manual' is excluded in the type, not merely by convention — an album
+ *  becomes manual by being dragged into an order, and choosing it from a menu would claim an
+ *  arrangement that does not exist. Typing it this way makes the save function reject it at
+ *  compile time rather than relying on every call site to remember. */
+export type PickablePhotoOrder = Exclude<PhotoOrder, 'manual'>
+export const PHOTO_ORDER_CHOICES: readonly PickablePhotoOrder[] = ['newest', 'oldest']
 
 export function isPhotoOrder(v: unknown): v is PhotoOrder {
   return typeof v === 'string' && (PHOTO_ORDERS as readonly string[]).includes(v)

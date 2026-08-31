@@ -72,6 +72,9 @@ export type Album = {
   mobile_grid_columns: MobileGridColumns;
   // null until the owner chooses; lib/grid-columns.ts supplies the default.
   desktop_grid_columns?: number | null;
+  // Which end of the album a visitor sees first. 'manual' means hand-arranged and is set by
+  // dragging, never picked. See lib/photo-order.ts for why this is not cosmetic.
+  photo_order?: 'newest' | 'oldest' | 'manual';
   photo_layout: PhotoLayout;
   slideshow_interval_ms: number;
   slideshow_animation: SlideshowAnimation;

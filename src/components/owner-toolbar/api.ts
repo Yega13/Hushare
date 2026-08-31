@@ -548,3 +548,21 @@ export async function saveDesktopGridColumns(
   }
   return { ok: true, desktop_grid_columns: body.desktop_grid_columns }
 }
+
+
+// Photo order saves ALONE, for the same reason desktop columns do: it is independent of the
+// seven settings the debounced media save threads positionally, and the route updates only the
+// fields present in the body.
+export async function savePhotoOrder(
+  slug: string,
+  photoOrder: 'newest' | 'oldest',
+): Promise<{ ok: true; photo_order: string } | { ok: false; error: string }> {
+  const res = await fetch('/api/album/media-settings', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ slug, photo_order: photoOrder }),
+  })
+  const body = await jsonBody<{ error?: string; photo_order?: string }>(res)
+  if (!res.ok || !body.photo_order) return { ok: false, error: body.error ?? `Save failed (${res.status})` }
+  return { ok: true, photo_order: body.photo_order }
+}

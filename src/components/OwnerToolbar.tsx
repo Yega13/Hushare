@@ -17,6 +17,7 @@ import {
   type SlideshowAnimation,
 } from '@/lib/media-display'
 import { DESKTOP_COLUMN_CHOICES, resolveGridColumns } from '@/lib/grid-columns'
+import { PHOTO_ORDER_CHOICES, isPhotoOrder, type PhotoOrder } from '@/lib/photo-order'
 import {
   DEFAULT_SLIDESHOW_MOTION,
   MAX_SLIDESHOW_DURATION_MS,
@@ -42,6 +43,7 @@ import {
   savePhotoLayoutRequest,
   saveMediaSettingsRequest,
   saveDesktopGridColumns,
+  savePhotoOrder,
   savePasswordRequest,
   saveSlideshowMotionRequest,
 } from '@/components/owner-toolbar/api'
@@ -151,6 +153,7 @@ export default function OwnerToolbar({ album, photos, albumPhotoCount, ownerToke
   const [savedMediaFilter, setSavedMediaFilter] = useState<MediaDisplayFilter>(album.media_filter ?? 'none')
   const [mobileGridColumns, setMobileGridColumns] = useState<MobileGridColumns>((resolveGridColumns(album).mobile) as MobileGridColumns)
   const [desktopGridColumns, setDesktopGridColumns] = useState<number>(resolveGridColumns(album).desktop)
+  const [photoOrder, setPhotoOrder] = useState<PhotoOrder>(isPhotoOrder(album.photo_order) ? album.photo_order : 'newest')
   const [slideshowIntervalMs, setSlideshowIntervalMs] = useState(album.slideshow_interval_ms ?? DEFAULT_SLIDESHOW_INTERVAL_MS)
   const [slideshowAnimation, setSlideshowAnimation] = useState<SlideshowAnimation>(album.slideshow_animation ?? 'fade')
   // The composed transition. Seeded from the album's own motion, or derived from the legacy preset
@@ -328,6 +331,7 @@ export default function OwnerToolbar({ album, photos, albumPhotoCount, ownerToke
       setSavedMediaFilter(album.media_filter ?? 'none')
       setMobileGridColumns(resolveGridColumns(album).mobile as MobileGridColumns)
       setDesktopGridColumns(resolveGridColumns(album).desktop)
+      setPhotoOrder(isPhotoOrder(album.photo_order) ? album.photo_order : 'newest')
       setSlideshowIntervalMs(album.slideshow_interval_ms ?? DEFAULT_SLIDESHOW_INTERVAL_MS)
       setSlideshowAnimation(album.slideshow_animation ?? 'fade')
       setSlideshowMotion(resolveSlideshowMotion({
@@ -342,7 +346,7 @@ export default function OwnerToolbar({ album, photos, albumPhotoCount, ownerToke
       setDeleteConfirm(false)
       setDeleteError('')
     }
-  }, [album.allow_guest_downloads, album.custom_slug, album.media_filter, album.media_radius, album.mobile_grid_columns, album.desktop_grid_columns, album.reveal_at, album.slideshow_animation, album.slideshow_motion, album.slideshow_interval_ms, album.video_autoplay, showSettings])
+  }, [album.allow_guest_downloads, album.custom_slug, album.media_filter, album.media_radius, album.mobile_grid_columns, album.desktop_grid_columns, album.photo_order, album.reveal_at, album.slideshow_animation, album.slideshow_motion, album.slideshow_interval_ms, album.video_autoplay, showSettings])
 
   useEffect(() => {
     if (showSettings && canUseCollections) void loadCollections()
@@ -880,6 +884,49 @@ export default function OwnerToolbar({ album, photos, albumPhotoCount, ownerToke
                     </div>
 
                     <div>
+                      <label className="mb-2 block text-xs font-medium" style={{ color: '#7C5C3E' }}>{t('ot.order')}</label>
+                      {photoOrder === 'manual' ? (
+                        // Not a choice to re-pick: the album is in a hand-made arrangement, and
+                        // offering "newest/oldest" here would silently discard it.
+                        <p className="text-xs" style={{ color: '#8B6F4E' }}>{t('ot.orderManual')}</p>
+                      ) : (
+                        <div className="grid grid-cols-2 gap-2">
+                          {PHOTO_ORDER_CHOICES.map((value) => {
+                            const selected = photoOrder === value
+                            return (
+                              <button
+                                key={value}
+                                type="button"
+                                onClick={() => {
+                                  const prev: PhotoOrder = photoOrder
+                                  setPhotoOrder(value)
+                                  onAlbumUpdated({ photo_order: value })
+                                  void savePhotoOrder(album.slug, value).then((r) => {
+                                    if (!r.ok) {
+                                      setMediaError(r.error)
+                                      showAppToast(r.error, 'error')
+                                      // Back to what the SERVER still has, rather than leaving a
+                                      // selected button the album does not actually honour.
+                                      setPhotoOrder(prev)
+                                      onAlbumUpdated({ photo_order: prev })
+                                    }
+                                  })
+                                }}
+                                className="hush-press rounded-lg py-2 text-sm font-semibold"
+                                style={{
+                                  background: selected ? '#630826' : '#FDFAF5',
+                                  border: '1px solid #DDD5C5',
+                                  color: selected ? '#FDFAF5' : '#630826',
+                                }}
+                              >
+                                {value === 'newest' ? t('ot.orderNewest') : t('ot.orderOldest')}
+                              </button>
+                            )
+                          })}
+                        </div>
+                      )}
+                      <p className="mt-2 mb-5 text-xs" style={{ color: '#8B6F4E' }}>{t('ot.orderSub')}</p>
+
                       <label className="mb-2 block text-xs font-medium" style={{ color: '#7C5C3E' }}>{t('ot.gridPhone')}</label>
                       <div className="grid grid-cols-5 gap-2">
                         {MOBILE_GRID_COLUMN_OPTIONS.map((option) => {
