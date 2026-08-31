@@ -52,6 +52,10 @@ import PlanBadge, { gatedRowStyle } from '@/components/PlanBadge'
 type Props = {
   album: Album
   photos: Photo[]
+  // The album's TRUE size. `photos` is only the loaded window (500, then a page per scroll), so
+  // the button read "Download all (500)" on a 4,566-photo album — while the download itself
+  // correctly fetched every row. A wrong number on the owner's primary action.
+  albumPhotoCount?: number
   ownerToken: string | null
   // null while the tier is still resolving — see the note in AlbumPageClient. Rendering a paid
   // feature as locked before the answer arrives is a lie the owner sees and remembers.
@@ -104,7 +108,7 @@ function toDatetimeLocal(iso: string | null): string {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
 }
 
-export default function OwnerToolbar({ album, photos, ownerToken, userTier, mediaRadiusMax, onAlbumUpdated, onOpenSlideshow, arrangeMode, onToggleArrangeMode, onOpenDesigner }: Props) {
+export default function OwnerToolbar({ album, photos, albumPhotoCount, ownerToken, userTier, mediaRadiusMax, onAlbumUpdated, onOpenSlideshow, arrangeMode, onToggleArrangeMode, onOpenDesigner }: Props) {
   const { t } = useT()
   const [copied, setCopied] = useState<'share' | 'owner' | null>(null)
   const [showShare, setShowShare] = useState(false)
@@ -1248,7 +1252,7 @@ export default function OwnerToolbar({ album, photos, ownerToken, userTier, medi
                       ) : (
                         <>
                           <Download className="w-4 h-4" />
-                          {t('ot.downloadAll', { n: photos.length })}
+                          {t('ot.downloadAll', { n: Math.max(albumPhotoCount ?? 0, photos.length) })}
                         </>
                       )}
                     </button>

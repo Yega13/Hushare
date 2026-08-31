@@ -54,7 +54,7 @@ describe('attachAlbumOwners', () => {
     expect(out[1].album?.email).toBe('(unknown user)')
   })
 
-  it('a report with no album, and one naming a deleted album, both resolve to null', async () => {
+  it('a successfully-queried album that is absent IS null — that is a real deletion', async () => {
     const admin = fakeAdmin({ data: [] })
     const out = await attachAlbumOwners(admin, [{ album_id: null }, { album_id: 'deleted' }], emails)
     expect(out[0].album).toBeNull()
@@ -63,10 +63,13 @@ describe('attachAlbumOwners', () => {
     expect(out).toHaveLength(2)
   })
 
-  it('a failed lookup returns rows rather than throwing', async () => {
+  it('a failed lookup says UNKNOWN, never "deleted"', async () => {
+    // undefined, not null. The table prints null as "album deleted" — a confident claim about a
+    // live album that a failed query has no basis for (rule 20). The row still renders.
     const admin = fakeAdmin({ error: { message: 'boom' } })
     const out = await attachAlbumOwners(admin, [{ album_id: 'a1' }], emails)
-    expect(out).toEqual([{ album_id: 'a1', album: null }])
+    expect(out).toEqual([{ album_id: 'a1', album: undefined }])
+    expect(out[0].album).not.toBeNull()
   })
 
   it('an errored response is discarded even when it carries rows', async () => {
@@ -80,7 +83,7 @@ describe('attachAlbumOwners', () => {
       error: { message: 'partial' },
     })
     const out = await attachAlbumOwners(admin, [{ album_id: 'a1' }], emails)
-    expect(out[0].album).toBeNull()
+    expect(out[0].album).toBeUndefined()
   })
 
   it('makes no query at all when nothing names an album', async () => {

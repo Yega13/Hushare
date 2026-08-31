@@ -18,6 +18,8 @@ export type ErrorRow = {
   // Resolved server-side from album_id (see admin/page.tsx). Present only when the report named
   // an album that still exists — so the owner can be CONTACTED, not merely counted. Nothing here
   // identifies the guest: guests are not signed in and nothing about them is stored.
+  // null = the album is genuinely gone. undefined/absent = not resolved (an older payload,
+  // or a lookup that failed) — which is NOT the same claim and must not print as a deletion.
   album?: { title: string; slug: string; email: string } | null
   ua: string | null
   context?: unknown
@@ -330,10 +332,13 @@ export default function AdminErrorTabs(
                           <div style={{ color: MUTED }}>{e.album.email}</div>
                         </>
                       ) : (
-                        // Two different facts, never merged: a report with no album at all (a
-                        // checkout, a signup) versus one naming an album that has since been
-                        // deleted. "—" for the first would claim the second never had one.
-                        <span style={{ color: MUTED }}>{e.album_id ? 'album deleted' : '—'}</span>
+                        // THREE different facts, never merged: no album at all (a checkout, a
+                        // signup); an album that has genuinely been deleted; and a lookup that
+                        // failed, which knows nothing and must not claim a deletion. undefined
+                        // is the third — see lib/server/error-attribution.
+                        <span style={{ color: MUTED }}>
+                          {!e.album_id ? '—' : e.album === null ? 'album deleted' : 'not loaded'}
+                        </span>
                       )}
                     </td>
                     <td style={{ ...td, whiteSpace: 'normal', maxWidth: 180, fontSize: 11, color: MUTED }}>

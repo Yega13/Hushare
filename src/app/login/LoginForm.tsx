@@ -192,7 +192,9 @@ export default function LoginForm() {
               maxLength={10}
               value={otpCode}
               onChange={(e) => { setOtpCode(e.target.value.replace(/[^0-9]/g, '')); setOtpError('') }}
-              placeholder="123456"
+              // No example digits: the code length is a Supabase project setting, and a six-digit
+              // sample beside an eight-digit code is the same wrong promise the label just lost.
+              placeholder=""
               className="flex-1 rounded-xl px-4 py-3 text-center text-lg tracking-widest"
               style={{ background: '#FFFFFF', border: '1px solid #DDD5C5', color: '#3B2F25' }}
             />

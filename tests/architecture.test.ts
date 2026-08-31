@@ -53,12 +53,14 @@ const SIZE_BUDGET: Record<string, number> = {
   // lines of reasoning for three gates that were wrong. Deliberate.
   // +40 (2026-08-31): the desktop columns picker — a second, independent grid choice with
   // its own single-field save (lib/grid-columns.ts owns the values).
-  'src/components/OwnerToolbar.tsx': 1823,
+  // +4 (2026-08-31): albumPhotoCount prop so Download-all names the album, not the window.
+  'src/components/OwnerToolbar.tsx': 1827,
   // +23 (2026-08-31): fallback-poll wiring for realtime REFUSAL — the cadence decision is in
   // lib/realtime-fallback.ts; the timer must live beside the channel it covers (rule 15).
   // +17 (2026-08-31, review finding): channel-identity guard + timer hygiene in the reconnect
   // loop, so a replaced channel's CLOSED echo cannot breed reconnect loops on venue WiFi.
-  'src/app/[slug]/AlbumPageClient.tsx': 1490,
+  // +1 (2026-08-31): pass the true total to the toolbar.
+  'src/app/[slug]/AlbumPageClient.tsx': 1491,
   'src/app/card-editor/CardEditorClient.tsx': 873,
   // +1 (2026-08-31): pass collectionTotal to the lightbox counter.
   // +2 (2026-08-31): morphAllowed gate on open and close.
@@ -73,7 +75,9 @@ const SIZE_BUDGET: Record<string, number> = {
   // pane stays mounted through the failed-swipe return.
   // +6 (2026-08-31): swipe pane matches the real photo's box and vertical centre.
   // +8 (2026-08-31): the clamped downward nudge that puts the chevrons on the photo's centre.
-  'src/components/photo-grid/LightboxOverlay.tsx': 711,
+  // +13 (2026-08-31, review finding): the chevron alignment moved from an inline transform —
+  // which a filled animation silently overrode — to padding on the overlay root.
+  'src/components/photo-grid/LightboxOverlay.tsx': 724,
   // 518, down from 645: validatePhoto, hasTraversal and r2UrlPrefix moved to lib/photo-input,
   // where 22 tests now cover the boundary between a guest and this album's storage — including the
   // poisoned-thumbnail attack, which the mutation run confirmed they catch.

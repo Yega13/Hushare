@@ -393,7 +393,7 @@ export const hy: Partial<Record<DictKey, string>> = {
   'ot.faceConsent.cancel': 'Չեղարկել',
   'ot.faceConsent.learn': 'Կարդալ ամբողջական բաժինը գաղտնիության քաղաքականությունում',
   'ot.customUrl': 'Սեփական հասցե',
-  'ot.customUrlSub': 'Ընտրեք ալբոմի հարմար հասցե։ Տառեր, թվեր և գծիկներ, 3–40 նիշ։',
+  'ot.customUrlSub': 'Ընտրեք ալբոմի հարմար հասցե։ Տառեր, թվեր և գծիկներ, 4–40 նիշ։',
   'ot.saved': 'Պահված է։',
   'ot.save': 'Պահել',
   'ot.clear': 'Մաքրել',

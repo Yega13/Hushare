@@ -393,7 +393,7 @@ export const ru: Partial<Record<DictKey, string>> = {
   'ot.faceConsent.cancel': 'Отмена',
   'ot.faceConsent.learn': 'Подробный раздел в политике конфиденциальности',
   'ot.customUrl': 'Свой адрес',
-  'ot.customUrlSub': 'Выберите удобный адрес альбома. Буквы, цифры и дефисы, 3–40 символов.',
+  'ot.customUrlSub': 'Выберите удобный адрес альбома. Буквы, цифры и дефисы, 4–40 символов.',
   'ot.saved': 'Сохранено.',
   'ot.save': 'Сохранить',
   'ot.clear': 'Очистить',

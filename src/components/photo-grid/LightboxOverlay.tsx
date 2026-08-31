@@ -163,7 +163,19 @@ export default function LightboxOverlay({
   // Clamped to the free space that actually exists: on a short landscape phone the image and its
   // controls nearly fill the screen, and an unconditional shift would push the controls off the
   // bottom edge. Where there is no room, the shift is zero and nothing moves.
-  const LB_SHIFT = 'clamp(0px, calc((100svh - min(70vh, 760px) - 96px) / 2), 44px)'
+  // Applied as PADDING ON THE OVERLAY ROOT, never as a transform on the content column.
+  //
+  // The column wears `hush-modal-pop`, an animation with fill-mode `both` whose final frame sets
+  // `transform`. A filled animation's declarations outrank the style attribute permanently, so an
+  // inline transform on that element is silently discarded — and the class is present exactly when
+  // `morphed` is false, which is every open past MORPH_TILE_LIMIT photos and every visitor with
+  // reduced motion. The shift appeared to work only because small albums take the morph path.
+  //
+  // Padding on the root moves the flex centre down by HALF its value while leaving the chevrons —
+  // absolutely positioned against the padding box — at the viewport's centre. So the padding is
+  // twice the wanted shift, and the swipe pane inherits it for free by filling the same box.
+  // Clamped to the free space that exists, so a short screen cannot clip the controls.
+  const LB_PAD = 'clamp(0px, calc(100svh - min(70vh, 760px) - 96px), 88px)'
   const shownTotal = Math.max(collectionTotal ?? 0, viewerPhotos.length)
   // Video aspect ratio drives the player box so it fills with no black bars. Prefer the exact
   // dimensions captured at upload (instant, reliable); fall back to measuring the poster for
@@ -267,6 +279,7 @@ export default function LightboxOverlay({
       className={`fixed inset-0 z-50 flex items-center justify-center overflow-hidden${slideshowMode ? ' hush-slideshow-overlay' : ''}`}
       onClick={onClose}
       onWheel={(e) => { if (!(e.target as HTMLElement).closest('[data-scroll-allowed="true"]')) e.preventDefault() }}
+      style={{ paddingTop: LB_PAD }}
     >
       <div aria-hidden className="absolute inset-0" style={{ background: 'rgba(5, 8, 5, 0.92)' }} />
 
@@ -346,7 +359,7 @@ export default function LightboxOverlay({
             aria-hidden
             className="absolute inset-0 z-10 flex items-center justify-center pointer-events-none"
             style={{
-              transform: `translate(calc(${swipeOffset}px + ${swipeOffset < 0 ? '100vw' : '-100vw'}), ${LB_SHIFT})`,
+              transform: `translateX(calc(${swipeOffset}px + ${swipeOffset < 0 ? '100vw' : '-100vw'}))`,
               transition: swipeAnimating ? 'transform 170ms cubic-bezier(0.4, 0, 0.2, 1)' : 'none',
               paddingBottom: 88,
             }}
@@ -378,7 +391,7 @@ export default function LightboxOverlay({
           touchAction: 'pan-y',
           // Clean horizontal slide that tracks the finger 1:1 (no scale — the scale-wobble read
           // as dated). A light fade near the end keeps it feeling smooth as the item leaves.
-          transform: `translate(${swipeOffset}px, ${LB_SHIFT})`,
+          transform: `translateX(${swipeOffset}px)`,
           opacity: 1 - Math.min(Math.abs(swipeOffset), 520) / 1600,
           transition: swipeAnimating ? 'transform 170ms cubic-bezier(0.4, 0, 0.2, 1), opacity 170ms ease-out' : 'none',
         }}

@@ -13,13 +13,19 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 
 export type AlbumOwner = { title: string; slug: string; email: string }
 
+// Owner emails, remembered for the life of the isolate. The dashboard polls every five seconds
+// and the SAME few owners reappear on every tick — uncached, one open admin tab could issue
+// hundreds of GoTrue lookups a minute to redraw a column that never changes. An email that
+// changes later is stale only until the isolate recycles, which is the right trade for a label.
+const EMAIL_CACHE = new Map<string, string>()
+
 type Rowish = { album_id: string | null }
 
 export async function attachAlbumOwners<T extends Rowish>(
   admin: SupabaseClient,
   rows: T[],
   emailById: Map<string, string> = new Map(),
-): Promise<Array<T & { album: AlbumOwner | null }>> {
+): Promise<Array<T & { album: AlbumOwner | null | undefined }>> {
   const ids = [...new Set(rows.map((r) => r.album_id).filter((x): x is string => !!x))]
   if (ids.length === 0) return rows.map((r) => ({ ...r, album: null }))
 
@@ -28,11 +34,11 @@ export async function attachAlbumOwners<T extends Rowish>(
     .select('id, title, slug, custom_slug, user_id')
     .in('id', ids)
 
-  // A failed lookup yields null attribution — the table then prints "album deleted" for rows that
-  // do have an album, which is wrong but harmless and self-corrects on the next poll. It must
-  // never take down the error table itself: the table is what an operator opens when something is
-  // already going wrong.
-  if (error || !data) return rows.map((r) => ({ ...r, album: null }))
+  // UNDEFINED, not null. The table reads null as "this album is gone" and prints so; a lookup
+  // that merely failed must not make that claim about a live album (rule 20). Undefined means
+  // "not resolved", the row still renders, and the next poll tries again. It must never take
+  // down the error table itself — that table is what an operator opens when things are wrong.
+  if (error || !data) return rows.map((r) => ({ ...r, album: undefined }))
 
   // Owner emails for ids the caller's map does not already hold. The admin page arrives with a
   // full user map and needs none of this; the live-stats poll holds no map at all, and looking up
@@ -44,10 +50,11 @@ export async function attachAlbumOwners<T extends Rowish>(
     albums.map((a) => a.user_id as string | null).filter((u): u is string => !!u && !emailById.has(u)),
   )]
   const fetched = new Map<string, string>()
-  await Promise.all(needed.map(async (id) => {
+  for (const id of needed) { const hit = EMAIL_CACHE.get(id); if (hit) fetched.set(id, hit) }
+  await Promise.all(needed.filter((id) => !fetched.has(id)).map(async (id) => {
     try {
       const { data: u } = await admin.auth.admin.getUserById(id)
-      if (u?.user?.email) fetched.set(id, u.user.email)
+      if (u?.user?.email) { fetched.set(id, u.user.email); EMAIL_CACHE.set(id, u.user.email) }
     } catch { /* leave unresolved — labelled below, never guessed */ }
   }))
 

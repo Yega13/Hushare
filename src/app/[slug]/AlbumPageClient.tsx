@@ -1366,6 +1366,7 @@ export default function AlbumPageClient({ initialAlbum = null, initialPhotos, in
           <OwnerToolbar
             album={album}
             photos={photos}
+            albumPhotoCount={total}
             ownerToken={ownerToken}
             userTier={userTier}
             mediaRadiusMax={Math.max(1, mediaRadiusMax)}

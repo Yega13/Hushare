@@ -410,7 +410,7 @@ export const en = {
   'ot.faceConsent.cancel': 'Cancel',
   'ot.faceConsent.learn': 'Read the full section in our privacy policy',
   'ot.customUrl': 'Custom URL',
-  'ot.customUrlSub': 'Pick a friendly path for this album. Letters, numbers, and hyphens, 3 to 40 characters.',
+  'ot.customUrlSub': 'Pick a friendly path for this album. Letters, numbers, and hyphens, 4 to 40 characters.',
   'ot.saved': 'Saved.',
   'ot.save': 'Save',
   'ot.clear': 'Clear',
