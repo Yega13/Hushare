@@ -406,28 +406,7 @@ export default async function PricingPage() {
 
       {/* Tiers */}
       <section className="hush-container pb-16">
-        {/* The yearly option used to be a 12px caption under the price with no border and no
-            background — clickable, and indistinguishable from the plain text rendered beside it
-            for plans without a yearly option. The OWNER could not find how to buy an annual plan
-            on their own pricing page. Both cycles are now equals, and both prices are in the HTML
-            from the first byte: the switch is two radios and CSS (styles/pricing.css), so it
-            works before any JavaScript loads and cannot show a price fetched after the fact. */}
-        <input type="radio" id="hush-cyc-m" name="hush-cycle" className="hush-cycle-radio" defaultChecked aria-label={dict['pricing.cycleMonthly']} />
-        <input type="radio" id="hush-cyc-y" name="hush-cycle" className="hush-cycle-radio" aria-label={dict['pricing.cycleYearly']} />
-        <div className="flex justify-center mb-8">
-          <div className="hush-cycle-switch" role="group" aria-label={dict['pricing.cycleLabel']}>
-            <label htmlFor="hush-cyc-m">{dict['pricing.cycleMonthly']}</label>
-            <label htmlFor="hush-cyc-y">
-              {dict['pricing.cycleYearly']}
-              <span style={{ fontSize: 11, opacity: 0.85 }}>
-                {' · ' + interpolate(dict['pricing.cycleSave'], {
-                  n: String(monthsSaved(PLAN_CATALOGUE.pro_monthly.amountCents, PLAN_CATALOGUE.pro_yearly.amountCents)),
-                })}
-              </span>
-            </label>
-          </div>
-        </div>
-        <div className="hush-cycle-cards grid grid-cols-1 md:grid-cols-3 gap-6 md:gap-5 xl:gap-7 items-stretch">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 md:gap-5 xl:gap-7 items-stretch">
           {localizedTiers.map((t) => (
             <article
               key={t.name}
@@ -467,6 +446,47 @@ export default async function PricingPage() {
                 {t.tagline}
               </p>
 
+              {/* ONE SWITCH PER CARD, each its own radio group.
+                  A single switch above the grid forced one decision onto every plan at once —
+                  but somebody comparing Pro monthly against Max yearly could not see both, and
+                  the control that changed the card they were reading was somewhere else on the
+                  page. Each card now answers for itself.
+                  The radios sit here, directly before the price and the checkout buttons, because
+                  the CSS reaches them as SIBLINGS. Move either into a wrapper and the switch
+                  silently stops working — nothing throws, the button just never changes. */}
+              {t.yearlyPlan && (
+                <>
+                  <input
+                    type="radio" value="monthly" defaultChecked
+                    id={`cyc-${t.name.toLowerCase()}-m`} name={`cyc-${t.name.toLowerCase()}`}
+                    className="hush-cycle-radio" aria-label={`${t.name} ${dict['pricing.cycleMonthly']}`}
+                  />
+                  <input
+                    type="radio" value="yearly"
+                    id={`cyc-${t.name.toLowerCase()}-y`} name={`cyc-${t.name.toLowerCase()}`}
+                    className="hush-cycle-radio" aria-label={`${t.name} ${dict['pricing.cycleYearly']}`}
+                  />
+                  <div className={`hush-cycle${t.highlight ? ' is-dark' : ''}`}>
+                    {/* aria-hidden: the labels below are the real, announced controls. */}
+                    <span className="hush-cycle-thumb" aria-hidden />
+                    <label className="hush-cycle-opt hush-cycle-opt-monthly" htmlFor={`cyc-${t.name.toLowerCase()}-m`}>
+                      {dict['pricing.cycleMonthly']}
+                    </label>
+                    <label className="hush-cycle-opt hush-cycle-opt-yearly" htmlFor={`cyc-${t.name.toLowerCase()}-y`}>
+                      {dict['pricing.cycleYearly']}
+                      <span className="hush-cycle-save">
+                        {interpolate(dict['pricing.cycleSave'], {
+                          n: String(monthsSaved(
+                            PLAN_CATALOGUE[t.monthlyPlan as 'pro_monthly'].amountCents,
+                            PLAN_CATALOGUE[t.yearlyPlan as 'pro_yearly'].amountCents,
+                          )),
+                        })}
+                      </span>
+                    </label>
+                  </div>
+                </>
+              )}
+
               {/* Both prices ship in the HTML; CSS shows one. A plan with no yearly option (Free)
                   carries no cycle class at all, so the switch simply does not touch it. */}
               <div className={`flex items-baseline gap-2 mb-1${t.yearlyPrice ? ' hush-monthly-only' : ''}`}>
@@ -478,7 +498,7 @@ export default async function PricingPage() {
                 </span>
               </div>
               {t.yearlyPrice && (
-                <div className="flex items-baseline gap-2 mb-1 hush-yearly-only">
+                <div className="flex items-baseline gap-2 mb-1 hush-yearly-only hush-cycle-price">
                   <span style={{ ...SERIF, fontSize: '2.6rem', fontWeight: 700, lineHeight: 1 }}>
                     {t.yearlyPrice}
                   </span>

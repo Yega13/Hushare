@@ -1,11 +1,13 @@
 @layer utilities {
-  /* MONTHLY / YEARLY, with no JavaScript.
-     Two real radio inputs drive the whole switch through sibling selectors, so the choice works
-     on the first paint of a server-rendered page — no client component, no hydration wait, and
-     it keeps working if the bundle never loads. Real radios also mean the keyboard and screen
-     readers get a labelled group for free, which a div-with-onClick does not.
-     The inputs are visually hidden rather than display:none, because display:none removes them
-     from the tab order and the switch would be unreachable without a mouse. */
+  /* PER-CARD MONTHLY / YEARLY SWITCH, with no JavaScript.
+     Two real radio inputs per card drive everything through sibling selectors, so the choice
+     works on the first paint of a server-rendered page — no client component, no hydration
+     wait, and it keeps working if the bundle never loads. Real radios also mean the keyboard
+     and screen readers get a labelled group for free, which a div-with-onClick does not.
+
+     The CSS hooks on the radio's VALUE, never on its id, so one stylesheet serves every card
+     however many plans exist — a per-tier id would need a per-tier rule, and the rule for the
+     tier somebody adds next year would be the one nobody remembers to write. */
   .hush-cycle-radio {
     position: absolute;
     width: 1px;
@@ -14,45 +16,135 @@
     pointer-events: none;
   }
 
-  .hush-cycle-switch {
-    display: inline-flex;
-    gap: 4px;
+  .hush-cycle {
+    --hush-cyc-track: rgba(99, 8, 38, 0.07);
+    --hush-cyc-edge: rgba(99, 8, 38, 0.16);
+    --hush-cyc-thumb: #630826;
+    --hush-cyc-on: #FDFAF5;
+    --hush-cyc-off: #8B6F4E;
+    position: relative;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    align-items: stretch;
+    gap: 0;
+    width: 100%;
     padding: 4px;
+    margin-bottom: 18px;
     border-radius: 999px;
-    background: rgba(99, 8, 38, 0.06);
-    border: 1px solid rgba(99, 8, 38, 0.16);
+    background: var(--hush-cyc-track);
+    border: 1px solid var(--hush-cyc-edge);
+    isolation: isolate;
   }
 
-  .hush-cycle-switch label {
+  /* The highlighted card is dark, so the switch inverts rather than disappearing into it. */
+  .hush-cycle.is-dark {
+    --hush-cyc-track: rgba(253, 250, 245, 0.12);
+    --hush-cyc-edge: rgba(253, 250, 245, 0.34);
+    --hush-cyc-thumb: #FDFAF5;
+    --hush-cyc-on: #630826;
+    --hush-cyc-off: rgba(253, 250, 245, 0.82);
+  }
+
+  /* The moving part. One element that slides, rather than two that fade: a single travelling
+     shape is what makes a switch read as one control with two states instead of two buttons. */
+  .hush-cycle-thumb {
+    position: absolute;
+    z-index: 0;
+    top: 4px;
+    bottom: 4px;
+    left: 4px;
+    width: calc(50% - 4px);
+    border-radius: 999px;
+    background: var(--hush-cyc-thumb);
+    box-shadow: 0 2px 10px rgba(99, 8, 38, 0.22);
+    transition: transform 320ms cubic-bezier(0.34, 1.32, 0.48, 1);
+    will-change: transform;
+  }
+
+  .hush-cycle-opt {
+    position: relative;
+    z-index: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
     cursor: pointer;
     border-radius: 999px;
-    padding: 7px 18px;
+    padding: 8px 6px;
     font-size: 13px;
     font-weight: 600;
-    color: #8B6F4E;
-    transition: background 140ms ease, color 140ms ease;
+    color: var(--hush-cyc-off);
     white-space: nowrap;
+    transition: color 200ms ease;
+    -webkit-tap-highlight-color: transparent;
   }
 
-  .hush-cycle-switch label:hover { color: #630826; }
+  .hush-cycle-opt:hover { color: var(--hush-cyc-thumb); }
+  .hush-cycle.is-dark .hush-cycle-opt:hover { color: var(--hush-cyc-on); }
 
-  /* The selected side. Written for each radio rather than with :has(), so it needs nothing
-     newer than sibling combinators. */
-  #hush-cyc-m:checked ~ .hush-cycle-switch label[for="hush-cyc-m"],
-  #hush-cyc-y:checked ~ .hush-cycle-switch label[for="hush-cyc-y"] {
-    background: #630826;
+  /* The saving, revealed only on the side it applies to. It occupies its space either way, so
+     the switch does not change width when it appears — a control that resizes as you use it
+     reads as a glitch. */
+  .hush-cycle-save {
+    font-size: 10.5px;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    padding: 2px 7px;
+    border-radius: 999px;
+    background: rgba(46, 107, 62, 0.16);
+    color: #2E6B3E;
+    opacity: 0;
+    transform: scale(0.86);
+    transition: opacity 220ms ease 60ms, transform 220ms cubic-bezier(0.34, 1.32, 0.48, 1) 60ms;
+  }
+
+  /* ── State, driven entirely by which radio is checked ───────────────────── */
+  .hush-cycle-radio[value="yearly"]:checked ~ .hush-cycle .hush-cycle-thumb {
+    transform: translateX(100%);
+  }
+
+  .hush-cycle-radio[value="monthly"]:checked ~ .hush-cycle .hush-cycle-opt-monthly,
+  .hush-cycle-radio[value="yearly"]:checked ~ .hush-cycle .hush-cycle-opt-yearly {
+    color: var(--hush-cyc-on);
+  }
+
+  .hush-cycle-radio[value="yearly"]:checked ~ .hush-cycle .hush-cycle-save {
+    opacity: 1;
+    transform: scale(1);
+  }
+
+  .hush-cycle.is-dark .hush-cycle-save {
+    background: rgba(253, 250, 245, 0.22);
     color: #FDFAF5;
   }
 
-  /* Keyboard focus has to be visible on the LABEL, since the input it belongs to is hidden. */
-  #hush-cyc-m:focus-visible ~ .hush-cycle-switch label[for="hush-cyc-m"],
-  #hush-cyc-y:focus-visible ~ .hush-cycle-switch label[for="hush-cyc-y"] {
-    outline: 2px solid #630826;
-    outline-offset: 2px;
+  /* Keyboard focus has to show on the LABEL, since the input it belongs to is hidden. */
+  .hush-cycle-radio:focus-visible ~ .hush-cycle {
+    outline: 2px solid var(--hush-cyc-thumb);
+    outline-offset: 3px;
   }
 
-  /* Only one of the two price/CTA blocks in each card is shown. Both are in the HTML, so
-     switching costs no request and cannot show a stale price. */
-  #hush-cyc-m:checked ~ .hush-cycle-cards .hush-yearly-only { display: none; }
-  #hush-cyc-y:checked ~ .hush-cycle-cards .hush-monthly-only { display: none; }
+  /* Which price and which checkout button. Both are in the HTML, so switching costs no request
+     and cannot show a price fetched after the fact. */
+  .hush-cycle-radio[value="monthly"]:checked ~ .hush-yearly-only { display: none; }
+  .hush-cycle-radio[value="yearly"]:checked ~ .hush-monthly-only { display: none; }
+
+  /* The price itself gets a small arrival move, so the number visibly belongs to the switch
+     that was just used rather than appearing to have been there all along. */
+  .hush-cycle-price {
+    animation: hush-cycle-price-in 300ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  }
+
+  @keyframes hush-cycle-price-in {
+    from { opacity: 0; transform: translateY(6px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+
+  /* Motion is decoration here; the switch works identically without it. */
+  @media (prefers-reduced-motion: reduce) {
+    .hush-cycle-thumb,
+    .hush-cycle-save,
+    .hush-cycle-opt { transition: none; }
+    .hush-cycle-price { animation: none; }
+  }
 }

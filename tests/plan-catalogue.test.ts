@@ -104,6 +104,50 @@ describe('the catalogue matches what /pricing advertises', () => {
     expect(page.slice(start, start + 400)).toContain('hush-monthly-only')
   })
 
+  it('the switch markup and the switch stylesheet agree on every hook', () => {
+    // The switch is CSS-only, so a renamed class or value breaks it SILENTLY: nothing throws,
+    // no test of behaviour fails, and the button simply stops changing. This binds the two
+    // files that have to agree.
+    const css = readFileSync(join(process.cwd(), 'src', 'app', 'styles', 'pricing.css'), 'utf8')
+    for (const hook of ['hush-cycle-radio', 'hush-monthly-only', 'hush-yearly-only', 'hush-cycle-thumb']) {
+      // Whole-name matching. A plain `toContain` passed when the rule had been renamed to
+      // `.hush-cycle-thumbx`, because the old name is still a substring of the new one — the
+      // element would have rendered with no style at all and the test stayed green.
+      const whole = new RegExp('\\.' + hook + '(?![\\w-])')
+      expect(css.match(whole), `${hook} is rendered but has no rule of its own`).not.toBeNull()
+      expect(page, `${hook} is styled but never rendered`).toContain(hook)
+    }
+    // The sliding thumb needs its own BASE rule, not just the state rules that move it. Renaming
+    // only the base rule left the state rules matching, so the whole-name check above passed
+    // while the thumb rendered as an unstyled span — invisible, and the switch looks broken.
+    expect(css).toMatch(/^\s*\.hush-cycle-thumb\s*\{/m)
+    // The labels ARE the control — the radios themselves are visually hidden. Asserting the rule
+    // merely exists proved nothing (an identically-named rule inside the reduced-motion query
+    // matched it), so this reads the block and checks it still makes them look clickable.
+    const optAt = css.indexOf('.hush-cycle-opt {')
+    expect(optAt, 'the switch labels have no base rule').toBeGreaterThan(0)
+    expect(css.slice(optAt, css.indexOf('}', optAt))).toContain('cursor: pointer')
+    // The CSS keys on the radio's VALUE, not its id, so every card is served by one rule.
+    expect(page).toContain('value="monthly"')
+    expect(page).toContain('value="yearly"')
+    // The two LOAD-BEARING pairings, asserted as whole selectors. Checking only that each value
+    // appears somewhere in the file passed while one rule had been renamed to a value no radio
+    // ever has — the switch would have shown both prices at once, silently.
+    expect(css).toContain('[value="yearly"]:checked ~ .hush-monthly-only')
+    expect(css).toContain('[value="monthly"]:checked ~ .hush-yearly-only')
+    // And no rule may key on a value the markup never sets.
+    for (const v of css.match(/\[value="([a-z]+)"\]/g) ?? []) {
+      expect(['[value="monthly"]', '[value="yearly"]'], `${v} matches no radio`).toContain(v)
+    }
+  })
+
+  it('each card has its own radio group, so the two plans switch independently', () => {
+    // A shared group name would make Pro and Max move together — the whole point of the change
+    // was that somebody comparing Pro monthly against Max yearly could not see both at once.
+    expect(page).toContain('name={`cyc-${t.name.toLowerCase()}`}')
+    expect(page).not.toContain('name="hush-cycle"')
+  })
+
   it('every plan names a distinct product env var', () => {
     const vars = Object.values(PLAN_CATALOGUE).map((p) => p.envVar)
     expect(new Set(vars).size).toBe(vars.length)
