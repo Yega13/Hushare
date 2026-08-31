@@ -62,7 +62,15 @@ export function useZipDownload(photos: Photo[], album: Pick<Album, 'id' | 'title
     const seen = new Set<string>()
     let offset = 0
     while (!abortRef.current) {
-      const res = await fetch(`/api/album/photos?albumId=${encodeURIComponent(album.id)}&offset=${offset}&limit=2000`, { cache: 'no-store' })
+      // A thrown fetch here used to escape the whole download. Returning what we have lets the
+      // caller fall back to the loaded window (`all.length === 0` → `photos`), so a blip costs a
+      // smaller download rather than no download at all.
+      let res: Response
+      try {
+        res = await fetch(`/api/album/photos?albumId=${encodeURIComponent(album.id)}&offset=${offset}&limit=2000`, { cache: 'no-store' })
+      } catch {
+        break
+      }
       if (!res.ok) break
       const json = (await res.json()) as { photos?: Photo[]; total?: number }
       const page = json.photos ?? []
@@ -227,6 +235,24 @@ export function useZipDownload(photos: Photo[], album: Pick<Album, 'id' | 'title
           failedTotal > 0 ? 'error' : 'success',
         )
       }
+    } catch (err) {
+      // try/finally with NO catch was the bug. A dropped connection inside fetchAllRecords threw
+      // "TypeError: Failed to fetch", nothing caught it, and because the button calls this without
+      // awaiting, it surfaced as an unhandled rejection — a red error in the panel, and for the
+      // guest a spinner that simply stopped with no explanation and nothing to press.
+      //
+      // Two guests hit this today on an Android phone mid-event. The download is the half of the
+      // product with the weakest instrumentation, which is exactly why it needs the loudest.
+      if (abortRef.current) return
+      const reason = err instanceof Error
+        ? (err.name === 'TypeError' ? 'network' : err.message.slice(0, 120))
+        : String(err).slice(0, 120)
+      reportClientError({
+        level: 'error', source: 'download:zip', albumId: album.id,
+        message: 'Download failed before it could finish',
+        context: { reason, photos: photos.length },
+      })
+      showAppToast('Download failed — check your connection and try again.', 'error')
     } finally {
       setZipping(false)
       setZipProgress(0)
