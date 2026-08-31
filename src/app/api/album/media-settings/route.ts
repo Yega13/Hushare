@@ -66,6 +66,12 @@ export async function POST(req: Request) {
     updates.mobile_grid_columns = body.mobile_grid_columns
   }
   if (body.photo_order !== undefined) {
+    // NO UI SENDS THIS. The owner-facing control was removed deliberately: newest-first is right
+    // for essentially every album, dragging photos already covers anyone who wants a specific
+    // arrangement, and one more switch in Settings is a worse trade than the preference is worth.
+    // The field stays reachable here for support — a large album cannot realistically be dragged
+    // into chronological order, so this is the only way to grant that if somebody ever asks.
+    //
     // 'manual' is deliberately NOT settable here. An album becomes manual by being dragged into
     // an order (see photos/reorder); accepting it from a menu would claim an arrangement that
     // does not exist and leave every row's sort_order NULL — an album in no order at all.
