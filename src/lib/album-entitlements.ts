@@ -2,6 +2,14 @@ import type { Tier } from '@/types'
 import {
   ANON_ALBUM_MEDIA, LEGACY_FREE_ALBUM_MEDIA, GRANDFATHER_FREE_BEFORE, albumMediaCapForTier,
 } from '@/lib/media'
+import { PACKAGE_CATALOGUE } from '@/lib/package-catalogue'
+
+/** Item allowance per package tier, read from the catalogue so the price list and the enforcement
+ *  cannot disagree about what somebody bought. */
+const PACKAGE_ITEMS_BY_TIER: Record<Exclude<Tier, 'free'>, number> = {
+  pro: PACKAGE_CATALOGUE.package_pro.items,
+  studio: PACKAGE_CATALOGUE.package_max.items,
+}
 
 // HOW MANY ITEMS MAY THIS ALBUM HOLD? ONE ANSWER, IN ONE PLACE.
 //
@@ -46,11 +54,17 @@ export type AlbumCapInput = {
   createdAt: string | null | undefined
   /** albums.media_cap_override — a deliberate per-album ceiling for partner and event albums. */
   override: number | null | undefined
+  /** A one-off package bought for THIS album, if any. Its item allowance is its own number, not
+   *  its tier's: a Pro Package grants 5,000 where a Pro subscription grants 3,000. */
+  pkg?: AlbumPackage | null
+  /** Injected only by tests that need a fixed clock. */
+  now?: Date
 }
 
 export type CapReason =
   | 'override'      // a per-album ceiling was set by hand; no upsell is appropriate
   | 'legacy'        // the album is grandfathered above what its plan gives today
+  | 'package'       // a one-off package bought for this album decides it
   | 'plan'          // the owner's plan decides it
   | 'anon'          // no account behind the album — registering genuinely gives more
 
@@ -61,7 +75,7 @@ export const MAX_MEDIA_CAP_OVERRIDE = 200_000
  * The cap for ONE PARTICULAR album, and WHY — the reason is what lets a caller phrase an honest
  * message instead of promising space that will not arrive.
  */
-export function albumCap({ ownerTier, createdAt, override }: AlbumCapInput): { cap: number; reason: CapReason } {
+export function albumCap({ ownerTier, createdAt, override, pkg, now }: AlbumCapInput): { cap: number; reason: CapReason } {
   // An override is a deliberate decision about this one album and outranks everything, including
   // the plan. Clamped, because the only way it gets set is by hand.
   if (typeof override === 'number' && override > 0) {
@@ -90,9 +104,16 @@ export function albumCap({ ownerTier, createdAt, override }: AlbumCapInput): { c
     ? LEGACY_FREE_ALBUM_MEDIA
     : 0
 
+  // A package bought for this album, if it is still in date. One more candidate in the same max()
+  // — which is exactly the seam this function was written around.
+  const pkgItems = !packageExpired(pkg, now ?? new Date()) && pkg?.tier
+    ? PACKAGE_ITEMS_BY_TIER[pkg.tier]
+    : 0
+
   // Only ever adds. This is the line that fixes the shadowing: a plan is never lowered to meet a
-  // grandfathered ceiling.
-  const cap = Math.max(base, legacy)
+  // grandfathered ceiling, and a package never lowers either.
+  const cap = Math.max(base, legacy, pkgItems)
+  if (cap === pkgItems && pkgItems > base && pkgItems > legacy) return { cap, reason: 'package' }
   if (cap === base) return { cap, reason: ownerTier ? 'plan' : 'anon' }
   return { cap, reason: 'legacy' }
 }
@@ -286,4 +307,56 @@ export function videoAlbumFullMessage(caps: VideoCaps, usedSeconds: number): str
       + 'Delete a video to make room, or add it as a photo.'
     : `${VIDEO_ALBUM_FULL_PREFIX} — it holds ${total} of video. `
       + 'Delete a video to make room. Photos can still be added.'
+}
+
+// ── WHAT DOES THIS ALBUM COUNT AS? ───────────────────────────────────────────────────────────
+//
+// Two completely different things can entitle one album, and they are independent:
+//
+//   the OWNER'S SUBSCRIPTION   per account, ongoing, covers every album they own
+//   a PACKAGE bought for it    per album, one-off, covers that album for a fixed number of years
+//
+// So a free account can own a Max Package album, and a Pro subscriber can own an album with a Max
+// Package on it. The album gets the BETTER of the two, always — never the average, never the most
+// recent, and never whichever code path happened to ask first.
+//
+// This exists so the answer is computed once. Every feature gate in the product currently asks
+// "what tier is the OWNER", which is the wrong question the moment a package exists: it would
+// hand a paying package customer the free feature set because their account has no subscription.
+
+export type AlbumPackage = {
+  /** albums.package_tier — the feature set bought for this album, or null if none was. */
+  tier: Exclude<Tier, 'free'> | null
+  /** albums.package_expires_at — ISO timestamp. Null means no package. */
+  expiresAt: string | null
+}
+
+const TIER_RANK: Record<Tier, number> = { free: 0, pro: 1, studio: 2 }
+
+/** Has this album's package lapsed? Null/unparseable dates are treated as EXPIRED. */
+export function packageExpired(pkg: AlbumPackage | null | undefined, now: Date = new Date()): boolean {
+  if (!pkg || !pkg.tier || !pkg.expiresAt) return true
+  const at = Date.parse(pkg.expiresAt)
+  // An unreadable expiry errs toward expired, which sounds harsh and is the safe direction: an
+  // album whose package we cannot date falls back to its OWNER's tier, so a subscriber loses
+  // nothing and a free owner keeps every photo — features switch off, data never does. Erring the
+  // other way would grant paid features forever off a corrupt string.
+  if (!Number.isFinite(at)) return true
+  return at <= now.getTime()
+}
+
+/**
+ * The tier this ALBUM is entitled to — the better of its owner's subscription and its own package.
+ *
+ * Everything that gates a feature must ask this, not the owner's tier.
+ */
+export function albumEffectiveTier(
+  ownerTier: Tier | null | undefined,
+  pkg: AlbumPackage | null | undefined,
+  now: Date = new Date(),
+): Tier {
+  const owner: Tier = ownerTier ?? 'free'
+  if (packageExpired(pkg, now)) return owner
+  const bought = pkg!.tier as Tier
+  return TIER_RANK[bought] > TIER_RANK[owner] ? bought : owner
 }
