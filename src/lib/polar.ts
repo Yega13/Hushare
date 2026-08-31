@@ -1,4 +1,5 @@
 import { timingSafeEqual } from '@/lib/timing-safe'
+import { PLAN_CATALOGUE, formatPrice } from '@/lib/plan-catalogue'
 
 const PROD_BASE = 'https://api.polar.sh'
 const SANDBOX_BASE = 'https://sandbox-api.polar.sh'
@@ -279,6 +280,58 @@ export async function checkIntroDiscounts(): Promise<DiscountHealth[]> {
       return { plan, id, state: 'ok' }
     } catch {
       return { plan, id, state: 'unknown' }
+    }
+  }))
+}
+
+
+// ── Does Polar charge what we advertise? ──────────────────────────────────────
+//
+// Same reasoning as checkIntroDiscounts, for the bigger number. A product's billing INTERVAL
+// cannot be edited at Polar after creation, so a mis-created product stays wrong until someone
+// notices — and "Hushare Studio (Yearly)" was configured to charge $100 every MONTH while
+// /pricing advertised $100 a year. No one had bought it, so nothing was broken yet; the first
+// annual Max customer would have paid $1,200 for a $100 plan.
+//
+// Compares every plan against PLAN_CATALOGUE. Read-only, and a lookup that fails reports
+// nothing rather than accusing a correct product.
+export type PlanHealth = {
+  plan: string
+  state: 'ok' | 'wrong-interval' | 'wrong-price' | 'missing' | 'unset' | 'unknown'
+  detail?: string
+}
+
+export async function checkPlanProducts(): Promise<PlanHealth[]> {
+  const entries = Object.values(PLAN_CATALOGUE)
+  return Promise.all(entries.map(async (want): Promise<PlanHealth> => {
+    const id = process.env[want.envVar]
+    if (!id) return { plan: want.label, state: 'unset' }
+    try {
+      const res = await fetch(`${apiBase()}/v1/products/${id}`, {
+        headers: { Authorization: `Bearer ${apiKey()}` },
+        cache: 'no-store',
+        signal: AbortSignal.timeout(4000),
+      })
+      if (res.status === 404) return { plan: want.label, state: 'missing' }
+      if (!res.ok) return { plan: want.label, state: 'unknown' }
+      const product = await res.json() as {
+        recurring_interval?: string | null
+        prices?: Array<{ price_amount?: number | null; recurring_interval?: string | null }>
+      }
+      const price = product.prices?.[0]
+      // The interval can live on either the product or its price depending on how it was
+      // created; a plan is only correct if whichever one Polar reports agrees with ours.
+      const interval = price?.recurring_interval ?? product.recurring_interval ?? null
+      if (interval && interval !== want.interval) {
+        return { plan: want.label, state: 'wrong-interval', detail: `Polar charges every ${interval}` }
+      }
+      const cents = price?.price_amount
+      if (typeof cents === 'number' && cents !== want.amountCents) {
+        return { plan: want.label, state: 'wrong-price', detail: `Polar charges ${formatPrice(cents)}` }
+      }
+      return { plan: want.label, state: 'ok' }
+    } catch {
+      return { plan: want.label, state: 'unknown' }
     }
   }))
 }

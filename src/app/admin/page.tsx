@@ -21,7 +21,7 @@ import AdminClockHeatmap from '@/components/AdminClockHeatmap'
 import AdminFunnel from '@/components/AdminFunnel'
 import AdminUsers, { type UserRow, type Cohort } from '@/components/AdminUsers'
 import { isSubActive } from '@/lib/subscriptions'
-import { checkIntroDiscounts } from '@/lib/polar'
+import { checkIntroDiscounts, checkPlanProducts } from '@/lib/polar'
 import { attachAlbumOwners } from '@/lib/server/error-attribution'
 import { albumCountLimitForTier, albumMediaCapForTier } from '@/lib/media'
 import AdminAreaChartLazy from '@/components/AdminAreaChartLazy'
@@ -132,7 +132,7 @@ export default async function AdminPage() {
 
   const [
     albumsActive, albumsRetired, imgCount, vidCount, subsCount,
-    recentAlbumsRes, subsRes, streamUsage, r2Usage, discountHealth, usersRes, errors24Res, recentErrorsRes,
+    recentAlbumsRes, subsRes, streamUsage, r2Usage, discountHealth, planHealth, usersRes, errors24Res, recentErrorsRes,
     clearedMsgsRes, backupRes,
   ] = await Promise.all([
     admin.from('albums').select('id', { count: 'exact', head: true }).is('retired_at', null),
@@ -150,6 +150,7 @@ export default async function AdminPage() {
     getStreamUsage(),
     getR2Usage(),
     checkIntroDiscounts(),
+    checkPlanProducts(),
     // 500, not 200. This one result feeds the signups list, the growth counts and the email lookup
     // for the albums table, so the page cap is the real ceiling on all three. At 33 users there is
     // plenty of head-room; past 500 this needs a paged query rather than a bigger number.
@@ -694,6 +695,30 @@ export default async function AdminPage() {
           </div>
           <AdminPublishStatement />
         </div>
+
+        {/* BILLING THE WRONG AMOUNT OR THE WRONG INTERVAL. A product's interval cannot be edited
+            at Polar once created, so a mis-created one stays wrong until somebody notices — and
+            "Studio (Yearly)" charged $100 a MONTH against a page advertising $100 a year. As
+            above, 'unknown' is excluded: it means Polar was unreachable, not that a plan is wrong. */}
+        {planHealth.some(p => p.state !== 'ok' && p.state !== 'unknown') && (
+          <div style={{ background: '#FBE8E7', border: '1px solid #EFCFCC', borderRadius: 12, padding: '12px 16px', marginBottom: 14 }}>
+            <div style={{ fontSize: 13, fontWeight: 700, color: '#B3261E' }}>
+              A plan at Polar does not match what we advertise
+            </div>
+            <p style={{ fontSize: 12, color: '#7A4B47', margin: '4px 0 6px' }}>
+              Anyone buying this plan is charged something other than the price on /pricing.
+            </p>
+            {planHealth.filter(p => p.state !== 'ok' && p.state !== 'unknown').map(p => (
+              <div key={p.plan} style={{ fontSize: 12, color: INK }}>
+                <strong>{p.plan}</strong>{' — '}
+                {p.state === 'wrong-interval' ? p.detail
+                  : p.state === 'wrong-price' ? p.detail
+                  : p.state === 'missing' ? 'no such product at Polar (archived or deleted?)'
+                  : 'no product id is configured'}
+              </div>
+            ))}
+          </div>
+        )}
 
         {/* Shown ONLY when an advertised intro price cannot be honoured. A green "all good" row
             here every day would be one more thing to scroll past; silence is the healthy state.
