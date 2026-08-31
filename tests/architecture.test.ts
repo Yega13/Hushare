@@ -53,7 +53,7 @@ const SIZE_BUDGET: Record<string, number> = {
   // of ticking every video green, including ones that were never written.
   // +4 (2026-08-31): the camera button explains what it does on a face-finder album, and goes
   // outline there so it stops outshouting "Find my photos".
-  'src/components/UploadZone.tsx': 2835,
+  'src/components/UploadZone.tsx': 2845,
   // +3 on 2026-08-30: the branding toggle gained a real plan check (it was dimmed but still
   // clickable), and Face Finder and bib search stopped riding on the collections flag. Three
   // lines of reasoning for three gates that were wrong. Deliberate.
@@ -99,7 +99,7 @@ const SIZE_BUDGET: Record<string, number> = {
   // 518, down from 645: validatePhoto, hasTraversal and r2UrlPrefix moved to lib/photo-input,
   // where 22 tests now cover the boundary between a guest and this album's storage — including the
   // poisoned-thumbnail attack, which the mutation run confirmed they catch.
-  'src/app/api/album/photos/create/route.ts': 518,
+  'src/app/api/album/photos/create/route.ts': 531,
   // +6 (2026-08-31, audit): progress comes from the server's outstanding count, not from the
   // length of a page that PostgREST had silently truncated.
   // +24 (2026-08-31, final audit): indexing pages until the server says it is finished, instead

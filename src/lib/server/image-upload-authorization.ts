@@ -5,7 +5,8 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { isAllowedImage, safeExtForMime } from '@/lib/cloudflare/r2'
 import { checkRateLimit, clientIpKey } from '@/lib/rate-limit'
 import { presignBudget } from '@/lib/presign-budget'
-import { albumMediaCapForTier, uploadCapsForTier, tooLargeMessage } from '@/lib/media'
+import { uploadCapsForTier, tooLargeMessage } from '@/lib/media'
+import { albumCap as albumCapFor } from '@/lib/album-entitlements'
 import { getUserTierById } from '@/lib/subscriptions'
 import { gateAllowsContribution, ALBUM_GATE_COLS } from '@/lib/server/album-access'
 import type { Tier } from '@/types'
@@ -49,12 +50,12 @@ export async function authorizeImageUpload(
     checkRateLimit(clientIpKey(req, 'presign_ip'), 3600, 12000, { failOpen: false }),
     admin
       .from('albums')
-      .select(`id, user_id, guest_uploads_enabled, media_cap_override, ${ALBUM_GATE_COLS}`)
+      .select(`id, user_id, guest_uploads_enabled, media_cap_override, created_at, ${ALBUM_GATE_COLS}`)
       .eq('id', params.albumId)
       .is('retired_at', null)
       .maybeSingle<{
         id: string; user_id: string | null; guest_uploads_enabled: boolean
-        media_cap_override: number | null
+        media_cap_override: number | null; created_at: string
         owner_token: string; password_hash: string | null; reveal_at: string | null
       }>(),
   ])
@@ -98,10 +99,25 @@ export async function authorizeImageUpload(
       .catch((error: unknown) => ({ tier: null, error })),
     admin.from('photos').select('id', { count: 'exact', head: true }).eq('album_id', params.albumId),
   ])
-  const capOverride = typeof album.media_cap_override === 'number' && album.media_cap_override > 0
-    ? album.media_cap_override
-    : null
-  const albumCap = capOverride ?? albumMediaCapForTier(tierRes.tier ?? 'free')
+  // ONE answer to "how many items may this album hold" — shared with photos/create, which
+  // enforces the same number as a hard block. This used to read `override ?? tierCap`, with no
+  // grandfathering at all, so an old album's presign budget was computed from a smaller cap than
+  // the one actually enforced a moment later.
+  //
+  // A failed tier lookup is treated as 'free' HERE ON PURPOSE: this value only sizes a rate-limit
+  // budget, and the request is refused a few lines below when the tier is unknown. Sizing it small
+  // is the safe direction; the refusal is what actually protects the album.
+  const { cap: albumCap } = albumCapFor({
+    // `album.user_id ? ... : null` matters: getUserTierById(null) returns 'free' rather than
+    // throwing, so passing the tier straight through told albumCap that an ANONYMOUS album was a
+    // free-account album — 500 instead of 250, or 1,000 once the free grandfathering applied.
+    // Every anonymous album alive today predates that date, so it doubled the hourly presign
+    // budget for all of them: ~100 GB/hour of R2 writes that no database row will ever reference
+    // and no audit can reconcile. The bytes are permanent; see lib/presign-budget.
+    ownerTier: album.user_id ? (tierRes.tier ?? 'free') : null,
+    createdAt: album.created_at,
+    override: album.media_cap_override,
+  })
   const albumRl = await checkRateLimit(
     `presign_album:${params.albumId}`,
     3600,

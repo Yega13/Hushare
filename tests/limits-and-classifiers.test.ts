@@ -1,8 +1,9 @@
+import { albumCap } from '../src/lib/album-entitlements'
 import { describe, it, expect } from 'vitest'
 import { readFileSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
 import {
-  uploadCapsForTier, albumMediaCapForTier, albumMediaCapForAlbum, formatCapSize, tooLargeMessage,
+  uploadCapsForTier, albumMediaCapForTier, formatCapSize, tooLargeMessage,
   isAllowedImage, isAllowedVideo,
   FREE_VIDEO_BYTES, PRO_VIDEO_BYTES, STUDIO_VIDEO_BYTES,
   FREE_ALBUM_MEDIA, LEGACY_FREE_ALBUM_MEDIA,
@@ -210,6 +211,11 @@ describe('custom slug validation', () => {
 describe('free album allowance and grandfathering', () => {
   const OLD = '2026-08-01T12:00:00Z'   // before the cutoff
   const NEW = '2026-08-26T12:00:00Z'   // after it
+  // Reads the real enforcement path. These assertions used to call albumMediaCapForAlbum, which
+  // no longer exists: it was one of three disagreeing answers to this question and the only one
+  // with tests, so it kept passing while the route enforced something else entirely.
+  const albumMediaCapForAlbum = (tier: 'free' | 'pro' | 'studio', createdAt: string | null) =>
+    albumCap({ ownerTier: tier, createdAt, override: null }).cap
 
   it('gives new free albums the reduced allowance', () => {
     expect(albumMediaCapForAlbum('free', NEW)).toBe(FREE_ALBUM_MEDIA)

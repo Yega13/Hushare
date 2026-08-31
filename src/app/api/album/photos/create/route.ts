@@ -11,7 +11,9 @@ import { queueAlbumChangedBroadcast, runAfterResponse } from '@/lib/broadcast'
 import { track } from '@/lib/analytics'
 import { timingSafeEqual } from '@/lib/timing-safe'
 import { getUserTierById } from '@/lib/subscriptions'
-import { albumMediaCapForAlbum, ANON_ALBUM_MEDIA } from '@/lib/media'
+import type { Tier } from '@/types'
+import { ANON_ALBUM_MEDIA } from '@/lib/media'
+import { albumCap, capNudge, registeringWouldHelp } from '@/lib/album-entitlements'
 import { gateAllowsContribution } from '@/lib/server/album-access'
 import { queueBibIndex } from '@/lib/server/bib-index'
 import { cookies } from 'next/headers'
@@ -62,16 +64,10 @@ type AlbumRow = {
   media_cap_override: number | null
 }
 
-// Albums created BEFORE this are grandfathered: the strict new per-tier caps don't apply, but they
-// still get a generous ceiling (1000) so an already-active album keeps accepting uploads for a
-// while, with an upsell to register once it's full.
-const GRANDFATHER_CUTOFF = '2026-08-02T00:00:00Z'
-const LEGACY_ALBUM_CAP = 1000
-
-// A partner/event album can carry a per-album cap override (albums.media_cap_override) that
-// supersedes ALL tier/grandfather logic — e.g. a festival album set to 30000. Hard-ceiled so a typo
-// (or a compromised admin) can never create a runaway, unbounded-cost album.
-const MAX_MEDIA_CAP_OVERRIDE = 200_000
+// The grandfather dates, the legacy ceiling and the override clamp all moved to
+// lib/album-entitlements, which is now the only place that answers "how many items may this album
+// hold". They lived here as local constants, which is how this route came to hold a SECOND
+// grandfather date (2026-08-02) that disagreed with lib/media's (2026-08-25) and shadowed it.
 
 // r2UrlPrefix / hasTraversal / validatePhoto now live in lib/photo-input, where they can be
 // tested. They are the entire boundary between a guest and this album's storage — including the
@@ -199,72 +195,88 @@ export async function POST(req: Request) {
     .from('photos')
     .select('id', { count: 'exact', head: true })
     .eq('album_id', albumId)
-  // `warning` is returned on a SUCCESSFUL upload (not a block) to nag over-allowance albums to
-  // register. It only fires once the album is past the free allowance (150), so albums under it are
-  // never nagged — they only ever see the block message when genuinely full.
-  // User-facing messages intentionally NEVER reveal the exact numbers — just a friendly nudge.
-  // A custom per-album cap (partner/event album) supersedes ALL tier + grandfather logic. Clamped to
-  // the hard ceiling so it can never be an unbounded, runaway-cost album.
-  const capOverride = typeof album.media_cap_override === 'number' && album.media_cap_override > 0
-    ? Math.min(album.media_cap_override, MAX_MEDIA_CAP_OVERRIDE)
-    : null
-
+  // HOW FULL IS THIS ALBUM, AND MAY IT TAKE MORE?
+  //
+  // The cap comes from lib/album-entitlements, shared with the presign path so the budget handed
+  // out and the limit enforced are the same number. This route used to decide it here, in a
+  // cascade that tested `created_at < 2026-08-02` FIRST and returned a flat 1,000 — shadowing the
+  // owner's plan entirely, so a Max album made before that date stopped at a tenth of its
+  // allowance and the tier branch below was unreachable.
+  //
   // A FAILED COUNT DISABLES THE CAP, deliberately — but it must not do so silently.
   //
-  // Every branch below is gated on `!countErr && photoCount != null`, so a transient Postgres error
+  // The block below is gated on `!countErr && photoCount != null`, so a transient Postgres error
   // means no cap is enforced and the upload proceeds. That is the right way round: this cap bounds
   // cost, and letting a few extra photos through during a database blip is a far smaller harm than
-  // blocking every guest at an event from uploading anything. But it was invisible, so a limiter
-  // that had quietly stopped working looked identical to one that was passing.
+  // blocking every guest at an event from uploading anything.
   //
   // Note also that the count is read ONCE and up to MAX_PHOTOS_PER_CALL rows are then inserted, so
   // concurrent uploads at a busy event can overshoot the cap by roughly (concurrent requests x
-  // batch size). Enforcing exactly would need a database-level constraint; the overshoot is bounded
-  // and cheap, the constraint is not.
+  // batch size). Enforcing exactly would need a database-level constraint; the overshoot is
+  // bounded and cheap, the constraint is not.
   if (countErr) {
     console.error('[photos/create] media cap NOT enforced — count failed for album', albumId, ':', countErr.message)
   }
 
   let warning: string | undefined
-  if (capOverride != null) {
-    if (!countErr && photoCount != null && photoCount >= capOverride) {
+  const hasOverride = typeof album.media_cap_override === 'number' && album.media_cap_override > 0
+
+  // Skip the tier lookup for albums that cannot possibly be full. ANON_ALBUM_MEDIA is the SMALLEST
+  // cap any album without an override can have, so below it no plan makes a difference. An
+  // override can be smaller than that, which is why it is excluded from the shortcut.
+  // tests/album-entitlements.test.ts pins that floor so this shortcut cannot rot.
+  // NUDGE_FLOOR, not the cap: the "filling up" nag has to fire BEFORE the album is full, and the
+  // smallest cap is ANON_ALBUM_MEDIA, so a threshold of exactly that could only ever be reached at
+  // the moment of refusal. It was, which made the nag unreachable — every state was either under
+  // the floor or already blocked.
+  const NUDGE_FLOOR = Math.floor(ANON_ALBUM_MEDIA * 0.8)
+  const worthChecking = hasOverride || (!countErr && photoCount != null && photoCount >= NUDGE_FLOOR)
+
+  if (worthChecking && !countErr && photoCount != null) {
+    // An override outranks every tier inside albumCap and makes both nudges false, so the tier
+    // lookup would be a round trip whose answer is discarded — on precisely the partner and
+    // festival albums that carry the most upload traffic.
+    //
+    // A lookup that THROWS must not 500 the upload. Consolidating widened when this runs — it now
+    // covers pre-2026-08-02 albums and override albums too — so an exception here would take down
+    // more of the upload path than it used to. It errs the same way as the failed count logged
+    // above, and for the same reason: this cap bounds cost, and letting a few extra photos through
+    // during a database blip is a far smaller harm than refusing every guest at a live event.
+    let ownerTier: Tier | null = null
+    let tierKnown = true
+    if (!hasOverride && album.user_id) {
+      try {
+        ownerTier = await getUserTierById(album.user_id)
+      } catch (err) {
+        tierKnown = false
+        console.error('[photos/create] media cap NOT enforced — tier lookup threw for album', albumId, ':', err)
+      }
+    }
+    const input = { ownerTier, createdAt: album.created_at, override: album.media_cap_override }
+    const { cap } = albumCap(input)
+
+    if (tierKnown && photoCount >= cap) {
+      // The nudge is only attached when it is TRUE. The old code told a grandfathered guest album
+      // "Register on Hushare to get more space" at the moment it filled — and registering led back
+      // into the same 1,000 ceiling, so nothing arrived. A message that sends someone to do
+      // something useless is worse than no message at all.
+      const nudge = capNudge(input)
+      const suffix = nudge === 'register' ? " Register on Hushare — it's free — for more space."
+        : nudge === 'upgrade' ? ' Upgrade your plan for more space.'
+        : ''
+      // `nudge` travels to the client so the upload banner shows the SAME advice. It used to infer
+      // from `code` alone that an account was the answer, and offered one to owners who already
+      // had one.
       return NextResponse.json(
-        { code: 'album_full', error: "You've reached this album's upload limit." },
+        { code: 'album_full', nudge, error: `You've reached this album's upload limit.${suffix}` },
         { status: 429, headers: NO_STORE },
       )
     }
-    // Custom-cap album: no register/upgrade nudge — it's a deliberate high limit.
-  } else if (!countErr && photoCount != null && photoCount >= ANON_ALBUM_MEDIA) {
-    if (album.created_at < GRANDFATHER_CUTOFF) {
-      // Grandfathered: generous ceiling. Full → block; otherwise nudge to register every session.
-      if (photoCount >= LEGACY_ALBUM_CAP) {
-        return NextResponse.json(
-          { code: 'album_full', error: "You've reached this album's upload limit. Register on Hushare to get more space." },
-          { status: 429, headers: NO_STORE },
-        )
-      }
+
+    // Filling up, not full: nag only where signing up genuinely adds room, and never on an album
+    // whose ceiling was set by hand.
+    if (tierKnown && photoCount >= cap * 0.8 && registeringWouldHelp(input)) {
       warning = 'This album is filling up — register on Hushare to unlock more space.'
-    } else if (!album.user_id) {
-      // Guest album (no account).
-      if (photoCount >= ANON_ALBUM_MEDIA) {
-        return NextResponse.json(
-          { code: 'album_full', error: "You've reached this album's upload limit. Register on Hushare — it's free — for more space." },
-          { status: 429, headers: NO_STORE },
-        )
-      }
-    } else {
-      const tier = await getUserTierById(album.user_id)
-      // The ALBUM's cap, not the plan's: free albums created before the allowance was lowered keep
-      // the old one for as long as they exist.
-      const cap = albumMediaCapForAlbum(tier, album.created_at)
-      if (photoCount >= cap) {
-        const nudge = tier === 'studio' ? '' : ' Upgrade your plan for more space.'
-        return NextResponse.json(
-          { error: `You've reached this album's upload limit.${nudge}` },
-          { status: 429, headers: NO_STORE },
-        )
-      }
-      // Registered-free / paid under their cap: no nudge.
     }
   }
 

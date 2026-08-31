@@ -153,20 +153,12 @@ export function albumMediaCapForTier(tier: Tier): number {
   return FREE_ALBUM_MEDIA
 }
 
-// Cap for ONE PARTICULAR album, which is what enforcement must use.
-//
-// Only free albums differ, and only by age. Paid tiers have never had their allowance reduced, so
-// there is nothing to grandfather there and no reason for a date to enter into it.
-export function albumMediaCapForAlbum(tier: Tier, createdAt: string | null | undefined): number {
-  const now = albumMediaCapForTier(tier)
-  if (tier !== 'free') return now
-  const created = createdAt ? Date.parse(createdAt) : NaN
-  // An unreadable date grandfathers. created_at is NOT NULL so this should be unreachable, but the
-  // two ways of being wrong are not equal: giving an album room it should not have costs a little
-  // storage, while wrongly shrinking one takes space away from something a person already built.
-  if (!Number.isFinite(created) || created < GRANDFATHER_FREE_BEFORE) return LEGACY_FREE_ALBUM_MEDIA
-  return now
-}
+// The per-ALBUM cap used to live here as albumMediaCapForAlbum. It moved to
+// lib/album-entitlements, which also accounts for media_cap_override and for the second
+// grandfather date this function never knew about — and it was deleted rather than left behind,
+// because an exported function with no callers that still LOOKS like the answer is how a codebase
+// grows a second answer. albumMediaCapForTier below stays: it describes a PLAN, which is the right
+// thing for the pricing page and the account dashboard to read.
 
 // Max number of albums a user can own, by tier. Anon (no account) is a separate soft cap — kept
 // BELOW the free registered cap so signing in always unlocks more.

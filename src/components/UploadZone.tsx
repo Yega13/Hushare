@@ -1742,10 +1742,12 @@ async function saveUploadedRows(albumId: string, rows: PhotoRow[]): Promise<{ wa
     // the job" by threading the abort signal in here.
   }, { deadlineMs: FETCH_DEADLINE_SAVE_MS })
   if (!res.ok) {
-    const err = await res.json().catch(() => ({})) as { error?: string; code?: string }
+    const err = await res.json().catch(() => ({})) as { error?: string; code?: string; nudge?: string }
     // Carry the server's code so callers can tell an expected refusal (album full) from a genuine
-    // failure, without string-matching an English message.
-    throw Object.assign(new Error(err.error ?? `Save failed (${res.status})`), { code: err.code })
+    // failure, without string-matching an English message. `nudge` says WHICH advice the server
+    // gave, so the banner cannot offer an account to someone who already has one — it used to
+    // infer "offer an account" from `code` alone.
+    throw Object.assign(new Error(err.error ?? `Save failed (${res.status})`), { code: err.code, nudge: err.nudge })
   }
   const data = await res.json().catch(() => ({})) as { warning?: string; rejected?: string[] }
   return { warning: data.warning, rejected: data.rejected }
@@ -1861,7 +1863,7 @@ const SAVE_DEBOUNCE_MS = 2500
 function createRowSaver(
   albumId: string,
   onSaved: (entryIds: string[]) => void,
-  onFailed: (entryIds: string[], message: string, code?: string, rows?: PhotoRow[]) => void,
+  onFailed: (entryIds: string[], message: string, code?: string, rows?: PhotoRow[], nudge?: string) => void,
   onWarning?: (message: string) => void,
 ) {
   let queue: { row: PhotoRow; entryId: string }[] = []
@@ -1899,7 +1901,7 @@ function createRowSaver(
         }
         if (warning && !warned) { warned = true; onWarning?.(warning) }
       } catch (e) {
-        onFailed(batch.map(b => b.entryId), e instanceof Error ? e.message : 'Failed to save', (e as { code?: string })?.code, batch.map(b => b.row))
+        onFailed(batch.map(b => b.entryId), e instanceof Error ? e.message : 'Failed to save', (e as { code?: string })?.code, batch.map(b => b.row), (e as { nudge?: string })?.nudge)
       }
     })
   }
@@ -1948,7 +1950,7 @@ export default function UploadZone({ album, onPhotosUploaded }: Props) {
   const pendingSaveRef = useRef<{ entryId: string; row: PhotoRow }[]>([])
   // Why they are pending. 'full' is a refusal the guest can clear by registering; 'failed' is a
   // genuine save failure they can simply retry. Null means nothing is waiting.
-  const [pendingSaveReason, setPendingSaveReason] = useState<'full' | 'failed' | null>(null)
+  const [pendingSaveReason, setPendingSaveReason] = useState<'full' | 'fullOther' | 'failed' | null>(null)
   // Mirrored into state purely so the banner re-renders when it changes. Reading the ref during
   // render would show whatever count happened to be there at the last unrelated render.
   const [pendingSaveCount, setPendingSaveCount] = useState(0)
@@ -2081,7 +2083,7 @@ export default function UploadZone({ album, onPhotosUploaded }: Props) {
     const saver = createRowSaver(
       album.id,
       (ids) => { for (const id of ids) patchEntry(id, { status: 'done', progress: 100 }) },
-      (ids, msg, code, rows) => {
+      (ids, msg, code, rows, nudge) => {
         // A full album is a REFUSAL, not a fault. It was reported at 'error' with the scary
         // "saving failed" prefix, which (a) told the guest their photos broke when the album was
         // simply full, and (b) flooded /admin -- 39 of ~60 events in one day were this, burying
@@ -2102,9 +2104,14 @@ export default function UploadZone({ album, onPhotosUploaded }: Props) {
           const pairs = ids.map((entryId, i) => ({ entryId, row: rows[i] })).filter(p => p.row)
           pendingSaveRef.current = [...pendingSaveRef.current, ...pairs]
           setPendingSaveCount(pendingSaveRef.current.length)
-          // A cap refusal outranks a transient failure: registering clears both, so if either is
-          // outstanding the banner should offer the account.
-          setPendingSaveReason(prev => (prev === 'full' || full ? 'full' : 'failed'))
+          // A cap refusal outranks a transient failure. But 'full' is the state that OFFERS AN
+          // ACCOUNT, so it is only correct when the server actually said registering would help.
+          // Inferring it from `code` alone showed a signed-in Max owner "Your album is full — keep
+          // going for free / Create a free account", for an account they were already using, above
+          // a button that would be refused forever. 'fullOther' is the same refusal without the
+          // sign-up: the album is full and nothing on this screen changes that.
+          const wall = full ? (nudge === 'register' ? 'full' : 'fullOther') : 'failed'
+          setPendingSaveReason(prev => (prev === 'full' ? 'full' : prev === 'fullOther' && wall === 'failed' ? 'fullOther' : wall))
         }
         // Same rule on the save path: a gate refusal arrives here as a plain message, and it is
         // not a failure of ours any more than a full album is.
@@ -2589,11 +2596,13 @@ export default function UploadZone({ album, onPhotosUploaded }: Props) {
       {pendingSaveReason && (
         <div style={{ marginBottom: 12, padding: 14, borderRadius: 14, background: '#F6E9EE', border: '1px solid #E3C9D3' }}>
           <p style={{ margin: '0 0 4px', fontSize: 15, fontWeight: 700, color: '#630826' }}>
-            {pendingSaveReason === 'full' ? t('uploadWall.title') : t('uploadWall.failedTitle', { n: pendingSaveCount })}
+            {pendingSaveReason === 'full' ? t('uploadWall.title')
+              : pendingSaveReason === 'fullOther' ? t('uploadWall.fullTitle')
+              : t('uploadWall.failedTitle', { n: pendingSaveCount })}
           </p>
           <p style={{ margin: '0 0 12px', fontSize: 13.5, lineHeight: 1.5, color: '#5C4A3C' }}>
-            {pendingSaveReason === 'full'
-              ? t('uploadWall.body', { n: pendingSaveCount })
+            {pendingSaveReason === 'full' ? t('uploadWall.body', { n: pendingSaveCount })
+              : pendingSaveReason === 'fullOther' ? t('uploadWall.fullBody', { n: pendingSaveCount })
               : t('uploadWall.failedBody', { n: pendingSaveCount })}
           </p>
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>

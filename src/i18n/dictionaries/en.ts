@@ -351,6 +351,8 @@ export const en = {
   'bib.noneHelpFace': 'Numbers can be hidden by an arm, folded, or blurred as you run. Search by your face instead — it finds you in the photos where your number can’t be read.',
   "uploadWall.title": "Your album is full — keep going for free",
   "uploadWall.body": "{n} photos are uploaded but not saved yet. Create a free account and they'll finish saving — you won't lose them, and you won't need to upload again.",
+  "uploadWall.fullTitle": "This album is full",
+  "uploadWall.fullBody": "{n} photos are uploaded but not saved yet. They'll finish saving once there is room — free up space in the album, then tap Finish saving.",
   "uploadWall.cta": "Create a free account",
   "uploadWall.retry": "Finish saving",
   "uploadWall.saving": "Saving…",
