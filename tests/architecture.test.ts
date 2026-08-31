@@ -174,3 +174,26 @@ describe('a new decision module arrives with its tests', () => {
     expect(gone, 'these were deleted — take them off the register').toEqual([])
   })
 })
+
+// EVERY CRON ROUTE MUST ANSWER THE SCHEDULER.
+//
+// worker.ts POSTs each cron with `Bearer ${env.ALBUM_RETIREMENT_SECRET}`. A route that exports
+// GET, or checks a differently-named secret, answers 405 or 503 to every scheduled run and never
+// executes — while looking perfectly correct in the file and in review. Both mistakes were made
+// in one afternoon writing a single new cron, and neither is visible without asking production.
+describe('cron routes are reachable by the scheduler', () => {
+  const dir = join(process.cwd(), 'src', 'app', 'api', 'cron')
+  const routes = readdirSync(dir).filter((d) => !d.startsWith('.'))
+
+  it('has at least the crons worker.ts schedules', () => {
+    expect(routes.length).toBeGreaterThan(5)
+  })
+
+  for (const name of routes) {
+    it(`${name} exports POST and checks ALBUM_RETIREMENT_SECRET`, () => {
+      const src = readFileSync(join(dir, name, 'route.ts'), 'utf8')
+      expect(src, `${name} must export POST — the scheduler only ever POSTs`).toMatch(/export async function POST\s*\(/)
+      expect(src, `${name} must check the secret worker.ts actually sends`).toContain('ALBUM_RETIREMENT_SECRET')
+    })
+  }
+})

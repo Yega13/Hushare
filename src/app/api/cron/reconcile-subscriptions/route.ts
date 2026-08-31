@@ -21,13 +21,11 @@ const NO_STORE = { 'Cache-Control': 'no-store' }
 // polar_subscription_id, so it converges rather than duplicating, and a normal night changes
 // nothing at all.
 export async function POST(req: Request) {
-  const secret = process.env.CRON_SECRET
-  if (!secret) {
-    return NextResponse.json({ error: 'Not configured' }, { status: 503, headers: NO_STORE })
-  }
-  const auth = req.headers.get('authorization') ?? ''
-  if (!timingSafeEqual(auth, `Bearer ${secret}`)) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401, headers: NO_STORE })
+  const secret = process.env.ALBUM_RETIREMENT_SECRET ?? ''
+  const auth = req.headers.get('Authorization') ?? ''
+  const provided = auth.startsWith('Bearer ') ? auth.slice(7) : ''
+  if (!secret || !timingSafeEqual(provided, secret)) {
+    return NextResponse.json({ error: 'Forbidden' }, { status: 403, headers: NO_STORE })
   }
 
   const admin = createAdminClient()
