@@ -39,7 +39,8 @@ const SIZE_BUDGET: Record<string, number> = {
   // rows — an admin's Max comes from code, not a row, so the owner's own account could never
   // appear — and the query gained the polar_product_id column its filter was silently reading as
   // undefined. Owner-requested fix; the lines are the loop that merges admins with comp rows.
-  'src/app/admin/page.tsx': 786,
+  // +3 (2026-08-31): drop deleted-album rows from Top albums.
+  'src/app/admin/page.tsx': 789,
   // +4 on 2026-08-30: FILE_ACCEPT stopped being a fourth hand-written copy of the accepted
   // MIME types and now builds from lib/media. An import and a comment cost four lines here
   // and removed a list that had already fallen two formats behind. Deliberate.
@@ -54,11 +55,14 @@ const SIZE_BUDGET: Record<string, number> = {
   // loop, so a replaced channel's CLOSED echo cannot breed reconnect loops on venue WiFi.
   'src/app/[slug]/AlbumPageClient.tsx': 1490,
   'src/app/card-editor/CardEditorClient.tsx': 873,
-  'src/components/PhotoGrid.tsx': 843,
+  // +1 (2026-08-31): pass collectionTotal to the lightbox counter.
+  'src/components/PhotoGrid.tsx': 844,
   'src/components/AlbumDesigner.tsx': 774,
   // +3 net (2026-08-31): deleted the duplicate ±1 prefetch loop, added strip windowing wired
   // to lib/lightbox-plan.ts.
-  'src/components/photo-grid/LightboxOverlay.tsx': 649,
+  // +43 (2026-08-31): the connected-swipe neighbour pane (the photo arriving rides beside the
+  // one leaving) and the collectionTotal counter fix.
+  'src/components/photo-grid/LightboxOverlay.tsx': 692,
   // 518, down from 645: validatePhoto, hasTraversal and r2UrlPrefix moved to lib/photo-input,
   // where 22 tests now cover the boundary between a guest and this album's storage — including the
   // poisoned-thumbnail attack, which the mutation run confirmed they catch.

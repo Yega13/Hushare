@@ -52,6 +52,18 @@ function tileImage(root: HTMLElement | null, photoId: string): HTMLElement | nul
   return root.querySelector<HTMLElement>(`[data-photo-id="${CSS.escape(photoId)}"] img`)
 }
 
+// A morph is only worth having when its destination is on (or near) the screen. A tile can be
+// MOUNTED yet thousands of pixels away — swipe from photo 100 to photo 2,000 and close, and the
+// return tile exists far below the fold. Morphing there makes the browser snapshot a page with
+// thousands of image tiles and fly the photo across several screen-heights: a visible stall on a
+// phone, for an animation that lands somewhere the person cannot see anyway. Near-viewport
+// closes keep the morph; distant ones take the plain cut.
+function tileNearViewport(img: HTMLElement): boolean {
+  const r = img.getBoundingClientRect()
+  const margin = 200
+  return r.bottom > -margin && r.top < window.innerHeight + margin
+}
+
 // Run `update` as a view transition, morphing between the grid tile and the lightbox.
 //
 // `update` MUST change the DOM synchronously, hence flushSync — React would otherwise batch the
@@ -109,7 +121,8 @@ export function morphPhotoClosed(
   // away. Opening already did this; closing did not, so a photo with no destination dissolved in
   // mid-screen for 280ms instead of simply closing. Without a counterpart there is nothing to morph
   // INTO, and the animation is worse than none.
-  if (!supportsViewTransitions() || !doc.startViewTransition || !tileImage(gridRoot, photoId)) {
+  const target = tileImage(gridRoot, photoId)
+  if (!supportsViewTransitions() || !doc.startViewTransition || !target || !tileNearViewport(target)) {
     update()
     return
   }

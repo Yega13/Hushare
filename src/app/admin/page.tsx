@@ -642,7 +642,10 @@ export default async function AdminPage() {
                 <table style={{ borderCollapse: 'collapse', width: '100%', minWidth: 420 }}>
                   <thead><tr><th style={th}>Top albums · 7d</th><th style={th}>Views</th><th style={th}></th></tr></thead>
                   <tbody>
-                    {topAlbumsRaw.map((a) => {
+                    {/* Rows whose album no longer exists are DROPPED, not labelled. The views are
+                        real history (analytics outlives the album row), but a "(deleted/unknown)"
+                        line answers no question this table is for — which LIVE albums are hot. */}
+                    {topAlbumsRaw.filter((a) => topAlbumMeta.has(a.albumId)).map((a) => {
                       const meta = topAlbumMeta.get(a.albumId)
                       return (
                         <tr key={a.albumId}>

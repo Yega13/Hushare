@@ -89,6 +89,10 @@ type Props = {
   onSetLightboxFlipped: (v: boolean) => void
   onSetOriginalLoaded: (update: (prev: Set<string>) => Set<string>) => void
   onThumbnailClick: (index: number) => void
+  // The size of the collection being browsed — the ALBUM total when unfiltered, the result
+  // count under a search. viewerPhotos is only the loaded window, and rendering its length
+  // told a guest at photo 34 of a 4,565-photo album they were at "34 / 1500" (rule 18).
+  collectionTotal?: number
 
   // Owner action callbacks
   onDownload: (photo: Photo) => void
@@ -142,6 +146,7 @@ export default function LightboxOverlay({
   onSetLightboxFlipped,
   onSetOriginalLoaded,
   onThumbnailClick,
+  collectionTotal,
   onDownload,
   onSetCover,
   onOpenSettings,
@@ -153,6 +158,7 @@ export default function LightboxOverlay({
   // Video aspect ratio drives the player box so it fills with no black bars. Prefer the exact
   // dimensions captured at upload (instant, reliable); fall back to measuring the poster for
   // legacy rows that predate the width/height columns.
+  const shownTotal = Math.max(collectionTotal ?? 0, viewerPhotos.length)
   const hasStoredDims = current.width != null && current.height != null && current.width > 0 && current.height > 0
   const [videoAspect, setVideoAspect] = React.useState<number | null>(null)
   // Whether the current video's player has been mounted. Starts as the album's autoplay setting
@@ -308,6 +314,43 @@ export default function LightboxOverlay({
         </>
       )}
 
+      {/* The photo on the other side of the swipe. The content column slides a full viewport
+          width on release, so a sibling pane offset by exactly ±100vw and tracking the same
+          finger delta lands precisely where the current photo was — the incoming photo is
+          VISIBLY attached to the outgoing one, instead of an empty gap that read as lag.
+          A sibling, not a child: the column clips its overflow, and the column's own exit fade
+          must not dim the photo arriving. Skipped in slideshow mode, which animates itself. */}
+      {swipeOffset !== 0 && !slideshowMode && viewerPhotos.length > 1 && (() => {
+        const len = viewerPhotos.length
+        const neighbor = swipeOffset < 0
+          ? viewerPhotos[(lightboxIndex + 1) % len]
+          : viewerPhotos[(lightboxIndex - 1 + len) % len]
+        if (!neighbor) return null
+        const src = neighbor.media_type === 'video'
+          ? (neighbor.poster_url || neighbor.stream_thumbnail_url)
+          : (lightboxOriginalLoadedIds.has(neighbor.id) && neighbor.url ? neighbor.url : (neighbor.thumb_url || neighbor.url))
+        if (!src) return null
+        return (
+          <div
+            aria-hidden
+            className="absolute inset-0 z-10 flex items-center justify-center pointer-events-none"
+            style={{
+              transform: `translateX(calc(${swipeOffset}px + ${swipeOffset < 0 ? '100vw' : '-100vw'}))`,
+              transition: swipeAnimating ? 'transform 170ms cubic-bezier(0.4, 0, 0.2, 1)' : 'none',
+              padding: 16,
+            }}
+          >
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={src}
+              alt=""
+              draggable={false}
+              style={{ maxWidth: 'min(96vw, 1100px)', maxHeight: 'min(95svh, 90vh)', objectFit: 'contain', borderRadius: previewRadiusFor(neighbor) }}
+            />
+          </div>
+        )
+      })()}
+
       <div
         className={`${morphed ? '' : 'hush-modal-pop '}relative z-10 max-w-[min(96vw,1100px)] mx-4 sm:mx-16 flex flex-col items-center gap-4 [&::-webkit-scrollbar]:hidden${slideshowMode ? ' hush-slideshow-stage' : ''}`}
         data-scroll-allowed="true"
@@ -332,7 +375,7 @@ export default function LightboxOverlay({
         {slideshowMode && (
           <div className="hush-slideshow-head" onClick={(e) => e.stopPropagation()}>
             <span>{t('guest.slideshow')}</span>
-            <strong>{lightboxIndex + 1} / {viewerPhotos.length}</strong>
+            <strong>{lightboxIndex + 1} / {shownTotal.toLocaleString('en-US')}</strong>
           </div>
         )}
 
@@ -599,7 +642,7 @@ export default function LightboxOverlay({
           )}
         </div>
 
-        {!slideshowMode && <p className="text-sm" style={{ color: '#8AB585' }}>{lightboxIndex + 1} / {viewerPhotos.length}</p>}
+        {!slideshowMode && <p className="text-sm" style={{ color: '#8AB585' }}>{lightboxIndex + 1} / {shownTotal.toLocaleString('en-US')}</p>}
 
         {slideshowMode && viewerPhotos.length > 1 && (
           <div ref={stripRef} className="hush-slideshow-strip" data-scroll-allowed="true" onClick={(e) => e.stopPropagation()}>

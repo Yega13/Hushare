@@ -687,6 +687,7 @@ export default function PhotoGrid({ album, photos, albumPhotoCount, isOwner, slu
           onNext={next}
           onSetLightboxFlipped={setLightboxFlipped}
           onSetOriginalLoaded={setLightboxOriginalLoadedIds}
+          collectionTotal={filtered ? viewerPhotos.length : Math.max(albumPhotoCount ?? 0, viewerPhotos.length)}
           onThumbnailClick={(index) => { setLightbox(index); setSlideshowPaused(true) }}
           onDownload={handleSinglePhotoDownload}
           onSetCover={(photo) => void setCoverPhoto(photo)}

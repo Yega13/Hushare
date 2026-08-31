@@ -268,8 +268,15 @@ export default async function AccountPage({ searchParams }: Props) {
   const collectionIds = collections.map((c) => c.id)
   const accountAlbumIds = accountAlbums.map((a) => a.id)
 
-  // Fetch collection links and media in parallel — both depend on their parent IDs.
-  const [collectionLinksResult, accountMediaResult] = await Promise.all([
+  // COUNT in the database, never by fetching rows. This used to pull every photo row for
+  // every album to count them in JS — and PostgREST silently caps an un-ranged select at
+  // 1,000 rows, so the moment one event album passed a thousand photos, every count on this
+  // page went quietly wrong (rule 18: 4,565 photos rendered as whatever fit under the cap).
+  const mediaCols = 'id, media_type, url, poster_url, stream_thumbnail_url'
+  type CoverRow = Pick<AccountMediaRow, 'id' | 'media_type' | 'url' | 'poster_url' | 'stream_thumbnail_url'>
+  const exactCount = async (q: PromiseLike<{ count: number | null }>): Promise<number> => (await q).count ?? 0
+  const headCount = () => admin.from('photos').select('id', { count: 'exact', head: true })
+  const [collectionLinksResult, albumCounts, albumCovers, photoTotal, videoTotal] = await Promise.all([
     collectionIds.length
       ? admin
           .from('collection_albums')
@@ -277,40 +284,46 @@ export default async function AccountPage({ searchParams }: Props) {
           .in('collection_id', collectionIds)
           .returns<Array<{ collection_id: string; album_id: string }>>()
       : Promise.resolve({ data: [] as Array<{ collection_id: string; album_id: string }>, error: null }),
-    accountAlbumIds.length
-      ? admin
-          .from('photos')
-          .select('id, album_id, media_type, url, poster_url, stream_thumbnail_url, created_at')
-          .in('album_id', accountAlbumIds)
-          .order('created_at', { ascending: true })
-          .returns<AccountMediaRow[]>()
-      : Promise.resolve({ data: [] as AccountMediaRow[], error: null }),
+    Promise.all(accountAlbums.map((a) => exactCount(headCount().eq('album_id', a.id)))),
+    Promise.all(accountAlbums.map(async (a): Promise<CoverRow | null> => {
+      // The pinned cover, if it still exists AND still belongs to this album — a stale
+      // cover_photo_id must not render another album's photo here.
+      if (a.cover_photo_id) {
+        const { data } = await admin.from('photos').select(mediaCols)
+          .eq('id', a.cover_photo_id).eq('album_id', a.id).maybeSingle<CoverRow>()
+        if (data) return data
+      }
+      // Else the earliest image, else the earliest video: media_type sorts 'image' before
+      // 'video', so one ordered limit-1 query expresses the old two-step fallback exactly.
+      const { data } = await admin.from('photos').select(mediaCols)
+        .eq('album_id', a.id)
+        .order('media_type', { ascending: true }).order('created_at', { ascending: true })
+        .limit(1).returns<CoverRow[]>()
+      return data?.[0] ?? null
+    })),
+    accountAlbumIds.length ? exactCount(headCount().in('album_id', accountAlbumIds).eq('media_type', 'image')) : Promise.resolve(0),
+    accountAlbumIds.length ? exactCount(headCount().in('album_id', accountAlbumIds).eq('media_type', 'video')) : Promise.resolve(0),
   ])
 
   const collectionLinks = collectionLinksResult.data ?? []
-  const accountMedia = accountMediaResult.data ?? []
 
   const collectionsWithCounts = collections.map((c) => ({
     ...c,
     album_count: collectionLinks.filter((link) => link.collection_id === c.id).length,
   }))
 
-  const albumsWithMedia = accountAlbums.map((album) => {
-    const albumMedia = accountMedia.filter((row) => row.album_id === album.id)
-    const pinned = album.cover_photo_id ? albumMedia.find((row) => row.id === album.cover_photo_id) : undefined
-    const cover = pinned ?? albumMedia.find((row) => row.media_type === 'image') ?? albumMedia[0]
+  const albumsWithMedia = accountAlbums.map((album, i) => {
+    const cover = albumCovers[i]
     return {
       ...album,
       cover_url: cover
         ? (cover.media_type === 'video' ? cover.stream_thumbnail_url || cover.poster_url || null : cover.url)
         : null,
-      media_count: albumMedia.length,
+      media_count: albumCounts[i],
     }
   })
 
   const recentAlbums = albumsWithMedia.slice(0, 6)
-  const photoTotal = accountMedia.filter((row) => row.media_type === 'image').length
-  const videoTotal = accountMedia.filter((row) => row.media_type === 'video').length
   const mediaTotal = photoTotal + videoTotal
   const customUrlTotal = accountAlbums.filter((album) => album.custom_slug).length
 

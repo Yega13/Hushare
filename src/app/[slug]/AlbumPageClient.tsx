@@ -1425,7 +1425,7 @@ export default function AlbumPageClient({ initialAlbum = null, initialPhotos, in
           <PhotoGrid
             // The unfiltered count: bib search narrows `visiblePhotos`, and without this the grid
             // would collapse to one wide column whenever a search matched a single photo.
-            albumPhotoCount={photos.length}
+            albumPhotoCount={total}
             album={album}
             photos={visiblePhotos}
             filtered={bibFilterActive}
