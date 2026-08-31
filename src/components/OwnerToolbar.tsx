@@ -16,6 +16,7 @@ import {
   type MobileGridColumns,
   type SlideshowAnimation,
 } from '@/lib/media-display'
+import { DESKTOP_COLUMN_CHOICES, resolveGridColumns } from '@/lib/grid-columns'
 import {
   DEFAULT_SLIDESHOW_MOTION,
   MAX_SLIDESHOW_DURATION_MS,
@@ -40,6 +41,7 @@ import {
   saveRequireApprovalRequest,
   savePhotoLayoutRequest,
   saveMediaSettingsRequest,
+  saveDesktopGridColumns,
   savePasswordRequest,
   saveSlideshowMotionRequest,
 } from '@/components/owner-toolbar/api'
@@ -144,6 +146,7 @@ export default function OwnerToolbar({ album, photos, ownerToken, userTier, medi
   const [mediaFilter, setMediaFilter] = useState<MediaDisplayFilter>(album.media_filter ?? 'none')
   const [savedMediaFilter, setSavedMediaFilter] = useState<MediaDisplayFilter>(album.media_filter ?? 'none')
   const [mobileGridColumns, setMobileGridColumns] = useState<MobileGridColumns>(album.mobile_grid_columns ?? 3)
+  const [desktopGridColumns, setDesktopGridColumns] = useState<number>(resolveGridColumns(album).desktop)
   const [slideshowIntervalMs, setSlideshowIntervalMs] = useState(album.slideshow_interval_ms ?? DEFAULT_SLIDESHOW_INTERVAL_MS)
   const [slideshowAnimation, setSlideshowAnimation] = useState<SlideshowAnimation>(album.slideshow_animation ?? 'fade')
   // The composed transition. Seeded from the album's own motion, or derived from the legacy preset
@@ -320,6 +323,7 @@ export default function OwnerToolbar({ album, photos, ownerToken, userTier, medi
       setMediaFilter(album.media_filter ?? 'none')
       setSavedMediaFilter(album.media_filter ?? 'none')
       setMobileGridColumns(album.mobile_grid_columns ?? 3)
+      setDesktopGridColumns(resolveGridColumns(album).desktop)
       setSlideshowIntervalMs(album.slideshow_interval_ms ?? DEFAULT_SLIDESHOW_INTERVAL_MS)
       setSlideshowAnimation(album.slideshow_animation ?? 'fade')
       setSlideshowMotion(resolveSlideshowMotion({
@@ -334,7 +338,7 @@ export default function OwnerToolbar({ album, photos, ownerToken, userTier, medi
       setDeleteConfirm(false)
       setDeleteError('')
     }
-  }, [album.allow_guest_downloads, album.custom_slug, album.media_filter, album.media_radius, album.mobile_grid_columns, album.reveal_at, album.slideshow_animation, album.slideshow_motion, album.slideshow_interval_ms, album.video_autoplay, showSettings])
+  }, [album.allow_guest_downloads, album.custom_slug, album.media_filter, album.media_radius, album.mobile_grid_columns, album.desktop_grid_columns, album.reveal_at, album.slideshow_animation, album.slideshow_motion, album.slideshow_interval_ms, album.video_autoplay, showSettings])
 
   useEffect(() => {
     if (showSettings && canUseCollections) void loadCollections()
@@ -872,8 +876,8 @@ export default function OwnerToolbar({ album, photos, ownerToken, userTier, medi
                     </div>
 
                     <div>
-                      <label className="mb-2 block text-xs font-medium" style={{ color: '#7C5C3E' }}>{t('ot.grid')}</label>
-                      <div className="grid grid-cols-4 gap-2">
+                      <label className="mb-2 block text-xs font-medium" style={{ color: '#7C5C3E' }}>{t('ot.gridPhone')}</label>
+                      <div className="grid grid-cols-5 gap-2">
                         {MOBILE_GRID_COLUMN_OPTIONS.map((option) => {
                           const selected = mobileGridColumns === option.value
                           return (
@@ -894,6 +898,42 @@ export default function OwnerToolbar({ album, photos, ownerToken, userTier, medi
                               }}
                             >
                               {option.value}
+                            </button>
+                          )
+                        })}
+                      </div>
+                      <label className="mb-2 mt-4 block text-xs font-medium" style={{ color: '#7C5C3E' }}>{t('ot.gridDesktop')}</label>
+                      <div className="grid grid-cols-6 gap-2">
+                        {DESKTOP_COLUMN_CHOICES.map((value) => {
+                          const selected = desktopGridColumns === value
+                          return (
+                            <button
+                              key={value}
+                              type="button"
+                              onClick={() => {
+                                // Saved on its own (see saveDesktopGridColumns): this value is
+                                // independent of the seven the debounced media save carries.
+                                setDesktopGridColumns(value)
+                                onAlbumUpdated({ desktop_grid_columns: value })
+                                void saveDesktopGridColumns(album.slug, value).then((r) => {
+                                  if (!r.ok) {
+                                    setMediaError(r.error)
+                                    showAppToast(r.error, 'error')
+                                    // Put the buttons back where the SERVER still is, rather than
+                                    // leaving a selected column the album does not actually have.
+                                    setDesktopGridColumns(resolveGridColumns(album).desktop)
+                                    onAlbumUpdated({ desktop_grid_columns: album.desktop_grid_columns ?? null })
+                                  }
+                                })
+                              }}
+                              className="hush-press rounded-lg py-2 text-sm font-semibold"
+                              style={{
+                                background: selected ? '#630826' : '#FDFAF5',
+                                border: '1px solid #DDD5C5',
+                                color: selected ? '#FDFAF5' : '#630826',
+                              }}
+                            >
+                              {value}
                             </button>
                           )
                         })}

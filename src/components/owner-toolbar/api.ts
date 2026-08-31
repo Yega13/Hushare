@@ -525,3 +525,26 @@ export async function deleteAlbumRequest(
   if (!res.ok) return { ok: false, error: body.error ?? `Delete failed (${res.status})` }
   return { ok: true }
 }
+
+// Desktop columns save ALONE, deliberately.
+//
+// saveMediaSettingsRequest already threads seven positional settings; adding an eighth to every
+// call site (radius drag, autoplay, filter, interval, animation) to carry one independent value
+// is how that signature got to seven in the first place, and each new position is a chance to
+// pass the arguments in the wrong order. The route updates only the fields present in the body,
+// so this sends exactly the one that changed.
+export async function saveDesktopGridColumns(
+  slug: string,
+  desktopGridColumns: number,
+): Promise<{ ok: true; desktop_grid_columns: number } | { ok: false; error: string }> {
+  const res = await fetch('/api/album/media-settings', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ slug, desktop_grid_columns: desktopGridColumns }),
+  })
+  const body = await jsonBody<{ error?: string; desktop_grid_columns?: number }>(res)
+  if (!res.ok || body.desktop_grid_columns == null) {
+    return { ok: false, error: body.error ?? `Save failed (${res.status})` }
+  }
+  return { ok: true, desktop_grid_columns: body.desktop_grid_columns }
+}

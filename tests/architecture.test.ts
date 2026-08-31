@@ -48,7 +48,9 @@ const SIZE_BUDGET: Record<string, number> = {
   // +3 on 2026-08-30: the branding toggle gained a real plan check (it was dimmed but still
   // clickable), and Face Finder and bib search stopped riding on the collections flag. Three
   // lines of reasoning for three gates that were wrong. Deliberate.
-  'src/components/OwnerToolbar.tsx': 1783,
+  // +40 (2026-08-31): the desktop columns picker — a second, independent grid choice with
+  // its own single-field save (lib/grid-columns.ts owns the values).
+  'src/components/OwnerToolbar.tsx': 1823,
   // +23 (2026-08-31): fallback-poll wiring for realtime REFUSAL — the cadence decision is in
   // lib/realtime-fallback.ts; the timer must live beside the channel it covers (rule 15).
   // +17 (2026-08-31, review finding): channel-identity guard + timer hygiene in the reconnect
@@ -57,7 +59,8 @@ const SIZE_BUDGET: Record<string, number> = {
   'src/app/card-editor/CardEditorClient.tsx': 873,
   // +1 (2026-08-31): pass collectionTotal to the lightbox counter.
   // +2 (2026-08-31): morphAllowed gate on open and close.
-  'src/components/PhotoGrid.tsx': 847,
+  // +7 (2026-08-31): per-device column resolution feeding grid, masonry and the eager row.
+  'src/components/PhotoGrid.tsx': 859,
   'src/components/AlbumDesigner.tsx': 774,
   // +3 net (2026-08-31): deleted the duplicate ±1 prefetch loop, added strip windowing wired
   // to lib/lightbox-plan.ts.

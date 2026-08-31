@@ -1,7 +1,7 @@
 export type MediaType = "image" | "video";
 export type StorageBackend = "r2" | "stream";
 export type MediaDisplayFilter = "none" | "warm" | "cool" | "mono" | "vintage" | "soft";
-export type MobileGridColumns = 3 | 4 | 5 | 6;
+export type MobileGridColumns = 2 | 3 | 4 | 5 | 6;
 export type PhotoLayout = "grid" | "justified";
 // Retired as a user-facing choice — kept as the fallback for albums that have never touched the
 // composable controls below, so their slideshow keeps the look they already had.
@@ -70,6 +70,8 @@ export type Album = {
   video_autoplay: boolean;
   media_filter: MediaDisplayFilter;
   mobile_grid_columns: MobileGridColumns;
+  // null until the owner chooses; lib/grid-columns.ts supplies the default.
+  desktop_grid_columns?: number | null;
   photo_layout: PhotoLayout;
   slideshow_interval_ms: number;
   slideshow_animation: SlideshowAnimation;

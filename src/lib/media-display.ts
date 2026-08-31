@@ -26,6 +26,7 @@ export const MEDIA_DISPLAY_FILTER_OPTIONS: Array<{ value: MediaDisplayFilter; la
 ]
 
 export const MOBILE_GRID_COLUMN_OPTIONS: Array<{ value: MobileGridColumns; label: string }> = [
+  { value: 2, label: '2 in a row' },
   { value: 3, label: '3 in a row' },
   { value: 4, label: '4 in a row' },
   { value: 5, label: '5 in a row' },

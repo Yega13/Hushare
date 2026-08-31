@@ -8,10 +8,12 @@ import { normalizeSlideshowMotion } from '@/lib/slideshow-motion'
 
 export const runtime = 'nodejs'
 
+import { isMobileColumns, isDesktopColumns, MOBILE_COLUMN_CHOICES, DESKTOP_COLUMN_CHOICES } from '@/lib/grid-columns'
+
 const NO_STORE = { 'Cache-Control': 'no-store' }
 
 const VALID_FILTERS = new Set(['none', 'warm', 'cool', 'mono', 'vintage', 'soft'])
-const VALID_GRID_COLUMNS = new Set([3, 4, 5, 6])
+
 const VALID_SLIDESHOW_ANIMS = new Set(['none', 'fade', 'rise', 'zoom'])
 
 export async function POST(req: Request) {
@@ -23,6 +25,7 @@ export async function POST(req: Request) {
     media_radius?: unknown
     media_filter?: unknown
     mobile_grid_columns?: unknown
+    desktop_grid_columns?: unknown
     slideshow_interval_ms?: unknown
     slideshow_animation?: unknown
     slideshow_motion?: unknown
@@ -50,11 +53,21 @@ export async function POST(req: Request) {
     }
     updates.media_filter = body.media_filter
   }
+  // Both column settings validate against lib/grid-columns.ts, the same module the toolbar
+  // builds its buttons from and the grid renders with — so an accepted value is always an
+  // offered value (rule 13; the old local Set had already drifted, allowing no 2-column phone
+  // layout while claiming to own the range).
   if (body.mobile_grid_columns !== undefined) {
-    if (typeof body.mobile_grid_columns !== 'number' || !VALID_GRID_COLUMNS.has(body.mobile_grid_columns)) {
-      return NextResponse.json({ error: `mobile_grid_columns must be one of: ${[...VALID_GRID_COLUMNS].join(', ')}` }, { status: 400, headers: NO_STORE })
+    if (!isMobileColumns(body.mobile_grid_columns)) {
+      return NextResponse.json({ error: `mobile_grid_columns must be one of: ${MOBILE_COLUMN_CHOICES.join(', ')}` }, { status: 400, headers: NO_STORE })
     }
     updates.mobile_grid_columns = body.mobile_grid_columns
+  }
+  if (body.desktop_grid_columns !== undefined) {
+    if (!isDesktopColumns(body.desktop_grid_columns)) {
+      return NextResponse.json({ error: `desktop_grid_columns must be one of: ${DESKTOP_COLUMN_CHOICES.join(', ')}` }, { status: 400, headers: NO_STORE })
+    }
+    updates.desktop_grid_columns = body.desktop_grid_columns
   }
   if (body.slideshow_interval_ms !== undefined) {
     const ms = body.slideshow_interval_ms
@@ -142,6 +155,7 @@ export async function POST(req: Request) {
     video_autoplay: updates.video_autoplay,
     media_filter: updates.media_filter,
     mobile_grid_columns: updates.mobile_grid_columns,
+    desktop_grid_columns: updates.desktop_grid_columns,
     slideshow_interval_ms: updates.slideshow_interval_ms,
     slideshow_animation: updates.slideshow_animation,
     slideshow_motion: updates.slideshow_motion,

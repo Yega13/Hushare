@@ -24,7 +24,7 @@ const ALBUM_SELECT_COLS = [
   // user_id is fetched to size this album's upload caps by its OWNER's tier (see media_caps below).
   // It is stripped before the album is returned — it must never reach a client.
   'id', 'user_id', 'slug', 'custom_slug', 'title', 'background_theme',
-  'media_radius', 'media_filter', 'mobile_grid_columns', 'photo_layout',
+  'media_radius', 'media_filter', 'mobile_grid_columns', 'desktop_grid_columns', 'photo_layout',
   'slideshow_interval_ms', 'slideshow_animation', 'slideshow_motion', 'video_autoplay',
   'cover_photo_id', 'header_image', 'header_focal', 'header_zoom', 'header_touched', 'header_video_mode', 'reveal_at', 'guest_uploads_enabled', 'allow_guest_downloads',
   'require_approval', 'face_finder_enabled', 'bib_search_enabled', 'bib_min', 'bib_max', 'branding_locked',
@@ -47,7 +47,7 @@ const PHOTO_SELECT_COLS = [
 type AlbumRow = {
   id: string; user_id: string | null; slug: string; custom_slug: string | null; title: string
   background_theme: string | null; media_radius: number; media_filter: string
-  mobile_grid_columns: number; photo_layout: string
+  mobile_grid_columns: number; desktop_grid_columns: number | null; photo_layout: string
   slideshow_interval_ms: number; slideshow_animation: string; slideshow_motion: unknown; video_autoplay: boolean
   cover_photo_id: string | null; header_image: string | null; header_focal: string | null; header_zoom: number | null; header_touched: boolean
   header_video_mode: string | null; reveal_at: string | null; guest_uploads_enabled: boolean

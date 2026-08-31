@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useLayoutEffect, useCallback, useMemo, useRef } from 'react'
 import { morphPhoto, morphPhotoClosed, supportsViewTransitions } from '@/components/photo-grid/viewTransition'
 import { morphAllowed } from '@/lib/lightbox-plan'
+import { resolveGridColumns } from '@/lib/grid-columns'
 import type { Album, Photo } from '@/types'
 import { DEFAULT_SLIDESHOW_INTERVAL_MS, cssMediaDisplayFilter } from '@/lib/media-display'
 import { MEDIA_AUTHOR_MAX, MEDIA_CAPTION_MAX, SUPPRESS_CLICK_AFTER_REORDER_MS, BTT_UPDATE_EVENT } from '@/lib/constants'
@@ -92,7 +93,12 @@ export default function PhotoGrid({ album, photos, albumPhotoCount, isOwner, slu
 
   // First-row (above-the-fold) tiles load eagerly at high priority — the rest stay lazy. Combined
   // with server-rendering the grid, this stops the LCP image from being deprioritized.
-  const eagerFirstRowCount = album.mobile_grid_columns ?? 3
+  // Resolved once (lib/grid-columns.ts): the grid style, the masonry column count and the
+  // eager-load row all have to agree about how wide a row is.
+  const gridColumns = resolveGridColumns(album)
+  // The eager row is about the FIRST paint, which on a phone is the mobile count — loading a
+  // desktop-sized row eagerly on a phone fetches tiles nobody sees at high priority.
+  const eagerFirstRowCount = gridColumns.mobile
 
   // Stable key over the set of photo IDs. Lets effects depend on "did the tile set change?"
   // instead of "did the photos array reference change?" — the latter happens on every Realtime
@@ -122,7 +128,10 @@ export default function PhotoGrid({ album, photos, albumPhotoCount, isOwner, slu
   }, [masonry, hasPhotos])
   // Masonry column count follows the same "Grid" setting as the square layout, so changing it
   // (3–6) affects both. Falls back to 3.
-  const masonryColumnCount = album.mobile_grid_columns ?? 3
+  // Masonry lays out in JS, so it cannot use the CSS media query — it picks from the measured
+  // container instead, at the same 900px boundary the stylesheet uses. containerWidth is 0 on
+  // the very first frame, which correctly reads as "narrow" until the observer measures.
+  const masonryColumnCount = containerWidth >= 900 ? gridColumns.desktop : gridColumns.mobile
   const masonryColumns = useMemo(
     () => (masonry
       ? computeMasonryColumns(photos, aspects, containerWidth, masonryColumnCount, MASONRY_GAP, albumPhotoCount)
@@ -640,7 +649,10 @@ export default function PhotoGrid({ album, photos, albumPhotoCount, isOwner, slu
             ref={gridRef}
             translate="no"
             className="hush-photo-grid grid gap-3 xl:gap-4"
-            style={{ '--hush-grid-cols': album.mobile_grid_columns ?? 3 } as React.CSSProperties}
+            style={{
+              '--hush-grid-cols': gridColumns.mobile,
+              '--hush-grid-cols-desktop': gridColumns.desktop,
+            } as React.CSSProperties}
           >
             {photos.map((photo, index) => renderTile(photo, index))}
           </div>
