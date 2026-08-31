@@ -148,3 +148,100 @@ export function capNudge(input: AlbumCapInput): CapNudge {
   if (upgradingWouldHelp(input)) return 'upgrade'
   return 'none'
 }
+
+// ── HOW MUCH VIDEO MAY THIS ALBUM HOLD ───────────────────────────────────────────
+//
+// Until this shipped there was NO limit on video at all — not on how long a clip could be, not on
+// how many an album could hold. The only video control in the code was per-file SIZE. So one Pro
+// album could legally hold 3,000 clips of ten minutes each: 30,000 stored minutes, about $150 a
+// month, against a $4 plan. Nothing came close only because the average clip people actually
+// upload is 14.5 seconds.
+//
+// Two numbers, not a pooled budget. "Clips up to 2 minutes, up to 30 videos" is something a guest
+// can hold in their head at the moment they are refused; "300 pooled minutes remaining" is not.
+//
+// WHY VIDEO GETS ITS OWN LIMITS AT ALL, when photos share one allowance: Cloudflare Stream bills
+// per MINUTE STORED, every month, plus again per minute watched — while R2 bills per byte and
+// charges nothing for delivery. Measured on this library, one minute of video costs the same as
+// 300 photos per year. An item cap alone therefore does not bound cost, because a video item is
+// ~300x a photo item.
+
+export type VideoCaps = {
+  /** Longest single clip, in seconds. Enforced by Cloudflare at upload, not just in the UI. */
+  maxClipSeconds: number
+  /** How many videos this album may hold in total. */
+  maxVideos: number
+}
+
+const FREE_VIDEO_CAPS: VideoCaps = { maxClipSeconds: 30, maxVideos: 20 }
+const PRO_VIDEO_CAPS: VideoCaps = { maxClipSeconds: 120, maxVideos: 30 }
+const STUDIO_VIDEO_CAPS: VideoCaps = { maxClipSeconds: 600, maxVideos: 40 }
+
+/**
+ * Video limits for one album.
+ *
+ * An album with no account behind it gets the free limits rather than something tighter: its 250
+ * ITEM cap already stops it long before video cost becomes interesting, and a guest album is the
+ * first thing anybody tries — making it meaner than free buys nothing and teaches the wrong
+ * lesson about the product.
+ */
+export function videoCaps(ownerTier: Tier | null | undefined): VideoCaps {
+  if (ownerTier === 'studio') return STUDIO_VIDEO_CAPS
+  if (ownerTier === 'pro') return PRO_VIDEO_CAPS
+  return FREE_VIDEO_CAPS
+}
+
+/** Is this clip short enough for the album? `null` duration means we could not measure it. */
+export function clipTooLong(seconds: unknown, caps: VideoCaps): boolean {
+  // `unknown`, not `number`, because the only caller gets this straight off a request body. Typing
+  // it as a number would move the lie one layer up rather than removing it.
+  // An unmeasurable clip is NOT refused here. The upload path already bounds it separately, and
+  // refusing something we could not measure would turn a failed metadata read on someone's phone
+  // into "your video is too long", which is both wrong and unfixable by them.
+  if (typeof seconds !== 'number' || !Number.isFinite(seconds) || seconds <= 0) return false
+  // A whole second of slack: browsers report duration as a float and a 30.02s read of a 30s clip
+  // is a measurement artefact, not a rule being broken.
+  return seconds > caps.maxClipSeconds + 1
+}
+
+/** Is the album already holding as many videos as it may? */
+export function videoAlbumFull(existingVideos: number, caps: VideoCaps): boolean {
+  return existingVideos >= caps.maxVideos
+}
+
+/** "2 minutes", "30 seconds" — for a refusal message that names the limit it hit. */
+export function formatClipLimit(seconds: number): string {
+  if (seconds % 60 === 0) {
+    const mins = seconds / 60
+    return mins === 1 ? '1 minute' : `${mins} minutes`
+  }
+  return `${seconds} seconds`
+}
+
+// ── THE TWO VIDEO REFUSALS, WRITTEN ONCE ─────────────────────────────────────────────────────
+//
+// These are DELIBERATE refusals, not failures: the guest is being told a rule, and nothing is
+// broken. lib/upload-policy has to recognise them by prefix for two separate reasons, and both
+// are unpleasant when it cannot:
+//
+//   1. An unrecognised refusal is filed at 'error' level, so it lands in the admin Errors tab.
+//      A 103 MB video refused twice once accounted for two of the four outstanding "errors" while
+//      nothing was wrong. About 11% of recent free-tier videos are over 30 seconds, so this alone
+//      would have buried the panel.
+//   2. Worse, an unrecognised video failure calls noteVideoOutcome(false), which collapses that
+//      guest's video upload lane to serial FOR THE REST OF THE SESSION. One refused clip would
+//      have slowed every later video that person uploaded.
+//
+// So the prefix and the message must be the same fact. They are built here, and upload-policy
+// imports the prefixes rather than retyping them.
+export const VIDEO_TOO_LONG_PREFIX = 'Videos in this album can be up to'
+export const VIDEO_ALBUM_FULL_PREFIX = 'This album is full of videos'
+
+export function videoTooLongMessage(caps: VideoCaps): string {
+  return `${VIDEO_TOO_LONG_PREFIX} ${formatClipLimit(caps.maxClipSeconds)} long. `
+    + 'Trim it shorter in your phone, then try again.'
+}
+
+export function videoAlbumFullMessage(caps: VideoCaps): string {
+  return `${VIDEO_ALBUM_FULL_PREFIX} — it holds ${caps.maxVideos}. Photos can still be added.`
+}

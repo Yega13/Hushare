@@ -1,3 +1,4 @@
+import { VIDEO_TOO_LONG_PREFIX, VIDEO_ALBUM_FULL_PREFIX } from '@/lib/album-entitlements'
 // THE DECISIONS THE UPLOADER MAKES ABOUT SOMEONE ELSE'S PHOTO.
 //
 // UploadZone.tsx is 2,846 lines of canvas work, retries, workers and progress plumbing, and until
@@ -122,6 +123,11 @@ export const EXPECTED_REFUSAL_PREFIXES = [
   'Unsupported',
   'Enter the album password before adding photos',
   'This album has not been revealed yet',
+  // Imported, never retyped. These two are built from the same constants in album-entitlements,
+  // so a reworded refusal cannot quietly stop being recognised here — which would put it in the
+  // Errors tab and collapse the guest's video lane at the same time.
+  VIDEO_TOO_LONG_PREFIX,
+  VIDEO_ALBUM_FULL_PREFIX,
 ] as const
 
 export function isExpectedRefusal(message: string): boolean {

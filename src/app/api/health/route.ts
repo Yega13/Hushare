@@ -27,7 +27,17 @@ export async function GET() {
 
   try {
     const admin = createAdminClient()
-    const { error } = await admin.from('albums').select('*', { count: 'exact', head: true })
+    // ONE ROW, NOT A COUNT OF EVERY ROW.
+    //
+    // This asked for an exact count over the whole albums table, unfiltered, to answer a yes/no
+    // question about whether the database is reachable. The HEAD handler above was already
+    // rewritten to stop doing that on every liveness poll; GET kept doing it. The work grows with
+    // the table forever, and the moment it matters most is exactly when the database is already
+    // struggling and something is polling to find out why.
+    //
+    // limit(1) on one column proves the same thing — credentials work, the connection is up, the
+    // schema is there — at fixed cost regardless of how big the product gets.
+    const { error } = await admin.from('albums').select('id').limit(1)
     checks.supabase = !error
   } catch {
     checks.supabase = false

@@ -6,6 +6,10 @@ import { createStreamUpload } from '@/lib/cloudflare/stream'
 import { checkRateLimit, clientIpKey } from '@/lib/rate-limit'
 import { uploadCapsForTier, tooLargeMessage, STUDIO_VIDEO_BYTES } from '@/lib/media'
 import { getUserTierById } from '@/lib/subscriptions'
+import { resolveMaxDurationSeconds } from '@/lib/stream-duration'
+import {
+  videoCaps, clipTooLong, videoAlbumFull, videoTooLongMessage, videoAlbumFullMessage,
+} from '@/lib/album-entitlements'
 import { forbidCrossSiteRequest } from '@/lib/request-security'
 import { gateAllowsContribution, ALBUM_GATE_COLS } from '@/lib/server/album-access'
 import { cookies } from 'next/headers'
@@ -31,27 +35,6 @@ type Body = {
 // quota and blocked ALL video uploads. Use the client-measured duration plus a safety margin
 // (Cloudflare rejects a video LONGER than maxDurationSeconds, so the margin absorbs measurement
 // error), and fall back to 2h only when the client couldn't measure the duration.
-const CF_MAX_DURATION_CEILING = 21600 // Cloudflare's absolute max (6h)
-// Used ONLY when the client could not measure the video (a failed poster decode). Cloudflare
-// reserves this many seconds of account storage quota for the whole time the upload is pending,
-// so the exposure is (concurrent failed uploads x this value). At 7200 (2h), six abandoned uploads
-// were measured holding 720 of the account's 1000 minutes on 2026-08-20 — 72% of the quota, for
-// zero minutes of stored video. Eight would exhaust it, and then EVERY video upload fails for
-// everyone, which at an event is the whole room at once.
-//
-// 900 (15 min) makes that exposure 8x smaller. It caps only videos whose length is unknown;
-// anything measurable passes its own tight value computed above. An unmeasurable video longer
-// than 15 minutes is refused, which is a far better failure than one stuck upload denying video
-// to an entire event.
-const FALLBACK_MAX_DURATION = 900
-function resolveMaxDurationSeconds(durationSeconds: unknown): number {
-  if (typeof durationSeconds === 'number' && Number.isFinite(durationSeconds) && durationSeconds > 0) {
-    const withMargin = Math.ceil(durationSeconds * 1.5) + 60
-    return Math.min(CF_MAX_DURATION_CEILING, Math.max(60, withMargin))
-  }
-  return FALLBACK_MAX_DURATION
-}
-
 export async function POST(req: Request) {
   const csrfError = forbidCrossSiteRequest(req)
   if (csrfError) return csrfError
@@ -78,7 +61,6 @@ export async function POST(req: Request) {
 
   const body = await req.json().catch(() => null) as Body | null
   const { albumId, fileName, contentType, fileSize, durationSeconds } = body ?? {}
-  const maxDurationSeconds = resolveMaxDurationSeconds(durationSeconds)
 
   if (
     typeof albumId !== 'string' || !UUID_RE.test(albumId) ||
@@ -155,6 +137,52 @@ export async function POST(req: Request) {
     )
   }
 
+  // ── HOW LONG, AND HOW MANY ──────────────────────────────────────────────────
+  //
+  // Neither was limited before this. A file SIZE cap does not bound video cost, because Cloudflare
+  // Stream bills per MINUTE stored every month (and again per minute watched) regardless of how
+  // many bytes those minutes take. A well-compressed 200 MB file can be half an hour.
+  const vcaps = videoCaps(tier)
+
+  if (clipTooLong(durationSeconds, vcaps)) {
+    return NextResponse.json(
+      { code: 'video_too_long', error: videoTooLongMessage(vcaps) },
+      { status: 413, headers: NO_STORE },
+    )
+  }
+
+  // The count is read once and the insert happens later, so a burst of simultaneous uploads can
+  // overshoot by roughly the number of requests in flight. Same bounded, cheap overshoot the item
+  // cap accepts in photos/create — enforcing it exactly needs a database constraint, and a handful
+  // of extra clips costs cents where a constraint costs an outage risk on the upload path.
+  // media_type, not storage_backend: it is how /api/admin/stats and the rest of the product
+  // define "a video", it is the column the 20260831 migration indexed, and schema.sql still
+  // permits a third storage_backend value. Two definitions of one fact is how they drift.
+  const { count: videoCount, error: videoCountErr } = await admin
+    .from('photos')
+    .select('id', { count: 'exact', head: true })
+    .eq('album_id', albumId)
+    .eq('media_type', 'video')
+
+  if (videoCountErr) {
+    // Same direction as every other counted limit here: a count we could not take does not block
+    // the upload. Letting a few extra clips through during a database blip is far cheaper than
+    // refusing every guest at a live event.
+    console.error('[stream] video count failed, cap NOT enforced for album', albumId, ':', videoCountErr.message)
+    reportServerError('stream', 'Video count cap NOT enforced — the count query failed', {
+      albumId,
+      context: { reason: videoCountErr.message.slice(0, 200) },
+    })
+  } else if (videoAlbumFull(videoCount ?? 0, vcaps)) {
+    // 403, NOT 429. lib/upload-policy treats 429 as retryable and runs the whole route four more
+    // times behind a backoff — for a refusal that is permanent and deterministic. The guest waits
+    // out the retries to be told the same thing, and the album pays five tier lookups for it.
+    return NextResponse.json(
+      { code: 'album_video_full', error: videoAlbumFullMessage(vcaps) },
+      { status: 403, headers: NO_STORE },
+    )
+  }
+
   let uploadUrl: string
   let streamUid: string
   let iframeUrl: string
@@ -162,6 +190,7 @@ export async function POST(req: Request) {
   try {
     // Sanitize fileName to printable ASCII before passing to Cloudflare Stream's metadata API.
     const safeName = String(fileName).replace(/[^\w.\- ]/g, '_').slice(0, 255)
+    const maxDurationSeconds = resolveMaxDurationSeconds(durationSeconds)
     ;({ uploadUrl, streamUid, iframeUrl, thumbnailUrl } = await createStreamUpload(fileSize, safeName, maxDurationSeconds))
   } catch (e) {
     console.error('[stream] createStreamUpload failed:', e instanceof Error ? e.message : String(e))

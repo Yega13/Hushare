@@ -274,7 +274,24 @@ export default async function AccountPage({ searchParams }: Props) {
   // page went quietly wrong (rule 18: 4,565 photos rendered as whatever fit under the cap).
   const mediaCols = 'id, media_type, url, poster_url, stream_thumbnail_url'
   type CoverRow = Pick<AccountMediaRow, 'id' | 'media_type' | 'url' | 'poster_url' | 'stream_thumbnail_url'>
-  const exactCount = async (q: PromiseLike<{ count: number | null }>): Promise<number> => (await q).count ?? 0
+  // A COUNT THAT FAILED IS NOT ZERO.
+  //
+  // This used to be `(await q).count ?? 0`, which threw the error away and returned 0 — so a
+  // single database blip rendered "0 items" against somebody's wedding album on the page they
+  // opened to check it was still there. That is the worst string this product can print: it does
+  // not say "we could not load this", it states as fact that their photos are gone.
+  //
+  // null means "not counted", and every reader below must render it as unknown, never as a number.
+  const exactCount = async (
+    q: PromiseLike<{ count: number | null; error: unknown }>,
+  ): Promise<number | null> => {
+    const { count, error } = await q
+    if (error) {
+      console.error('[account] media count failed:', error instanceof Error ? error.message : String(error))
+      return null
+    }
+    return count ?? 0
+  }
   const headCount = () => admin.from('photos').select('id', { count: 'exact', head: true })
   const [collectionLinksResult, albumCounts, albumCovers, photoTotal, videoTotal] = await Promise.all([
     collectionIds.length
@@ -303,6 +320,7 @@ export default async function AccountPage({ searchParams }: Props) {
     })),
     accountAlbumIds.length ? exactCount(headCount().in('album_id', accountAlbumIds).eq('media_type', 'image')) : Promise.resolve(0),
     accountAlbumIds.length ? exactCount(headCount().in('album_id', accountAlbumIds).eq('media_type', 'video')) : Promise.resolve(0),
+    // (both resolve to 0 for an account with no albums at all, which is a real zero)
   ])
 
   const collectionLinks = collectionLinksResult.data ?? []
@@ -324,13 +342,18 @@ export default async function AccountPage({ searchParams }: Props) {
   })
 
   const recentAlbums = albumsWithMedia.slice(0, 6)
-  const mediaTotal = photoTotal + videoTotal
+  // An unknown count poisons the total: 0 + 4,572 reads as a real figure and is simply wrong.
+  const mediaKnown = photoTotal !== null && videoTotal !== null
+  const mediaTotal = mediaKnown ? photoTotal + videoTotal : null
   const customUrlTotal = accountAlbums.filter((album) => album.custom_slug).length
 
   const dashboardStats = [
     ['Albums', String(accountAlbums.length), 'Claimed to this account'],
     ['Collections', String(collectionsWithCounts.length), `${collectionLinks.length} album link${collectionLinks.length === 1 ? '' : 's'}`],
-    ['Media', String(mediaTotal), `${photoTotal} photo${photoTotal === 1 ? '' : 's'} · ${videoTotal} video${videoTotal === 1 ? '' : 's'}`],
+    ['Media', mediaKnown ? String(mediaTotal) : '\u2014',
+      mediaKnown
+        ? `${photoTotal} photo${photoTotal === 1 ? '' : 's'} \u00b7 ${videoTotal} video${videoTotal === 1 ? '' : 's'}`
+        : 'could not be counted just now'],
     ['Custom URLs', String(customUrlTotal), 'Short branded album links'],
   ]
 
@@ -562,7 +585,10 @@ export default async function AccountPage({ searchParams }: Props) {
                       <span className="min-w-0">
                         <span className="block truncate text-sm font-semibold" style={{ color: '#630826' }}>{album.title}</span>
                         <span className="block text-xs" style={{ color: '#8B6F4E' }}>
-                          {album.media_count} item{album.media_count === 1 ? '' : 's'} · Created {formatDate(album.created_at)}
+                          {album.media_count === null
+                            ? 'Item count unavailable'
+                            : `${album.media_count} item${album.media_count === 1 ? '' : 's'}`}
+                          {' \u00b7 '}Created {formatDate(album.created_at)}
                         </span>
                       </span>
                     </Link>
