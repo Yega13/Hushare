@@ -1,0 +1,12 @@
+-- The admin dashboard's own polling was reading every photo row, twice, every five seconds.
+--
+-- /api/admin/stats counts images and videos with `where media_type = ...`, and there was no index
+-- on that column — so each poll was a sequential scan of the whole photos table. Measured at
+-- 17,744 rows: 7.3 ms per count, two counts, twelve times a minute, for as long as the dashboard
+-- is open. That is continuous database CPU spent on a screen nobody is looking at most of the
+-- time, on a shared instance, and the moment it is most likely to be open is during an event —
+-- exactly when guests need that CPU.
+--
+-- Built CONCURRENTLY against production so uploads kept working throughout. After: an index scan
+-- at 3.1 ms, and it stops growing with the table.
+create index concurrently if not exists photos_media_type_idx on photos (media_type);

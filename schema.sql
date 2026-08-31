@@ -515,6 +515,7 @@ create unique index if not exists photos_album_stream_uid_unique ON public.photo
 create index if not exists photos_album_visible_idx ON public.photos USING btree (album_id) WHERE (hidden = false);
 create index if not exists photos_bib_numbers_idx ON public.photos USING gin (bib_numbers);
 create index if not exists photos_face_ids_gin_idx ON public.photos USING gin (face_ids);
+create index if not exists photos_media_type_idx ON public.photos USING btree (media_type);
 create index if not exists photos_stream_uid_idx ON public.photos USING btree (stream_uid) WHERE (stream_uid IS NOT NULL);
 create index if not exists poll_votes_key_idx ON public.poll_votes USING btree (poll_key);
 create unique index if not exists poll_votes_unique ON public.poll_votes USING btree (poll_key, voter_id);
