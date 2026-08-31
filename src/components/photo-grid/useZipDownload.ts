@@ -4,6 +4,7 @@ import { useState, useRef } from 'react'
 import { reportClientError } from '@/lib/report-error'
 import { showAppToast } from '@/components/AppToast'
 import type { Album, Photo } from '@/types'
+import { batchByBytes, ZIP_BUDGET_MOBILE, ZIP_BUDGET_DESKTOP } from '@/lib/zip-batching'
 import {
   DOWNLOAD_CONCURRENCY_MOBILE,
   DOWNLOAD_CONCURRENCY_DESKTOP,
@@ -18,10 +19,15 @@ const concurrencyForDevice = () =>
     ? DOWNLOAD_CONCURRENCY_MOBILE
     : DOWNLOAD_CONCURRENCY_DESKTOP
 
-// Photos per ZIP file. A whole big album can be tens of GB — far too much to hold in one browser
-// tab — so we download it in parts, never holding more than one batch's worth in memory at once.
-// Albums at/under this size are a single ZIP, exactly as before.
-const BATCH_SIZE = 500
+// A whole big album can be tens of GB — far too much for one browser tab — so it downloads in
+// parts, never holding more than one part's worth in memory. How big a part may be is decided by
+// BYTES in lib/zip-batching.ts; an album that fits in one part is still a single ZIP, as before.
+//
+// Read at press time rather than through a hook: this runs inside an event handler, and the only
+// question is what the screen is now.
+function isNarrowViewport(): boolean {
+  return typeof window !== 'undefined' && window.innerWidth < 640
+}
 
 // What one ZIP part produced: how many photos were lost, and why.
 type ZipOutcome = { failed: number; reasons: Map<string, number> }
@@ -173,7 +179,14 @@ export function useZipDownload(photos: Photo[], album: Pick<Album, 'id' | 'title
 
       const title = safeName(album.title ?? '')
 
-      if (downloadable.length <= BATCH_SIZE) {
+      // BATCHED BY BYTES, NOT BY COUNT (lib/zip-batching.ts). The tab holds every photo of a part
+      // in memory until it is written out, and photos are not a fixed size — 500 phone snaps is a
+      // couple of hundred megabytes, 500 originals is over nine gigabytes and the tab is killed.
+      // The budget is smaller on a phone, where this button is most often pressed.
+      const budget = isNarrowViewport() ? ZIP_BUDGET_MOBILE : ZIP_BUDGET_DESKTOP
+      const parts = batchByBytes(downloadable, budget)
+
+      if (parts.length <= 1) {
         const { failed, reasons } = await zipAndSave(downloadable, `${title}.zip`, 0, downloadable.length)
         if (failed > 0 && !abortRef.current) {
           // Downloads were entirely silent: a guest could lose part of an album and nobody would
@@ -188,9 +201,7 @@ export function useZipDownload(photos: Photo[], album: Pick<Album, 'id' | 'title
         return
       }
 
-      // Big album → multiple ZIP files, one batch at a time (bounded memory).
-      const parts: Photo[][] = []
-      for (let i = 0; i < downloadable.length; i += BATCH_SIZE) parts.push(downloadable.slice(i, i + BATCH_SIZE))
+      // Big album → multiple ZIP files, one part at a time (bounded memory).
       let base = 0
       let failedTotal = 0
       const allReasons = new Map<string, number>()

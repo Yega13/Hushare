@@ -22,10 +22,34 @@ export async function POST(req: Request) {
   const csrfError = forbidCrossSiteRequest(req)
   if (csrfError) return csrfError
 
-  // Bound table growth from a single (possibly shared-NAT) IP. failOpen: keep the signal on a
-  // limiter blip — losing an error log is worse than the tiny risk of a few extra rows.
-  const rl = await checkRateLimit(clientIpKey(req, 'client_error_log'), 3600, 500, { failOpen: true })
-  if (!rl.ok) return new NextResponse(null, { status: 204, headers: NO_STORE })
+  // 5,000/hour, not 500, and the reason the higher number is safe is coalescing.
+  //
+  // 500 guests behind one venue IP share this bucket, and a widespread failure — a bad deploy
+  // producing chunk errors, a network the whole room is on — is exactly when they all report at
+  // once. At 500/hour the panel stopped listening partway through the incident it exists to
+  // show, and everything after that vanished with no trace. That is rule 20 aimed at the operator
+  // instead of a guest: an empty panel meant "nothing is wrong" when it meant "we stopped
+  // counting".
+  //
+  // What the old limit was really protecting was table growth, and that is bounded by something
+  // else entirely: coalesce_error_event merges a repeat into the EXISTING row and increments a
+  // counter, so a thousand identical reports are one row. The cost scales with distinct messages,
+  // not with requests, and a hostile client sending garbage is capped by the same coalescing.
+  const rl = await checkRateLimit(clientIpKey(req, 'client_error_log'), 3600, 5000, { failOpen: true })
+  if (!rl.ok) {
+    // SAY THAT WE STOPPED LISTENING, once per hour, in the panel itself. Silence and "nothing
+    // went wrong" must not look the same on the one screen used to answer that question. This
+    // rides the same coalescing, so a flood adds a counter to a single row rather than rows.
+    void createAdminClient().rpc('coalesce_error_event', {
+      p_level: 'warn',
+      p_source: 'log:rate-limited',
+      p_message: 'Client error reports were rate-limited — some reports from this network were not recorded',
+      p_album_id: null,
+      p_context: { limit_per_hour: 5000 },
+      p_ua: null,
+    })
+    return new NextResponse(null, { status: 204, headers: NO_STORE })
+  }
 
   const body = await req.json().catch(() => null) as Body | null
   if (!body) return new NextResponse(null, { status: 204, headers: NO_STORE })
