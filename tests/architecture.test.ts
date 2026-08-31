@@ -62,7 +62,9 @@ const SIZE_BUDGET: Record<string, number> = {
   // to lib/lightbox-plan.ts.
   // +43 (2026-08-31): the connected-swipe neighbour pane (the photo arriving rides beside the
   // one leaving) and the collectionTotal counter fix.
-  'src/components/photo-grid/LightboxOverlay.tsx': 692,
+  // +5 (2026-08-31, review fold-in): slideshow counter uses its own complete set; the swipe
+  // pane stays mounted through the failed-swipe return.
+  'src/components/photo-grid/LightboxOverlay.tsx': 697,
   // 518, down from 645: validatePhoto, hasTraversal and r2UrlPrefix moved to lib/photo-input,
   // where 22 tests now cover the boundary between a guest and this album's storage — including the
   // poisoned-thumbnail attack, which the mutation run confirmed they catch.

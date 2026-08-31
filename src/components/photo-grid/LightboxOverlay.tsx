@@ -320,7 +320,9 @@ export default function LightboxOverlay({
           VISIBLY attached to the outgoing one, instead of an empty gap that read as lag.
           A sibling, not a child: the column clips its overflow, and the column's own exit fade
           must not dim the photo arriving. Skipped in slideshow mode, which animates itself. */}
-      {swipeOffset !== 0 && !slideshowMode && viewerPhotos.length > 1 && (() => {
+      {/* Kept mounted while the failed-swipe animation returns to 0 — unmounting on the
+          first frame made the visible neighbour pop out instead of sliding away. */}
+      {(swipeOffset !== 0 || swipeAnimating) && !slideshowMode && viewerPhotos.length > 1 && (() => {
         const len = viewerPhotos.length
         const neighbor = swipeOffset < 0
           ? viewerPhotos[(lightboxIndex + 1) % len]
@@ -375,7 +377,10 @@ export default function LightboxOverlay({
         {slideshowMode && (
           <div className="hush-slideshow-head" onClick={(e) => e.stopPropagation()}>
             <span>{t('guest.slideshow')}</span>
-            <strong>{lightboxIndex + 1} / {shownTotal.toLocaleString('en-US')}</strong>
+            {/* The slideshow set is COMPLETE by construction (a curated pick, fully loaded), so its
+                own length is the truth here — shownTotal would claim the album's 4,565 over a
+                10-photo show. */}
+            <strong>{lightboxIndex + 1} / {viewerPhotos.length}</strong>
           </div>
         )}
 
