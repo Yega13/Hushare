@@ -7,6 +7,12 @@
 -- time, on a shared instance, and the moment it is most likely to be open is during an event —
 -- exactly when guests need that CPU.
 --
--- Built CONCURRENTLY against production so uploads kept working throughout. After: an index scan
--- at 3.1 ms, and it stops growing with the table.
-create index concurrently if not exists photos_media_type_idx on photos (media_type);
+-- Built CONCURRENTLY by hand against production first, so uploads kept working throughout — which
+-- is why the live database had the index while schema_migrations had no record of it. This file
+-- then sat unapplied FOREVER: the migration runner wraps every file in a transaction, and
+-- CREATE INDEX CONCURRENTLY refuses to run inside one, so every db:migrate stopped dead here and
+-- nothing after it could ever apply. Plain CREATE INDEX in the tracked copy: IF NOT EXISTS makes
+-- it a no-op where the hand-built index already lives, and on a rebuilt database an 18k-row index
+-- takes milliseconds — there is no concurrency to preserve during disaster recovery.
+-- After: an index scan at 3.1 ms, and it stops growing with the table.
+create index if not exists photos_media_type_idx on photos (media_type);

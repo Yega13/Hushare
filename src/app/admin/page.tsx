@@ -21,7 +21,7 @@ import AdminClockHeatmap from '@/components/AdminClockHeatmap'
 import AdminFunnel from '@/components/AdminFunnel'
 import AdminUsers, { type UserRow, type Cohort } from '@/components/AdminUsers'
 import { isSubActive } from '@/lib/subscriptions'
-import { checkIntroDiscounts, checkPlanProducts } from '@/lib/polar'
+import { checkIntroDiscounts, checkPlanProducts, checkPackageProducts } from '@/lib/polar'
 import { discountBanner, discountRowsToShow } from '@/lib/discount-health'
 import { attachAlbumOwners } from '@/lib/server/error-attribution'
 import { albumCountLimitForTier, albumMediaCapForTier } from '@/lib/media'
@@ -152,7 +152,9 @@ export default async function AdminPage() {
     getStreamUsage(),
     getR2Usage(),
     checkIntroDiscounts(),
-    checkPlanProducts(),
+    // Subscriptions AND one-time packages, merged: the banner below asks one question — does
+    // Polar charge what we sell it as — and the answer has to cover everything with a price.
+    Promise.all([checkPlanProducts(), checkPackageProducts()]).then(([a, b]) => [...a, ...b]),
     // 500, not 200. This one result feeds the signups list, the growth counts and the email lookup
     // for the albums table, so the page cap is the real ceiling on all three. At 33 users there is
     // plenty of head-room; past 500 this needs a paged query rather than a bigger number.

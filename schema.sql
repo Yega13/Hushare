@@ -75,6 +75,8 @@ create table if not exists public.albums (
   branding_locked boolean default false not null,
   desktop_grid_columns smallint,
   photo_order text default 'newest'::text not null,
+  package_tier text,
+  package_expires_at timestamp with time zone,
   primary key (id)
 );
 alter table public.albums enable row level security;
@@ -299,6 +301,18 @@ do $$ begin
   end if;
 end $$;
 do $$ begin
+  if not exists (select 1 from pg_constraint where conname = 'albums_package_pair_check'
+    and conrelid = 'albums'::regclass) then
+    alter table albums add constraint albums_package_pair_check CHECK (((package_tier IS NULL) = (package_expires_at IS NULL)));
+  end if;
+end $$;
+do $$ begin
+  if not exists (select 1 from pg_constraint where conname = 'albums_package_tier_check'
+    and conrelid = 'albums'::regclass) then
+    alter table albums add constraint albums_package_tier_check CHECK (((package_tier IS NULL) OR (package_tier = ANY (ARRAY['pro'::text, 'studio'::text]))));
+  end if;
+end $$;
+do $$ begin
   if not exists (select 1 from pg_constraint where conname = 'albums_photo_layout_check'
     and conrelid = 'albums'::regclass) then
     alter table albums add constraint albums_photo_layout_check CHECK ((photo_layout = ANY (ARRAY['grid'::text, 'justified'::text])));
@@ -495,6 +509,7 @@ end $$;
 create index if not exists active_sessions_last_seen_idx ON public.active_sessions USING btree (last_seen);
 create index if not exists albums_branding_locked_idx ON public.albums USING btree (branding_locked) WHERE branding_locked;
 create unique index if not exists albums_custom_slug_unique_idx ON public.albums USING btree (custom_slug) WHERE (custom_slug IS NOT NULL);
+create index if not exists albums_package_expiry_idx ON public.albums USING btree (package_expires_at) WHERE (package_tier IS NOT NULL);
 create index if not exists albums_retirement_scan_idx ON public.albums USING btree (last_activity_at) WHERE (retired_at IS NULL);
 create index if not exists albums_slug_idx ON public.albums USING btree (slug);
 create unique index if not exists albums_slug_key ON public.albums USING btree (slug);

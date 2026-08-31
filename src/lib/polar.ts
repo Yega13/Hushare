@@ -1,5 +1,6 @@
 import { timingSafeEqual } from '@/lib/timing-safe'
 import { PLAN_CATALOGUE, formatPrice } from '@/lib/plan-catalogue'
+import { PACKAGE_CATALOGUE, RENEWAL_CATALOGUE } from '@/lib/package-catalogue'
 
 const PROD_BASE = 'https://api.polar.sh'
 const SANDBOX_BASE = 'https://sandbox-api.polar.sh'
@@ -323,37 +324,65 @@ export type PlanHealth = {
   detail?: string
 }
 
-export async function checkPlanProducts(): Promise<PlanHealth[]> {
-  const entries = Object.values(PLAN_CATALOGUE)
-  return Promise.all(entries.map(async (want): Promise<PlanHealth> => {
-    const id = process.env[want.envVar]
-    if (!id) return { plan: want.label, state: 'unset' }
-    try {
-      const res = await fetch(`${apiBase()}/v1/products/${id}`, {
-        headers: { Authorization: `Bearer ${apiKey()}` },
-        cache: 'no-store',
-        signal: AbortSignal.timeout(4000),
-      })
-      if (res.status === 404) return { plan: want.label, state: 'missing' }
-      if (!res.ok) return { plan: want.label, state: 'unknown' }
-      const product = await res.json() as {
-        recurring_interval?: string | null
-        prices?: Array<{ price_amount?: number | null; recurring_interval?: string | null }>
-      }
-      const price = product.prices?.[0]
-      // The interval can live on either the product or its price depending on how it was
-      // created; a plan is only correct if whichever one Polar reports agrees with ours.
-      const interval = price?.recurring_interval ?? product.recurring_interval ?? null
-      if (interval && interval !== want.interval) {
-        return { plan: want.label, state: 'wrong-interval', detail: `Polar charges every ${interval}` }
-      }
-      const cents = price?.price_amount
-      if (typeof cents === 'number' && cents !== want.amountCents) {
-        return { plan: want.label, state: 'wrong-price', detail: `Polar charges ${formatPrice(cents)}` }
-      }
-      return { plan: want.label, state: 'ok' }
-    } catch {
-      return { plan: want.label, state: 'unknown' }
+// One product checked against what we sell it as. Shared by the subscription and package checks,
+// because the fetch, the 404 logic and the price comparison must not exist twice (rule 13).
+//
+// `wantInterval: null` means the product must be a ONE-TIME purchase. That check exists because
+// its failure already happened in both directions here: "Hushare Studio (Yearly)" was created at
+// Polar as $100 every MONTH, and a package created as recurring would quietly bill $49 every
+// month for something sold as buy-once. Polar cannot edit an interval after creation, so the only
+// fix is recreation — all the more reason the panel says it before a customer does.
+async function checkOnePolarProduct(
+  label: string,
+  envVar: string,
+  wantCents: number,
+  wantInterval: 'month' | 'year' | null,
+): Promise<PlanHealth> {
+  const id = process.env[envVar]
+  if (!id) return { plan: label, state: 'unset' }
+  try {
+    const res = await fetch(`${apiBase()}/v1/products/${id}`, {
+      headers: { Authorization: `Bearer ${apiKey()}` },
+      cache: 'no-store',
+      signal: AbortSignal.timeout(4000),
+    })
+    if (res.status === 404) return { plan: label, state: 'missing' }
+    if (!res.ok) return { plan: label, state: 'unknown' }
+    const product = await res.json() as {
+      recurring_interval?: string | null
+      prices?: Array<{ price_amount?: number | null; recurring_interval?: string | null }>
     }
-  }))
+    const price = product.prices?.[0]
+    // The interval can live on either the product or its price depending on how it was
+    // created; a product is only correct if whichever one Polar reports agrees with ours.
+    const interval = price?.recurring_interval ?? product.recurring_interval ?? null
+    if (wantInterval === null && interval) {
+      return { plan: label, state: 'wrong-interval', detail: `sold as buy-once, but Polar charges every ${interval}` }
+    }
+    if (wantInterval !== null && interval && interval !== wantInterval) {
+      return { plan: label, state: 'wrong-interval', detail: `Polar charges every ${interval}` }
+    }
+    const cents = price?.price_amount
+    if (typeof cents === 'number' && cents !== wantCents) {
+      return { plan: label, state: 'wrong-price', detail: `Polar charges ${formatPrice(cents)}` }
+    }
+    return { plan: label, state: 'ok' }
+  } catch {
+    return { plan: label, state: 'unknown' }
+  }
+}
+
+export async function checkPlanProducts(): Promise<PlanHealth[]> {
+  return Promise.all(Object.values(PLAN_CATALOGUE).map((want) =>
+    checkOnePolarProduct(want.label, want.envVar, want.amountCents, want.interval)))
+}
+
+// The four one-time package products, held to the closed prices in package-catalogue.
+export async function checkPackageProducts(): Promise<PlanHealth[]> {
+  return Promise.all([
+    ...Object.values(PACKAGE_CATALOGUE).map((want) =>
+      checkOnePolarProduct(want.label, want.envVar, want.amountCents, null)),
+    ...Object.values(RENEWAL_CATALOGUE).map((want) =>
+      checkOnePolarProduct(want.label, want.envVar, want.amountCents, null)),
+  ])
 }
