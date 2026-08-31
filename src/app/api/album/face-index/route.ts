@@ -61,9 +61,15 @@ export async function GET(req: Request) {
   const slug = url.searchParams.get('slug')?.trim() ?? ''
   if (!slug || !isValidSlug(slug)) return NextResponse.json({ error: 'Invalid slug' }, { status: 400, headers: NO_STORE })
 
-  // failOpen:false — this GET still calls ensureCollection() below, which hits paid AWS
-  // Rekognition. If the rate-limit store is unavailable, deny rather than allow unbounded spend.
-  const ipLimit = await checkRateLimit(clientIpKey(req, 'face_index_list'), 60, 30, { failOpen: false })
+  // 30/min per IP was the LOWEST limit in the product, and 400 guests at a venue share one
+  // public IP — so Face Finder died for the whole room after the 30th person opened it, on a
+  // dead-end error screen with no retry. Every sibling limit was raised for this exact reason
+  // (album_photos 20000, presence 3000, album_resolve 900); this one was missed.
+  //
+  // The AWS spend this was protecting is bounded by the ALBUM limiter on the POST that actually
+  // indexes, not by reads of a photo-id list. failOpen stays false because this GET still calls
+  // ensureCollection(), which touches Rekognition.
+  const ipLimit = await checkRateLimit(clientIpKey(req, 'face_index_list'), 60, 2000, { failOpen: false })
   if (!ipLimit.ok) return rateLimitResponse(ipLimit.retryAfterSeconds)
 
   const { admin, album } = await resolveAlbum(slug)
@@ -88,6 +94,13 @@ export async function GET(req: Request) {
     // unhandled throw become an opaque 500 (Cloudflare HTML interstitial).
     await ensureCollection(album.id)
 
+    // EXPLICIT limit, because PostgREST silently caps an un-ranged select at 1000 rows. Without
+    // it, an album with 3,000 unindexed photos returned 1,000 ids beside a total of 4,566, and
+    // the client computed "already indexed = 3,566" and displayed 100% — while 2,000 photos had
+    // never been looked at and the selfie search then confidently found nobody in them (rule 20,
+    // on the primary path). Naming the cap makes the number honest: `remaining` below reports
+    // the true outstanding count, so the client can show real progress across several passes.
+    const FACE_LIST_MAX = 1000
     const { data: unindexed } = await admin
       .from('photos')
       .select('id')
@@ -95,15 +108,28 @@ export async function GET(req: Request) {
       .is('face_ids', null)
       .neq('media_type', 'video')
       .order('created_at', { ascending: true })
+      .limit(FACE_LIST_MAX)
 
-    const { count: total } = await admin
-      .from('photos')
-      .select('id', { count: 'exact', head: true })
-      .eq('album_id', album.id)
-      .neq('media_type', 'video')
+    // TWO counts, because `ids` is a capped page and not the whole outstanding set. The client
+    // used to infer "already indexed" as total - ids.length, which reads a truncated page as a
+    // finished job and reports 100%. `remaining` is counted in the database, so the client can
+    // say what is genuinely left and come back for another page.
+    const [{ count: total }, { count: remaining }] = await Promise.all([
+      admin.from('photos').select('id', { count: 'exact', head: true })
+        .eq('album_id', album.id).neq('media_type', 'video'),
+      admin.from('photos').select('id', { count: 'exact', head: true })
+        .eq('album_id', album.id).neq('media_type', 'video').is('face_ids', null),
+    ])
 
     return NextResponse.json(
-      { ids: unindexed?.map((p) => p.id) ?? [], total: total ?? 0 },
+      {
+        ids: unindexed?.map((p) => p.id) ?? [],
+        total: total ?? 0,
+        remaining: remaining ?? 0,
+        // True when this response is a PAGE rather than the whole outstanding set, so the client
+        // knows to ask again instead of concluding it has finished.
+        more: (remaining ?? 0) > (unindexed?.length ?? 0),
+      },
       { headers: NO_STORE },
     )
   } catch (err) {
@@ -155,6 +181,14 @@ async function handlePost(req: Request) {
     return NextResponse.json({ error: 'Face Finder is not enabled for this album' }, { status: 403, headers: NO_STORE })
   }
 
+  // The album's password / reveal gate applies to the WRITE path too — the GET above gates and
+  // this did not. Without it, anyone who knows the slug of a password-protected or pre-reveal
+  // album could spend the owner's Rekognition budget and enroll biometric face templates for
+  // people in photos they are not allowed to see, and read back the album's unindexed count.
+  // Third sibling of the same omission; the other two were fixed and this one was missed.
+  const gate = await gateAllowsContribution(album, await cookies())
+  if (!gate.ok) return NextResponse.json({ error: gate.error }, { status: 403, headers: NO_STORE })
+
   // failOpen:false — same reasoning as the IP-scoped limiter above.
   const albumLimit = await checkRateLimit(`face_index_album:${album.id}`, INDEX_WINDOW_SECONDS, INDEX_ALBUM_MAX, { failOpen: false })
   if (!albumLimit.ok) return rateLimitResponse(albumLimit.retryAfterSeconds)
@@ -186,9 +220,15 @@ async function handlePost(req: Request) {
       const name = (err as { name?: string }).name ?? 'Unknown'
       const message = err instanceof Error ? err.message : String(err)
       console.error('[face-index] indexPhotoFaces failed:', photo.id, name, message)
-      // Mark unindexable (face_ids = []) so it isn't retried forever.
-      await admin.from('photos').update({ face_ids: [] }).eq('id', photo.id)
-      return NextResponse.json({ indexed: 0 }, { headers: NO_STORE })
+      // LEFT NULL, so a later pass retries. [] is the sentinel for "looked at, found nobody",
+      // and writing it here made a TRANSIENT failure permanently mark a photo as face-free —
+      // silent data loss, and a runner who is in that photo can never be found in it again.
+      // lib/server/face-sweep.ts fixed exactly this and said so in a comment; the browser-driven
+      // path kept the bug (rule 13: one fact, two authors). It matters at event scale because
+      // every phone runs 8 concurrent indexers, so AWS throttling is normal, not exceptional.
+      // A genuinely unreadable image still resolves: indexPhotoFaces RETURNS [] rather than
+      // throwing when AWS reads the image and finds no face.
+      return NextResponse.json({ indexed: 0, retryable: true }, { headers: NO_STORE })
     }
   }
 

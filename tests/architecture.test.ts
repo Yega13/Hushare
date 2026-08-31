@@ -49,7 +49,9 @@ const SIZE_BUDGET: Record<string, number> = {
   // +4 on 2026-08-30: FILE_ACCEPT stopped being a fourth hand-written copy of the accepted
   // MIME types and now builds from lib/media. An import and a comment cost four lines here
   // and removed a list that had already fallen two formats behind. Deliberate.
-  'src/components/UploadZone.tsx': 2800,
+  // +18 (2026-08-31, audit): the parked-row retry now reads the server's refused list instead
+  // of ticking every video green, including ones that were never written.
+  'src/components/UploadZone.tsx': 2818,
   // +3 on 2026-08-30: the branding toggle gained a real plan check (it was dimmed but still
   // clickable), and Face Finder and bib search stopped riding on the collections flag. Three
   // lines of reasoning for three gates that were wrong. Deliberate.
@@ -84,7 +86,9 @@ const SIZE_BUDGET: Record<string, number> = {
   // where 22 tests now cover the boundary between a guest and this album's storage — including the
   // poisoned-thumbnail attack, which the mutation run confirmed they catch.
   'src/app/api/album/photos/create/route.ts': 518,
-  'src/components/FaceFinder.tsx': 542,
+  // +6 (2026-08-31, audit): progress comes from the server's outstanding count, not from the
+  // length of a page that PostgREST had silently truncated.
+  'src/components/FaceFinder.tsx': 549,
 }
 
 describe('the big files do not get bigger', () => {

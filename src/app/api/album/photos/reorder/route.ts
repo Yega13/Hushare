@@ -64,6 +64,21 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: 'Could not reorder photos' }, { status: 500, headers: NO_STORE })
   }
 
+  // Arranging photos by hand IS the album's order from now on. Without this the album keeps
+  // whatever photo_order it had and sorts by created_at, so the drag appears to work, the rows
+  // are written, and the arrangement is silently ignored on the next load.
+  const { error: orderErr } = await admin
+    .from('albums').update({ photo_order: 'manual' }).eq('id', access.album.id)
+  if (orderErr) {
+    // The sort values are already written, so the arrangement is not lost — it just will not be
+    // honoured until this succeeds. Worth saying so rather than reporting a clean success.
+    console.error('[photos/reorder] could not switch album to manual order:', orderErr.message)
+    return NextResponse.json(
+      { error: 'Photos were reordered but the album could not be switched to manual order. Try again.' },
+      { status: 500, headers: NO_STORE },
+    )
+  }
+
   // Reordering is an UPDATE; viewers pick it up via broadcast rather than postgres_changes.
   queueAlbumChangedBroadcast(access.album.id)
 

@@ -94,6 +94,9 @@ export default function FaceFinder({ albumSlug, photos, onClose }: Props) {
 
     let ids: string[] = []
     let dbTotal = imagePhotos.length
+    // What the SERVER says is still unindexed. Undefined only against an older deploy, where the
+    // old inference is the honest fallback.
+    let dbRemaining: number | undefined
     try {
       const res = await fetch(`/api/album/face-index?slug=${encodeURIComponent(albumSlug)}`, { signal })
       if (!res.ok) {
@@ -103,9 +106,10 @@ export default function FaceFinder({ albumSlug, photos, onClose }: Props) {
         setErrorMsg(errBody.error ?? t('ff.errIndexStart'))
         return
       }
-      const data = (await res.json()) as { ids: string[]; total: number }
+      const data = (await res.json()) as { ids: string[]; total: number; remaining?: number }
       ids = data.ids
       dbTotal = data.total || imagePhotos.length
+      dbRemaining = data.remaining
     } catch (err) {
       if ((err as { name?: string }).name === 'AbortError') return
       errorOrigin.current = 'indexing'
@@ -114,7 +118,10 @@ export default function FaceFinder({ albumSlug, photos, onClose }: Props) {
       return
     }
 
-    const alreadyIndexed = Math.max(0, dbTotal - ids.length)
+    // From the server's own count of what is LEFT, never inferred from the id list — that list
+    // is a capped page, and treating a truncated page as the whole job reported "100% indexed"
+    // on an album with two thousand photos never looked at.
+    const alreadyIndexed = Math.max(0, dbTotal - (dbRemaining ?? ids.length))
     setTotal(dbTotal)
     setIndexed(alreadyIndexed)
 

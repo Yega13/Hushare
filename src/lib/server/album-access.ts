@@ -24,7 +24,7 @@ const ALBUM_SELECT_COLS = [
   // user_id is fetched to size this album's upload caps by its OWNER's tier (see media_caps below).
   // It is stripped before the album is returned — it must never reach a client.
   'id', 'user_id', 'slug', 'custom_slug', 'title', 'background_theme',
-  'media_radius', 'media_filter', 'mobile_grid_columns', 'desktop_grid_columns', 'photo_layout',
+  'media_radius', 'media_filter', 'mobile_grid_columns', 'desktop_grid_columns', 'photo_layout', 'photo_order',
   'slideshow_interval_ms', 'slideshow_animation', 'slideshow_motion', 'video_autoplay',
   'cover_photo_id', 'header_image', 'header_focal', 'header_zoom', 'header_touched', 'header_video_mode', 'reveal_at', 'guest_uploads_enabled', 'allow_guest_downloads',
   'require_approval', 'face_finder_enabled', 'bib_search_enabled', 'bib_min', 'bib_max', 'branding_locked',
@@ -35,6 +35,7 @@ const ALBUM_SELECT_COLS = [
 
 // Same columns AlbumPageClient renders (mirrors the former photos route).
 import { bibSearchCandidates } from '@/lib/bib-match'
+import { orderClausesFor, isPhotoOrder } from '@/lib/photo-order'
 
 const PHOTO_SELECT_COLS = [
   'id', 'album_id', 'storage_path', 'storage_backend',
@@ -47,7 +48,7 @@ const PHOTO_SELECT_COLS = [
 type AlbumRow = {
   id: string; user_id: string | null; slug: string; custom_slug: string | null; title: string
   background_theme: string | null; media_radius: number; media_filter: string
-  mobile_grid_columns: number; desktop_grid_columns: number | null; photo_layout: string
+  mobile_grid_columns: number; desktop_grid_columns: number | null; photo_layout: string; photo_order: string
   slideshow_interval_ms: number; slideshow_animation: string; slideshow_motion: unknown; video_autoplay: boolean
   cover_photo_id: string | null; header_image: string | null; header_focal: string | null; header_zoom: number | null; header_touched: boolean
   header_video_mode: string | null; reveal_at: string | null; guest_uploads_enabled: boolean
@@ -375,9 +376,9 @@ export async function fetchAuthorizedPhotos(
     // bib_min/bib_max come from the ALBUM, never from the caller. They decide which OCR readings
     // count, so accepting them from the request would let anyone widen the race's numbering and
     // pull back photos the owner's bounds were set to exclude.
-    .select('id, user_id, owner_token, password_hash, reveal_at, retired_at, bib_search_enabled, bib_min, bib_max')
+    .select('id, user_id, owner_token, password_hash, reveal_at, retired_at, bib_search_enabled, bib_min, bib_max, photo_order')
     .eq('id', albumId)
-    .maybeSingle<{ id: string; user_id: string | null; owner_token: string; password_hash: string | null; reveal_at: string | null; retired_at: string | null; bib_search_enabled: boolean; bib_min: number | null; bib_max: number | null }>()
+    .maybeSingle<{ id: string; user_id: string | null; owner_token: string; password_hash: string | null; reveal_at: string | null; retired_at: string | null; bib_search_enabled: boolean; bib_min: number | null; bib_max: number | null; photo_order: string }>()
 
   if (!album || album.retired_at) return { kind: 'notfound' }
 
@@ -474,7 +475,16 @@ export async function fetchAuthorizedPhotos(
     // id is the deterministic tiebreaker: without it two photos sharing (sort_order, created_at)
     // could swap places between page fetches, so range() paging would skip/duplicate one. With it
     // the total order is stable, which is what makes offset paging correct.
-    : query.order('sort_order', { ascending: true, nullsFirst: false }).order('created_at', { ascending: true }).order('id', { ascending: true }).range(offset, offset + limit - 1)
+    // Ordering comes from the ALBUM, not from a constant here. It was fixed oldest-first, which
+      // made the first window — the slice every realtime refresh reloads — the 500 OLDEST photos,
+      // so on a growing album a new upload sorted past it and no visitor ever saw it arrive.
+      // lib/photo-order.ts owns the clauses and guarantees a unique tiebreak.
+    : orderClausesFor(isPhotoOrder(album.photo_order) ? album.photo_order : 'oldest')
+        .reduce(
+          (q, c) => q.order(c.column, { ascending: c.ascending, nullsFirst: false }),
+          query,
+        )
+        .range(offset, offset + limit - 1)
   const { data: photos, error } = await query
 
   if (error) {

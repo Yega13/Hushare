@@ -2398,7 +2398,18 @@ export default function UploadZone({ album, onPhotosUploaded }: Props) {
     if (retrying || pending.length === 0) return
     setRetrying(true)
     try {
-      await saveUploadedRows(album.id, pending.map(p => p.row))
+      // The server saves what it can and NAMES what it refused. Discarding that list and
+      // ticking everything green marks a video "done" that was never written — the guest sees a
+      // finished tile for a video that is not in the album, which is worse than an honest error
+      // because nothing prompts them to fix it. The debounced flush path already handles this
+      // and says so; this sibling did not (rule 15: the decision was enforced at one call site
+      // and not the other).
+      const { rejected } = await saveUploadedRows(album.id, pending.map(p => p.row))
+      const refused = new Set(rejected ?? [])
+      const lost = refused.size > 0
+        ? pending.filter(p => p.row.stream_uid && refused.has(p.row.stream_uid))
+        : []
+      const lostIds = new Set(lost.map(p => p.entryId))
       pendingSaveRef.current = []
       setPendingSaveCount(0)
       setPendingSaveReason(null)
@@ -2406,12 +2417,18 @@ export default function UploadZone({ album, onPhotosUploaded }: Props) {
       // entry with status 'error' to 'done', so in a mixed batch a photo that genuinely failed to
       // upload was given a green tick alongside the ones that really were saved — telling the
       // guest their photos were safe when those photos did not exist.
-      const saved = new Set(pending.map(p => p.entryId))
-      setEntries(prev => prev.map(e => (
-        saved.has(e.id) ? { ...e, status: 'done', error: undefined, progress: 100 } : e
-      )))
+      const saved = new Set(pending.filter(p => !lostIds.has(p.entryId)).map(p => p.entryId))
+      setEntries(prev => prev.map(e => {
+        if (lostIds.has(e.id)) {
+          // A refused uid will be refused forever — its upload token is already spent. Retry
+          // (a fresh Stream session) is what actually works, so this has to land on the tile's
+          // Retry button rather than back in the "finish the job" queue.
+          return { ...e, status: 'error', progress: 0, error: 'its upload session had already been used. Tap Retry to send it again.' }
+        }
+        return saved.has(e.id) ? { ...e, status: 'done', error: undefined, progress: 100 } : e
+      }))
       onPhotosUploaded?.()
-      showAppToast(t('uploadWall.saved', { n: pending.length }), 'success')
+      if (saved.size > 0) showAppToast(t('uploadWall.saved', { n: saved.size }), 'success')
     } catch (e) {
       showAppToast(e instanceof Error ? e.message : t('common.errorGeneric'), 'error')
     } finally {
