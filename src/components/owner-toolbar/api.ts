@@ -466,6 +466,20 @@ export async function saveGuestDownloadsRequest(
   return { ok: true, allow_guest_downloads: body.allow_guest_downloads ?? allowGuestDownloads }
 }
 
+export async function saveGuestUploadsRequest(
+  slug: string,
+  guestUploadsEnabled: boolean,
+): Promise<{ ok: true; guest_uploads_enabled: boolean } | { ok: false; error: string }> {
+  const res = await fetch('/api/album/guest-uploads', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ slug, guest_uploads_enabled: guestUploadsEnabled }),
+  })
+  const body = await jsonBody<{ error?: string; guest_uploads_enabled?: boolean }>(res)
+  if (!res.ok) return { ok: false, error: body.error ?? `Save failed (${res.status})` }
+  return { ok: true, guest_uploads_enabled: body.guest_uploads_enabled ?? guestUploadsEnabled }
+}
+
 // The composed slideshow transition saves on its own rather than riding along with the seven-field
 // media-settings call: it is dragged continuously across six axes, and it must not be able to
 // resend (or clobber) an unrelated setting on every tick. Same endpoint, partial body — the route

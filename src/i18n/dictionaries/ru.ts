@@ -379,6 +379,8 @@ export const ru: Partial<Record<DictKey, string>> = {
   'ot.downloading': 'Загрузка {n}%…',
   'ot.creatingZip': 'Создание архива…',
   'ot.downloadAll': 'Скачать всё ({n})',
+  'ot.allowUploads': 'Гости могут добавлять фото',
+  'ot.allowUploadsSub': 'Выключите — и добавлять сможете только вы. Остальные по-прежнему смогут смотреть и скачивать.',
   'ot.allowDownloads': 'Разрешить скачивание гостям',
   'ot.allowDownloadsSub': 'Гости могут скачать все фото одним архивом.',
   'ot.requireApproval': 'Требовать одобрения',

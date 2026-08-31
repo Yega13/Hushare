@@ -379,6 +379,8 @@ export const hy: Partial<Record<DictKey, string>> = {
   'ot.downloading': 'Ներբեռնում {n}%…',
   'ot.creatingZip': 'Արխիվի ստեղծում…',
   'ot.downloadAll': 'Ներբեռնել բոլորը ({n})',
+  'ot.allowUploads': 'Թույլատրել հյուրերի վերբեռնումը',
+  'ot.allowUploadsSub': 'Հյուրերը կարող են ավելացնել լուսանկարներ։',
   'ot.allowDownloads': 'Թույլատրել հյուրերի ներբեռնումը',
   'ot.allowDownloadsSub': 'Հյուրերը կարող են ներբեռնել բոլոր լուսանկարները մեկ արխիվով։',
   'ot.requireApproval': 'Պահանջել հաստատում',

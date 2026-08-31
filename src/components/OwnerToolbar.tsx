@@ -38,6 +38,7 @@ import {
   fetchCollections,
   saveCustomUrlRequest,
   saveGuestDownloadsRequest,
+  saveGuestUploadsRequest,
   saveRequireApprovalRequest,
   savePhotoLayoutRequest,
   saveMediaSettingsRequest,
@@ -168,6 +169,7 @@ export default function OwnerToolbar({ album, photos, albumPhotoCount, ownerToke
   const { zipping, zipProgress, zipStatus, downloadZip } = useZipDownload(photos, album)
 
   const [allowGuestDownloads, setAllowGuestDownloads] = useState(album.allow_guest_downloads !== false)
+  const [guestUploadsEnabled, setGuestUploadsEnabled] = useState(album.guest_uploads_enabled !== false)
   const [hideBranding, setHideBranding] = useState(!!album.hide_branding)
   const [requireApproval, setRequireApproval] = useState(!!album.require_approval)
   const [faceFinderEnabled, setFaceFinderEnabled] = useState(!!album.face_finder_enabled)
@@ -321,6 +323,7 @@ export default function OwnerToolbar({ album, photos, albumPhotoCount, ownerToke
       setVideoAutoplay(!!album.video_autoplay)
       setPhotoLayout(album.photo_layout === 'justified' ? 'justified' : 'grid')
       setAllowGuestDownloads(album.allow_guest_downloads !== false)
+      setGuestUploadsEnabled(album.guest_uploads_enabled !== false)
       setHideBranding(!!album.hide_branding)
       setRequireApproval(!!album.require_approval)
       setFaceFinderEnabled(!!album.face_finder_enabled)
@@ -342,7 +345,7 @@ export default function OwnerToolbar({ album, photos, albumPhotoCount, ownerToke
       setDeleteConfirm(false)
       setDeleteError('')
     }
-  }, [album.allow_guest_downloads, album.custom_slug, album.media_filter, album.media_radius, album.mobile_grid_columns, album.desktop_grid_columns, album.reveal_at, album.slideshow_animation, album.slideshow_motion, album.slideshow_interval_ms, album.video_autoplay, showSettings])
+  }, [album.allow_guest_downloads, album.guest_uploads_enabled, album.custom_slug, album.media_filter, album.media_radius, album.mobile_grid_columns, album.desktop_grid_columns, album.reveal_at, album.slideshow_animation, album.slideshow_motion, album.slideshow_interval_ms, album.video_autoplay, showSettings])
 
   useEffect(() => {
     if (showSettings && canUseCollections) void loadCollections()
@@ -1192,6 +1195,72 @@ export default function OwnerToolbar({ album, photos, albumPhotoCount, ownerToke
                 </button>
                 {openSection === 'guests' && (
                   <div className="px-4 pb-4 space-y-3">
+                    {/* WHO MAY ADD PHOTOS. The server has always enforced this — photos/create,
+                        presign, stream and image-relay all refuse when it is off — but nothing
+                        could SET it, so the only way to close an album to guests was an UPDATE
+                        against the database by hand. It sits first because it is the biggest
+                        switch here: everything else shapes what guests see, this decides whether
+                        they contribute at all. */}
+                    <label className="flex items-center justify-between gap-4 rounded-xl px-3 py-3" style={{ background: '#FDFAF5', border: '1px solid #DDD5C5', cursor: 'pointer' }}>
+                      <span>
+                        <span className="block text-sm font-semibold" style={{ color: '#630826' }}>{t('ot.allowUploads')}</span>
+                        <span className="block text-xs" style={{ color: '#7C5C3E' }}>{t('ot.allowUploadsSub')}</span>
+                      </span>
+                      <input
+                        type="checkbox"
+                        checked={guestUploadsEnabled}
+                        onChange={async (e) => {
+                          const next = e.target.checked
+                          setGuestUploadsEnabled(next)
+                          onAlbumUpdated({ guest_uploads_enabled: next })
+                          try {
+                            const result = await saveGuestUploadsRequest(album.slug, next)
+                            if (!result.ok) {
+                              showAppToast(result.error, 'error')
+                              setGuestUploadsEnabled(!next)
+                              onAlbumUpdated({ guest_uploads_enabled: !next })
+                            }
+                          } catch (e) {
+                            const message = e instanceof Error ? e.message : t('common.networkError')
+                            showAppToast(message, 'error')
+                            setGuestUploadsEnabled(!next)
+                            onAlbumUpdated({ guest_uploads_enabled: !next })
+                          }
+                        }}
+                        className="h-4 w-4"
+                      />
+                    </label>
+
+<label className="flex items-center justify-between gap-4 rounded-xl px-3 py-3" style={{ background: '#FDFAF5', border: '1px solid #DDD5C5', cursor: 'pointer' }}>
+                      <span>
+                        <span className="block text-sm font-semibold" style={{ color: '#630826' }}>{t('ot.allowDownloads')}</span>
+                        <span className="block text-xs" style={{ color: '#7C5C3E' }}>{t('ot.allowDownloadsSub')}</span>
+                      </span>
+                      <input
+                        type="checkbox"
+                        checked={allowGuestDownloads}
+                        onChange={async (e) => {
+                          const next = e.target.checked
+                          setAllowGuestDownloads(next)
+                          onAlbumUpdated({ allow_guest_downloads: next })
+                          try {
+                            const result = await saveGuestDownloadsRequest(album.slug, next)
+                            if (!result.ok) {
+                              showAppToast(result.error, 'error')
+                              setAllowGuestDownloads(!next)
+                              onAlbumUpdated({ allow_guest_downloads: !next })
+                            }
+                          } catch (e) {
+                            const message = e instanceof Error ? e.message : t('common.networkError')
+                            showAppToast(message, 'error')
+                            setAllowGuestDownloads(!next)
+                            onAlbumUpdated({ allow_guest_downloads: !next })
+                          }
+                        }}
+                        className="h-4 w-4"
+                      />
+                    </label>
+
                     <label className="flex items-center justify-between gap-4 rounded-xl px-3 py-3" style={{ background: '#FDFAF5', border: '1px solid #DDD5C5', ...gatedRowStyle(showLockedModeration) }}>
                       <span>
                         <span className="block text-sm font-semibold" style={{ color: '#630826' }}>
@@ -1257,35 +1326,6 @@ export default function OwnerToolbar({ album, photos, albumPhotoCount, ownerToke
                       )}
                     </button>
 
-                    <label className="flex items-center justify-between gap-4 rounded-xl px-3 py-3" style={{ background: '#FDFAF5', border: '1px solid #DDD5C5', cursor: 'pointer' }}>
-                      <span>
-                        <span className="block text-sm font-semibold" style={{ color: '#630826' }}>{t('ot.allowDownloads')}</span>
-                        <span className="block text-xs" style={{ color: '#7C5C3E' }}>{t('ot.allowDownloadsSub')}</span>
-                      </span>
-                      <input
-                        type="checkbox"
-                        checked={allowGuestDownloads}
-                        onChange={async (e) => {
-                          const next = e.target.checked
-                          setAllowGuestDownloads(next)
-                          onAlbumUpdated({ allow_guest_downloads: next })
-                          try {
-                            const result = await saveGuestDownloadsRequest(album.slug, next)
-                            if (!result.ok) {
-                              showAppToast(result.error, 'error')
-                              setAllowGuestDownloads(!next)
-                              onAlbumUpdated({ allow_guest_downloads: !next })
-                            }
-                          } catch (e) {
-                            const message = e instanceof Error ? e.message : t('common.networkError')
-                            showAppToast(message, 'error')
-                            setAllowGuestDownloads(!next)
-                            onAlbumUpdated({ allow_guest_downloads: !next })
-                          }
-                        }}
-                        className="h-4 w-4"
-                      />
-                    </label>
 
                     {/* Pro+. The server is the authority — this only decides what the owner is
                         shown, and a free owner toggling it gets the plan message back rather than a
