@@ -20,7 +20,7 @@ const NO_STORE = { 'Cache-Control': 'no-store' }
 // This asks Polar what is true and writes it down, nightly. Idempotent — every write is keyed on
 // polar_subscription_id, so it converges rather than duplicating, and a normal night changes
 // nothing at all.
-export async function GET(req: Request) {
+export async function POST(req: Request) {
   const secret = process.env.CRON_SECRET
   if (!secret) {
     return NextResponse.json({ error: 'Not configured' }, { status: 503, headers: NO_STORE })
