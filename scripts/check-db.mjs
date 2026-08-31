@@ -15,7 +15,7 @@ import { connectionString } from './db-connection.mjs'
 // What the application requires. Add to this whenever code starts depending on a
 // new column/table/function/policy — that keeps the check honest.
 const REQUIRED_COLUMNS = {
-  albums: ['password_hash', 'reveal_at', 'owner_token', 'slug', 'custom_slug', 'retired_at', 'guest_uploads_enabled'],
+  albums: ['password_hash', 'reveal_at', 'owner_token', 'slug', 'custom_slug', 'retired_at', 'guest_uploads_enabled', 'mobile_grid_columns', 'desktop_grid_columns'],
   photos: ['album_id', 'storage_backend', 'storage_path', 'stream_uid', 'face_ids', 'sort_order', 'thumb_url'],
   subscriptions: ['user_id', 'polar_subscription_id', 'tier', 'status', 'current_period_end'],
   collections: ['user_id', 'slug', 'name'],

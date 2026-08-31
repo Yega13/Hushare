@@ -1,3 +1,4 @@
+import { MOBILE_COLUMN_CHOICES } from '@/lib/grid-columns'
 // Types are declared in @/types to avoid duplication across the codebase.
 // Re-exported here so all existing imports of `@/lib/media-display` keep working.
 export type {
@@ -25,13 +26,11 @@ export const MEDIA_DISPLAY_FILTER_OPTIONS: Array<{ value: MediaDisplayFilter; la
   { value: 'soft', label: 'Soft' },
 ]
 
-export const MOBILE_GRID_COLUMN_OPTIONS: Array<{ value: MobileGridColumns; label: string }> = [
-  { value: 2, label: '2 in a row' },
-  { value: 3, label: '3 in a row' },
-  { value: 4, label: '4 in a row' },
-  { value: 5, label: '5 in a row' },
-  { value: 6, label: '6 in a row' },
-]
+// DERIVED, never typed out again. This list and the API's accepted set were two hand-kept
+// copies that agreed only by luck — the route's local Set had already drifted to 3-6 while the
+// toolbar claimed to own the range. lib/grid-columns.ts is the source; this only adds labels.
+export const MOBILE_GRID_COLUMN_OPTIONS: Array<{ value: MobileGridColumns; label: string }> =
+  MOBILE_COLUMN_CHOICES.map((value) => ({ value, label: `${value} in a row` }))
 
 export const SLIDESHOW_ANIMATION_OPTIONS: Array<{ value: SlideshowAnimation; label: string }> = [
   { value: 'fade', label: 'Fade' },
@@ -49,11 +48,6 @@ const SLIDESHOW_ANIMATIONS = new Set<SlideshowAnimation>(
 
 export function isMediaDisplayFilter(value: unknown): value is MediaDisplayFilter {
   return typeof value === 'string' && MEDIA_DISPLAY_FILTERS.has(value as MediaDisplayFilter)
-}
-
-export function isMobileGridColumns(value: unknown): value is MobileGridColumns {
-  const n = typeof value === 'number' ? value : Number(value)
-  return MOBILE_GRID_COLUMN_OPTIONS.some((o) => o.value === n)
 }
 
 export function isSlideshowAnimation(value: unknown): value is SlideshowAnimation {

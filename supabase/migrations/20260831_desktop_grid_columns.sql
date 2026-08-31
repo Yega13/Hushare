@@ -10,8 +10,10 @@
 alter table albums add column if not exists desktop_grid_columns smallint;
 
 alter table albums drop constraint if exists albums_desktop_grid_columns_check;
+-- Exactly the values DESKTOP_COLUMN_CHOICES offers. A range the app can never write is an
+-- uncopied fact that drifts; two is a phone option only.
 alter table albums add constraint albums_desktop_grid_columns_check
-  check (desktop_grid_columns is null or desktop_grid_columns between 2 and 8);
+  check (desktop_grid_columns is null or desktop_grid_columns = any (array[3, 4, 5, 6, 7, 8]));
 
 -- Two photos across is now an option on phones. This is what an owner actually wants for an
 -- event album viewed one-handed: a bib number or a face is readable at 2 across on a 390px

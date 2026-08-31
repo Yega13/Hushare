@@ -14,8 +14,7 @@ export const DESKTOP_COLUMN_CHOICES = [3, 4, 5, 6, 7, 8] as const
 export type MobileColumns = (typeof MOBILE_COLUMN_CHOICES)[number]
 export type DesktopColumns = (typeof DESKTOP_COLUMN_CHOICES)[number]
 
-/** The desktop default for an album whose owner has never chosen one: what the grid rendered
- *  before this setting existed, so nothing changes appearance until somebody picks. */
+/** Last resort only — used when an album has NEITHER a desktop choice nor a usable mobile one. */
 export const DESKTOP_COLUMNS_FALLBACK = 5
 export const MOBILE_COLUMNS_FALLBACK = 3
 
@@ -35,8 +34,17 @@ export function resolveGridColumns(album: {
   mobile_grid_columns?: number | null
   desktop_grid_columns?: number | null
 }): { mobile: number; desktop: number } {
-  return {
-    mobile: isMobileColumns(album.mobile_grid_columns) ? album.mobile_grid_columns : MOBILE_COLUMNS_FALLBACK,
-    desktop: isDesktopColumns(album.desktop_grid_columns) ? album.desktop_grid_columns : DESKTOP_COLUMNS_FALLBACK,
-  }
+  const mobile = isMobileColumns(album.mobile_grid_columns) ? album.mobile_grid_columns : MOBILE_COLUMNS_FALLBACK
+  if (isDesktopColumns(album.desktop_grid_columns)) return { mobile, desktop: album.desktop_grid_columns }
+  // NO DESKTOP CHOICE YET: fall back to this album's OWN mobile number, because that is
+  // literally what the grid rendered at every width before the split. A fixed default here
+  // would silently re-lay-out every album on the platform the moment this shipped — measured:
+  // 97 of 97 albums had no desktop value, and the live event album (6 across) would have
+  // reflowed to 5 under guests mid-scroll, against a number its owner had chosen on purpose.
+  // Clamped into the desktop range, so a 2-across phone album gets the nearest legal 3.
+  const carried = Math.min(
+    Math.max(mobile, Math.min(...DESKTOP_COLUMN_CHOICES)),
+    Math.max(...DESKTOP_COLUMN_CHOICES),
+  )
+  return { mobile, desktop: isDesktopColumns(carried) ? carried : DESKTOP_COLUMNS_FALLBACK }
 }

@@ -145,7 +145,7 @@ export default function OwnerToolbar({ album, photos, ownerToken, userTier, medi
   const [photoLayout, setPhotoLayout] = useState<'grid' | 'justified'>(album.photo_layout === 'justified' ? 'justified' : 'grid')
   const [mediaFilter, setMediaFilter] = useState<MediaDisplayFilter>(album.media_filter ?? 'none')
   const [savedMediaFilter, setSavedMediaFilter] = useState<MediaDisplayFilter>(album.media_filter ?? 'none')
-  const [mobileGridColumns, setMobileGridColumns] = useState<MobileGridColumns>(album.mobile_grid_columns ?? 3)
+  const [mobileGridColumns, setMobileGridColumns] = useState<MobileGridColumns>((resolveGridColumns(album).mobile) as MobileGridColumns)
   const [desktopGridColumns, setDesktopGridColumns] = useState<number>(resolveGridColumns(album).desktop)
   const [slideshowIntervalMs, setSlideshowIntervalMs] = useState(album.slideshow_interval_ms ?? DEFAULT_SLIDESHOW_INTERVAL_MS)
   const [slideshowAnimation, setSlideshowAnimation] = useState<SlideshowAnimation>(album.slideshow_animation ?? 'fade')
@@ -322,7 +322,7 @@ export default function OwnerToolbar({ album, photos, ownerToken, userTier, medi
       setFaceFinderEnabled(!!album.face_finder_enabled)
       setMediaFilter(album.media_filter ?? 'none')
       setSavedMediaFilter(album.media_filter ?? 'none')
-      setMobileGridColumns(album.mobile_grid_columns ?? 3)
+      setMobileGridColumns(resolveGridColumns(album).mobile as MobileGridColumns)
       setDesktopGridColumns(resolveGridColumns(album).desktop)
       setSlideshowIntervalMs(album.slideshow_interval_ms ?? DEFAULT_SLIDESHOW_INTERVAL_MS)
       setSlideshowAnimation(album.slideshow_animation ?? 'fade')
@@ -903,7 +903,7 @@ export default function OwnerToolbar({ album, photos, ownerToken, userTier, medi
                         })}
                       </div>
                       <label className="mb-2 mt-4 block text-xs font-medium" style={{ color: '#7C5C3E' }}>{t('ot.gridDesktop')}</label>
-                      <div className="grid grid-cols-6 gap-2">
+                      <div className="grid grid-cols-3 gap-2">
                         {DESKTOP_COLUMN_CHOICES.map((value) => {
                           const selected = desktopGridColumns === value
                           return (

@@ -2,8 +2,9 @@
   /* PER DEVICE. One variable served both screens until 2026-08-31, so an owner choosing 5 for
      their laptop gave phone visitors five ~70px thumbnails, and one choosing 3 for phones gave
      desktops three enormous tiles. 900px is the same width the rest of the album chrome treats
-     as "a real screen". Both defaults match what the grid rendered before the split, so an
-     album whose owner has not chosen looks unchanged. */
+     as "a real screen". An album with no desktop choice has --hush-grid-cols-desktop set to its
+     OWN phone number by resolveGridColumns, so it renders exactly as it did before the split —
+     the var defaults in this file are a last resort that should never be reached. */
   .hush-photo-grid {
     grid-template-columns: repeat(var(--hush-grid-cols, 3), minmax(0, 1fr));
   }
