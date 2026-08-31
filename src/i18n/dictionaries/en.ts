@@ -142,7 +142,7 @@ export const en = {
   'pricing.cycleLabel': 'Billing period',
   'pricing.cycleMonthly': 'Monthly',
   'pricing.cycleYearly': 'Yearly',
-  'pricing.cycleSave': 'save {n} months',
+  'pricing.cycleSave': 'Save {n} months a year',
   'pricing.pro.yearlyRenew': 'Billed once a year. Auto-renews until cancelled.',
   'pricing.max.yearlyRenew': 'Billed once a year. Auto-renews until cancelled.',
   'pricing.cadenceYear': 'per year',

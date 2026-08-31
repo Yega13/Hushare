@@ -16,48 +16,53 @@
     pointer-events: none;
   }
 
+  /* Sized to its own text and placed UNDER the price, not above it.
+     The first version ran the full width of the card and sat above the number, which made the
+     loudest object on a pricing card the control rather than the price. It also wore a thick
+     filled pill, against a page built from thin rules, serif numerals and small-caps chips.
+     This borrows that chip language instead: 11px, uppercase, letter-spaced — the same voice
+     as MOST LOVED and FIRST MONTH, so it reads as part of the card rather than bolted on. */
   .hush-cycle {
-    --hush-cyc-track: rgba(99, 8, 38, 0.07);
-    --hush-cyc-edge: rgba(99, 8, 38, 0.16);
+    --hush-cyc-track: rgba(99, 8, 38, 0.06);
+    --hush-cyc-edge: rgba(99, 8, 38, 0.14);
     --hush-cyc-thumb: #630826;
     --hush-cyc-on: #FDFAF5;
-    --hush-cyc-off: #8B6F4E;
+    --hush-cyc-off: #9A836B;
     position: relative;
-    display: grid;
+    display: inline-grid;
     grid-template-columns: 1fr 1fr;
     align-items: stretch;
-    gap: 0;
-    width: 100%;
-    padding: 4px;
-    margin-bottom: 18px;
+    padding: 3px;
+    margin: 10px 0 2px;
     border-radius: 999px;
     background: var(--hush-cyc-track);
     border: 1px solid var(--hush-cyc-edge);
     isolation: isolate;
   }
 
-  /* The highlighted card is dark, so the switch inverts rather than disappearing into it. */
+  /* The highlighted card is dark, so the switch inverts rather than sinking into it. */
   .hush-cycle.is-dark {
-    --hush-cyc-track: rgba(253, 250, 245, 0.12);
-    --hush-cyc-edge: rgba(253, 250, 245, 0.34);
+    --hush-cyc-track: rgba(253, 250, 245, 0.10);
+    --hush-cyc-edge: rgba(253, 250, 245, 0.26);
     --hush-cyc-thumb: #FDFAF5;
     --hush-cyc-on: #630826;
-    --hush-cyc-off: rgba(253, 250, 245, 0.82);
+    --hush-cyc-off: rgba(253, 250, 245, 0.70);
   }
 
-  /* The moving part. One element that slides, rather than two that fade: a single travelling
-     shape is what makes a switch read as one control with two states instead of two buttons. */
+  /* The moving part. One element that travels, rather than two that fade: a single moving
+     shape is what makes a switch read as one control with two states instead of two buttons.
+     The overshoot in the curve is the whole character of it — it arrives, settles, and stops. */
   .hush-cycle-thumb {
     position: absolute;
     z-index: 0;
-    top: 4px;
-    bottom: 4px;
-    left: 4px;
-    width: calc(50% - 4px);
+    top: 3px;
+    bottom: 3px;
+    left: 3px;
+    width: calc(50% - 3px);
     border-radius: 999px;
     background: var(--hush-cyc-thumb);
-    box-shadow: 0 2px 10px rgba(99, 8, 38, 0.22);
-    transition: transform 320ms cubic-bezier(0.34, 1.32, 0.48, 1);
+    box-shadow: 0 1px 3px rgba(99, 8, 38, 0.20), inset 0 1px 0 rgba(255, 255, 255, 0.14);
+    transition: transform 340ms cubic-bezier(0.34, 1.42, 0.44, 1);
     will-change: transform;
   }
 
@@ -67,36 +72,21 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    gap: 6px;
     cursor: pointer;
     border-radius: 999px;
-    padding: 8px 6px;
-    font-size: 13px;
-    font-weight: 600;
+    padding: 6px 15px;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
     color: var(--hush-cyc-off);
     white-space: nowrap;
-    transition: color 200ms ease;
+    transition: color 220ms ease;
     -webkit-tap-highlight-color: transparent;
   }
 
   .hush-cycle-opt:hover { color: var(--hush-cyc-thumb); }
   .hush-cycle.is-dark .hush-cycle-opt:hover { color: var(--hush-cyc-on); }
-
-  /* The saving, revealed only on the side it applies to. It occupies its space either way, so
-     the switch does not change width when it appears — a control that resizes as you use it
-     reads as a glitch. */
-  .hush-cycle-save {
-    font-size: 10.5px;
-    font-weight: 700;
-    letter-spacing: 0.02em;
-    padding: 2px 7px;
-    border-radius: 999px;
-    background: rgba(46, 107, 62, 0.16);
-    color: #2E6B3E;
-    opacity: 0;
-    transform: scale(0.86);
-    transition: opacity 220ms ease 60ms, transform 220ms cubic-bezier(0.34, 1.32, 0.48, 1) 60ms;
-  }
 
   /* ── State, driven entirely by which radio is checked ───────────────────── */
   .hush-cycle-radio[value="yearly"]:checked ~ .hush-cycle .hush-cycle-thumb {
@@ -108,20 +98,22 @@
     color: var(--hush-cyc-on);
   }
 
-  .hush-cycle-radio[value="yearly"]:checked ~ .hush-cycle .hush-cycle-save {
-    opacity: 1;
-    transform: scale(1);
-  }
-
-  .hush-cycle.is-dark .hush-cycle-save {
-    background: rgba(253, 250, 245, 0.22);
-    color: #FDFAF5;
-  }
-
-  /* Keyboard focus has to show on the LABEL, since the input it belongs to is hidden. */
+  /* Keyboard focus has to show on the switch, since the input it belongs to is hidden. */
   .hush-cycle-radio:focus-visible ~ .hush-cycle {
     outline: 2px solid var(--hush-cyc-thumb);
     outline-offset: 3px;
+  }
+
+  /* THE SAVING LIVES OUTSIDE THE SWITCH.
+     Inside it, the chip either changed the control's width as you used it or had to reserve
+     space it did not always need. As a line under the yearly price it says the same thing
+     where the eye already is, and the switch stays two words wide. */
+  .hush-cycle-save {
+    display: inline-block;
+    font-size: 11.5px;
+    font-weight: 700;
+    color: #2E6B3E;
+    animation: hush-cycle-rise 320ms cubic-bezier(0.16, 1, 0.3, 1) both;
   }
 
   /* Which price and which checkout button. Both are in the HTML, so switching costs no request
@@ -129,22 +121,20 @@
   .hush-cycle-radio[value="monthly"]:checked ~ .hush-yearly-only { display: none; }
   .hush-cycle-radio[value="yearly"]:checked ~ .hush-monthly-only { display: none; }
 
-  /* The price itself gets a small arrival move, so the number visibly belongs to the switch
-     that was just used rather than appearing to have been there all along. */
-  .hush-cycle-price {
-    animation: hush-cycle-price-in 300ms cubic-bezier(0.16, 1, 0.3, 1) both;
-  }
+  /* The arriving price lifts in, so the number visibly belongs to the switch just used rather
+     than appearing to have been there all along. */
+  .hush-cycle-price { animation: hush-cycle-rise 300ms cubic-bezier(0.16, 1, 0.3, 1) both; }
 
-  @keyframes hush-cycle-price-in {
-    from { opacity: 0; transform: translateY(6px); }
+  @keyframes hush-cycle-rise {
+    from { opacity: 0; transform: translateY(5px); }
     to   { opacity: 1; transform: translateY(0); }
   }
 
   /* Motion is decoration here; the switch works identically without it. */
   @media (prefers-reduced-motion: reduce) {
     .hush-cycle-thumb,
-    .hush-cycle-save,
     .hush-cycle-opt { transition: none; }
-    .hush-cycle-price { animation: none; }
+    .hush-cycle-price,
+    .hush-cycle-save { animation: none; }
   }
 }

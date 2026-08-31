@@ -134,7 +134,7 @@ export const ru: Partial<Record<DictKey, string>> = {
   'pricing.cycleLabel': 'Период оплаты',
   'pricing.cycleMonthly': 'Помесячно',
   'pricing.cycleYearly': 'Годовой',
-  'pricing.cycleSave': 'экономия {n} мес.',
+  'pricing.cycleSave': 'Экономия {n} месяцев в год',
   'pricing.pro.yearlyRenew': 'Оплата раз в год. Продлевается автоматически до отмены.',
   'pricing.max.yearlyRenew': 'Оплата раз в год. Продлевается автоматически до отмены.',
   'pricing.cadenceYear': 'в год',

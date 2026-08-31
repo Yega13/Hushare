@@ -466,24 +466,6 @@ export default async function PricingPage() {
                     id={`cyc-${t.name.toLowerCase()}-y`} name={`cyc-${t.name.toLowerCase()}`}
                     className="hush-cycle-radio" aria-label={`${t.name} ${dict['pricing.cycleYearly']}`}
                   />
-                  <div className={`hush-cycle${t.highlight ? ' is-dark' : ''}`}>
-                    {/* aria-hidden: the labels below are the real, announced controls. */}
-                    <span className="hush-cycle-thumb" aria-hidden />
-                    <label className="hush-cycle-opt hush-cycle-opt-monthly" htmlFor={`cyc-${t.name.toLowerCase()}-m`}>
-                      {dict['pricing.cycleMonthly']}
-                    </label>
-                    <label className="hush-cycle-opt hush-cycle-opt-yearly" htmlFor={`cyc-${t.name.toLowerCase()}-y`}>
-                      {dict['pricing.cycleYearly']}
-                      <span className="hush-cycle-save">
-                        {interpolate(dict['pricing.cycleSave'], {
-                          n: String(monthsSaved(
-                            PLAN_CATALOGUE[t.monthlyPlan as 'pro_monthly'].amountCents,
-                            PLAN_CATALOGUE[t.yearlyPlan as 'pro_yearly'].amountCents,
-                          )),
-                        })}
-                      </span>
-                    </label>
-                  </div>
                 </>
               )}
 
@@ -506,6 +488,36 @@ export default async function PricingPage() {
                     {t.yearlyCadence}
                   </span>
                 </div>
+              )}
+
+              {/* The switch sits UNDER the price it changes, so the price stays the loudest thing
+                  on the card and the control reads as a modifier of it. The radios above are
+                  invisible and stay where they are — the CSS reaches these as SIBLINGS, so
+                  wrapping any of it in a div silently stops the switch working. */}
+              {t.yearlyPlan && (
+                <div className={`hush-cycle${t.highlight ? ' is-dark' : ''}`}>
+                  {/* aria-hidden: the labels are the real, announced controls. */}
+                  <span className="hush-cycle-thumb" aria-hidden />
+                  <label className="hush-cycle-opt hush-cycle-opt-monthly" htmlFor={`cyc-${t.name.toLowerCase()}-m`}>
+                    {dict['pricing.cycleMonthly']}
+                  </label>
+                  <label className="hush-cycle-opt hush-cycle-opt-yearly" htmlFor={`cyc-${t.name.toLowerCase()}-y`}>
+                    {dict['pricing.cycleYearly']}
+                  </label>
+                </div>
+              )}
+
+              {t.yearlyPlan && (
+                <p className="hush-yearly-only" style={{ margin: '2px 0 0' }}>
+                  <span className="hush-cycle-save" style={t.highlight ? { color: '#A8D5B5' } : undefined}>
+                    {interpolate(dict['pricing.cycleSave'], {
+                      n: String(monthsSaved(
+                        PLAN_CATALOGUE[t.monthlyPlan as 'pro_monthly'].amountCents,
+                        PLAN_CATALOGUE[t.yearlyPlan as 'pro_yearly'].amountCents,
+                      )),
+                    })}
+                  </span>
+                </p>
               )}
 
               {/* THE YEARLY OPTION HAS TO LOOK LIKE A BUTTON.

@@ -134,7 +134,7 @@ export const hy: Partial<Record<DictKey, string>> = {
   'pricing.cycleLabel': 'Հաշվարկման ժամկետ',
   'pricing.cycleMonthly': 'Ամսական',
   'pricing.cycleYearly': 'Տարեկան',
-  'pricing.cycleSave': 'խնայեք {n} ամիս',
+  'pricing.cycleSave': 'Խնայեք {n} ամիս տարին',
   'pricing.pro.yearlyRenew': 'Գանձվում է տարեկան մեկ անգամ։ Թարմացվում է ավտոմատ մինչև չեղարկելը։',
   'pricing.max.yearlyRenew': 'Գանձվում է տարեկան մեկ անգամ։ Թարմացվում է ավտոմատ մինչև չեղարկելը։',
   'pricing.cadenceYear': 'տարեկան',
