@@ -88,6 +88,17 @@ type Tier = {
   features: string[]
 }
 
+// THE STRINGS IN features BELOW ARE NEVER SHOWN TO ANYONE.
+//
+// PricingPage renders them as tier.features.map((_, i) => tt('pricing.<key>.f<i+1>')) — it throws
+// the literals away and keeps only the COUNT, pulling the real copy from the dictionary with every
+// number interpolated from lib/media. So these are placeholders that read exactly like the source
+// of truth, and they had quietly rotted into a lie: this array still claimed 1,000 free items
+// (really 500 since 25 Aug) and 50 Max albums (really 40).
+//
+// Left as prose rather than reduced to a count, because the shape documents which feature sits at
+// which index — but treat them as comments. To change what the page SAYS, edit
+// src/i18n/dictionaries/*.ts. To change what it MEANS, edit src/lib/media.ts.
 const tiers: Tier[] = [
   {
     name: 'Free',
@@ -98,7 +109,7 @@ const tiers: Tier[] = [
     href: '/',
     highlight: false,
     features: [
-      'Up to 1,000 photos & videos per album (250 as a guest)',
+      'Up to 500 photos & videos per album (250 as a guest)',
       'Anyone can view & add via the link',
       'Download full album as ZIP',
       'Photos up to 25 MB · videos up to 200 MB',
@@ -160,7 +171,7 @@ const tiers: Tier[] = [
       'Priority support - replies within 24 hrs',
       'Account dashboard to manage your subscription',
       'Up to 10,000 photos & videos per album',
-      'Create up to 50 albums',
+      'Create up to 40 albums',
     ],
   },
 ]

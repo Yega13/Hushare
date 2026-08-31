@@ -177,7 +177,12 @@ export const ANON_ALBUM_LIMIT = 2
 export const ANON_ALBUM_DAILY_IP_LIMIT = 10
 export const FREE_ALBUM_LIMIT = 3
 export const PRO_ALBUM_LIMIT = 15
-export const STUDIO_ALBUM_LIMIT = 50
+// Lowered 50 -> 40 on 2026-08-31. Checked first: the largest account holds 11 albums, so nobody
+// alive loses anything — and lowering a limit is not like raising one, so it must never be done
+// without that check. It also pulls in the worst case that made Max awkward to price: the video
+// allowance multiplies by this number, and 50 albums put the theoretical ceiling above the plan's
+// own revenue.
+export const STUDIO_ALBUM_LIMIT = 40
 
 export function albumCountLimitForTier(tier: Tier): number {
   if (tier === 'studio') return STUDIO_ALBUM_LIMIT
