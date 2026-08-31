@@ -16,6 +16,7 @@ import {
 } from '@/lib/media'
 import type { DictKey } from '@/i18n/dictionaries/en'
 import type { PlanKey } from '@/lib/polar'
+import { PLAN_CATALOGUE, formatPrice, monthsSaved } from '@/lib/plan-catalogue'
 
 export const runtime = 'nodejs'
 
@@ -61,6 +62,13 @@ type Tier = {
   price: string
   cadence: string
   annual?: string
+  // What the big number and the line under it become when the Yearly side of the switch is on.
+  // Derived from PLAN_CATALOGUE (lib/plan-catalogue.ts), which is the same table the Polar
+  // health check verifies against Polar — so the switch cannot advertise a price Polar will
+  // not charge, which is exactly how "$100 / year" ended up sold as $100 a month.
+  yearlyPrice?: string
+  yearlyCadence?: string
+  yearlyRenewText?: string
   promo?: string
   renewText?: string
   cta: string
@@ -105,6 +113,9 @@ const tiers: Tier[] = [
     price: '$4',
     cadence: 'per month',
     annual: '$40 / year - save 2 months',
+    yearlyPrice: formatPrice(PLAN_CATALOGUE.pro_yearly.amountCents),
+    yearlyCadence: 'per year',
+    yearlyRenewText: 'Billed once a year. Auto-renews until cancelled.',
     promo: 'First month $1.99',
     renewText: 'Intro offer: $1.99 first month, then $4/month. Auto-renews until cancelled.',
     cta: 'Get Pro',
@@ -131,6 +142,9 @@ const tiers: Tier[] = [
     price: '$10',
     cadence: 'per month',
     annual: '$100 / year - save 2 months',
+    yearlyPrice: formatPrice(PLAN_CATALOGUE.studio_yearly.amountCents),
+    yearlyCadence: 'per year',
+    yearlyRenewText: 'Billed once a year. Auto-renews until cancelled.',
     promo: 'First month $6.99',
     renewText: 'Intro offer: $6.99 first month, then $10/month. Auto-renews until cancelled.',
     cta: 'Get Max',
@@ -308,6 +322,8 @@ export default async function PricingPage() {
       cadence: key === 'free' ? tt('pricing.cadenceForever') : tt('pricing.cadenceMonth'),
       cta: tt(`pricing.${key}.cta`),
       annual: tier.annual ? tt(`pricing.${key}.annual`) : tier.annual,
+      yearlyCadence: tier.yearlyCadence ? tt('pricing.cadenceYear') : tier.yearlyCadence,
+      yearlyRenewText: tier.yearlyRenewText ? tt(`pricing.${key}.yearlyRenew`) : tier.yearlyRenewText,
       promo: tier.promo ? tt(`pricing.${key}.promo`) : tier.promo,
       renewText: tier.renewText ? tt(`pricing.${key}.renew`) : tier.renewText,
       features: tier.features.map((_, i) => tt(`pricing.${key}.f${i + 1}`)),
@@ -390,7 +406,28 @@ export default async function PricingPage() {
 
       {/* Tiers */}
       <section className="hush-container pb-16">
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 md:gap-5 xl:gap-7 items-stretch">
+        {/* The yearly option used to be a 12px caption under the price with no border and no
+            background — clickable, and indistinguishable from the plain text rendered beside it
+            for plans without a yearly option. The OWNER could not find how to buy an annual plan
+            on their own pricing page. Both cycles are now equals, and both prices are in the HTML
+            from the first byte: the switch is two radios and CSS (styles/pricing.css), so it
+            works before any JavaScript loads and cannot show a price fetched after the fact. */}
+        <input type="radio" id="hush-cyc-m" name="hush-cycle" className="hush-cycle-radio" defaultChecked aria-label={dict['pricing.cycleMonthly']} />
+        <input type="radio" id="hush-cyc-y" name="hush-cycle" className="hush-cycle-radio" aria-label={dict['pricing.cycleYearly']} />
+        <div className="flex justify-center mb-8">
+          <div className="hush-cycle-switch" role="group" aria-label={dict['pricing.cycleLabel']}>
+            <label htmlFor="hush-cyc-m">{dict['pricing.cycleMonthly']}</label>
+            <label htmlFor="hush-cyc-y">
+              {dict['pricing.cycleYearly']}
+              <span style={{ fontSize: 11, opacity: 0.85 }}>
+                {' · ' + interpolate(dict['pricing.cycleSave'], {
+                  n: String(monthsSaved(PLAN_CATALOGUE.pro_monthly.amountCents, PLAN_CATALOGUE.pro_yearly.amountCents)),
+                })}
+              </span>
+            </label>
+          </div>
+        </div>
+        <div className="hush-cycle-cards grid grid-cols-1 md:grid-cols-3 gap-6 md:gap-5 xl:gap-7 items-stretch">
           {localizedTiers.map((t) => (
             <article
               key={t.name}
@@ -430,7 +467,9 @@ export default async function PricingPage() {
                 {t.tagline}
               </p>
 
-              <div className="flex items-baseline gap-2 mb-1">
+              {/* Both prices ship in the HTML; CSS shows one. A plan with no yearly option (Free)
+                  carries no cycle class at all, so the switch simply does not touch it. */}
+              <div className={`flex items-baseline gap-2 mb-1${t.yearlyPrice ? ' hush-monthly-only' : ''}`}>
                 <span style={{ ...SERIF, fontSize: '2.6rem', fontWeight: 700, lineHeight: 1 }}>
                   {t.price}
                 </span>
@@ -438,32 +477,40 @@ export default async function PricingPage() {
                   {t.cadence}
                 </span>
               </div>
+              {t.yearlyPrice && (
+                <div className="flex items-baseline gap-2 mb-1 hush-yearly-only">
+                  <span style={{ ...SERIF, fontSize: '2.6rem', fontWeight: 700, lineHeight: 1 }}>
+                    {t.yearlyPrice}
+                  </span>
+                  <span className="text-sm" style={{ color: t.highlight ? 'rgba(253,250,245,0.75)' : '#8B6F4E' }}>
+                    {t.yearlyCadence}
+                  </span>
+                </div>
+              )}
 
-              {t.annual && (t.yearlyPlan ? (
-                <form action="/api/checkout" method="POST" className="mt-1">
-                  <input type="hidden" name="plan" value={t.yearlyPlan} />
-                  <button
-                    type="submit"
-                    className="text-xs hover:underline cursor-pointer text-left"
-                    style={{
-                      color: t.highlight ? 'rgba(253,250,245,0.85)' : '#8B6F4E',
-                      background: 'none',
-                      border: 'none',
-                      padding: 0,
-                    }}
-                  >
-                    or <span style={{ fontWeight: 600 }}>{t.annual}</span>
-                  </button>
-                </form>
-              ) : (
+              {/* THE YEARLY OPTION HAS TO LOOK LIKE A BUTTON.
+                  This was 12px muted text with no border, no background and no padding — pixel
+                  for pixel the same as the plain caption rendered in the else-branch below for
+                  plans that have no yearly option. It was clickable and nobody could tell: the
+                  OWNER could not find how to buy an annual plan on their own pricing page. A
+                  yearly sale is two months' more revenue and far less churn, and it was hiding
+                  behind a footnote. */}
+              {/* The "or $40 / year" line is GONE, not restyled. With a real Monthly/Yearly
+                  switch above the cards it was a second route to the same purchase sitting
+                  inside the first — and a second place for the yearly price to be written,
+                  which is how the price on this page drifted from Polar in the first place.
+                  A plan with no yearly option (Free) simply says nothing here. */}
+              {t.annual && !t.yearlyPlan && (
                 <p className="text-xs mt-1" style={{ color: t.highlight ? 'rgba(253,250,245,0.75)' : '#8B6F4E' }}>
                   or <span style={{ fontWeight: 600 }}>{t.annual}</span>
                 </p>
-              ))}
+              )}
 
+              {/* A first-MONTH intro price is meaningless beside a yearly plan, and showing it
+                  there would advertise a discount the yearly checkout does not apply. */}
               {t.promo && (
                 <p
-                  className="inline-block text-[11px] font-semibold tracking-wide uppercase mt-3 px-2.5 py-1 rounded-full"
+                  className={`inline-block text-[11px] font-semibold tracking-wide uppercase mt-3 px-2.5 py-1 rounded-full${t.yearlyPrice ? ' hush-monthly-only' : ''}`}
                   style={{
                     background: t.highlight ? '#F3E0BC' : '#F6E9EE',
                     color: t.highlight ? '#7C4A2D' : '#630826',
@@ -506,7 +553,8 @@ export default async function PricingPage() {
               </ul>
 
               {t.monthlyPlan ? (
-                <form action="/api/checkout" method="POST" className="w-full">
+                <>
+                <form action="/api/checkout" method="POST" className={`w-full${t.yearlyPlan ? ' hush-monthly-only' : ''}`}>
                   <input type="hidden" name="plan" value={t.monthlyPlan} />
                   <button
                     type="submit"
@@ -525,6 +573,31 @@ export default async function PricingPage() {
                     </p>
                   )}
                 </form>
+                {/* The yearly button posts the YEARLY plan key. A single form with a swapped
+                    hidden value would need JavaScript; two forms need none, and the wrong one
+                    is never in the page for CSS to have to guard. */}
+                {t.yearlyPlan && (
+                  <form action="/api/checkout" method="POST" className="w-full hush-yearly-only">
+                    <input type="hidden" name="plan" value={t.yearlyPlan} />
+                    <button
+                      type="submit"
+                      className="w-full inline-flex items-center justify-center gap-2 font-semibold rounded-xl py-3 transition hover:opacity-90 cursor-pointer"
+                      style={{
+                        background: t.highlight ? '#FDFAF5' : '#630826',
+                        color: t.highlight ? '#630826' : '#FDFAF5',
+                        border: 'none',
+                      }}
+                    >
+                      {t.cta} <ArrowRight className="w-4 h-4" />
+                    </button>
+                    {t.yearlyRenewText && (
+                      <p className="mt-2 text-[11px] text-center leading-snug" style={{ color: t.highlight ? 'rgba(253,250,245,0.60)' : '#A89880' }}>
+                        {t.yearlyRenewText}
+                      </p>
+                    )}
+                  </form>
+                )}
+                </>
               ) : (
                 <Link
                   href={t.href ?? '/'}

@@ -1,0 +1,58 @@
+@layer utilities {
+  /* MONTHLY / YEARLY, with no JavaScript.
+     Two real radio inputs drive the whole switch through sibling selectors, so the choice works
+     on the first paint of a server-rendered page — no client component, no hydration wait, and
+     it keeps working if the bundle never loads. Real radios also mean the keyboard and screen
+     readers get a labelled group for free, which a div-with-onClick does not.
+     The inputs are visually hidden rather than display:none, because display:none removes them
+     from the tab order and the switch would be unreachable without a mouse. */
+  .hush-cycle-radio {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    opacity: 0;
+    pointer-events: none;
+  }
+
+  .hush-cycle-switch {
+    display: inline-flex;
+    gap: 4px;
+    padding: 4px;
+    border-radius: 999px;
+    background: rgba(99, 8, 38, 0.06);
+    border: 1px solid rgba(99, 8, 38, 0.16);
+  }
+
+  .hush-cycle-switch label {
+    cursor: pointer;
+    border-radius: 999px;
+    padding: 7px 18px;
+    font-size: 13px;
+    font-weight: 600;
+    color: #8B6F4E;
+    transition: background 140ms ease, color 140ms ease;
+    white-space: nowrap;
+  }
+
+  .hush-cycle-switch label:hover { color: #630826; }
+
+  /* The selected side. Written for each radio rather than with :has(), so it needs nothing
+     newer than sibling combinators. */
+  #hush-cyc-m:checked ~ .hush-cycle-switch label[for="hush-cyc-m"],
+  #hush-cyc-y:checked ~ .hush-cycle-switch label[for="hush-cyc-y"] {
+    background: #630826;
+    color: #FDFAF5;
+  }
+
+  /* Keyboard focus has to be visible on the LABEL, since the input it belongs to is hidden. */
+  #hush-cyc-m:focus-visible ~ .hush-cycle-switch label[for="hush-cyc-m"],
+  #hush-cyc-y:focus-visible ~ .hush-cycle-switch label[for="hush-cyc-y"] {
+    outline: 2px solid #630826;
+    outline-offset: 2px;
+  }
+
+  /* Only one of the two price/CTA blocks in each card is shown. Both are in the HTML, so
+     switching costs no request and cannot show a stale price. */
+  #hush-cyc-m:checked ~ .hush-cycle-cards .hush-yearly-only { display: none; }
+  #hush-cyc-y:checked ~ .hush-cycle-cards .hush-monthly-only { display: none; }
+}
