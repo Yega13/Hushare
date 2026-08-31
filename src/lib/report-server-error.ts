@@ -18,10 +18,18 @@ import { getCloudflareContext } from '@opennextjs/cloudflare'
 export function reportServerError(
   source: string,
   message: string,
-  opts: { albumId?: string | null; context?: Record<string, unknown> } = {},
+  // `account` is WHO this failed for, when the failure is not about an album.
+  //
+  // The admin panel answers "whose album broke" from album_id, which is the right answer for a
+  // guest-facing failure — guests are not signed in and nothing about them is stored. But a
+  // checkout, a billing portal or an account action has no album and DOES have a signed-in
+  // person, and those rows rendered a bare dash: the one class of error where someone is
+  // definitely waiting to be helped was the one that named nobody.
+  opts: { albumId?: string | null; account?: string | null; context?: Record<string, unknown> } = {},
 ): void {
   try {
     const admin = createAdminClient()
+    const context = opts.account ? { ...(opts.context ?? {}), account: opts.account } : opts.context
     // KEPT ALIVE PAST THE RESPONSE, or it never happens at all.
     //
     // On Cloudflare Workers a pending promise is killed when the response returns unless it is
@@ -47,7 +55,7 @@ export function reportServerError(
         p_source: `server:${source}`.slice(0, 60),
         p_message: String(message).slice(0, 500),
         p_album_id: opts.albumId ?? null,
-        p_context: opts.context ?? {},
+        p_context: context ?? {},
         p_ua: null,
       })
       .then(({ error }) => {
@@ -60,7 +68,7 @@ export function reportServerError(
           source: `server:${source}`.slice(0, 60),
           message: String(message).slice(0, 500),
           album_id: opts.albumId ?? null,
-          context: opts.context ?? null,
+          context: context ?? null,
           ua: null,
         }).then(({ error: e2 }) => { if (e2) console.error('[report-server-error] insert failed:', e2.message) })
       }))

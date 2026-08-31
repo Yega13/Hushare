@@ -127,6 +127,7 @@ export async function POST(req: Request) {
           metadata: { userId: user.id, tier, cycle },
         })
         reportServerError('checkout', 'Intro discount failed at Polar — checkout completed at FULL PRICE', {
+          account: user.email,
           context: {
             plan,
             reason: (firstErr instanceof Error ? firstErr.message : String(firstErr)).slice(0, 250),
@@ -148,6 +149,7 @@ export async function POST(req: Request) {
     // stayed clean — the generic message alone cannot distinguish a bad API key from a deleted
     // discount object from a Polar outage, and those have three different fixes.
     reportServerError('checkout', 'Could not start checkout. Please try again. (502)', {
+      account: user.email,
       context: {
         plan,
         reason: (err instanceof Error ? err.message : String(err)).slice(0, 250),

@@ -332,13 +332,23 @@ export default function AdminErrorTabs(
                           <div style={{ color: MUTED }}>{e.album.email}</div>
                         </>
                       ) : (
-                        // THREE different facts, never merged: no album at all (a checkout, a
-                        // signup); an album that has genuinely been deleted; and a lookup that
-                        // failed, which knows nothing and must not claim a deletion. undefined
-                        // is the third — see lib/server/error-attribution.
-                        <span style={{ color: MUTED }}>
-                          {!e.album_id ? '—' : e.album === null ? 'album deleted' : 'not loaded'}
-                        </span>
+                        // An error with no ALBUM may still name a PERSON: a checkout or a
+                        // billing action has no album and a signed-in buyer, and those rows used
+                        // to render a bare dash — the one class of failure where somebody is
+                        // certainly waiting to be helped named nobody. Beyond that, three facts
+                        // stay separate: no album at all; an album genuinely deleted; and a
+                        // lookup that failed, which knows nothing and must not claim a deletion.
+                        (() => {
+                          const account = (e.context as { account?: unknown } | null)?.account
+                          if (typeof account === 'string' && account) {
+                            return <span style={{ color: INK }}>{account}</span>
+                          }
+                          return (
+                            <span style={{ color: MUTED }}>
+                              {!e.album_id ? '—' : e.album === null ? 'album deleted' : 'not loaded'}
+                            </span>
+                          )
+                        })()
                       )}
                     </td>
                     <td style={{ ...td, whiteSpace: 'normal', maxWidth: 180, fontSize: 11, color: MUTED }}>
