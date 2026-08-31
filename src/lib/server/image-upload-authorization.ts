@@ -4,7 +4,8 @@ import { v4 as uuid } from 'uuid'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { isAllowedImage, safeExtForMime } from '@/lib/cloudflare/r2'
 import { checkRateLimit, clientIpKey } from '@/lib/rate-limit'
-import { uploadCapsForTier, tooLargeMessage } from '@/lib/media'
+import { presignBudget } from '@/lib/presign-budget'
+import { albumMediaCapForTier, uploadCapsForTier, tooLargeMessage } from '@/lib/media'
 import { getUserTierById } from '@/lib/subscriptions'
 import { gateAllowsContribution, ALBUM_GATE_COLS } from '@/lib/server/album-access'
 import type { Tier } from '@/types'
@@ -48,11 +49,12 @@ export async function authorizeImageUpload(
     checkRateLimit(clientIpKey(req, 'presign_ip'), 3600, 12000, { failOpen: false }),
     admin
       .from('albums')
-      .select(`id, user_id, guest_uploads_enabled, ${ALBUM_GATE_COLS}`)
+      .select(`id, user_id, guest_uploads_enabled, media_cap_override, ${ALBUM_GATE_COLS}`)
       .eq('id', params.albumId)
       .is('retired_at', null)
       .maybeSingle<{
         id: string; user_id: string | null; guest_uploads_enabled: boolean
+        media_cap_override: number | null
         owner_token: string; password_hash: string | null; reveal_at: string | null
       }>(),
   ])
@@ -80,12 +82,32 @@ export async function authorizeImageUpload(
     return { ok: false, response: NextResponse.json({ error: gate.error }, { status: 403, headers: NO_STORE }) }
   }
 
-  const [albumRl, tierRes] = await Promise.all([
-    checkRateLimit(`presign_album:${params.albumId}`, 3600, 40000, { failOpen: false }),
+  // THE PER-ALBUM CEILING IS SIZED TO WHAT THE ALBUM COULD STILL LEGITIMATELY HOLD.
+  //
+  // It was a flat 40,000/hour, which at the free-tier file size is roughly a terabyte an hour of
+  // permanent storage for anyone who knows one album id. The media cap cannot bound this: the cap
+  // counts ROWS, and an abuser never creates one — they take the slot, PUT the bytes and never
+  // call photos/create. Nothing then references those objects, every deletion path works from
+  // rows, and the storage audit deletes nothing, so both the bytes and the bill are forever.
+  //
+  // The count runs alongside the tier lookup rather than after it, so this costs no extra latency
+  // on the upload path. lib/presign-budget.ts owns the arithmetic and errs open on a failed count.
+  const [tierRes, countRes] = await Promise.all([
     getUserTierById(album.user_id)
       .then(tier => ({ tier, error: null as unknown }))
       .catch((error: unknown) => ({ tier: null, error })),
+    admin.from('photos').select('id', { count: 'exact', head: true }).eq('album_id', params.albumId),
   ])
+  const capOverride = typeof album.media_cap_override === 'number' && album.media_cap_override > 0
+    ? album.media_cap_override
+    : null
+  const albumCap = capOverride ?? albumMediaCapForTier(tierRes.tier ?? 'free')
+  const albumRl = await checkRateLimit(
+    `presign_album:${params.albumId}`,
+    3600,
+    presignBudget(countRes.error ? null : countRes.count, albumCap),
+    { failOpen: false },
+  )
   if (!albumRl.ok) {
     return {
       ok: false,

@@ -115,9 +115,37 @@ export async function checkRateLimit(
   }
 }
 
+// AN IPv6 CLIENT IS A WHOLE NETWORK, NOT AN ADDRESS.
+//
+// Every per-IP limit in the product keyed on the full address. A routed /64 is standard on almost
+// any VPS, which gives one host 18 quintillion distinct addresses — so every limit keyed this way
+// (presign, face search, password attempts, album creation) was effectively per-request for anyone
+// who wanted around it, while still binding real visitors. Keying on the /64 makes an IPv6 client
+// cost the same as an IPv4 one.
+//
+// A /64 is also the smallest block a residential customer is normally assigned, so this does not
+// merge separate households into one bucket — and the venue case the limits are sized for (a room
+// sharing one address) is unchanged.
+export function ipBucket(raw: string): string {
+  const ip = raw.trim().slice(0, 64)
+  if (!ip.includes(':')) return ip
+  // Expand only as far as needed to take the first four groups; a '::' anywhere after them means
+  // the rest is zeros, and anything before is already explicit.
+  const [head] = ip.split('%')            // strip any zone index (fe80::1%eth0)
+  const groups = head.split(':')
+  const out: string[] = []
+  for (const g of groups) {
+    if (out.length === 4) break
+    if (g === '') { while (out.length < 4) out.push('0'); break }
+    out.push(g)
+  }
+  while (out.length < 4) out.push('0')
+  return out.join(':') + '::/64'
+}
+
 export function clientIpKey(req: Request, prefix: string): string {
   const cf = req.headers.get('cf-connecting-ip')
-  if (cf) return `${prefix}:${cf.trim().slice(0, 64)}`
+  if (cf) return `${prefix}:${ipBucket(cf)}`
 
   // In production all traffic must flow through Cloudflare (orange-cloud on), which always
   // sets cf-connecting-ip. Reaching this fallback in production means the origin is directly
@@ -135,7 +163,7 @@ export function clientIpKey(req: Request, prefix: string): string {
     const ip = parts[parts.length - 1].trim()
     // Normalize IPv6 bracket notation (e.g. [::1]:12345 → ::1)
     const clean = ip.replace(/^\[(.+)\](?::\d+)?$/, '$1').slice(0, 64)
-    if (clean) return `${prefix}:${clean}`
+    if (clean) return `${prefix}:${ipBucket(clean)}`
   }
 
   // Both cf-connecting-ip and x-forwarded-for are absent. All requests will share one

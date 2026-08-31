@@ -58,7 +58,7 @@ vi.mock('@/lib/supabase/admin', () => ({
   }),
 }))
 
-import { checkRateLimit } from '@/lib/rate-limit'
+import { checkRateLimit, ipBucket } from '@/lib/rate-limit'
 
 beforeEach(() => {
   cfg.rpc = { data: null, error: { message: 'function does not exist' } }
@@ -157,5 +157,35 @@ describe('failure honours the direction the caller chose', () => {
     cfg.insert = { data: null, error: { message: 'x' } }
     const r = await checkRateLimit('k', 60, 10)
     expect(r.ok).toBe(false)
+  })
+})
+
+describe('ipBucket — an IPv6 client is a network, not an address', () => {
+  it('keeps an IPv4 address exactly as it is', () => {
+    expect(ipBucket('203.0.113.7')).toBe('203.0.113.7')
+    expect(ipBucket('  203.0.113.7  ')).toBe('203.0.113.7')
+  })
+
+  it('collapses a /64 so one host cannot become quintillions of buckets', () => {
+    // THE BUG. A routed /64 is standard on almost any VPS, so every per-IP limit in the product
+    // was effectively per-request for anyone who wanted around it.
+    const a = ipBucket('2001:db8:1234:5678:aaaa:bbbb:cccc:dddd')
+    const b = ipBucket('2001:db8:1234:5678:1111:2222:3333:4444')
+    expect(a).toBe(b)
+    expect(a).toBe('2001:db8:1234:5678::/64')
+  })
+
+  it('separates genuinely different networks', () => {
+    expect(ipBucket('2001:db8:1234:5678::1')).not.toBe(ipBucket('2001:db8:1234:9999::1'))
+  })
+
+  it('handles compressed and short forms without inventing groups', () => {
+    expect(ipBucket('::1')).toBe('0:0:0:0::/64')
+    expect(ipBucket('2001:db8::1')).toBe('2001:db8:0:0::/64')
+    expect(ipBucket('2001:db8::')).toBe('2001:db8:0:0::/64')
+  })
+
+  it('ignores a zone index, which is per-interface and not per-network', () => {
+    expect(ipBucket('fe80::1%eth0')).toBe(ipBucket('fe80::1%wlan0'))
   })
 })
