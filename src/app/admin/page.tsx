@@ -759,11 +759,17 @@ export default async function AdminPage() {
             <div style={{ fontSize: 12, fontWeight: 700, color: '#8A6212' }}>
               Could not verify the intro discounts just now
             </div>
-            <p style={{ fontSize: 12, color: '#7A6238', margin: '3px 0 0' }}>
-              Polar did not answer, or our API key is expired or unscoped. Not proof anything is
-              broken — but not proof it works either.
-              {' '}{discountRowsToShow(discountHealth, 'unverified').map(d => d.plan).join(', ')}
+            <p style={{ fontSize: 12, color: '#7A6238', margin: '3px 0 6px' }}>
+              Not proof anything is broken — but not proof it works either.
             </p>
+            {/* The REASON, not a list of three guesses. "expired or unscoped or unreachable" are
+                three different problems with three different fixes, and the owner cannot tell
+                which one they have from a sentence that offers all three. */}
+            {discountRowsToShow(discountHealth, 'unverified').map(d => (
+              <div key={d.plan} style={{ fontSize: 12, color: INK }}>
+                <strong>{d.plan}</strong>{d.why ? ` — ${d.why}` : ''}
+              </div>
+            ))}
           </div>
         )}
 

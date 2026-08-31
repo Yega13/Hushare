@@ -258,7 +258,15 @@ export function productIdForPlan(
 // Read-only. Never repairs anything, and a network failure reports 'unknown' rather than
 // claiming a live discount is dead — a false alarm here would send the owner into the Polar
 // dashboard to fix nothing.
-export type DiscountHealth = { plan: string; id: string | null; state: 'ok' | 'missing' | 'unset' | 'unknown' }
+export type DiscountHealth = {
+  plan: string
+  id: string | null
+  state: 'ok' | 'missing' | 'unset' | 'unknown'
+  /** WHY it could not be checked, in words the owner can act on. Only set when state is 'unknown'.
+   *  Without this the panel says "Polar did not answer, or the key is expired or unscoped" — three
+   *  different problems with three different fixes, and no way to tell which one you have. */
+  why?: string
+}
 
 export async function checkIntroDiscounts(): Promise<DiscountHealth[]> {
   const wanted: Array<{ plan: string; id: string | undefined }> = [
@@ -281,10 +289,19 @@ export async function checkIntroDiscounts(): Promise<DiscountHealth[]> {
       // Everything else is a question we could not ask, not a dead discount. 401/403 in particular
       // mean OUR key is wrong or unscoped; blaming the discount there would send the owner into the
       // Polar dashboard to fix something that is not broken (rule 19 — say which way it errs).
-      if (!res.ok) return { plan, id, state: 'unknown' }
+      if (res.status === 401) {
+        return { plan, id, state: 'unknown', why: 'our Polar API key was rejected (401) — it is expired or revoked' }
+      }
+      if (res.status === 403) {
+        // The most likely one, and the least obvious: a key that creates checkouts fine but was
+        // never given permission to READ discounts. Sales keep working, so nothing looks wrong.
+        return { plan, id, state: 'unknown', why: 'our Polar API key is not allowed to read discounts (403) — add the discounts:read scope to it' }
+      }
+      if (!res.ok) return { plan, id, state: 'unknown', why: `Polar answered ${res.status}` }
       return { plan, id, state: 'ok' }
-    } catch {
-      return { plan, id, state: 'unknown' }
+    } catch (err) {
+      const timedOut = err instanceof Error && (err.name === 'TimeoutError' || err.name === 'AbortError')
+      return { plan, id, state: 'unknown', why: timedOut ? 'Polar did not answer within 4 seconds' : 'could not reach Polar' }
     }
   }))
 }
