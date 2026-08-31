@@ -274,8 +274,13 @@ export async function checkIntroDiscounts(): Promise<DiscountHealth[]> {
         signal: AbortSignal.timeout(4000),
       })
       // 404 is the answer this exists to catch: the id in our secrets names something Polar no
-      // longer has. Any other non-OK status is a question we could not ask, not a dead discount.
-      if (res.status === 404) return { plan, id, state: 'missing' }
+      // longer has. 422 is the same answer in a different costume — it is literally what checkout
+      // creation returned ("Discount does not exist") while THIS probe stayed quiet, so treating
+      // 422 as unanswerable is how three customers were charged full price with a green panel.
+      if (res.status === 404 || res.status === 422) return { plan, id, state: 'missing' }
+      // Everything else is a question we could not ask, not a dead discount. 401/403 in particular
+      // mean OUR key is wrong or unscoped; blaming the discount there would send the owner into the
+      // Polar dashboard to fix something that is not broken (rule 19 — say which way it errs).
       if (!res.ok) return { plan, id, state: 'unknown' }
       return { plan, id, state: 'ok' }
     } catch {

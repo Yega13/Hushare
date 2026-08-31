@@ -6,16 +6,28 @@ import { createClient } from '@/lib/supabase/client'
 import { showAppToast } from '@/components/AppToast'
 import { useT } from '@/i18n/LocaleProvider'
 
-// "Your albums on this device" — recovery for ANONYMOUS creators only. Reads localStorage
-// (client-only), so it renders nothing on the server and nothing until we've checked. Registered
-// users manage their albums from their account, so this list is hidden for them. Each entry links
-// back to the album's owner (#owner=) view, so an anon creator who closed the tab never loses it.
+// "Your albums on this device" — recovery from localStorage, so it renders nothing on the server
+// and nothing until we've checked. Each entry links back to the album's owner (#owner=) view, so
+// a creator who closed the tab never loses it.
+//
+// IT SHOWS TO SIGNED-IN VISITORS TOO, and that is the whole point of the second half of this file.
+// It used to hide itself for them — "registered users manage their albums from their account" —
+// which is true only of albums that are ON an account. An album made while signed out never
+// reaches the profile, so for a signed-in person it was invisible in BOTH places at once: absent
+// from their account page, and deliberately hidden here. A customer emailed support having made
+// three albums and being able to find two; 40 albums holding photos were stranded that way.
+//
+// So for a signed-in visitor this lists ONLY the albums that are not on their account, and offers
+// to attach them. For a signed-out visitor nothing changes.
 export default function MyDeviceAlbums() {
   const { t } = useT()
   const [albums, setAlbums] = useState<MyAlbum[] | null>(null)
   // null = still checking; false = signed out (show); true = signed in (hide).
   const [loggedIn, setLoggedIn] = useState<boolean | null>(null)
   const [busy, setBusy] = useState<string | null>(null)
+  // Slugs the server says have no account behind them. null = not asked yet, so a signed-in
+  // visitor is shown nothing rather than a list we cannot describe honestly (rule 20).
+  const [unclaimed, setUnclaimed] = useState<Set<string> | null>(null)
 
   useEffect(() => {
     const local = getMyAlbums()
@@ -34,9 +46,10 @@ export default function MyDeviceAlbums() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ slugs: local.map((a) => a.slug) }),
     })
-      .then((r) => (r.ok ? r.json() as Promise<{ alive?: string[] }> : null))
+      .then((r) => (r.ok ? r.json() as Promise<{ alive?: string[]; unclaimed?: string[] }> : null))
       .then((res) => {
         if (cancelled || !res || !Array.isArray(res.alive)) return
+        if (Array.isArray(res.unclaimed)) setUnclaimed(new Set(res.unclaimed))
         const alive = new Set(res.alive)
         const dead = local.filter((a) => !alive.has(a.slug))
         if (dead.length === 0) return
@@ -46,6 +59,52 @@ export default function MyDeviceAlbums() {
       .catch(() => { /* leave the list untouched */ })
     return () => { cancelled = true }
   }, [])
+
+  // Attach an album made while signed out to the account the visitor is signed into now.
+  //
+  // Two calls, the same shape deleteAlbum uses: owner-login proves ownership with the token this
+  // device remembers and sets the owner cookie; claim then reports what happened. The attach
+  // itself is a side effect of owner-login (see claimAlbumIfNeeded) — claim never writes, it only
+  // tells us the truth about the result, including "your plan is full", which no surface used to
+  // say out loud.
+  async function claimAlbum(a: MyAlbum) {
+    if (busy) return
+    setBusy(a.slug)
+    try {
+      const login = await fetch('/api/album/owner-login', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ slug: a.slug, owner_token: a.token }),
+      })
+      if (!login.ok) { showAppToast(t('common.errorGeneric'), 'error'); return }
+
+      const res = await fetch('/api/album/claim', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ slug: a.slug }),
+      })
+      const body = await res.json().catch(() => ({})) as { ok?: boolean; reason?: string; cap?: number }
+
+      if (body.ok) {
+        // It is on the account now, so it belongs on the account page rather than in this list.
+        setUnclaimed((prev) => {
+          if (!prev) return prev
+          const next = new Set(prev)
+          next.delete(a.slug)
+          return next
+        })
+        showAppToast(t('claim.done'), 'success')
+      } else if (body.reason === 'at_cap') {
+        // The one refusal worth explaining: nothing they do on this screen will change it, so
+        // "try again" would be a lie.
+        showAppToast(t('claim.atCap').replace('{cap}', String(body.cap ?? '')), 'error')
+      } else {
+        showAppToast(t('claim.failed'), 'error')
+      }
+    } catch {
+      showAppToast(t('common.networkError'), 'error')
+    } finally {
+      setBusy(null)
+    }
+  }
 
   // Deleting for real (not just forgetting): for an anonymous album, dropping it from this device
   // means losing its management token anyway, so we delete the album — which also frees a slot in the
@@ -88,9 +147,16 @@ export default function MyDeviceAlbums() {
     }
   }
 
-  // Only show once we've confirmed the visitor is signed OUT — never flash it to a signed-in user.
-  if (loggedIn !== false) return null
+  // Wait for both answers before rendering anything. A signed-in visitor must never be shown a
+  // list captioned "not on your account" before we know which albums that is true of.
+  if (loggedIn === null) return null
   if (!albums || albums.length === 0) return null
+
+  // Signed out: every remembered album, unchanged. Signed in: only the ones with no account
+  // behind them — the rest are already on their account page, and repeating them here would be
+  // two lists of the same thing that can disagree.
+  const rows = loggedIn ? albums.filter((a) => unclaimed?.has(a.slug)) : albums
+  if (rows.length === 0) return null
 
   return (
     <section className="hush-container pb-10" aria-label="Your albums on this device">
@@ -100,15 +166,15 @@ export default function MyDeviceAlbums() {
       >
         <div className="flex items-baseline justify-between mb-3">
           <h2 className="text-sm sm:text-base" style={{ fontWeight: 700, color: '#630826', fontFamily: 'var(--font-serif)' }}>
-            {t('myAlbums.title')}
+            {loggedIn ? t('claim.title') : t('myAlbums.title')}
           </h2>
-          <span className="text-xs" style={{ color: '#8A7A66' }}>{t('myAlbums.saved', { n: albums.length })}</span>
+          <span className="text-xs" style={{ color: '#8A7A66' }}>{t('myAlbums.saved', { n: rows.length })}</span>
         </div>
         <p className="text-xs mb-3" style={{ color: '#8A7A66' }}>
-          {t('myAlbums.subtitle')}
+          {loggedIn ? t('claim.body') : t('myAlbums.subtitle')}
         </p>
         <ul className="flex flex-col divide-y" style={{ borderColor: '#EFE7D8' }}>
-          {albums.map((a) => (
+          {rows.map((a) => (
             <li key={a.slug} className="flex items-center justify-between gap-3 py-2">
               <a
                 href={`/${a.slug}#owner=${a.token}`}
@@ -118,9 +184,21 @@ export default function MyDeviceAlbums() {
                 {a.title}
               </a>
               <div className="flex items-center gap-3 shrink-0">
-                <a href={`/${a.slug}#owner=${a.token}`} className="text-xs" style={{ color: '#630826', fontWeight: 600 }}>
-                  {t('myAlbums.manage')}
-                </a>
+                {loggedIn ? (
+                  <button
+                    type="button"
+                    onClick={() => void claimAlbum(a)}
+                    disabled={!!busy}
+                    className="text-xs disabled:opacity-50"
+                    style={{ color: '#630826', fontWeight: 700 }}
+                  >
+                    {busy === a.slug ? t('claim.working') : t('claim.cta')}
+                  </button>
+                ) : (
+                  <a href={`/${a.slug}#owner=${a.token}`} className="text-xs" style={{ color: '#630826', fontWeight: 600 }}>
+                    {t('myAlbums.manage')}
+                  </a>
+                )}
                 <button
                   type="button"
                   onClick={() => void deleteAlbum(a)}

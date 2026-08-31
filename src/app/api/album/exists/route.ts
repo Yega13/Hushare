@@ -14,8 +14,16 @@ const MAX_SLUGS = 60
 // device, or by the retention job. Those entries lingered as ghosts the owner could not get rid
 // of: tapping Delete on an already-deleted album is a no-op, so the list only ever grew.
 //
+// Also reports which of them have no account behind them (`unclaimed`), so "Your albums on this
+// device" can offer to attach those to a signed-in visitor's account. An album made while signed
+// out is invisible in BOTH places for a signed-in person — it is not on their profile, and this
+// list used to hide itself from them entirely — which is how 40 albums holding photos ended up
+// stranded and a customer had to email support to find one.
+//
 // Discloses nothing new: anyone can already tell a slug exists by requesting the album URL and
-// seeing 200 vs 404. Returns ONLY the subset asked about, so it can't be used to enumerate.
+// seeing 200 vs 404. Returns ONLY the subset asked about, so it cannot be used to enumerate, and
+// knowing an album is unclaimed grants nothing on its own — claiming still requires the owner
+// token, which only the creator's own device holds.
 export async function POST(req: Request) {
   const csrf = forbidCrossSiteRequest(req)
   if (csrf) return csrf
@@ -37,22 +45,32 @@ export async function POST(req: Request) {
   const admin = createAdminClient()
   const { data, error } = await admin
     .from('albums')
-    .select('slug, custom_slug')
+    .select('slug, custom_slug, user_id')
     .or(`slug.in.(${slugs.join(',')}),custom_slug.in.(${slugs.join(',')})`)
     .is('retired_at', null)
-    .returns<{ slug: string; custom_slug: string | null }[]>()
+    .returns<{ slug: string; custom_slug: string | null; user_id: string | null }[]>()
 
   if (error) {
     // On failure report everything as alive. Pruning on an error would delete the owner's only
     // record of a live album — losing the token for good.
     console.error('[album/exists] lookup failed:', error.message)
-    return NextResponse.json({ alive: slugs }, { headers: NO_STORE })
+    // Report everything alive AND nothing unclaimed: the first keeps a live album's token, the
+    // second offers no action we could not verify. Both err toward doing nothing (rule 19).
+    return NextResponse.json({ alive: slugs, unclaimed: [] }, { headers: NO_STORE })
   }
 
   const found = new Set<string>()
+  const unowned = new Set<string>()
   for (const row of data ?? []) {
     if (row.slug) found.add(row.slug)
     if (row.custom_slug) found.add(row.custom_slug)
+    if (row.user_id === null) {
+      if (row.slug) unowned.add(row.slug)
+      if (row.custom_slug) unowned.add(row.custom_slug)
+    }
   }
-  return NextResponse.json({ alive: slugs.filter((s) => found.has(s)) }, { headers: NO_STORE })
+  return NextResponse.json({
+    alive: slugs.filter((s) => found.has(s)),
+    unclaimed: slugs.filter((s) => unowned.has(s)),
+  }, { headers: NO_STORE })
 }

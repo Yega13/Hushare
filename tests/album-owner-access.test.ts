@@ -19,7 +19,14 @@ const cfg: {
   ownedCount: number
   cookieValue: string | null
   rlOk: boolean
-} = { rows: [], lookups: 0, claims: 0, user: null, ownedCount: 0, cookieValue: null, rlOk: true }
+  /** Rows the UPDATE...select() reports back. [] = the race guard matched nothing. */
+  claimedRows: { id: string }[]
+  updateError: boolean
+  countError: boolean
+} = {
+  rows: [], lookups: 0, claims: 0, user: null, ownedCount: 0, cookieValue: null, rlOk: true,
+  claimedRows: [{ id: 'alb-1' }], updateError: false, countError: false,
+}
 
 vi.mock('@/lib/supabase/admin', () => ({
   createAdminClient: () => ({
@@ -27,7 +34,7 @@ vi.mock('@/lib/supabase/admin', () => ({
       select: (_cols: string, opts?: { count?: string }) => {
         if (opts?.count) {
           // The claim-cap count: select('id', {count}).eq('user_id', ...).is('retired_at', null)
-          return { eq: () => ({ is: async () => ({ count: cfg.ownedCount, error: null }) }) }
+          return { eq: () => ({ is: async () => (cfg.countError ? { count: null, error: { message: 'boom' } } : { count: cfg.ownedCount, error: null }) }) }
         }
         // The album lookup: select(cols).or(...).is(...).limit(2).returns()
         return {
@@ -43,7 +50,19 @@ vi.mock('@/lib/supabase/admin', () => ({
           }),
         }
       },
-      update: () => ({ eq: () => ({ is: async () => { cfg.claims++; return { error: null } } }) }),
+      update: () => ({
+        eq: () => ({
+          is: () => ({
+            // .select('id') reads the update back. `claimedRows` is how a test says "somebody
+            // else won the race": the guard matched nothing, so no row comes back.
+            select: async () => {
+              cfg.claims++
+              if (cfg.updateError) return { data: null, error: { message: 'boom' } }
+              return { data: cfg.claimedRows, error: null }
+            },
+          }),
+        }),
+      }),
     }),
   }),
 }))
@@ -73,6 +92,9 @@ beforeEach(() => {
   cfg.ownedCount = 0
   cfg.cookieValue = null
   cfg.rlOk = true
+  cfg.claimedRows = [{ id: 'alb-1' }]
+  cfg.updateError = false
+  cfg.countError = false
   vi.spyOn(console, 'info').mockImplementation(() => {})
 })
 
@@ -172,6 +194,73 @@ describe('claiming an anonymous album', () => {
     expect(r.ok, 'access must survive the declined claim').toBe(true)
     expect(cfg.claims).toBe(0)
     if (r.ok) expect(r.album.user_id).toBeNull()
+  })
+
+  it('LOSING THE RACE must not fabricate ownership in the returned album', async () => {
+    // `.is('user_id', null)` exists precisely so a second claimer matches zero rows. The result
+    // was never read back, so the loser still got an album object stamped with THEIR id and a log
+    // line saying "claimed". That is not cosmetic: api/album/branding and api/album/custom-url
+    // gate paid features on album.user_id, so the loser's request would have evaluated the
+    // winner's album against the loser's plan. Owner links are shareable by design, so two
+    // signed-in people holding one is an ordinary situation, not an exotic one.
+    cfg.rows = [anon]
+    cfg.user = { id: 'user-9' }
+    cfg.ownedCount = 1
+    cfg.claimedRows = []          // somebody else got there first
+    const r = await verifyAlbumOwnerAccess('abcd1234', 'real-secret-token')
+    expect(r.ok, 'access itself must survive').toBe(true)
+    if (r.ok) {
+      expect(r.album.user_id, 'must not claim an album we did not get').toBeNull()
+      expect(r.claim).toBe('owned_by_other')
+    }
+  })
+
+  it('a failed UPDATE is reported, not swallowed', async () => {
+    cfg.rows = [anon]
+    cfg.user = { id: 'user-9' }
+    cfg.ownedCount = 1
+    cfg.updateError = true
+    const r = await verifyAlbumOwnerAccess('abcd1234', 'real-secret-token')
+    expect(r.ok).toBe(true)
+    if (r.ok) {
+      expect(r.album.user_id).toBeNull()
+      expect(r.claim).toBe('owned_by_other')
+    }
+  })
+
+  it('a count that FAILED is not a count of zero', async () => {
+    // `count ?? 0` turned an errored query into "they own nothing", which waves the album straight
+    // through the plan cap. Erring the other way leaves it anonymous, which the owner cannot even
+    // see and which never over-grants (rule 19).
+    cfg.rows = [anon]
+    cfg.user = { id: 'user-9' }
+    cfg.countError = true
+    const r = await verifyAlbumOwnerAccess('abcd1234', 'real-secret-token')
+    expect(r.ok, 'access must survive a count we could not take').toBe(true)
+    expect(cfg.claims, 'must not write without knowing the cap').toBe(0)
+    if (r.ok) {
+      expect(r.album.user_id).toBeNull()
+      expect(r.claim).toBe('not_counted')
+    }
+  })
+
+  it('reports the outcome the route reports to the user', async () => {
+    // POST /api/album/claim renders access.claim directly rather than re-deciding. If these
+    // outcomes were ever wrong, the button would lie in the user's own words.
+    cfg.rows = [anon]
+    cfg.user = { id: 'user-9' }
+    cfg.ownedCount = 1
+    const claimed = await verifyAlbumOwnerAccess('abcd1234', 'real-secret-token')
+    if (claimed.ok) expect(claimed.claim).toBe('claim')
+
+    cfg.ownedCount = 3
+    const full = await verifyAlbumOwnerAccess('abcd1234', 'real-secret-token')
+    if (full.ok) { expect(full.claim).toBe('at_cap'); expect(full.claimCap).toBe(3) }
+
+    cfg.rows = [ALBUM]   // already owned by owner-1
+    cfg.user = { id: 'user-9' }
+    const theirs = await verifyAlbumOwnerAccess('abcd1234', 'real-secret-token')
+    if (theirs.ok) expect(theirs.claim).toBe('owned_by_other')
   })
 
   it('never claims an album that already has an owner', async () => {

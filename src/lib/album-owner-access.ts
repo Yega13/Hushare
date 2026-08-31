@@ -5,6 +5,7 @@ import { timingSafeEqual } from '@/lib/timing-safe'
 import { checkRateLimit, clientIpKey } from '@/lib/rate-limit'
 import { getUserTier } from '@/lib/subscriptions'
 import { albumCountLimitForTier } from '@/lib/media'
+import { decideClaim, type ClaimOutcome } from '@/lib/album-claim'
 
 // Allowlist of columns that callers may request beyond the base set.
 // Never pass caller-supplied column names directly into .select() — SQL injection vector.
@@ -35,6 +36,11 @@ type AccessOk<T extends AlbumOwnerBase> = {
   ok: true
   album: T
   userId: string | null
+  /** What the auto-claim actually DID on this request. POST /api/album/claim reports this rather
+   *  than re-deciding from a second read — see claimAlbumIfNeeded. */
+  claim: ClaimOutcome
+  /** The plan's album cap, when one was looked up; 0 when the question never arose. */
+  claimCap: number
 }
 
 type AccessFail = {
@@ -79,13 +85,25 @@ async function lookupOwnableAlbum<T extends AlbumOwnerBase>(cleanSlug: string, c
 }
 
 // Claims an unclaimed album for the logged-in user on first owner access. Shared by both auth
-// paths below.
-async function claimAlbumIfNeeded<T extends AlbumOwnerBase>(album: T): Promise<{ album: T; userId: string | null }> {
+// paths below, and by POST /api/album/claim, which reports the `outcome` this returns rather than
+// deciding a second time from a second read — two reads of the same fact WILL disagree (rule 13),
+// and here the disagreement was one-directional: the route could report a claim that never
+// happened, never the reverse.
+async function claimAlbumIfNeeded<T extends AlbumOwnerBase>(
+  album: T,
+): Promise<{ album: T; userId: string | null; outcome: ClaimOutcome; cap: number }> {
   // Only trust getUser() (server-validated JWT) — never fall back to getSession() (local cookie, unverified)
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
+  const viewerId = user?.id ?? null
 
-  if (user && !album.user_id) {
+  // Every rule about who may claim lives in decideClaim, shared with POST /api/album/claim so the
+  // automatic path and the button cannot disagree. The cheap rules run first; the COUNT below only
+  // happens when nothing cheaper settled it.
+  let outcome = decideClaim({ albumUserId: album.user_id, viewerId, ownedCount: null, cap: 0 })
+  let cap = 0
+
+  if (outcome === 'needs_count' && user) {
     const admin = createAdminClient()
 
     // The plan's album cap applies HERE too, not only in api/album/create.
@@ -94,30 +112,52 @@ async function claimAlbumIfNeeded<T extends AlbumOwnerBase>(album: T): Promise<{
     // also a way around the cap: album/create checks the limit only for requests that arrive
     // authenticated, so albums made anonymously and then claimed were never counted against
     // anything. Enough of them and a free account holds any number of albums.
-    //
-    // Over the limit, the album is simply LEFT ANONYMOUS rather than refused. Nothing is lost or
-    // broken — it still opens, still takes photos, and the owner link still works exactly as it did
-    // a second earlier. Claiming is a convenience, not the thing that makes an album function, so
-    // declining it quietly is the behaviour that costs the person least.
     const tier = await getUserTier(user)
-    const cap = albumCountLimitForTier(tier)
-    const { count } = await admin
+    cap = albumCountLimitForTier(tier)
+    const { count, error: countErr } = await admin
       .from('albums').select('id', { count: 'exact', head: true })
       .eq('user_id', user.id).is('retired_at', null)
 
-    if ((count ?? 0) >= cap) {
+    if (countErr) {
+      // A count we could not take is not a count of zero. Treating it as zero waves the album
+      // through the cap; treating it as "cannot decide" leaves the album anonymous, which costs
+      // the person nothing they can see and never over-grants (rule 19).
+      console.error('[album-owner-access] album count failed, not claiming:', countErr.message)
+      return { album, userId: viewerId, outcome: 'not_counted', cap }
+    }
+
+    outcome = decideClaim({ albumUserId: album.user_id, viewerId, ownedCount: count ?? 0, cap })
+
+    if (outcome === 'claim') {
+      // `.is('user_id', null)` is the race guard, and its WHOLE POINT is that it can match zero
+      // rows. Without reading the result back, a request that lost the race still stamped user_id
+      // into the in-memory album and logged "claimed" — so a second link-holder was handed an
+      // album object saying it was theirs. That is not cosmetic: branding/route.ts and
+      // custom-url/route.ts gate paid features on album.user_id, so the loser's request would
+      // evaluate the winner's album against the LOSER's plan.
+      const { data: updated, error: updErr } = await admin
+        .from('albums').update({ user_id: user.id })
+        .eq('id', album.id).is('user_id', null)
+        .select('id')
+
+      if (updErr || !updated || updated.length === 0) {
+        if (updErr) console.error('[album-owner-access] claim update failed:', updErr.message)
+        else console.info(`[album-owner-access] lost the claim race on album ${album.id}`)
+        // The album is NOT ours. Leave user_id exactly as we read it and say so.
+        return { album, userId: viewerId, outcome: 'owned_by_other', cap }
+      }
+
+      album = { ...album, user_id: user.id }
+      console.info(`[album-owner-access] claimed album ${album.id} for user ${user.id}`)
+    } else if (outcome === 'at_cap') {
+      // Left anonymous rather than refused — see decideClaim for why that costs the person least.
       console.info(
         `[album-owner-access] not claiming album ${album.id} for user ${user.id}: at the ${tier} cap of ${cap}`,
       )
-      return { album, userId: user.id }
     }
-
-    await admin.from('albums').update({ user_id: user.id }).eq('id', album.id).is('user_id', null)
-    album = { ...album, user_id: user.id }
-    console.info(`[album-owner-access] claimed album ${album.id} for user ${user.id}`)
   }
 
-  return { album, userId: user?.id ?? null }
+  return { album, userId: viewerId, outcome, cap }
 }
 
 export async function verifyAlbumOwnerAccess<T extends AlbumOwnerBase = AlbumOwnerBase>(
@@ -147,8 +187,8 @@ export async function verifyAlbumOwnerAccess<T extends AlbumOwnerBase = AlbumOwn
     return { ok: false, status: 403, error: 'Forbidden', reason: 'bad_token' }
   }
 
-  const { album, userId } = await claimAlbumIfNeeded(found)
-  return { ok: true, album, userId }
+  const { album, userId, outcome, cap } = await claimAlbumIfNeeded(found)
+  return { ok: true, album, userId, claim: outcome, claimCap: cap }
 }
 
 export async function verifyOwnerWithRateLimit<T extends AlbumOwnerBase = AlbumOwnerBase>(
@@ -200,8 +240,8 @@ export async function verifyOwnerViaCookie<T extends AlbumOwnerBase = AlbumOwner
     return { ok: false, status: 403, error: 'Forbidden', reason: 'bad_token' }
   }
 
-  const { album, userId } = await claimAlbumIfNeeded(found)
-  return { ok: true, album, userId }
+  const { album, userId, outcome, cap } = await claimAlbumIfNeeded(found)
+  return { ok: true, album, userId, claim: outcome, claimCap: cap }
 }
 
 export async function verifyOwnerViaCookieWithRateLimit<T extends AlbumOwnerBase = AlbumOwnerBase>(

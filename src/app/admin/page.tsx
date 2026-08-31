@@ -22,6 +22,7 @@ import AdminFunnel from '@/components/AdminFunnel'
 import AdminUsers, { type UserRow, type Cohort } from '@/components/AdminUsers'
 import { isSubActive } from '@/lib/subscriptions'
 import { checkIntroDiscounts, checkPlanProducts } from '@/lib/polar'
+import { discountBanner, discountRowsToShow } from '@/lib/discount-health'
 import { attachAlbumOwners } from '@/lib/server/error-attribution'
 import { albumCountLimitForTier, albumMediaCapForTier } from '@/lib/media'
 import AdminAreaChartLazy from '@/components/AdminAreaChartLazy'
@@ -720,27 +721,49 @@ export default async function AdminPage() {
           </div>
         )}
 
-        {/* Shown ONLY when an advertised intro price cannot be honoured. A green "all good" row
-            here every day would be one more thing to scroll past; silence is the healthy state.
-            'unknown' is excluded on purpose — it means Polar could not be reached, not that a
-            discount is dead, and crying wolf sends the owner to fix nothing. */}
-        {discountHealth.some(d => d.state === 'missing' || d.state === 'unset') && (
+        {/* WHAT THE PANEL OWES THE OWNER ABOUT INTRO PRICING — decided in src/lib/discount-health.
+            Three states, not two: the third ('unverified') exists because filtering 'unknown' out
+            of the alarm meant a blind probe rendered nothing, and nothing reads as "it works". */}
+        {discountBanner(discountHealth) === 'alarm' && (
           <div style={{ background: '#FBE8E7', border: '1px solid #EFCFCC', borderRadius: 12, padding: '12px 16px', marginBottom: 14 }}>
             <div style={{ fontSize: 13, fontWeight: 700, color: '#B3261E' }}>
               The pricing page is advertising an intro price we cannot charge
             </div>
             <p style={{ fontSize: 12, color: '#7A4B47', margin: '4px 0 6px' }}>
-              Eligible first-time buyers are being charged full price. Recreate the discount in
-              Polar, then set the secret to its new id.
+              Eligible first-time buyers are being charged full price. Check the id below against
+              the Polar dashboard before recreating anything.
             </p>
-            {discountHealth.filter(d => d.state !== 'ok').map(d => (
-              <div key={d.plan} style={{ fontSize: 12, color: INK }}>
+            {discountRowsToShow(discountHealth, 'alarm').map(d => (
+              <div key={d.plan} style={{ fontSize: 12, color: INK, marginBottom: 3 }}>
                 <strong>{d.plan}</strong>{' — '}
-                {d.state === 'missing' ? 'the id in our secrets no longer exists at Polar'
+                {d.state === 'missing' ? 'the id in our secrets does not exist at Polar'
                   : d.state === 'unset' ? 'no discount id is configured'
                   : 'could not be checked just now'}
+                {/* The id is shown because "recreate it and set the secret" is the WRONG advice
+                    when the secret holds the wrong PLAN's id — which is what happened here: Pro
+                    monthly was configured with the Max discount's id, so every first-time Pro
+                    buyer paid full price. Without the id on screen that is invisible. Admin-only,
+                    and a discount id is an object identifier, not a credential. */}
+                {d.id && (
+                  <div style={{ fontFamily: 'ui-monospace, monospace', fontSize: 11, color: '#7A4B47' }}>
+                    configured id: {d.id}
+                  </div>
+                )}
               </div>
             ))}
+          </div>
+        )}
+
+        {discountBanner(discountHealth) === 'unverified' && (
+          <div style={{ background: '#FFF6E5', border: '1px solid #F0DFC0', borderRadius: 12, padding: '10px 14px', marginBottom: 14 }}>
+            <div style={{ fontSize: 12, fontWeight: 700, color: '#8A6212' }}>
+              Could not verify the intro discounts just now
+            </div>
+            <p style={{ fontSize: 12, color: '#7A6238', margin: '3px 0 0' }}>
+              Polar did not answer, or our API key is expired or unscoped. Not proof anything is
+              broken — but not proof it works either.
+              {' '}{discountRowsToShow(discountHealth, 'unverified').map(d => d.plan).join(', ')}
+            </p>
           </div>
         )}
 
