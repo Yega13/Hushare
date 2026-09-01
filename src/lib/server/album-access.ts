@@ -3,6 +3,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { verifyAccessToken } from '@/lib/album-password'
 import { timingSafeEqual } from '@/lib/timing-safe'
 import { getUserTierById, getUserTierResolved } from '@/lib/subscriptions'
+import { albumEffectiveTier } from '@/lib/album-entitlements'
 import { uploadCapsForTier } from '@/lib/media'
 import type { Album, Photo, SponsorLogo } from '@/types'
 
@@ -28,6 +29,7 @@ const ALBUM_SELECT_COLS = [
   'slideshow_interval_ms', 'slideshow_animation', 'slideshow_motion', 'video_autoplay',
   'cover_photo_id', 'header_image', 'header_focal', 'header_zoom', 'header_touched', 'header_video_mode', 'reveal_at', 'guest_uploads_enabled', 'allow_guest_downloads',
   'require_approval', 'face_finder_enabled', 'bib_search_enabled', 'bib_min', 'bib_max', 'branding_locked',
+  'package_tier', 'package_expires_at',
   'accent_color', 'logo_url', 'sponsor_logos', 'title_font', 'photo_style', 'welcome_message', 'hide_branding',
   'last_activity_at', 'created_at',
   'password_hash', 'retired_at',
@@ -198,6 +200,14 @@ export async function resolveAlbum(
   // One indexed subscriptions lookup per album load — negligible next to the presign path, which
   // runs this same call once per FILE.
   const ownerTier = await getUserTierById(album.user_id)
+  // THE ALBUM'S tier, which since the packages is not always its OWNER's: a one-off package can
+  // entitle the album above the account. Every mask and cap below keys on this — using ownerTier
+  // for any of them would re-split the fact require-tier just unified, and its symptom is precise:
+  // a paid Max Package album whose guests see no Face Finder button while the search itself works.
+  const effectiveTier = albumEffectiveTier(ownerTier, {
+    tier: (album as { package_tier?: 'pro' | 'studio' | null }).package_tier ?? null,
+    expiresAt: (album as { package_expires_at?: string | null }).package_expires_at ?? null,
+  })
 
   const { password_hash: _pw, retired_at: _ra, header_touched: _ht, user_id: _uid, ...publicAlbum } = album
   void _ra; void _ht; void _uid
@@ -214,7 +224,7 @@ export async function resolveAlbum(
       // PRO marks at all while the server refused every one of those features. It also meant the
       // owner of a free album could never see the marks if they happened to be signed in elsewhere.
       // Reveals nothing new — media_caps already states the tier exactly.
-      plan: ownerTier,
+      plan: effectiveTier,
       // RE-CHECKED HERE, not just when it was switched on.
       //
       // hide_branding was gated only at write time, and nothing ever looked at it again: subscribe
@@ -228,7 +238,7 @@ export async function resolveAlbum(
       // which was given Max for free in exchange for carrying our name. A stored `true` from before
       // either rule applied must not go on taking effect — that is exactly how hide_branding
       // survived a cancelled subscription forever the first time.
-      hide_branding: album.hide_branding && ownerTier !== 'free' && !album.branding_locked,
+      hide_branding: album.hide_branding && effectiveTier !== 'free' && !album.branding_locked,
       // SAME RE-CHECK, for the two flags that put a control in front of GUESTS.
       //
       // Both of these open a search that api/album/face-search and api/album/bib-search refuse
@@ -240,9 +250,9 @@ export async function resolveAlbum(
       // require_approval and reveal_at are deliberately NOT masked here: unmasking those would
       // PUBLISH something the owner is holding back — photos awaiting approval, or an album that
       // has not opened yet. A plan boundary must never be the thing that reveals someone's photos.
-      face_finder_enabled: album.face_finder_enabled && ownerTier === 'studio',
-      bib_search_enabled: album.bib_search_enabled && ownerTier === 'studio',
-      media_caps: uploadCapsForTier(ownerTier),
+      face_finder_enabled: album.face_finder_enabled && effectiveTier === 'studio',
+      bib_search_enabled: album.bib_search_enabled && effectiveTier === 'studio',
+      media_caps: uploadCapsForTier(effectiveTier),
     } as unknown as Album,
   }
 }

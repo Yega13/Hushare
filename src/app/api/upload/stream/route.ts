@@ -9,6 +9,7 @@ import { getUserTierById } from '@/lib/subscriptions'
 import { resolveMaxDurationSeconds } from '@/lib/stream-duration'
 import {
   videoCaps, clipTooLong, videoBudgetExceeded, videoTooLongMessage, videoAlbumFullMessage,
+  albumEffectiveTier,
 } from '@/lib/album-entitlements'
 import { forbidCrossSiteRequest } from '@/lib/request-security'
 import { gateAllowsContribution, ALBUM_GATE_COLS } from '@/lib/server/album-access'
@@ -89,11 +90,12 @@ export async function POST(req: Request) {
   const admin = createAdminClient()
   const { data: album, error: albumError } = await admin
     .from('albums')
-    .select(`id, user_id, guest_uploads_enabled, ${ALBUM_GATE_COLS}`)
+    .select(`id, user_id, guest_uploads_enabled, package_tier, package_expires_at, ${ALBUM_GATE_COLS}`)
     .eq('id', albumId)
     .is('retired_at', null)
     .maybeSingle<{
       id: string; user_id: string | null; guest_uploads_enabled: boolean
+      package_tier: 'pro' | 'studio' | null; package_expires_at: string | null
       owner_token: string; password_hash: string | null; reveal_at: string | null
     }>()
 
@@ -129,7 +131,12 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: 'Service temporarily unavailable' }, { status: 503, headers: NO_STORE })
   }
 
-  const caps = uploadCapsForTier(tier)
+  // The ALBUM's tier, not just its owner's — a package raises both the file-size caps and the
+  // video budget below, or a Max Package album would refuse the 4 GB uploads it was sold with.
+  const effective = albumEffectiveTier(album.user_id ? tier : null, {
+    tier: album.package_tier, expiresAt: album.package_expires_at,
+  })
+  const caps = uploadCapsForTier(effective)
   if (fileSize > caps.video) {
     return NextResponse.json(
       { error: tooLargeMessage('video', caps.video) },
@@ -142,7 +149,7 @@ export async function POST(req: Request) {
   // Neither was limited before this. A file SIZE cap does not bound video cost, because Cloudflare
   // Stream bills per MINUTE stored every month (and again per minute watched) regardless of how
   // many bytes those minutes take. A well-compressed 200 MB file can be half an hour.
-  const vcaps = videoCaps(tier)
+  const vcaps = videoCaps(effective)
 
   if (clipTooLong(durationSeconds, vcaps)) {
     return NextResponse.json(

@@ -62,6 +62,8 @@ type AlbumRow = {
   reveal_at: string | null
   created_at: string
   media_cap_override: number | null
+  package_tier: 'pro' | 'studio' | null
+  package_expires_at: string | null
 }
 
 // The grandfather dates, the legacy ceiling and the override clamp all moved to
@@ -121,7 +123,7 @@ export async function POST(req: Request) {
 
   const { data: album, error: albumError } = await admin
     .from('albums')
-    .select('id, user_id, guest_uploads_enabled, require_approval, title, slug, owner_token, password_hash, reveal_at, created_at, media_cap_override')
+    .select('id, user_id, guest_uploads_enabled, require_approval, title, slug, owner_token, password_hash, reveal_at, created_at, media_cap_override, package_tier, package_expires_at')
     .eq('id', albumId)
     .is('retired_at', null)
     .maybeSingle<AlbumRow>()
@@ -252,7 +254,10 @@ export async function POST(req: Request) {
         console.error('[photos/create] media cap NOT enforced — tier lookup threw for album', albumId, ':', err)
       }
     }
-    const input = { ownerTier, createdAt: album.created_at, override: album.media_cap_override }
+    // The package rides along so its OWN item allowance applies — a Pro Package grants 5,000
+    // where a Pro subscription grants 3,000, and albumCap's max() was built for exactly this.
+    const pkg = { tier: album.package_tier, expiresAt: album.package_expires_at }
+    const input = { ownerTier, createdAt: album.created_at, override: album.media_cap_override, pkg }
     const { cap } = albumCap(input)
 
     if (tierKnown && photoCount >= cap) {

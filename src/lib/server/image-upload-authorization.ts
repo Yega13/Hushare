@@ -6,7 +6,7 @@ import { isAllowedImage, safeExtForMime } from '@/lib/cloudflare/r2'
 import { checkRateLimit, clientIpKey } from '@/lib/rate-limit'
 import { presignBudget } from '@/lib/presign-budget'
 import { uploadCapsForTier, tooLargeMessage } from '@/lib/media'
-import { albumCap as albumCapFor } from '@/lib/album-entitlements'
+import { albumCap as albumCapFor, albumEffectiveTier } from '@/lib/album-entitlements'
 import { getUserTierById } from '@/lib/subscriptions'
 import { gateAllowsContribution, ALBUM_GATE_COLS } from '@/lib/server/album-access'
 import type { Tier } from '@/types'
@@ -50,12 +50,13 @@ export async function authorizeImageUpload(
     checkRateLimit(clientIpKey(req, 'presign_ip'), 3600, 12000, { failOpen: false }),
     admin
       .from('albums')
-      .select(`id, user_id, guest_uploads_enabled, media_cap_override, created_at, ${ALBUM_GATE_COLS}`)
+      .select(`id, user_id, guest_uploads_enabled, media_cap_override, created_at, package_tier, package_expires_at, ${ALBUM_GATE_COLS}`)
       .eq('id', params.albumId)
       .is('retired_at', null)
       .maybeSingle<{
         id: string; user_id: string | null; guest_uploads_enabled: boolean
         media_cap_override: number | null; created_at: string
+        package_tier: 'pro' | 'studio' | null; package_expires_at: string | null
         owner_token: string; password_hash: string | null; reveal_at: string | null
       }>(),
   ])
@@ -117,6 +118,7 @@ export async function authorizeImageUpload(
     ownerTier: album.user_id ? (tierRes.tier ?? 'free') : null,
     createdAt: album.created_at,
     override: album.media_cap_override,
+    pkg: { tier: album.package_tier, expiresAt: album.package_expires_at },
   })
   const albumRl = await checkRateLimit(
     `presign_album:${params.albumId}`,
@@ -138,7 +140,9 @@ export async function authorizeImageUpload(
     return { ok: false, response: NextResponse.json({ error: 'Service temporarily unavailable' }, { status: 503, headers: NO_STORE }) }
   }
 
-  const caps = uploadCapsForTier(tierRes.tier)
+  const caps = uploadCapsForTier(albumEffectiveTier(album.user_id ? tierRes.tier : null, {
+    tier: album.package_tier, expiresAt: album.package_expires_at,
+  }))
   if (params.fileSize > caps.image) {
     return {
       ok: false,
