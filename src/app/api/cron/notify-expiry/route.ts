@@ -49,6 +49,13 @@ export async function POST(req: Request) {
     .from('albums')
     .select('id, user_id, title, slug, custom_slug, last_activity_at, last_notification_at')
     .is('retired_at', null)
+    // A LIVE PACKAGE IS PAID-FOR TIME. Inactivity retirement exists to stop unpaid albums
+    // costing storage forever; a package album's storage was bought outright, so the whole
+    // machinery — warning and deletion both — must not see it until the package lapses.
+    // After lapse it falls back in as an ordinary album: the renewal emails (30 and 7 days
+    // before lapse) came first, and the standard warned 30-day window still applies after,
+    // so nothing a customer paid for can vanish with less than two months of warnings.
+    .or(`package_expires_at.is.null,package_expires_at.lt.${new Date().toISOString()}`)
     .is('last_notification_at', null)  // only notify once
     // ANONYMOUS ALBUMS ARE INCLUDED, and they were the majority.
     //

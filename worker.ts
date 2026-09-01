@@ -82,6 +82,7 @@ const worker = {
       callCronRoute(baseUrl, '/api/cron/retire-albums', secret),
       callCronRoute(baseUrl, '/api/cron/notify-expiry', secret),
       callCronRoute(baseUrl, '/api/cron/notify-renewal', secret),
+      callCronRoute(baseUrl, '/api/cron/package-renewal', secret),
       // Reclaims storage quota held by abandoned Stream uploads (Cloudflare doesn't reliably
       // reclaim them itself — a pile-up triggered the "capacity running low" warning).
       callCronRoute(baseUrl, '/api/cron/cleanup-stream', secret),

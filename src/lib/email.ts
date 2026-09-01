@@ -202,6 +202,49 @@ export async function sendBillingReminderEmail(
   await sendEmail(ownerEmail, subject, html, text)
 }
 
+// The package renewal reminder. Renewals are one-time payments from the link in THIS email —
+// there is no stored card and nothing renews itself, so this is the renewal mechanism, not a
+// courtesy. Sent at 30 days and again at 7 (lib/package-renewal decides), never after lapse.
+export async function sendPackageRenewalEmail(
+  ownerEmail: string,
+  albumTitle: string,
+  albumUrl: string,
+  daysLeft: number,
+  priceLabel: string,   // "$9" / "$19" — formatted by the caller from the catalogue
+) {
+  requireSafeUrl(albumUrl, 'albumUrl')
+  const MAILING_ADDRESS = process.env.MAILING_ADDRESS ?? 'Hushare, Yerevan, Armenia'
+  const subject = `Keep "${safeSubjectField(albumTitle)}" online — ${daysLeft} day${daysLeft === 1 ? '' : 's'} left`
+
+  const renewUrl = `${albumUrl}?renew=1`
+  const html = `
+<div style="font-family:-apple-system,system-ui,sans-serif;color:#630826;max-width:560px;margin:0 auto;padding:24px;">
+  <h2 style="margin:0 0 16px;font-size:18px;">Your album's package is running out</h2>
+  <p style="margin:0 0 16px;color:#5C4A3C;">
+    The package on <strong>${escapeHtml(albumTitle)}</strong> ends in
+    <strong>${daysLeft} day${daysLeft === 1 ? '' : 's'}</strong>. Renewing costs
+    <strong>${escapeHtml(priceLabel)} for a year</strong> and keeps every photo and video exactly
+    where it is.
+  </p>
+  <p style="margin:0 0 20px;color:#5C4A3C;">
+    Nothing is deleted without further warning — but the paid features stop when the package does.
+  </p>
+  <a href="${escapeHtml(renewUrl)}"
+     style="display:inline-block;background:#630826;color:#FDFAF5;text-decoration:none;border-radius:10px;padding:10px 20px;font-size:14px;font-weight:600;">
+    Renew for ${escapeHtml(priceLabel)}/year
+  </a>
+  <hr style="border:none;border-top:1px solid #E8E0D0;margin:24px 0 12px;" />
+  <p style="margin:0;color:#B0A090;font-size:12px;">
+    You are receiving this because your album on <a href="${escapeHtml(SITE_URL)}" style="color:#B0A090;">Hushare</a>
+    has a package that is about to end. To stop receiving these emails, reply with "unsubscribe" or email
+    ${escapeHtml(process.env.SUPPORT_EMAIL ?? 'support@hushare.space')}. ${escapeHtml(MAILING_ADDRESS)}.
+  </p>
+</div>`
+  const text = `The package on "${albumTitle}" ends in ${daysLeft} day${daysLeft === 1 ? '' : 's'}. `
+    + `Renewing costs ${priceLabel} for a year and keeps everything where it is: ${renewUrl}`
+  await sendEmail(ownerEmail, subject, html, text)
+}
+
 export async function sendExpiryWarningEmail(
   ownerEmail: string,
   albumTitle: string,

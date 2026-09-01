@@ -78,6 +78,7 @@ create table if not exists public.albums (
   package_tier text,
   package_expires_at timestamp with time zone,
   package_last_order_id text,
+  package_reminder_at timestamp with time zone,
   primary key (id)
 );
 alter table public.albums enable row level security;
