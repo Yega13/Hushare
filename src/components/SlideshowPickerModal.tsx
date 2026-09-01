@@ -100,12 +100,29 @@ export default function SlideshowPickerModal({
                 style={{
                   border: selected ? '3px solid #630826' : '1px solid #DDD5C5',
                   background: '#E8E0D2',
+                  // SKIP WHAT IS NOT ON SCREEN. This modal lists the WHOLE album, and on a 4,566
+                  // photo album that meant styling, laying out and painting every one of them in a
+                  // single commit inside a 52vh scroller — measured as the largest single cause of
+                  // the main thread locking up in owner view. The tile is aspect-square inside a
+                  // fixed-column grid, so its box is definite under size containment and nothing
+                  // jumps; this is the same trick .hush-photo-tile already uses in the album grid.
+                  contentVisibility: 'auto',
                 }}
                 onClick={() => onToggle(photo.id)}
               >
                 {thumbSrc ? (
                   // eslint-disable-next-line @next/next/no-img-element
-                  <img src={thumbSrc} alt="" className="h-full w-full object-cover" draggable={false} />
+                  // lazy + async, exactly as PhotoTile does it. Without them, opening this picker
+                  // fired one image request PER PHOTO at once — 4,566 requests and 4,566 decodes
+                  // from a single tap.
+                  <img
+                    src={thumbSrc}
+                    alt=""
+                    className="h-full w-full object-cover"
+                    loading="lazy"
+                    decoding="async"
+                    draggable={false}
+                  />
                 ) : (
                   <span className="flex h-full w-full items-center justify-center" style={{ color: '#7C5C3E' }}>
                     <Play className="h-7 w-7" />

@@ -65,6 +65,8 @@ type Props = {
   // null while the tier is still resolving — see the note in AlbumPageClient. Rendering a paid
   // feature as locked before the answer arrives is a lie the owner sees and remembers.
   userTier: Tier | null
+  /** A package payment is in flight (Polar just redirected back). Blocks a second purchase. */
+  purchasePending?: boolean
   mediaRadiusMax: number
   onAlbumUpdated: (
     patch: Partial<Album>,
@@ -113,7 +115,7 @@ function toDatetimeLocal(iso: string | null): string {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
 }
 
-export default function OwnerToolbar({ album, photos, albumPhotoCount, ownerToken, userTier, mediaRadiusMax, onAlbumUpdated, onOpenSlideshow, arrangeMode, onToggleArrangeMode, onOpenDesigner }: Props) {
+export default function OwnerToolbar({ album, photos, albumPhotoCount, ownerToken, userTier, purchasePending, mediaRadiusMax, onAlbumUpdated, onOpenSlideshow, arrangeMode, onToggleArrangeMode, onOpenDesigner }: Props) {
   const { t } = useT()
   const [copied, setCopied] = useState<'share' | 'owner' | null>(null)
   const [showShare, setShowShare] = useState(false)
@@ -1241,6 +1243,7 @@ export default function OwnerToolbar({ album, photos, albumPhotoCount, ownerToke
               <PackageSection
                 album={album}
                 packagedLive={packagedLive}
+                purchasePending={purchasePending === true}
                 open={openSection === 'package'}
                 onToggle={() => toggleSection('package')}
                 t={t}

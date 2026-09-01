@@ -391,6 +391,8 @@ export const ru: Partial<Record<DictKey, string>> = {
   'ot.downloading': 'Загрузка {n}%…',
   'ot.creatingZip': 'Создание архива…',
   'ot.downloadAll': 'Скачать всё ({n})',
+  'ot.packagePending': 'Платёж получен',
+  'ot.packagePendingSub': 'Пакет применяется — это займёт несколько секунд. Не платите повторно.',
   'ot.package': 'Пакет',
   'ot.packageSub': 'Купите этот альбом навсегда — один платёж, два года включены, без подписки.',
   'ot.packageProName': 'Pro Package',

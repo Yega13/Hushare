@@ -176,11 +176,22 @@ export default function PhotoGrid({ album, photos, albumPhotoCount, isOwner, slu
     toggleSlideshowPick, startSlideshow, clearSlideshow, removeFromSlideshow,
   } = useSlideshow({ photos, slideshowRequestId, lightbox, onSetLightboxIndex: setLightbox })
 
-  const viewerPhotos = slideshowPhotoIds
-    ? slideshowPhotoIds
-        .map((id) => photos.find((photo) => photo.id === id))
-        .filter((photo): photo is Photo => Boolean(photo))
-    : photos
+  // A MAP, AND MEMOISED — this was the one genuinely quadratic thing on the page.
+  //
+  // `.find` inside `.map` is n×k. A whole-album slideshow on a 4,566-photo album selects every id,
+  // so this ran ~20.8 MILLION comparisons — in the render body, with no memo, on every render the
+  // grid does: each slideshow tick, each swipe, each zoom-pan, each image load. The slideshow was
+  // the one feature guaranteed to re-render constantly, so the cost landed exactly where it hurt.
+  //
+  // The .filter stays and matters: an id whose photo has since been deleted must still drop out,
+  // or the "the photo being viewed is gone, close the lightbox" guard below changes meaning.
+  const viewerPhotos = useMemo(() => {
+    if (!slideshowPhotoIds) return photos
+    const byId = new Map(photos.map((p) => [p.id, p]))
+    return slideshowPhotoIds
+      .map((id) => byId.get(id))
+      .filter((photo): photo is Photo => Boolean(photo))
+  }, [slideshowPhotoIds, photos])
   const current = lightbox !== null ? viewerPhotos[lightbox] ?? null : null
 
   const {

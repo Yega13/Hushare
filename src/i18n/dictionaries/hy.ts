@@ -391,6 +391,8 @@ export const hy: Partial<Record<DictKey, string>> = {
   'ot.downloading': 'Ներբեռնում {n}%…',
   'ot.creatingZip': 'Արխիվի ստեղծում…',
   'ot.downloadAll': 'Ներբեռնել բոլորը ({n})',
+  'ot.packagePending': 'Վճարումը ստացվել է',
+  'ot.packagePendingSub': 'Փաթեթը շուտով կմիանա՝ մի քանի վայրկյանում։ Կրկին մի վճարեք։',
   'ot.package': 'Փաթեթ',
   'ot.packageSub': 'Մեկ վճարում, առանց բաժանորդագրության։',
   'ot.packageProName': 'Pro Package',

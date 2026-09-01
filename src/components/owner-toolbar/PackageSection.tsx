@@ -21,12 +21,14 @@ import { accordionButton, sectionTitle, settingsSectionStyle } from '@/component
 type Props = {
   album: Album
   packagedLive: boolean
+  /** True on the return from checkout, before the webhook has landed. */
+  purchasePending: boolean
   open: boolean
   onToggle: () => void
   t: (key: string, params?: Record<string, string | number>) => string
 }
 
-export default function PackageSection({ album, packagedLive, open, onToggle, t }: Props) {
+export default function PackageSection({ album, packagedLive, purchasePending, open, onToggle, t }: Props) {
   const [busy, setBusy] = useState(false)
 
   async function startCheckout(item: 'package_pro' | 'package_max' | 'renewal_pro' | 'renewal_max') {
@@ -69,7 +71,16 @@ export default function PackageSection({ album, packagedLive, open, onToggle, t 
       </button>
       {open && (
         <div className="px-4 pb-4 space-y-3">
-          {packagedLive ? (
+          {purchasePending && !packagedLive ? (
+            // MONEY IS ALREADY IN FLIGHT. The webhook applies the package a moment after Polar
+            // sends the buyer back, and for that moment this section used to look untouched —
+            // two "Get" buttons in front of somebody who had just paid $99. Buying again here
+            // would be a second real charge, so the offer is replaced by the truth.
+            <div className="rounded-xl px-3 py-3" style={{ background: '#FDFAF5', border: '1px solid #DDD5C5' }}>
+              <p className="text-sm font-semibold" style={{ color: '#630826' }}>{t('ot.packagePending')}</p>
+              <p className="text-xs mt-0.5" style={{ color: '#7C5C3E' }}>{t('ot.packagePendingSub')}</p>
+            </div>
+          ) : packagedLive ? (
             <div className="rounded-xl px-3 py-3" style={{ background: '#FDFAF5', border: '1px solid #DDD5C5' }}>
               <p className="text-sm font-semibold" style={{ color: '#630826' }}>
                 {isMax ? t('ot.packageMaxName') : t('ot.packageProName')}

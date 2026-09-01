@@ -63,7 +63,9 @@ const SIZE_BUDGET: Record<string, number> = {
   // 1827 (2026-08-31): the photo-order control was added and then removed the same day —
   // newest-first is right for essentially every album and dragging already covers the rest, so
   // the switch was not worth the room it took in Settings. Back to where it started.
-  'src/components/OwnerToolbar.tsx': 1933,
+  // +3 (2026-09-01): the package section refuses to offer a second purchase while one is in
+  // flight — the prop and its plumbing.
+  'src/components/OwnerToolbar.tsx': 1936,
   // +23 (2026-08-31): fallback-poll wiring for realtime REFUSAL — the cadence decision is in
   // lib/realtime-fallback.ts; the timer must live beside the channel it covers (rule 15).
   // +17 (2026-08-31, review finding): channel-identity guard + timer hygiene in the reconnect
@@ -77,13 +79,19 @@ const SIZE_BUDGET: Record<string, number> = {
   // out of the bib results and the counts that describe the grid.
   // +45 (2026-08-31, capacity audit): delta refresh — a live album fetches the few new photos
   // instead of the whole 500-row window, which measured 424 KB and was the real egress bill.
-  'src/app/[slug]/AlbumPageClient.tsx': 1689,
+  // +17 (2026-09-01): the two package surfaces the money path was missing — the renewal card
+  // (?renew=1, for an email opened without an owner link) and the post-payment banner
+  // (?package=thanks, which Polar returns to with no owner fragment at all).
+  'src/app/[slug]/AlbumPageClient.tsx': 1706,
   'src/app/card-editor/CardEditorClient.tsx': 873,
   // +1 (2026-08-31): pass collectionTotal to the lightbox counter.
   // +2 (2026-08-31): morphAllowed gate on open and close.
   // +7 (2026-08-31): per-device column resolution feeding grid, masonry and the eager row.
   // +5 (2026-08-31, final audit): the close morph measures mounted tiles, not the slideshow subset.
-  'src/components/PhotoGrid.tsx': 864,
+  // +11 (2026-09-01): viewerPhotos resolves through a Map instead of .find-in-map. It was the
+  // only quadratic path on the page — ~20.8M comparisons per render during a whole-album
+  // slideshow — and the comment explaining why the .filter must stay is most of the growth.
+  'src/components/PhotoGrid.tsx': 875,
   'src/components/AlbumDesigner.tsx': 774,
   // +3 net (2026-08-31): deleted the duplicate ±1 prefetch loop, added strip windowing wired
   // to lib/lightbox-plan.ts.

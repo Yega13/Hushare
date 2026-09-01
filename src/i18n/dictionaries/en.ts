@@ -408,6 +408,8 @@ export const en = {
   'ot.downloading': 'Downloading {n}%…',
   'ot.creatingZip': 'Creating zip…',
   'ot.downloadAll': 'Download all ({n})',
+  'ot.packagePending': 'Payment received',
+  'ot.packagePendingSub': 'Applying your package — this takes a few seconds. Do not pay again.',
   'ot.package': 'Package',
   'ot.packageSub': 'Buy this album outright — one payment, two years included, no subscription.',
   'ot.packageProName': 'Pro Package',

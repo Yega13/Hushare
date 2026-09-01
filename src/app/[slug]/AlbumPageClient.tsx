@@ -23,6 +23,7 @@ import { rememberOwnedAlbum, getMyAlbums } from '@/lib/my-albums'
 import SignInPrompt from '@/components/SignInPrompt'
 import PendingReview from '@/components/PendingReview'
 import RenewPackagePrompt from '@/components/RenewPackagePrompt'
+import PackageThanksBanner from '@/components/PackageThanksBanner'
 import BibSearchBar, { bibMatches } from '@/components/BibSearchBar'
 import { fontStack, isImageBackground, getBackgroundImageUrl, getBackgroundColorStyle, resolveHeaderImageUrl, resolveHeaderVideo } from '@/lib/album-design'
 import { retryImport } from '@/lib/lazy-retry'
@@ -132,6 +133,10 @@ export default function AlbumPageClient({ initialAlbum = null, initialPhotos, in
   // ?renew=1 comes from the renewal email. Read once; navigation within the page keeps it.
   const [renewRequested] = useState(() =>
     typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('renew') === '1')
+  // ?package=thanks is Polar's redirect after a package is paid for. Also read once — this page
+  // load IS the return from checkout, and the banner owns the wait from here.
+  const [thanksRequested] = useState(() =>
+    typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('package') === 'thanks')
   const ownerPromptShownRef = useRef(false)
   // Album Designer (full-screen customization editor). The ref lets Effect 4 skip the owner's OWN
   // settings-refetch while designing, so rapid edits don't flicker (the reported glitch).
@@ -1550,6 +1555,7 @@ export default function AlbumPageClient({ initialAlbum = null, initialPhotos, in
             albumPhotoCount={total}
             ownerToken={ownerToken}
             userTier={userTier}
+            purchasePending={thanksRequested}
             mediaRadiusMax={Math.max(1, mediaRadiusMax)}
             onAlbumUpdated={handleAlbumUpdated}
             onOpenSlideshow={() => setSlideshowRequestId(id => id + 1)}
@@ -1608,6 +1614,17 @@ export default function AlbumPageClient({ initialAlbum = null, initialPhotos, in
             server is the one that decides who may pay. The owner toolbar's own package section
             covers the on-device owner, so this skips them to avoid two surfaces at once. */}
         {renewRequested && !effectiveIsOwner && album && <RenewPackagePrompt album={album} />}
+
+        {/* Just paid. The Polar redirect drops the #owner= fragment, so the buyer lands in the
+            ordinary guest view of their own album — with, until this existed, no sign anywhere
+            that the payment had happened and the same two buy buttons waiting if they went back
+            for their owner link. */}
+        {thanksRequested && album && (
+          <PackageThanksBanner
+            album={album}
+            onApplied={(fresh) => setAlbum(prev => prev ? { ...prev, ...fresh } : prev)}
+          />
+        )}
 
         {effectiveIsOwner && pendingPhotos.length > 0 && (
           <PendingReview
