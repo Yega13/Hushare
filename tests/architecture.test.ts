@@ -77,7 +77,7 @@ const SIZE_BUDGET: Record<string, number> = {
   // out of the bib results and the counts that describe the grid.
   // +45 (2026-08-31, capacity audit): delta refresh — a live album fetches the few new photos
   // instead of the whole 500-row window, which measured 424 KB and was the real egress bill.
-  'src/app/[slug]/AlbumPageClient.tsx': 1680,
+  'src/app/[slug]/AlbumPageClient.tsx': 1689,
   'src/app/card-editor/CardEditorClient.tsx': 873,
   // +1 (2026-08-31): pass collectionTotal to the lightbox counter.
   // +2 (2026-08-31): morphAllowed gate on open and close.

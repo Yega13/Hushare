@@ -3,7 +3,7 @@ import { createClient } from '@/lib/supabase/server'
 import { createCheckout } from '@/lib/polar'
 import { forbidCrossSiteRequest } from '@/lib/request-security'
 import { checkRateLimit, clientIpKey } from '@/lib/rate-limit'
-import { verifyOwnerViaCookieWithRateLimit } from '@/lib/album-owner-access'
+import { verifyOwnerViaCookieOrAccount } from '@/lib/album-owner-access'
 import {
   PACKAGE_CATALOGUE, RENEWAL_CATALOGUE, isPackageKey, isRenewalKey,
 } from '@/lib/package-catalogue'
@@ -66,13 +66,6 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: 'This package is not available right now.' }, { status: 503, headers: NO_STORE })
   }
 
-  // Owner proof — and the album's real id, which is what the webhook needs. A renewal bought by
-  // whoever holds the owner link is fine by construction: it can only ever ADD time to the album.
-  const access = await verifyOwnerViaCookieWithRateLimit(req, slug)
-  if (!access.ok) {
-    return NextResponse.json({ error: access.error }, { status: access.status, headers: NO_STORE })
-  }
-
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user || !user.email) {
@@ -82,6 +75,16 @@ export async function POST(req: Request) {
       { error: 'Sign in to buy a package — it keeps the album on your account.', code: 'sign_in_required' },
       { status: 401, headers: NO_STORE },
     )
+  }
+
+  // Owner proof: the owner cookie, OR being signed in as the account that owns the album. The
+  // second is what makes the renewal email work — it lands two years later on a device where the
+  // cookie never existed, and a packaged album is guaranteed claimed, so the account IS the proof.
+  // A renewal bought by whoever holds the owner link is fine by construction either way: it can
+  // only ever ADD time to the album.
+  const access = await verifyOwnerViaCookieOrAccount(req, slug, user.id)
+  if (!access.ok) {
+    return NextResponse.json({ error: access.error }, { status: access.status, headers: NO_STORE })
   }
 
   const site = process.env.NEXT_PUBLIC_SITE_URL ?? 'https://hushare.space'

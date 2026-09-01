@@ -87,7 +87,7 @@ vi.mock('@/lib/subscriptions', () => ({
   getUserTier: async () => 'free',
 }))
 
-import { verifyAlbumOwnerAccess, verifyOwnerViaCookie, verifyOwnerWithRateLimit } from '@/lib/album-owner-access'
+import { verifyAlbumOwnerAccess, verifyOwnerViaCookie, verifyOwnerViaCookieOrAccount, verifyOwnerWithRateLimit } from '@/lib/album-owner-access'
 
 const ALBUM: Row = { id: 'alb-1', owner_token: 'real-secret-token', user_id: 'owner-1', slug: 'abcd1234', custom_slug: null }
 
@@ -275,6 +275,73 @@ describe('claiming an anonymous album', () => {
     const r = await verifyAlbumOwnerAccess('abcd1234', 'real-secret-token')
     expect(r.ok).toBe(true)
     expect(cfg.claims, 'a claimed album must not be re-claimed by whoever presents the token').toBe(0)
+  })
+})
+
+describe('cookie OR the signed-in owning account', () => {
+  // The renewal email's auth. It lands years later on a device with no owner cookie and no
+  // #owner= token, so being signed in as the account that owns the album must be enough — and
+  // nothing weaker than that may pass.
+  const req = () => new Request('https://hushare.space/x')
+
+  it('the cookie still wins when present — account not even needed', async () => {
+    cfg.cookieValue = 'real-secret-token'
+    const r = await verifyOwnerViaCookieOrAccount(req(), 'abcd1234', 'somebody-else-entirely')
+    expect(r.ok).toBe(true)
+    expect(cfg.lookups, 'a good cookie must short-circuit — one lookup, not a second').toBe(1)
+  })
+
+  it('no cookie + the OWNING account = access', async () => {
+    cfg.cookieValue = null
+    const r = await verifyOwnerViaCookieOrAccount(req(), 'abcd1234', 'owner-1')
+    expect(r.ok).toBe(true)
+    if (r.ok) {
+      expect(r.album.id).toBe('alb-1')
+      expect(r.claim, 'nothing to claim — it is already theirs').toBe('already_yours')
+    }
+
+    // A different owner, so the result echoes the CALLER's id, not a constant.
+    cfg.rows = [{ ...ALBUM, user_id: 'owner-2' }]
+    const r2 = await verifyOwnerViaCookieOrAccount(req(), 'abcd1234', 'owner-2')
+    expect(r2.ok).toBe(true)
+    if (r2.ok) expect(r2.userId).toBe('owner-2')
+  })
+
+  it('no cookie + a DIFFERENT account = the refusal, never a grant', async () => {
+    cfg.cookieValue = null
+    const r = await verifyOwnerViaCookieOrAccount(req(), 'abcd1234', 'stranger-7')
+    expect(r.ok).toBe(false)
+    if (!r.ok) expect(r.status, 'a stranger is refused, not told the album is missing').not.toBe(404)
+  })
+
+  it('an UNCLAIMED album grants nobody account access', async () => {
+    // No user_id on the row means no account owns it — a session proves nothing here. The claim
+    // flow (owner token in hand) is the only door into an anonymous album.
+    cfg.rows = [{ ...ALBUM, user_id: null }]
+    cfg.cookieValue = null
+    const r = await verifyOwnerViaCookieOrAccount(req(), 'abcd1234', 'owner-1')
+    expect(r.ok).toBe(false)
+  })
+
+  it('signed out entirely = the cookie refusal, and no second lookup', async () => {
+    cfg.cookieValue = null
+    const r = await verifyOwnerViaCookieOrAccount(req(), 'abcd1234', null)
+    expect(r.ok).toBe(false)
+    expect(cfg.lookups, 'no userId, no reason to touch the database again').toBe(1)
+  })
+
+  it('album gone = 404 even for a signed-in caller', async () => {
+    cfg.rows = []
+    cfg.cookieValue = null
+    const r = await verifyOwnerViaCookieOrAccount(req(), 'abcd1234', 'owner-1')
+    expect(r).toMatchObject({ ok: false, status: 404 })
+  })
+
+  it('rate-limited = 429 and the account path costs nothing', async () => {
+    cfg.rlOk = false
+    const r = await verifyOwnerViaCookieOrAccount(req(), 'abcd1234', 'owner-1')
+    expect(r).toMatchObject({ ok: false, status: 429 })
+    expect(cfg.lookups, 'a limited caller must cost nothing further').toBe(0)
   })
 })
 

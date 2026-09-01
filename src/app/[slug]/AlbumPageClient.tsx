@@ -22,6 +22,7 @@ import GuestActionsBar from '@/components/GuestActionsBar'
 import { rememberOwnedAlbum, getMyAlbums } from '@/lib/my-albums'
 import SignInPrompt from '@/components/SignInPrompt'
 import PendingReview from '@/components/PendingReview'
+import RenewPackagePrompt from '@/components/RenewPackagePrompt'
 import BibSearchBar, { bibMatches } from '@/components/BibSearchBar'
 import { fontStack, isImageBackground, getBackgroundImageUrl, getBackgroundColorStyle, resolveHeaderImageUrl, resolveHeaderVideo } from '@/lib/album-design'
 import { retryImport } from '@/lib/lazy-retry'
@@ -128,6 +129,9 @@ export default function AlbumPageClient({ initialAlbum = null, initialPhotos, in
   // Owner "save your album" prompt — a one-time MODAL shown to a signed-OUT owner a few seconds
   // after they've finished adding photos, offering the one-tap Google save.
   const [ownerSavePromptOpen, setOwnerSavePromptOpen] = useState(false)
+  // ?renew=1 comes from the renewal email. Read once; navigation within the page keeps it.
+  const [renewRequested] = useState(() =>
+    typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('renew') === '1')
   const ownerPromptShownRef = useRef(false)
   // Album Designer (full-screen customization editor). The ref lets Effect 4 skip the owner's OWN
   // settings-refetch while designing, so rapid edits don't flicker (the reported glitch).
@@ -1598,6 +1602,12 @@ export default function AlbumPageClient({ initialAlbum = null, initialPhotos, in
         {(album.guest_uploads_enabled || effectiveIsOwner) && (
           <UploadZone album={album} onPhotosUploaded={handlePhotosUploaded} />
         )}
+
+        {/* The renewal email's landing spot. Rendered from the URL param, NOT from owner
+            status: the email is opened on devices where no owner cookie or token exists, and the
+            server is the one that decides who may pay. The owner toolbar's own package section
+            covers the on-device owner, so this skips them to avoid two surfaces at once. */}
+        {renewRequested && !effectiveIsOwner && album && <RenewPackagePrompt album={album} />}
 
         {effectiveIsOwner && pendingPhotos.length > 0 && (
           <PendingReview

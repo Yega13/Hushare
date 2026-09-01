@@ -244,6 +244,48 @@ export async function verifyOwnerViaCookie<T extends AlbumOwnerBase = AlbumOwner
   return { ok: true, album, userId, claim: outcome, claimCap: cap }
 }
 
+// Cookie OR the signed-in account that owns the album — for the surfaces a RETURNING owner
+// reaches without their owner link.
+//
+// The renewal email lands two years after the event, on whatever device the owner opens it with.
+// The owner cookie from the original browser is long gone, and the #owner= token is not in the
+// email (it must never be — an emailed management link is a management link in every forwarded
+// copy). Requiring the cookie there meant the renewal's primary audience could not pay. An album
+// with a package is GUARANTEED claimed (checkout requires an account and payment claims it), so
+// the account itself is proof of ownership: user.id === album.user_id.
+//
+// The cookie path is tried first and still works — it is the stronger, older proof and covers the
+// owner mid-session on the original device.
+export async function verifyOwnerViaCookieOrAccount<T extends AlbumOwnerBase = AlbumOwnerBase>(
+  req: Request,
+  slug: string,
+  userId: string | null,
+  extraColumns?: string,
+) {
+  const viaCookie = await verifyOwnerViaCookieWithRateLimit<T>(req, slug, extraColumns)
+  if (viaCookie.ok || !userId) return viaCookie
+  // A rate-limited caller must cost nothing further — no lookup on the account path either.
+  if (viaCookie.reason === 'rate_limited') return viaCookie
+
+  // No cookie, but a session: the album row itself says whether this account owns it.
+  const cleanSlug = slug.trim().toLowerCase()
+  const cols = Array.from(new Set([
+    'id', 'owner_token', 'user_id', 'slug', 'custom_slug',
+    ...validateExtraColumns(extraColumns ?? ''),
+  ])).join(', ')
+  const found = await lookupOwnableAlbum<T>(cleanSlug, cols)
+  if (!found) {
+    return { ok: false as const, status: 404, error: 'Album not found', reason: 'not_found' as const }
+  }
+  if (found.user_id !== userId) {
+    // Covers the unclaimed album too: user_id null never equals a session id (userId is non-empty
+    // by the guard above). The cookie failure already carries the right status; being signed in as
+    // somebody else is not a better claim than holding no proof at all.
+    return viaCookie
+  }
+  return { ok: true as const, album: found, userId, claim: 'already_yours' as const, claimCap: 0 }
+}
+
 export async function verifyOwnerViaCookieWithRateLimit<T extends AlbumOwnerBase = AlbumOwnerBase>(
   req: Request,
   slug: string,
