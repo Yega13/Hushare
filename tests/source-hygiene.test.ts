@@ -69,6 +69,10 @@ describe('source files contain no invisible characters', () => {
     expect(files.length).toBeGreaterThan(50)
   })
 
+  // 30s, not the 5s default: this walks and reads EVERY source file, which is disk I/O that
+  // slows with machine load, not with the code under test. It timed out at 8s during a fully
+  // parallel run on a busy machine while passing in 200ms alone — a flake that would teach
+  // people to re-run red suites until green, which is how real failures start being ignored.
   it('has no file carrying one', () => {
     const offenders: string[] = []
     for (const file of files) {
@@ -85,7 +89,7 @@ describe('source files contain no invisible characters', () => {
         'heredoc or editor interpreted before the file reached disk — check the regex or string ' +
         'literal on that line and write the escape so it survives.',
     ).toEqual([])
-  })
+  }, 30_000)
 })
 
 // PAGINATION MUST BE ORDERED. `.range()` without `.order()` is not pagination — it is two
