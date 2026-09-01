@@ -98,12 +98,18 @@ async function fetchCoverUrl(album: AlbumMeta): Promise<string | null> {
   const admin = createAdminClient()
   const cols = 'url, thumb_url, media_type, poster_url, stream_thumbnail_url'
 
+  // NOT hidden, in both queries. On an album with require_approval every guest upload starts
+  // hidden, and the earliest one was eligible to become the link preview — so a photo the owner
+  // had not approved could be published to every chat the album link was pasted into, which is
+  // further than the album itself would ever have shown it. The gate for password and reveal
+  // albums is applied by the caller; this is the third case it did not cover.
   if (album.cover_photo_id) {
     const { data } = await admin
       .from('photos')
       .select(cols)
       .eq('id', album.cover_photo_id)
       .eq('album_id', album.id)
+      .eq('hidden', false)
       .maybeSingle()
     if (data) return photoOgUrl(data as PhotoMeta)
   }
@@ -112,6 +118,7 @@ async function fetchCoverUrl(album: AlbumMeta): Promise<string | null> {
     .from('photos')
     .select(cols)
     .eq('album_id', album.id)
+    .eq('hidden', false)
     .order('sort_order', { ascending: true, nullsFirst: false })
     .order('created_at', { ascending: true })
     .limit(1)

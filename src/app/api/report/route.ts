@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { reportServerError } from '@/lib/report-server-error'
 import { forbidCrossSiteRequest } from '@/lib/request-security'
 import { checkRateLimit, clientIpKey } from '@/lib/rate-limit'
 import { track } from '@/lib/analytics'
@@ -87,6 +88,18 @@ export async function POST(req: Request) {
   }
 
   const turnstileSecret = process.env.TURNSTILE_SECRET_KEY
+  // A MISSING SECRET MUST NOT MEAN "SKIP THE CHECK" IN PRODUCTION.
+  //
+  // Verified against production on 2026-09-01: the secret IS set, and this endpoint answers
+  // "Please complete the verification" without a token. So the fail-open branch below is only ever
+  // reached by a future misconfiguration — a rotation that half-lands, a secret dropped from a new
+  // environment — and the failure mode is silent: the form keeps working, the abuse gate is simply
+  // gone, and nothing says so. Refusing loudly is the better half of that trade; locally, where no
+  // secret is set, the check is still skipped so the form is testable.
+  if (!turnstileSecret && process.env.NODE_ENV === 'production') {
+    reportServerError('report', 'Turnstile secret missing — refusing rather than skipping the check')
+    return json(503, { error: 'Verification is temporarily unavailable. Please try again shortly.' })
+  }
   if (turnstileSecret) {
     const token = sanitizeLine(body.turnstileToken ?? '')
     if (!token) return json(400, { error: 'Please complete the verification' })

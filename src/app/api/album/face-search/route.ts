@@ -16,8 +16,17 @@ export const maxDuration = 30
 const NO_STORE = { 'Cache-Control': 'no-store' }
 const MAX_SELFIE_BYTES = 5 * 1024 * 1024
 
-const SLUG_RE = /^[a-zA-Z0-9._-]{1,200}$/
-function isValidSlug(s: string): boolean { return SLUG_RE.test(s) }
+// The SAME contract every other path uses. This one allowed uppercase, dots and underscores
+// over 200 characters while resolveAlbum and lookupOwnableAlbum lowercase and accept only
+// [a-z0-9-] — so an uppercase custom slug 404'd here and resolved everywhere else. Not an
+// injection (PostgREST's or() splits on characters this never allowed), but two answers to
+// one question, which is how the next difference becomes one.
+const SLUG_RE = /^[a-z0-9-]{1,64}$/
+// Normalised THEN tested, exactly as lookupOwnableAlbum does it — otherwise tightening the
+// pattern would turn an uppercase custom URL from a silent 404 into a 400, which is the same
+// bug wearing a different status code.
+function normalizeSlug(s: string): string { return s.trim().toLowerCase() }
+function isValidSlug(s: string): boolean { return SLUG_RE.test(normalizeSlug(s)) }
 
 // Rekognition calls cost money — rate limits must be shared across Worker instances.
 // IP limit is generous because at an event every guest's "find my photos" comes from the same
@@ -89,6 +98,9 @@ async function handlePost(req: Request) {
   if (!slug || !isValidSlug(slug)) {
     return NextResponse.json({ error: 'Invalid slug' }, { status: 400, headers: NO_STORE })
   }
+  // The normalised form is what the lookup below must use, or a valid uppercase custom URL
+  // validates and then matches no row — the 404 this was meant to stop.
+  slug = normalizeSlug(slug)
 
   const admin = createAdminClient()
 

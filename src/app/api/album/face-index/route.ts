@@ -14,8 +14,17 @@ const NO_STORE = { 'Cache-Control': 'no-store' }
 
 // Validate slugs before embedding them in PostgREST .or() filters. A bare interpolation like
 // `slug.eq.${slug}` is injectable: a slug with commas/operators would add extra filter arms.
-const SLUG_RE = /^[a-zA-Z0-9._-]{1,200}$/
-function isValidSlug(s: string): boolean { return SLUG_RE.test(s) }
+// The SAME contract every other path uses. This one allowed uppercase, dots and underscores
+// over 200 characters while resolveAlbum and lookupOwnableAlbum lowercase and accept only
+// [a-z0-9-] — so an uppercase custom slug 404'd here and resolved everywhere else. Not an
+// injection (PostgREST's or() splits on characters this never allowed), but two answers to
+// one question, which is how the next difference becomes one.
+const SLUG_RE = /^[a-z0-9-]{1,64}$/
+// Normalised THEN tested, exactly as lookupOwnableAlbum does it — otherwise tightening the
+// pattern would turn an uppercase custom URL from a silent 404 into a 400, which is the same
+// bug wearing a different status code.
+function normalizeSlug(s: string): string { return s.trim().toLowerCase() }
+function isValidSlug(s: string): boolean { return SLUG_RE.test(normalizeSlug(s)) }
 
 // Rekognition calls cost money — rate limits must be shared across Worker instances.
 const INDEX_WINDOW_SECONDS = 10 * 60
@@ -61,7 +70,8 @@ function rateLimitResponse(retryAfterSeconds: number) {
 // Read-only, no cost → no owner auth. Only POST (paid Rekognition calls) is owner-gated.
 export async function GET(req: Request) {
   const url = new URL(req.url)
-  const slug = url.searchParams.get('slug')?.trim() ?? ''
+  // Normalised once, up front: what is validated is what queries the database.
+  const slug = normalizeSlug(url.searchParams.get('slug') ?? '')
   if (!slug || !isValidSlug(slug)) return NextResponse.json({ error: 'Invalid slug' }, { status: 400, headers: NO_STORE })
 
   // 30/min per IP was the LOWEST limit in the product, and 400 guests at a venue share one
@@ -166,7 +176,7 @@ async function handlePost(req: Request) {
     return NextResponse.json({ error: 'Invalid body' }, { status: 400, headers: NO_STORE })
   }
 
-  const slug = String(body.slug ?? '').trim()
+  const slug = normalizeSlug(String(body.slug ?? '').trim() as string)
   if (!slug || !isValidSlug(slug)) return NextResponse.json({ error: 'Invalid slug' }, { status: 400, headers: NO_STORE })
 
   // failOpen:false — indexPhotoFaces below is a paid Rekognition call per photo.
