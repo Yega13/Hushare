@@ -173,8 +173,10 @@ export default function LightboxOverlay({
   //
   // Padding on the root moves the flex centre down by HALF its value while leaving the chevrons —
   // absolutely positioned against the padding box — at the viewport's centre. So the padding is
-  // twice the wanted shift, and the swipe pane inherits it for free by filling the same box.
-  // Clamped to the free space that exists, so a short screen cannot clip the controls.
+  // twice the wanted shift. The swipe pane does NOT inherit it (absolute inset-0 spans the padding
+  // box) and carries its own copy below — the version that assumed inheritance placed the arriving
+  // photo up to 44px high on every phone. Clamped to the free space that exists, so a short screen
+  // cannot clip the controls.
   const LB_PAD = 'clamp(0px, calc(100svh - min(70vh, 760px) - 96px), 88px)'
   const shownTotal = Math.max(collectionTotal ?? 0, viewerPhotos.length)
   // Video aspect ratio drives the player box so it fills with no black bars. Prefer the exact
@@ -362,6 +364,11 @@ export default function LightboxOverlay({
               transform: `translateX(calc(${swipeOffset}px + ${swipeOffset < 0 ? '100vw' : '-100vw'}))`,
               transition: swipeAnimating ? 'transform 170ms cubic-bezier(0.4, 0, 0.2, 1)' : 'none',
               paddingBottom: 88,
+              // THE PANE DOES NOT INHERIT THE ROOT'S PADDING. It is absolute inset-0, so it spans
+              // the padding box and its flex centre ignores the root's paddingTop entirely — the
+              // belief that it "inherits the shift for free" is exactly how the arriving photo
+              // rode up to 44px HIGH on phones for a day. It needs the same padding, itself.
+              paddingTop: LB_PAD,
             }}
           >
             {/* eslint-disable-next-line @next/next/no-img-element */}

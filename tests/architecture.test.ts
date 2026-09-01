@@ -85,7 +85,9 @@ const SIZE_BUDGET: Record<string, number> = {
   // +21 (2026-09-01): the photo lists that feed the grid are memoised. Their IDENTITY is what
   // decides whether thousands of tiles re-render, and a bib search or a review queue was
   // rebuilding them on every parent render.
-  'src/app/[slug]/AlbumPageClient.tsx': 1727,
+  // +5 (2026-09-01, incident): bibRange memoised for identity — a fresh {} in visiblePhotos'
+  // deps re-rendered every tile during an active bib search.
+  'src/app/[slug]/AlbumPageClient.tsx': 1732,
   'src/app/card-editor/CardEditorClient.tsx': 873,
   // +1 (2026-08-31): pass collectionTotal to the lightbox counter.
   // +2 (2026-08-31): morphAllowed gate on open and close.
@@ -98,7 +100,10 @@ const SIZE_BUDGET: Record<string, number> = {
   // lightbox's own state stops re-rendering thousands of tiles. A reduction, locked in.
   // +2 (2026-09-01): the tile list takes the three album FIELDS it reads instead of the album
   // object, so a title or background edit no longer re-renders every tile.
-  'src/components/PhotoGrid.tsx': 821,
+  // +4 (2026-09-01, incident): the morph gate asks about the ALBUM, not the loaded window —
+  // the comment carrying why is most of the growth. A fresh 499-tile load of a 4,566-photo
+  // album ran the paint-suppressing view transition on every tap: the ten-second freeze.
+  'src/components/PhotoGrid.tsx': 825,
   'src/components/AlbumDesigner.tsx': 774,
   // +3 net (2026-08-31): deleted the duplicate ±1 prefetch loop, added strip windowing wired
   // to lib/lightbox-plan.ts.
@@ -110,7 +115,9 @@ const SIZE_BUDGET: Record<string, number> = {
   // +8 (2026-08-31): the clamped downward nudge that puts the chevrons on the photo's centre.
   // +13 (2026-08-31, review finding): the chevron alignment moved from an inline transform —
   // which a filled animation silently overrode — to padding on the overlay root.
-  'src/components/photo-grid/LightboxOverlay.tsx': 724,
+  // +7 (2026-09-01, incident): the swipe pane carries its own LB_PAD — absolute inset-0 does
+  // NOT inherit the root's padding, so the arriving photo rode up to 44px high on phones.
+  'src/components/photo-grid/LightboxOverlay.tsx': 731,
   // 518, down from 645: validatePhoto, hasTraversal and r2UrlPrefix moved to lib/photo-input,
   // where 22 tests now cover the boundary between a guest and this album's storage — including the
   // poisoned-thumbnail attack, which the mutation run confirmed they catch.

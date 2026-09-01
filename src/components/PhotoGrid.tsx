@@ -272,14 +272,18 @@ export default function PhotoGrid({ album, photos, albumPhotoCount, isOwner, slu
     // a slideshow is running. Indexing the album instead sent the photo flying back into whichever
     // tile happened to sit at that position — usually the wrong one entirely.
     const returningTo = lightbox != null ? viewerPhotos[lightbox]?.id : undefined
-    // An empty id forces the plain cut: past MORPH_TILE_LIMIT loaded photos the page is too
-    // heavy to snapshot, and the morph itself was the close-lag (lib/lightbox-plan.ts).
-    // photos.length, not viewerPhotos.length. The limit is about how many TILES are mounted for
-    // the browser to snapshot, and the grid always renders `photos` — a slideshow narrows
-    // viewerPhotos to a handful while four thousand tiles stay mounted behind it, so closing a
-    // ten-photo slideshow on a big album ran the very transition MORPH_TILE_LIMIT exists to
-    // prevent. Open already measures it this way; close disagreed.
-    morphPhotoClosed(gridRef.current, morphAllowed(photos.length) ? (returningTo ?? '') : '', () => {
+    // An empty id forces the plain cut: past MORPH_TILE_LIMIT photos the page is too heavy to
+    // snapshot, and the morph itself was the close-lag (lib/lightbox-plan.ts).
+    // THE ALBUM'S size, not the loaded window's. Keyed on photos.length alone, a fresh load of the
+    // 4,566-photo race album carried 499 tiles — under the 600 limit — so the full-page view
+    // transition ran on the one album it exists to protect, and startViewTransition suppresses ALL
+    // painting until its captures finish. During a cold load's thumb storm that was a ten-second
+    // frozen screen on every tap, reproducible in incognito, and invisible in every test done on a
+    // scrolled album (where photos.length was over the limit and the gate held). Math.max keeps
+    // photos.length as the floor so a slideshow narrowing viewerPhotos still cannot re-open the
+    // door, and albumPhotoCount (the album's true published size) closes it for big albums in
+    // every load state.
+    morphPhotoClosed(gridRef.current, morphAllowed(Math.max(albumPhotoCount ?? 0, photos.length)) ? (returningTo ?? '') : '', () => {
       // clearSlideshow lives INSIDE the callback with the rest. Left outside, it flushed on its own
       // and changed viewerPhotos while `lightbox` was still set — so for one commit the lightbox
       // showed a different photo, remounted on its key, fetched a full-size image nobody asked for,
@@ -301,10 +305,10 @@ export default function PhotoGrid({ album, photos, albumPhotoCount, isOwner, slu
     // Recorded per open, because the answer differs: a morph needs a tile to grow from, so opening
     // a photo scrolled far out of the grid is a plain cut even on a browser that supports it — and
     // that open still wants its ordinary entrance animation.
-    setOpenedWithMorph(supportsViewTransitions() && !!photo && morphAllowed(photos.length))
+    setOpenedWithMorph(supportsViewTransitions() && !!photo && morphAllowed(Math.max(albumPhotoCount ?? 0, photos.length)))
     // Morph the tapped thumbnail into the full photo. Falls straight through to the plain state
     // change where the browser cannot do it, which is exactly the hard cut this replaces.
-    morphPhoto(gridRef.current, morphAllowed(photos.length) ? (photo?.id ?? '') : '', () => {
+    morphPhoto(gridRef.current, morphAllowed(Math.max(albumPhotoCount ?? 0, photos.length)) ? (photo?.id ?? '') : '', () => {
       setLightbox(index)
     })
     // Outside the transition: pushing history inside it would be captured as part of the animation

@@ -1,4 +1,6 @@
 import { describe, it, expect } from 'vitest'
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { PREFETCH_DELTAS, stripWindow, morphAllowed } from '../src/lib/lightbox-plan'
 
 describe('PREFETCH_DELTAS', () => {
@@ -51,5 +53,21 @@ describe('morphAllowed', () => {
     expect(morphAllowed(600)).toBe(true)
     expect(morphAllowed(601)).toBe(false)
     expect(morphAllowed(4565)).toBe(false)
+  })
+
+  it('is asked about the ALBUM at every call site, never the loaded window', () => {
+    // The decision above was always right; the number fed to it was not. Keyed on photos.length,
+    // a FRESH load of the 4,566-photo race album carried 499 tiles — under the limit — so the
+    // full-page view transition ran on precisely the album this gate exists to protect, and
+    // startViewTransition suppresses all painting until its captures finish: a ten-second frozen
+    // screen on every tap, invisible to every test done on a scrolled album. Rule 15's shape —
+    // the decision was in lib and tested, its enforcement drifted alone.
+    const source = readFileSync(join(process.cwd(), 'src', 'components', 'PhotoGrid.tsx'), 'utf8')
+    const calls = [...source.matchAll(/morphAllowed\(([^)]*)\)/g)].map((m) => m[1])
+    expect(calls.length, 'the open, openedWithMorph and close gates').toBeGreaterThanOrEqual(3)
+    for (const arg of calls) {
+      expect(arg, 'must include the album total, with the window only as a floor')
+        .toContain('albumPhotoCount')
+    }
   })
 })
