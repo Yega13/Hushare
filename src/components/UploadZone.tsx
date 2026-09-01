@@ -9,7 +9,7 @@ import { stripExifFromJpeg, jpegOrientation, stripMetadataFromPng, stripMetadata
 // tested in tests/upload-policy.test.ts, because none of it was reachable from inside here.
 import {
   maxImageDimFor, shrinkLadderFor, needsReEncode, outputMimeFor, nextShrinkDim,
-  isMissingContentLengthFailure,
+  isMissingContentLengthFailure, tusFailureAction,
   backoffDelay, isNetworkClass, isExpectedRefusal, createRelayPolicy,
   verdictForResponse, verdictForThrow,
 } from '@/lib/upload-policy'
@@ -1471,18 +1471,10 @@ function isDeterministicTusError(e: unknown): boolean {
   return status !== null && status >= 400 && status < 500
 }
 
-// The OUTER recovery loop's view is more permissive: it always constructs a FRESH tus.Upload per
-// attempt, which re-HEADs for the true confirmed offset before resuming — so a 409 Conflict (offset
-// mismatch, e.g. from an aborted attempt's already-in-flight PATCH landing on the wire after the
-// next attempt already started — abort() can't un-send bytes already flushed to the socket, an
-// inherent property of retrying over HTTP) self-corrects on the next attempt rather than being a
-// real final verdict. tus-js-client's own internal retry (isDeterministicTusError, above) still
-// gives up on a 409 quickly — that's fine, it just hands control back to this loop sooner.
-function isFatalTusError(e: unknown): boolean {
-  const status = tusHttpStatus(e)
-  if (status === 409) return false
-  return status !== null && status >= 400 && status < 500
-}
+// The OUTER recovery loop's more permissive view — which attempts are final and which are worth
+// another pass — now lives in tusFailureAction in src/lib/upload-policy.ts, together with the relay
+// decision it has to outrank. It was a local isFatalTusError here, and separating the two halves is
+// precisely what let a repairable 400 be thrown as fatal before the relay branch could see it.
 
 // Session-scoped (browser JS, not server state — see the Workers "no global request state" rule,
 // which is about per-request isolation on the SERVER and doesn't apply to a single browser tab's
@@ -1593,13 +1585,16 @@ async function runTusWithRecovery(
       return
     } catch (e) {
       if (e instanceof DOMException && e.name === 'AbortError') throw e
-      if (isFatalTusError(e)) throw e
+      // ONE call, because the ORDER of these questions is the bug this replaced. Asking "is it
+      // fatal?" first threw every missing-Content-Length 400 as final before the relay branch below
+      // could run, so the recovery written for Chrome on iOS 26 never once executed. tusFailureAction
+      // owns the precedence and tests/upload-policy.test.ts holds it.
+      const action = tusFailureAction(tusHttpStatus(e), errText(e), relayState.active)
+      if (action === 'fatal') throw e
       lastErr = e instanceof Error ? e : new Error(String(e))
-      // Switch to the relay on a pure network failure OR on a missing Content-Length. The second
-      // is a 4xx, so it used to be fatal — but it is exactly what the relay repairs, because the
-      // relay re-issues the chunk from our Worker with a Content-Length the runtime computes.
-      // Chrome on iOS 26 omitting that header cost one wedding album 19 videos in six minutes.
-      if (!relayState.active && (tusHttpStatus(e) === null || isMissingContentLengthFailure(errText(e)))) {
+      // The relay repairs a missing Content-Length because our Worker forwards the chunk as an
+      // ArrayBuffer, so the runtime sets the header itself regardless of what the phone sent.
+      if (action === 'relay') {
         relayState.active = true
         effectiveUrl = relayUploadUrl
         networkNeedsRelay = true

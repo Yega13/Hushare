@@ -151,6 +151,45 @@ export function isMissingContentLengthFailure(message: unknown): boolean {
 }
 
 /**
+ * WHAT THE VIDEO RECOVERY LOOP DOES WITH ONE FAILED TUS ATTEMPT — the whole decision, in order.
+ *
+ * THE ORDER IS THE ENTIRE POINT, and getting it wrong made the fix above dead code for three
+ * commits. The loop asked "is this fatal?" first, and a missing-Content-Length failure is a 400,
+ * so every one of them was thrown as a final verdict BEFORE the branch that would have switched to
+ * the relay was ever evaluated. isMissingContentLengthFailure was correct, tested, and unreachable:
+ * the phone retried the same direct URL six times and the customer lost the video anyway. That is
+ * rule 15 exactly — the decision was extracted into a tested module while the enforcement that
+ * makes it mean anything stayed behind in the component, where nothing could observe it.
+ *
+ * So the question is answered here, once, with the precedence baked in:
+ *
+ *   'relay' — a failure the same-origin relay is known to repair, and the relay is not yet in use.
+ *             A 400 we can fix is NOT final. This outranks fatality deliberately.
+ *   'fatal' — a real 4xx verdict from Cloudflare (expired session, bad request). Retrying the same
+ *             URL cannot succeed and the loop must stop rather than burn six attempts.
+ *   'retry' — everything else: network drops, stalls, 5xx, and 409 offset mismatches, which
+ *             self-correct because each attempt re-HEADs for the server's confirmed offset.
+ *
+ * `status` is null when no HTTP response ever arrived — a pure network failure. That is the other
+ * relay trigger: it means this network cannot reach upload.cloudflarestream.com at all, whereas a
+ * real 4xx proves it can.
+ */
+export type TusFailureAction = 'relay' | 'retry' | 'fatal'
+
+export function tusFailureAction(
+  status: number | null,
+  message: unknown,
+  relayActive: boolean,
+): TusFailureAction {
+  const relayCouldFix = status === null || isMissingContentLengthFailure(message)
+  if (relayCouldFix && !relayActive) return 'relay'
+  // 409 is an offset mismatch from an aborted attempt's in-flight PATCH landing late; the next
+  // attempt re-HEADs and self-corrects, so it is never a final verdict here.
+  if (status !== null && status !== 409 && status >= 400 && status < 500) return 'fatal'
+  return 'retry'
+}
+
+/**
  * How long to actually wait before retry `attempt` (1-based). The COMPLETE wait, not a base for a
  * caller to modify.
  *

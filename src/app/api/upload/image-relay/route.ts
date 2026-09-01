@@ -134,9 +134,18 @@ export async function POST(req: Request): Promise<Response> {
     })
   } else {
     const buffered = await req.arrayBuffer()
-    if (buffered.byteLength > RELAY_UNKNOWN_SIZE_MAX) {
+    // THE ALBUM'S OWN CAP, not just the relay's ceiling.
+    //
+    // With no Content-Length, authorizeImageUpload could not check either size gate — it was handed
+    // null — so this branch was the only thing standing between the request and storage, and it
+    // only knew RELAY_UNKNOWN_SIZE_MAX. A free album advertising a 25 MB per-file limit would
+    // therefore store a 64 MB object from any caller who simply omitted the header. The cap comes
+    // back from the authorizer rather than being re-derived here, so the number enforced is
+    // literally the one that route already decided (rule 13).
+    const unknownSizeLimit = Math.min(RELAY_UNKNOWN_SIZE_MAX, auth.imageCap)
+    if (buffered.byteLength > unknownSizeLimit) {
       return NextResponse.json(
-        { error: tooLargeMessage('image', RELAY_UNKNOWN_SIZE_MAX) },
+        { error: tooLargeMessage('image', unknownSizeLimit) },
         { status: 413, headers: NO_STORE },
       )
     }

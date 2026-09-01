@@ -23,7 +23,7 @@ const NO_STORE = { 'Cache-Control': 'no-store' }
 const MAX_FILESIZE_HARD_CAP = 200 * 1024 * 1024 // 200 MB absolute ceiling regardless of tier
 
 export type ImageUploadAuthResult =
-  | { ok: true; tier: Tier }
+  | { ok: true; tier: Tier; imageCap: number }
   | { ok: false; response: Response }
 
 // Re-runs the EXACT validation /api/upload/presign already performed: file type allowed, absolute
@@ -156,7 +156,11 @@ export async function authorizeImageUpload(
     }
   }
 
-  return { ok: true, tier: tierRes.tier }
+  // imageCap rides along because the caller sometimes cannot check it here. When Content-Length is
+  // absent the size is unknown at this point, so both gates above are skipped and the relay must
+  // re-apply this exact number once it has measured the body itself. Returning it is what keeps
+  // that one fact in one place — the relay must never re-derive the album's cap for itself.
+  return { ok: true, tier: tierRes.tier, imageCap: caps.image }
 }
 
 // Pure key derivation — no I/O. Always server-generated (uuid()); the client never supplies or

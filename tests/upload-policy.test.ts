@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   MAX_IMG_DIM, SHRINK_LADDER, needsReEncode, outputMimeFor, nextShrinkDim,
-  maxImageDimFor, shrinkLadderFor, OWNER_IMG_DIM, isMissingContentLengthFailure,
+  maxImageDimFor, shrinkLadderFor, OWNER_IMG_DIM, isMissingContentLengthFailure, tusFailureAction,
   backoffDelay, isNetworkClass, isExpectedRefusal, EXPECTED_REFUSAL_PREFIXES,
   createRelayPolicy, verdictForResponse, verdictForThrow,
 } from '@/lib/upload-policy'
@@ -396,5 +396,71 @@ describe('the upload failure that must be relayed, not abandoned', () => {
 
   it('is case-insensitive, because these strings come from three different servers', () => {
     expect(isMissingContentLengthFailure('INVALID CONTENT-LENGTH')).toBe(true)
+  })
+})
+
+describe('what the video recovery loop does with a failed attempt', () => {
+  // THE REGRESSION THIS EXISTS FOR. isMissingContentLengthFailure was correct and tested from the
+  // day it was written, and it never once ran in production: the recovery loop asked "is this
+  // fatal?" first, a missing-Content-Length failure is a 400, and every one was thrown as a final
+  // verdict before the relay branch beneath it could be reached. Chrome on iOS 26 kept losing every
+  // video for three commits while a green test suite reported the fix was in place.
+  //
+  // So the ORDER is what is asserted here, not the predicate. A test that only checked "does this
+  // message match" would have passed throughout the entire bug.
+
+  const CL_400 = 'tus: unexpected response while uploading chunk, response code: 400, response text: '
+    + '{"errors":[{"code":10032,"message":"Invalid Content-Length: The Content-Length header is missing or invalid."}]}'
+
+  it('RELAYS a missing-Content-Length 400 instead of calling it fatal', () => {
+    // The whole bug in one line: this is a 4xx, and it must still reach the relay.
+    expect(tusFailureAction(400, CL_400, false)).toBe('relay')
+  })
+
+  it('relays a pure network failure, which is the other thing the relay fixes', () => {
+    expect(tusFailureAction(null, 'Video upload stalled', false)).toBe('relay')
+  })
+
+  it('does not relay twice — once it is on, a further failure is judged on its own merits', () => {
+    // Otherwise a permanently broken relay would loop forever re-switching to itself.
+    expect(tusFailureAction(400, CL_400, true)).toBe('fatal')
+    expect(tusFailureAction(null, 'Video upload stalled', true)).toBe('retry')
+  })
+
+  it('still stops on a real 4xx verdict, which is why the fatal branch exists at all', () => {
+    // An expired or invalid upload session cannot be repaired by any number of attempts, and
+    // burning six of them makes the customer wait minutes to be told the same thing.
+    expect(tusFailureAction(403, 'forbidden', false)).toBe('fatal')
+    expect(tusFailureAction(404, 'no such upload', false)).toBe('fatal')
+    expect(tusFailureAction(400, 'malformed request', false)).toBe('fatal')
+  })
+
+  it('retries a 409, because the next attempt re-HEADs for the true offset', () => {
+    expect(tusFailureAction(409, 'offset mismatch', false)).toBe('retry')
+    expect(tusFailureAction(409, 'offset mismatch', true)).toBe('retry')
+  })
+
+  it('retries a 5xx and anything else transient', () => {
+    expect(tusFailureAction(500, 'internal error', false)).toBe('retry')
+    expect(tusFailureAction(503, 'unavailable', true)).toBe('retry')
+  })
+})
+
+describe('isMissingContentLengthFailure: the first condition, which had no negative case', () => {
+  // A mutation run proved this guard was untested: replacing `if (!m.includes('content-length'))`
+  // with `if (false)` left all 50 tests green. Every negative case in the file mentions the header
+  // and is not this fault; none was a message that omits the header but contains "missing",
+  // "invalid" or "10032". So a different Cloudflare Stream 4xx would have been misread as
+  // repairable-by-relay, latching the relay on for the rest of the session.
+  it('does NOT match a Stream error that merely says "invalid"', () => {
+    expect(isMissingContentLengthFailure('{"code":10015,"message":"Invalid video duration"}')).toBe(false)
+    expect(isMissingContentLengthFailure('Invalid upload session')).toBe(false)
+    expect(isMissingContentLengthFailure('missing required field')).toBe(false)
+    expect(isMissingContentLengthFailure('error 10032 while probing the file')).toBe(false)
+  })
+
+  it('and the relay decision follows it — a 400 it does not recognise stays fatal', () => {
+    // The consequence, asserted where it actually costs something.
+    expect(tusFailureAction(400, '{"code":10015,"message":"Invalid video duration"}', false)).toBe('fatal')
   })
 })
