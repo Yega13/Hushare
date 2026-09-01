@@ -5,7 +5,7 @@ import { verifyAccessToken } from '@/lib/album-password'
 import { timingSafeEqual } from '@/lib/timing-safe'
 import { getUserTierById, getUserTierResolved } from '@/lib/subscriptions'
 import { albumEffectiveTier } from '@/lib/album-entitlements'
-import { uploadCapsForTier } from '@/lib/media'
+import { uploadCapsForTier , GRANDFATHER_FREE_BEFORE } from '@/lib/media'
 import type { Album, Photo, SponsorLogo } from '@/types'
 
 // Shared album access/gating logic — the SINGLE source of truth used by both the API routes
@@ -210,6 +210,19 @@ export async function resolveAlbum(
     expiresAt: (album as { package_expires_at?: string | null }).package_expires_at ?? null,
   })
 
+  // THESE ALBUMS WERE PROMISED THE FEATURE, AND WE DO NOT TAKE IT BACK.
+  //
+  // Before 2026-08-25 every feature here was free — an actual promotion, not an oversight — so an
+  // album from that window set a logo or a sponsor mark while doing exactly what it was invited to
+  // do. Masking those is not enforcing a price, it is withdrawing something someone already has,
+  // which is the one pricing change that makes people leave.
+  //
+  // GRANDFATHER_FREE_BEFORE is the same constant the media caps grandfather on, and the same date
+  // the gate itself landed, so there is one answer to "was this album from the free era" (rule 13).
+  // The WRITE gate is unaffected and already right: setting a new logo needs Pro, clearing one
+  // always works, so a grandfathered owner can remove theirs but not swap it for another.
+  const markGrandfathered = Date.parse(album.created_at) < GRANDFATHER_FREE_BEFORE
+
   const { password_hash: _pw, retired_at: _ra, header_touched: _ht, user_id: _uid, ...publicAlbum } = album
   void _ra; void _ht; void _uid
   return {
@@ -268,8 +281,8 @@ export async function resolveAlbum(
       // it visible; nobody else sees a mark that is not paid for. Unlike require_approval, nothing
       // here is being un-hidden — a mark disappearing costs the owner a mark, not their guests'
       // privacy.
-      logo_url: (isOwner || effectiveTier !== 'free') ? album.logo_url : null,
-      sponsor_logos: (isOwner || effectiveTier === 'studio') ? album.sponsor_logos : [],
+      logo_url: (isOwner || markGrandfathered || effectiveTier !== 'free') ? album.logo_url : null,
+      sponsor_logos: (isOwner || markGrandfathered || effectiveTier === 'studio') ? album.sponsor_logos : [],
       media_caps: uploadCapsForTier(effectiveTier),
       // The ONE deliberately account-scoped feature. A collection groups albums across an
       // account, so a single-album package must not unlock it — `plan` above would say it does.

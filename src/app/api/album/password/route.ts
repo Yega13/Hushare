@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { verifyOwnerViaCookieWithRateLimit } from '@/lib/album-owner-access'
 import { forbidCrossSiteRequest } from '@/lib/request-security'
-import { hashPassword, MIN_PASSWORD_LEN, MAX_PASSWORD_LEN } from '@/lib/album-password'
+import { hashPassword, MIN_NEW_PASSWORD_LEN, MAX_PASSWORD_LEN } from '@/lib/album-password'
 import { queueAlbumSettingsBroadcast } from '@/lib/broadcast'
 
 export const runtime = 'nodejs'
@@ -22,9 +22,9 @@ export async function POST(req: Request) {
 
   // Validate length before auth — cheap feedback, no PBKDF2 yet.
   if (typeof password === 'string' && password.length > 0) {
-    if (password.length < MIN_PASSWORD_LEN || password.length > MAX_PASSWORD_LEN) {
+    if (password.length < MIN_NEW_PASSWORD_LEN || password.length > MAX_PASSWORD_LEN) {
       return NextResponse.json(
-        { error: `Password must be ${MIN_PASSWORD_LEN}–${MAX_PASSWORD_LEN} characters` },
+        { error: `Password must be ${MIN_NEW_PASSWORD_LEN}–${MAX_PASSWORD_LEN} characters` },
         { status: 400, headers: NO_STORE },
       )
     }

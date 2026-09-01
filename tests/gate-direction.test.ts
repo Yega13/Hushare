@@ -187,6 +187,19 @@ describe('a paid mark does not outlive the plan that paid for it', () => {
     ).toBe(true)
   })
 
+  it('a PROMO-ERA album keeps the mark it was invited to set', () => {
+    // Before 2026-08-25 every feature was free — an actual promotion. An album from that window
+    // set a logo doing exactly what it was invited to do, and masking it is not enforcing a price,
+    // it is withdrawing something someone already has. Grandfathered on the SAME constant the
+    // media caps use, which is also the date the gate landed (rule 13: one answer to "was this
+    // album from the free era").
+    const src = read('lib/server/album-access.ts')
+    expect(/markGrandfathered = Date\.parse\(album\.created_at\) < GRANDFATHER_FREE_BEFORE/.test(src),
+      'the grandfather test must read the shared constant, not a date typed in again').toBe(true)
+    expect(/logo_url:.*markGrandfathered/.test(src)).toBe(true)
+    expect(/sponsor_logos:.*markGrandfathered/.test(src)).toBe(true)
+  })
+
   it('but the OWNER always sees their own marks', () => {
     // AlbumDesigner renders album.logo_url as the owner's current logo. Masking it for them too
     // shows an empty slot on a file we still hold, and the honest reading of that is "Hushare

@@ -8,12 +8,25 @@ const MAX_VERIFY_ITERATIONS = 100_000 // workerd refuses to verify PBKDF2 above 
 // salt + the server-side pepper remains strong for album (not account) passwords.
 export const PBKDF2_ITERATIONS = 100_000
 
-export const MIN_PASSWORD_LEN = 4
+// TWO MINIMUMS, for the same reason MIN_VERIFY_ITERATIONS sits below PBKDF2_ITERATIONS above: what
+// we ACCEPT from an existing album and what we ALLOW someone to set today are different questions.
+//
+// 4 was too short for what this now protects. The per-album limiter allows ~34,500 guesses a day
+// and there is no lockout, so a 4-digit PIN — the obvious choice for a wedding sign — falls in a
+// few hours; and since gateAllowsContribution made the album password the UPLOAD gate too,
+// cracking it now buys write access, not just a look.
+//
+// Raising the verify minimum instead would lock out every guest at the 8 live albums that already
+// have a password, which is a worse failure than the one being fixed: real people at a real event,
+// turned away by us, with a password that is correct.
+export const MIN_PASSWORD_LEN = 4        // what we still ACCEPT — existing albums keep working
+export const MIN_NEW_PASSWORD_LEN = 6    // what may be SET from now on
 export const MAX_PASSWORD_LEN = 128
 
 export async function hashPassword(password: string): Promise<string> {
-  if (password.length < MIN_PASSWORD_LEN || password.length > MAX_PASSWORD_LEN) {
-    throw new Error(`[album-password] password must be ${MIN_PASSWORD_LEN}–${MAX_PASSWORD_LEN} characters`)
+  // The NEW minimum: hashing only ever happens when a password is being set.
+  if (password.length < MIN_NEW_PASSWORD_LEN || password.length > MAX_PASSWORD_LEN) {
+    throw new Error(`[album-password] password must be ${MIN_NEW_PASSWORD_LEN}–${MAX_PASSWORD_LEN} characters`)
   }
   const [pepper] = passwordPeppers()
   const salt = crypto.getRandomValues(new Uint8Array(16))
