@@ -167,6 +167,55 @@ export async function listAllSubscriptions(): Promise<PolarSubscriptionItem[]> {
   return out
 }
 
+/** One paid order as Polar reports it. Only the fields the package reconcile needs. */
+export type PolarOrderItem = {
+  id?: string
+  product_id?: string
+  status?: string
+  net_amount?: number
+  total_amount?: number
+  amount?: number
+  refunded?: boolean
+  refunded_amount?: number
+  created_at?: string
+  metadata?: { albumId?: string; userId?: string }
+}
+
+/**
+ * Recent orders, newest first — the repair path for a package whose webhook never arrived.
+ *
+ * Subscriptions have had this since the day a lost webhook dropped a paying customer to free.
+ * One-time orders had nothing: Polar exhausts its retries, the $49 is collected, and the album
+ * never becomes a package. Nobody notices until the customer says "I paid and nothing happened",
+ * which for an event album is the worst possible moment to find out.
+ *
+ * Bounded rather than exhaustive — the point is to catch what the last day or two lost, not to
+ * walk the whole ledger every night. Anything older than the window has already been noticed by a
+ * human, and the webhook itself remains the primary path.
+ */
+export async function listRecentOrders(maxPages = 3): Promise<PolarOrderItem[]> {
+  const out: PolarOrderItem[] = []
+  for (let page = 1; page <= maxPages; page++) {
+    const url = new URL(`${apiBase()}/v1/orders/`)
+    url.searchParams.set('limit', '100')
+    url.searchParams.set('page', String(page))
+    const res = await fetch(url.toString(), { headers: { Authorization: `Bearer ${apiKey()}` } })
+    if (!res.ok) {
+      const text = await res.text()
+      throw new Error(`Polar list orders failed: ${res.status} ${text.slice(0, 200)}`)
+    }
+    const data = (await res.json()) as {
+      items?: PolarOrderItem[]
+      pagination?: { max_page?: number }
+    }
+    const items = data.items ?? []
+    out.push(...items)
+    const maxPage = data.pagination?.max_page ?? 1
+    if (items.length === 0 || page >= maxPage) break
+  }
+  return out
+}
+
 export async function verifyWebhookSignature(
   rawBody: string,
   headers: Headers,

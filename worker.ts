@@ -95,6 +95,8 @@ const worker = {
       // drops to free once the 7-day grace runs out, while Polar keeps charging them. This is the
       // safety net; a normal night changes nothing.
       callCronRoute(baseUrl, '/api/cron/reconcile-subscriptions', secret),
+      // Same repair, for one-time package orders — see the route's own note.
+      callCronRoute(baseUrl, '/api/cron/reconcile-packages', secret),
     ]))
   },
 }
