@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeAll } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { r2KeyFromUrl, collectDeletionTargets, albumAssetKeys, ALBUM_ASSET_COLUMNS, type PhotoToDelete, withoutStillReferenced } from '@/lib/album-delete'
+import { r2KeyFromUrl, collectDeletionTargets, albumAssetKeys, ALBUM_ASSET_COLUMNS, type PhotoToDelete, withoutStillReferenced, keyFileName } from '@/lib/album-delete'
 import { r2PublicUrl } from '@/lib/cloudflare/r2'
 
 // r2KeyFromUrl decides WHICH FILE GETS DELETED. Everything about album and photo deletion
@@ -414,5 +414,37 @@ describe('withoutStillReferenced — a delete must never destroy a file still in
       [img('b', 'albums/alb/b.jpg', T('b.jpg'))],
     )
     expect(safe.r2Keys.has('albums/alb/a.jpg')).toBe(true)
+  })
+})
+
+
+describe('the file name a deletion key is matched by', () => {
+  // keyFileName feeds rowsReferencingKeys, which decides whether a file is still in use. Getting
+  // this wrong in the permissive direction keeps bytes (cents); getting it wrong in the strict
+  // direction deletes a live photo (unrecoverable, no backup). So the rules are pinned.
+
+  it('takes the last path segment of a real key', () => {
+    expect(keyFileName('albums/abc/9f8e7d6c-1234-4a5b-8c9d-000000000000.jpg'))
+      .toBe('9f8e7d6c-1234-4a5b-8c9d-000000000000.jpg')
+    expect(keyFileName('thumbs/abc/def.jpg')).toBe('def.jpg')
+  })
+
+  it('refuses a name carrying a PostgREST filter metacharacter', () => {
+    // The name is interpolated into an .or() LIKE filter. A comma or a paren would break out of
+    // that filter and change which rows come back — and the rows that come back are the ones
+    // whose files we then DO NOT delete.
+    expect(keyFileName('albums/abc/a,b.jpg')).toBeNull()
+    expect(keyFileName('albums/abc/a(b).jpg')).toBeNull()
+    expect(keyFileName('albums/abc/a*b.jpg')).toBeNull()
+    expect(keyFileName('albums/abc/a b.jpg')).toBeNull()
+  })
+
+  it('a refused name is safe, because it can only ever name a file that does not exist', () => {
+    // Dropping a name from the survivor query would be dangerous if it meant "no survivor found,
+    // delete it". It does not: every object we store is minted server-side as <uuid>.<ext>, so a
+    // name that fails this regex matches nothing real. This test states the reasoning the safety
+    // rests on, so a future change to key minting has to confront it.
+    expect(keyFileName('albums/abc/normal-uuid_name.v2.jpg')).toBe('normal-uuid_name.v2.jpg')
+    expect(keyFileName('')).toBeNull()
   })
 })

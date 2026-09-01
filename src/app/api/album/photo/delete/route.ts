@@ -145,8 +145,13 @@ export async function POST(req: Request) {
   // Best-effort asset cleanup — non-fatal after DB row is gone
   await deleteR2Keys([...safe.r2Keys])
 
-  if (photo.storage_backend === 'stream' && photo.stream_uid) {
-    deleteStreamVideo(photo.stream_uid).catch(e =>
+  // THE GUARDED SET, matching bulk-delete. This route computed safe.streamUids and then deleted
+  // photo.stream_uid unconditionally, so the guard read as protection while protecting nothing.
+  // A unique constraint on (album_id, stream_uid) makes a same-album duplicate impossible today,
+  // which is exactly why the dead line survived review — but the two sibling routes disagreeing
+  // about the same question is how the next difference goes unnoticed.
+  for (const uid of safe.streamUids) {
+    deleteStreamVideo(uid).catch(e =>
       console.error('[photo/delete] Stream remove failed:', e instanceof Error ? e.message : String(e))
     )
   }

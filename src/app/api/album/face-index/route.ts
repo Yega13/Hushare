@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { cookies } from 'next/headers'
-import { ALBUM_GATE_COLS, gateAllowsContribution } from '@/lib/server/album-access'
+import { ALBUM_GATE_COLS, gateAllowsContribution, signedInUserForGate } from '@/lib/server/album-access'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { ensureCollection, indexPhotoFaces } from '@/lib/rekognition'
 import { forbidCrossSiteRequest } from '@/lib/request-security'
@@ -89,7 +89,7 @@ export async function GET(req: Request) {
   // reveal. The photos RLS policy (album_is_open) exists to stop anonymous reads of protected
   // albums; reaching for the admin client here stepped around that model instead of implementing
   // it. Every other read path gates on exactly this.
-  const gate = await gateAllowsContribution(album, await cookies())
+  const gate = await gateAllowsContribution(album, await cookies(), await signedInUserForGate(album))
   if (!gate.ok) return NextResponse.json({ error: gate.error }, { status: 403, headers: NO_STORE })
 
   try {
@@ -189,7 +189,7 @@ async function handlePost(req: Request) {
   // album could spend the owner's Rekognition budget and enroll biometric face templates for
   // people in photos they are not allowed to see, and read back the album's unindexed count.
   // Third sibling of the same omission; the other two were fixed and this one was missed.
-  const gate = await gateAllowsContribution(album, await cookies())
+  const gate = await gateAllowsContribution(album, await cookies(), await signedInUserForGate(album))
   if (!gate.ok) return NextResponse.json({ error: gate.error }, { status: 403, headers: NO_STORE })
 
   // failOpen:false — same reasoning as the IP-scoped limiter above.

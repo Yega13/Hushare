@@ -1,6 +1,10 @@
 import { NextResponse } from 'next/server'
 
-const ALLOWED_ORIGIN_HOSTS = new Set(['hushare.space', 'www.hushare.space'])
+// staging is here because the CSRF check now covers /api/auth/confirm: without it, signing in on
+// staging 403s and the environment cannot be tested at all. It is our own host, on the same
+// deployment, and being absent from this list was already breaking every other mutating route
+// there — the login was just the first one anybody would notice.
+const ALLOWED_ORIGIN_HOSTS = new Set(['hushare.space', 'www.hushare.space', 'staging.hushare.space'])
 const ALLOWED_LOCAL_PORTS = new Set(['3000', '3001', '5173', '8000', '8080'])
 const IS_DEV = process.env.NODE_ENV !== 'production'
 

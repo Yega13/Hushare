@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { cookies } from 'next/headers'
-import { ALBUM_GATE_COLS, FACE_MATCH_PHOTO_COLS, gateAllowsContribution } from '@/lib/server/album-access'
+import { ALBUM_GATE_COLS, FACE_MATCH_PHOTO_COLS, gateAllowsContribution, signedInUserForGate } from '@/lib/server/album-access'
 import { timingSafeEqual } from '@/lib/timing-safe'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { searchFacesByImage } from '@/lib/rekognition'
@@ -110,7 +110,7 @@ async function handlePost(req: Request) {
   // face-index GET already had this exact check, with a comment explaining why. This is its sibling
   // and it was missed. Same two lines, deliberately identical so the pair cannot drift again.
   const cookieStore = await cookies()
-  const gate = await gateAllowsContribution(album, cookieStore)
+  const gate = await gateAllowsContribution(album, cookieStore, await signedInUserForGate(album))
   if (!gate.ok) return NextResponse.json({ error: gate.error }, { status: 403, headers: NO_STORE })
 
   // failOpen:false — same reasoning as the IP-scoped limiter above.

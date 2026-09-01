@@ -1,5 +1,6 @@
 import { getCloudflareContext } from '@opennextjs/cloudflare'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { createClient } from '@/lib/supabase/server'
 import { verifyAccessToken } from '@/lib/album-password'
 import { timingSafeEqual } from '@/lib/timing-safe'
 import { getUserTierById, getUserTierResolved } from '@/lib/subscriptions'
@@ -283,7 +284,11 @@ export type AlbumGateRow = {
 }
 
 // Columns a caller must select for gateAllowsContribution to work. Keeps the two in step.
-export const ALBUM_GATE_COLS = 'owner_token, password_hash, reveal_at'
+// user_id IS PART OF THE GATE. It was added to the question (the signed-in owner branch below)
+// and not to this list, and AlbumGateRow.user_id is optional — so a caller selecting only these
+// columns would compile fine and silently ask the weaker question, refusing an owner on their own
+// album. That is the exact drift this constant exists to prevent (rule 13).
+export const ALBUM_GATE_COLS = 'owner_token, password_hash, reveal_at, user_id'
 
 // What a face-search result needs to render a tile and open the lightbox on it. Deliberately the
 // full photo shape rather than a trimmed one: the results grid hands these straight to the same
@@ -301,6 +306,36 @@ export type ContributionRefusal =
   | 'owner-cookie-mismatch'    // an owner cookie that is not this album's token — stale or wrong album
   | 'password-cookie-absent'
   | 'password-cookie-stale'    // present but no longer verifies — password changed since unlocking
+
+/**
+ * The signed-in account id, but ONLY when the gate can actually use it.
+ *
+ * gateAllowsContribution consults the account for one reason: to admit the album's own owner past
+ * a password or a reveal date when their owner cookie is absent — a new device, a new tab, or
+ * simply past its seven days. That is the "wrong no" that once cost a customer 163 uploads.
+ *
+ * On an album with neither gate the answer is already yes, and asking Supabase is pure cost: one
+ * round trip PER FILE, which on a 5,000-photo upload is 5,000 of them on the hot path. So the
+ * question is only asked when it can change the answer.
+ *
+ * Lives here, beside the gate it feeds, because it was written out by hand at each call site and
+ * three of the five were missed — the same bug in three more places (rule 13).
+ *
+ * Never throws into an upload path: a failed lookup means "not signed in", which is exactly what
+ * the gate would have assumed anyway.
+ */
+export async function signedInUserForGate(
+  album: Pick<AlbumGateRow, 'password_hash' | 'reveal_at'>,
+): Promise<string | null> {
+  if (!album.password_hash && !album.reveal_at) return null
+  try {
+    const supabase = await createClient()
+    const { data: { user } } = await supabase.auth.getUser()
+    return user?.id ?? null
+  } catch {
+    return null
+  }
+}
 
 export async function gateAllowsContribution(
   album: AlbumGateRow,

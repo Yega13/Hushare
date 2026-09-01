@@ -1,6 +1,5 @@
 import { NextResponse } from 'next/server'
 import { cookies } from 'next/headers'
-import { createClient } from '@/lib/supabase/server'
 import { v4 as uuid } from 'uuid'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { isAllowedImage, safeExtForMime } from '@/lib/cloudflare/r2'
@@ -9,7 +8,7 @@ import { presignBudget } from '@/lib/presign-budget'
 import { uploadCapsForTier, tooLargeMessage } from '@/lib/media'
 import { albumCap as albumCapFor, albumEffectiveTier } from '@/lib/album-entitlements'
 import { getUserTierById } from '@/lib/subscriptions'
-import { gateAllowsContribution, ALBUM_GATE_COLS } from '@/lib/server/album-access'
+import { gateAllowsContribution, signedInUserForGate, ALBUM_GATE_COLS } from '@/lib/server/album-access'
 import type { Tier } from '@/types'
 
 // Shared authorization logic for the image upload path — the SINGLE source of truth used by both
@@ -81,24 +80,9 @@ export async function authorizeImageUpload(
     return { ok: false, response: NextResponse.json({ error: 'Uploads disabled for this album' }, { status: 403, headers: NO_STORE }) }
   }
 
-  // The album's own signed-in OWNER counts as proof, exactly as photos/create already treats it.
-  // Without this the gate refused the owner on their own password-protected album whenever the
-  // owner cookie was absent — a new device, a new tab, or simply past its 7 days — and it refused
-  // them HERE, before a single byte moved, so the fix that already existed one route later was
-  // unreachable for any new upload. That is the "wrong no" that cost a customer 163 uploads.
-  // A failed session lookup means "not signed in" and never throws into the upload path.
-  let signedInUserId: string | null = null
-  try {
-    const supabase = await createClient()
-    const { data: { user } } = await supabase.auth.getUser()
-    signedInUserId = user?.id ?? null
-  } catch {
-    signedInUserId = null
-  }
-
   // A password or reveal gate applies to contributing, not just to viewing — see
   // gateAllowsContribution, which the photo listing's own gate sits beside.
-  const gate = await gateAllowsContribution(album, await cookies(), signedInUserId)
+  const gate = await gateAllowsContribution(album, await cookies(), await signedInUserForGate(album))
   if (!gate.ok) {
     return { ok: false, response: NextResponse.json({ error: gate.error }, { status: 403, headers: NO_STORE }) }
   }

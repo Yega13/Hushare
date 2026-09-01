@@ -234,6 +234,11 @@ export async function rowsReferencingKeys(
       .select(cols)
       .eq('album_id', albumId)
       .or(terms.join(','))
+      // ORDERED, because a cap without one is not a deterministic subset. A survivor this query
+      // fails to return is a live file deleted — the one direction that cannot be undone — so the
+      // truncation must at least be repeatable rather than planner-dependent (same reasoning as
+      // the paginated sweep below).
+      .order('id', { ascending: true })
       .limit(500)
     if (error) throw new Error(`survivor lookup failed: ${error.message}`)
     out.push(...((data ?? []) as unknown as PhotoToDelete[]))
