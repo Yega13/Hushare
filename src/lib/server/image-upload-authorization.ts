@@ -33,13 +33,16 @@ export type ImageUploadAuthResult =
 // callers derive a key separately via deriveImageKey() once authorized.
 export async function authorizeImageUpload(
   req: Request,
-  params: { albumId: string; contentType: string; fileSize: number },
+  // fileSize null = the caller could not learn it (Chrome on iOS omits Content-Length). Treated as
+  // "as large as this album may legally accept": the byte cap is then enforced on the ACTUAL bytes
+  // by the relay's size-limit stream, which is the only measurement that was ever authoritative.
+  params: { albumId: string; contentType: string; fileSize: number | null },
 ): Promise<ImageUploadAuthResult> {
   const normalizedType = params.contentType.toLowerCase()
   if (!isAllowedImage(normalizedType)) {
     return { ok: false, response: NextResponse.json({ error: 'File type not allowed' }, { status: 415, headers: NO_STORE }) }
   }
-  if (params.fileSize > MAX_FILESIZE_HARD_CAP) {
+  if (params.fileSize !== null && params.fileSize > MAX_FILESIZE_HARD_CAP) {
     return { ok: false, response: NextResponse.json({ error: 'File too large' }, { status: 413, headers: NO_STORE }) }
   }
 
@@ -159,7 +162,7 @@ export async function authorizeImageUpload(
   const caps = uploadCapsForTier(albumEffectiveTier(album.user_id ? tierRes.tier : null, {
     tier: album.package_tier, expiresAt: album.package_expires_at,
   }))
-  if (params.fileSize > caps.image) {
+  if (params.fileSize !== null && params.fileSize > caps.image) {
     return {
       ok: false,
       response: NextResponse.json(

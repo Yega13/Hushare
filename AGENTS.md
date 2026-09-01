@@ -62,6 +62,37 @@ Every rule below exists because it was broken here and it cost something real. T
 rules rather than advice because the failures they describe are all SILENT: nothing throws, no error
 appears in the panel, and the first person to find out is a customer.
 
+## 12b. A review agent must be FAIR, not just harsh.
+
+Adversarial review is how defects get found here, and the instinct to make the reviewer meaner
+every time is wrong. A reviewer told only to be brutal starts manufacturing findings to justify
+its existence: it invents attacks that require a credential the attacker would already need, it
+reports a "leak" of something the page already publishes, and it calls a deliberate,
+documented trade-off a defect. That is not free. Every false finding costs a real investigation,
+and worse, it trains us to skim the list — which is how the one true finding gets skipped.
+
+**The rule:** a reviewer is asked to be harsh about REAL problems and equally willing to say
+"this is sound, and here is why". Every finding must carry the concrete path — the exact request
+an attacker sends and what comes back, or the exact state a user reaches. A finding that cannot be
+reproduced from its own description is not a finding. And the review must end with what it checked
+and found correct, so the absence of a finding is evidence rather than silence.
+
+Being right is the standard; being brutal is only useful when it is also right.
+
+## 12c. You do not need to break your own code to find out how it breaks.
+
+When something is already broken, the evidence is what is in front of you: the error text, the
+build id, the device, the database, the live API. Read those first. Do not "reproduce" a fault by
+deliberately damaging a working path, and do not deploy an experiment to see what happens — the
+people using this are at somebody's wedding.
+
+The one deliberate breakage that IS required is rule 16: mutating code to prove a TEST fails. That
+happens locally, on a copy, and is always restored in the same command that made it. It is never a
+deploy, and it is never done to production.
+
+**The rule:** diagnose from evidence, mutate only to validate a test, and never ship a change whose
+purpose is to observe a failure.
+
 ## 13. One fact, one place. If it is written twice, they WILL disagree.
 
 Not a style preference. Every worst bug in this codebase has been this exact shape:

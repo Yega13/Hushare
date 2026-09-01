@@ -120,6 +120,37 @@ export function nextShrinkDim(
 }
 
 /**
+ * Does this upload failure describe a request whose Content-Length never arrived?
+ *
+ * WHY THIS IS ITS OWN QUESTION. A 4xx from the upload host is normally final — the request was
+ * malformed and repeating it changes nothing, which is why the direct→relay fallback only ever
+ * triggered on a pure network failure. This one 4xx is different, and it cost a wedding album 19
+ * failed video uploads in six minutes:
+ *
+ *   Chrome on iOS 26 sent TUS chunks with no Content-Length. Cloudflare Stream answered
+ *   400 / code 10032 "Invalid Content-Length", the classifier called it deterministic, and every
+ *   attempt was abandoned. Our OWN image relay rejected the same device for the same missing
+ *   header, which is the corroboration that matters: two independent servers, one phone, one
+ *   absent header. Nothing we deployed can remove a header from a request that goes straight
+ *   from the phone to Cloudflare.
+ *
+ * And it is precisely the failure the relay fixes: our Worker forwards the chunk as an
+ * ArrayBuffer, so the runtime sets an exact Content-Length and strips whatever the browser did or
+ * did not send. So this failure must switch to the relay rather than end the upload.
+ *
+ * Matched on the message rather than the numeric code alone, because the code lives in a JSON body
+ * the tus client folds into its error string, and because our own relay phrases it differently.
+ * Both wordings are checked; a false positive costs one relayed attempt, a false negative costs
+ * somebody their video.
+ */
+export function isMissingContentLengthFailure(message: unknown): boolean {
+  if (typeof message !== 'string') return false
+  const m = message.toLowerCase()
+  if (!m.includes('content-length')) return false
+  return m.includes('missing') || m.includes('invalid') || m.includes('10032')
+}
+
+/**
  * How long to actually wait before retry `attempt` (1-based). The COMPLETE wait, not a base for a
  * caller to modify.
  *

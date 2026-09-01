@@ -9,6 +9,7 @@ import { stripExifFromJpeg, jpegOrientation, stripMetadataFromPng, stripMetadata
 // tested in tests/upload-policy.test.ts, because none of it was reachable from inside here.
 import {
   maxImageDimFor, shrinkLadderFor, needsReEncode, outputMimeFor, nextShrinkDim,
+  isMissingContentLengthFailure,
   backoffDelay, isNetworkClass, isExpectedRefusal, createRelayPolicy,
   verdictForResponse, verdictForThrow,
 } from '@/lib/upload-policy'
@@ -1220,6 +1221,11 @@ class VideoUploadError extends Error {
 // HTTP status of the failing request: a number means the server rejected it (4xx = the video
 // is bad/too long/too large; 5xx = transient server error); null means no response arrived at
 // all (a genuine network drop — the "response code: n/a" case).
+/** The text of a thrown upload error, for the classifiers in lib/upload-policy. */
+function errText(e: unknown): string {
+  return e instanceof Error ? e.message : String(e)
+}
+
 function tusHttpStatus(e: unknown): number | null {
   const resp = (e as { originalResponse?: { getStatus?: () => number } | null })?.originalResponse
   const status = resp?.getStatus?.() ?? 0
@@ -1523,7 +1529,10 @@ function runTusOnce(
       retryDelays: [0, 1000, 3000, 5000, 10000, 20000],
       // Retry transport/network failures AND transient server states (5xx). Deterministic
       // 4xx verdicts are final — mirrors putWithRetry's policy for images.
-      onShouldRetry: (err: unknown) => !isDeterministicTusError(err),
+      // A missing-Content-Length 400 is the one 4xx worth retrying: the retry may go through the
+      // relay, which sets the header itself. See isMissingContentLengthFailure.
+      onShouldRetry: (err: unknown) =>
+        !isDeterministicTusError(err) || isMissingContentLengthFailure(errText(err)),
       onProgress: (bytesUploaded, bytesTotal) => {
         lastActivity = Date.now()
         onFraction(bytesTotal > 0 ? bytesUploaded / bytesTotal : 0)
@@ -1586,7 +1595,11 @@ async function runTusWithRecovery(
       if (e instanceof DOMException && e.name === 'AbortError') throw e
       if (isFatalTusError(e)) throw e
       lastErr = e instanceof Error ? e : new Error(String(e))
-      if (!relayState.active && tusHttpStatus(e) === null) {
+      // Switch to the relay on a pure network failure OR on a missing Content-Length. The second
+      // is a 4xx, so it used to be fatal — but it is exactly what the relay repairs, because the
+      // relay re-issues the chunk from our Worker with a Content-Length the runtime computes.
+      // Chrome on iOS 26 omitting that header cost one wedding album 19 videos in six minutes.
+      if (!relayState.active && (tusHttpStatus(e) === null || isMissingContentLengthFailure(errText(e)))) {
         relayState.active = true
         effectiveUrl = relayUploadUrl
         networkNeedsRelay = true
@@ -1699,7 +1712,7 @@ async function uploadVideoToStream(
     )
   } catch (e) {
     if (e instanceof DOMException && e.name === 'AbortError') throw e
-    if (resume && isDeterministicTusError(e)) {
+    if (resume && isDeterministicTusError(e) && !isMissingContentLengthFailure(errText(e))) {
       // The resumed upload URL is stale/expired — start over with a fresh Stream session
       // (recursion is bounded: the recursive call passes no `resume`, so it can't loop).
       return uploadVideoToStream(file, albumId, onProgress, signal)

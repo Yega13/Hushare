@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   MAX_IMG_DIM, SHRINK_LADDER, needsReEncode, outputMimeFor, nextShrinkDim,
-  maxImageDimFor, shrinkLadderFor, OWNER_IMG_DIM,
+  maxImageDimFor, shrinkLadderFor, OWNER_IMG_DIM, isMissingContentLengthFailure,
   backoffDelay, isNetworkClass, isExpectedRefusal, EXPECTED_REFUSAL_PREFIXES,
   createRelayPolicy, verdictForResponse, verdictForThrow,
 } from '@/lib/upload-policy'
@@ -343,5 +343,58 @@ describe('whose upload keeps how many pixels', () => {
     // encoded its first attempt at 3500: above its own cap, silently.
     expect(shrinkLadderFor(1920)).toEqual([1920])
     expect(shrinkLadderFor(3000)).toEqual([3000, 2560, 1920])
+  })
+})
+
+
+describe('the upload failure that must be relayed, not abandoned', () => {
+  // A wedding album lost 19 videos in six minutes. Chrome on iOS 26 sent TUS chunks with no
+  // Content-Length; Cloudflare answered 400 code 10032; the classifier called every 4xx final and
+  // gave up. The relay repairs exactly this — it re-sends the chunk from our Worker, where the
+  // runtime sets the length — so this one 4xx has to be recognised and routed there.
+
+  it('recognises what Cloudflare Stream actually said', () => {
+    // The real text, from the error stored in the admin panel that night.
+    const real = 'tus: unexpected response while uploading chunk, originated from request '
+      + '(method: PATCH, url: https://upload.cloudflarestream.com/tus/abc?tusv2=true, '
+      + 'response code: 400, response text: {"errors":[{"code":10032,'
+      + '"message":"Invalid Content-Length: The Content-Length header is missing or invalid."}]})'
+    expect(isMissingContentLengthFailure(real)).toBe(true)
+  })
+
+  it('recognises what OUR OWN relay said about the same phone', () => {
+    // Two servers, one device, one absent header — the corroboration that made the diagnosis
+    // certain. Both wordings must match or half the fix does nothing.
+    expect(isMissingContentLengthFailure('Missing or invalid Content-Length')).toBe(true)
+  })
+
+  it('does not fire on ordinary upload failures', () => {
+    // A false positive costs one wasted relayed attempt; being sloppy here would send every
+    // genuine refusal through the relay and hide real errors behind a slower path.
+    expect(isMissingContentLengthFailure('File type not allowed')).toBe(false)
+    expect(isMissingContentLengthFailure('tus: response code: 403, forbidden')).toBe(false)
+    expect(isMissingContentLengthFailure('Chunk too large')).toBe(false)
+    expect(isMissingContentLengthFailure('Content-Type must be image/jpeg')).toBe(false)
+    // MENTIONING the header is not the same as the header being absent. Without this case the
+    // suite passes even if the function returns true for everything containing "content-length",
+    // which would route genuine refusals through the relay and bury them behind a slower path.
+    expect(isMissingContentLengthFailure('content-length mismatch: body was truncated')).toBe(false)
+    expect(isMissingContentLengthFailure('rejected: content-length exceeds the limit')).toBe(false)
+  })
+
+  it('survives whatever it is handed', () => {
+    expect(isMissingContentLengthFailure(null)).toBe(false)
+    expect(isMissingContentLengthFailure(undefined)).toBe(false)
+    expect(isMissingContentLengthFailure(400)).toBe(false)
+    expect(isMissingContentLengthFailure({ message: 'content-length missing' })).toBe(false)
+    // An ERROR OBJECT must not match either — the contract is "hand me the message", and every
+    // caller goes through errText() to get it. Stringifying whatever arrives would make this
+    // function quietly accept two different input shapes, which is how one call site ends up
+    // passing the wrong one and nobody notices.
+    expect(isMissingContentLengthFailure(new Error('Invalid Content-Length'))).toBe(false)
+  })
+
+  it('is case-insensitive, because these strings come from three different servers', () => {
+    expect(isMissingContentLengthFailure('INVALID CONTENT-LENGTH')).toBe(true)
   })
 })

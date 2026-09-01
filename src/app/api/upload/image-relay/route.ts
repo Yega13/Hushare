@@ -1,8 +1,13 @@
 import { NextResponse } from 'next/server'
+import { tooLargeMessage } from '@/lib/media'
 import { getCloudflareContext } from '@opennextjs/cloudflare'
 import { r2PublicUrl, IMMUTABLE_CACHE_CONTROL } from '@/lib/cloudflare/r2'
 import { authorizeImageUpload, deriveImageKey } from '@/lib/server/image-upload-authorization'
 import { forbidCrossSiteRequest } from '@/lib/request-security'
+
+// The ceiling for a body whose length the browser did not declare. 64 MB: larger than any photo
+// this uploader can produce (6000px long edge re-encoded), smaller than a Worker's memory limit.
+const RELAY_UNKNOWN_SIZE_MAX = 64 * 1024 * 1024
 
 export const runtime = 'nodejs'
 
@@ -73,12 +78,27 @@ export async function POST(req: Request): Promise<Response> {
   // Content-Length is the browser's own declaration for a Blob/ArrayBuffer body — trusted here only
   // for the authorization gate, at the SAME trust level /api/upload/presign already places on a
   // client-declared fileSize field. The size-limit stream below enforces the real cap regardless.
-  const declaredSize = Number(req.headers.get('content-length') ?? '')
-  if (!Number.isFinite(declaredSize) || declaredSize <= 0) {
-    return NextResponse.json({ error: 'Missing or invalid Content-Length' }, { status: 400, headers: NO_STORE })
-  }
+  // A MISSING Content-Length IS NOT A REASON TO REFUSE SOMEBODY'S PHOTO.
+  //
+  // Chrome on iOS 26 sends upload requests without it — confirmed on a real device, from an album
+  // where Cloudflare Stream rejected that same phone's video chunks for the identical reason. This
+  // route used to answer 400 and the photo was simply lost, on the one path that exists BECAUSE the
+  // direct upload already failed. The relay is the last resort; it cannot be the pickiest step.
+  //
+  // The header was only ever a pre-authorisation hint, at the same trust level as the presign
+  // route's client-declared fileSize — and the size-limit stream below enforces the real cap on the
+  // actual bytes regardless. So when it is absent, authorise against the album's own ceiling (the
+  // largest this album could legally accept) and let the stream do what it already does. Nothing is
+  // weakened: a caller could always have declared this number anyway.
+  const headerSize = Number(req.headers.get('content-length') ?? '')
+  const declaredSize = Number.isFinite(headerSize) && headerSize > 0 ? headerSize : null
 
-  const auth = await authorizeImageUpload(req, { albumId, contentType, fileSize: declaredSize })
+  const auth = await authorizeImageUpload(req, {
+    albumId,
+    contentType,
+    // null → the album's own per-file ceiling, resolved inside authorizeImageUpload.
+    fileSize: declaredSize,
+  })
   if (!auth.ok) return auth.response
 
   const { key, finalContentType } = deriveImageKey(albumId, contentType, fileName, isThumb)
@@ -92,15 +112,39 @@ export async function POST(req: Request): Promise<Response> {
     return NextResponse.json({ error: 'Missing request body' }, { status: 400, headers: NO_STORE })
   }
 
-  // declaredSize was already checked against the tier's real caps.image ceiling above, so it's
-  // safe to use as FixedLengthStream's declared length: piping req.body into `writable` fails if
-  // MORE bytes than declaredSize arrive (a lying Content-Length can't smuggle extra bytes past the
-  // already-authorized size), and R2Bucket.put() gets a `readable` with the known length it requires.
-  const { readable, writable } = new FixedLengthStream(declaredSize)
-  const pipePromise = req.body.pipeTo(writable)
-  const putPromise = bucket.put(key, readable, {
-    httpMetadata: { contentType: finalContentType, cacheControl: IMMUTABLE_CACHE_CONTROL },
-  })
+  // TWO WAYS TO KNOW HOW BIG THE BODY IS, because one browser will not say.
+  //
+  // With a Content-Length: FixedLengthStream is the strict, streaming path — piping req.body into
+  // `writable` fails if MORE bytes than declaredSize arrive (a lying header cannot smuggle extra
+  // bytes past the size we already authorised), and R2Bucket.put() gets a `readable` with the
+  // known length it requires. Unchanged, and still what almost every upload takes.
+  //
+  // Without one (Chrome on iOS 26): buffer the body and measure it ourselves, bounded — an unknown
+  // length cannot be handed to FixedLengthStream at all. RELAY_UNKNOWN_SIZE_MAX is far above any
+  // processed photo (the uploader caps the long edge at 6000px) and far below the Worker's memory
+  // ceiling, so this can neither refuse a real picture nor be used to exhaust the isolate. Refusing
+  // outright is what this route used to do, and it lost somebody's photos on the LAST-RESORT path.
+  let pipePromise: Promise<unknown>
+  let putPromise: Promise<unknown>
+  if (declaredSize !== null) {
+    const { readable, writable } = new FixedLengthStream(declaredSize)
+    pipePromise = req.body.pipeTo(writable)
+    putPromise = bucket.put(key, readable, {
+      httpMetadata: { contentType: finalContentType, cacheControl: IMMUTABLE_CACHE_CONTROL },
+    })
+  } else {
+    const buffered = await req.arrayBuffer()
+    if (buffered.byteLength > RELAY_UNKNOWN_SIZE_MAX) {
+      return NextResponse.json(
+        { error: tooLargeMessage('image', RELAY_UNKNOWN_SIZE_MAX) },
+        { status: 413, headers: NO_STORE },
+      )
+    }
+    pipePromise = Promise.resolve()
+    putPromise = bucket.put(key, buffered, {
+      httpMetadata: { contentType: finalContentType, cacheControl: IMMUTABLE_CACHE_CONTROL },
+    })
+  }
 
   try {
     await Promise.all([pipePromise, putPromise])
