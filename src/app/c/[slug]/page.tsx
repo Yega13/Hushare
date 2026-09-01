@@ -122,32 +122,23 @@ export default async function CollectionPage({ params }: Props) {
 
   const albumIds = (rows ?? []).map((row) => row.album_id as string)
 
-  // Fetch albums and media in parallel — both only depend on albumIds.
-  const [albumsResult, mediaResult] = await Promise.all([
-    albumIds.length
-      ? admin
-          .from('albums')
-          .select('id, slug, custom_slug, title, cover_photo_id, created_at, owner_token, password_hash, reveal_at, retired_at')
-          .in('id', albumIds)
-          .returns<AlbumSummary[]>()
-      : Promise.resolve({ data: [] as AlbumSummary[], error: null }),
-    albumIds.length
-      ? admin
-          .from('photos')
-          // NOT hidden. On an album with require_approval every guest upload starts hidden, and the
-          // earliest one was becoming this page's cover — publishing a photo the owner had not
-          // approved, on a public URL, and counting it. The product promises the opposite in
-          // writing on the pricing page.
-          .select('id, album_id, url, poster_url, stream_thumbnail_url, media_type, created_at')
-          .eq('hidden', false)
-          .in('album_id', albumIds)
-          .order('created_at', { ascending: true })
-          .returns<MediaPreview[]>()
-      : Promise.resolve({ data: [] as MediaPreview[], error: null }),
-  ])
+  // ALBUMS FIRST, then only what each visible one needs.
+  //
+  // This page used to fetch EVERY PHOTO OF EVERY ALBUM in the collection — on a public URL, with no
+  // sign-in — to derive one cover image and two numbers per album. PostgREST stops at 1,000 rows,
+  // so past that the counts it printed were silently wrong, and the account page had already fixed
+  // this exact defect and written down why. It also pulled up to 1,000 photo rows on every
+  // unauthenticated load, against the database transfer allowance the rest of the codebase guards.
+  const { data: albums, error: albumsError } = albumIds.length
+    ? await admin
+        .from('albums')
+        .select('id, slug, custom_slug, title, cover_photo_id, created_at, owner_token, password_hash, reveal_at, retired_at')
+        .in('id', albumIds)
+        .returns<AlbumSummary[]>()
+    : { data: [] as AlbumSummary[], error: null }
 
-  if (albumsResult.error || mediaResult.error) {
-    console.error('[c/slug] query failed:', (albumsResult.error ?? mediaResult.error)?.message)
+  if (albumsError) {
+    console.error('[c/slug] query failed:', albumsError.message)
     return (
       <main className="min-h-screen flex items-center justify-center px-4" style={{ background: '#FDFAF5' }}>
         <div className="max-w-md w-full rounded-2xl p-8 text-center" style={{ background: '#FFFFFF', border: '1px solid #DDD5C5' }}>
@@ -162,9 +153,6 @@ export default async function CollectionPage({ params }: Props) {
       </main>
     )
   }
-
-  const albums = albumsResult.data
-  const mediaRows = mediaResult.data
 
   // A COLLECTION MAY NOT PUBLISH WHAT THE ALBUM ITSELF WITHHOLDS.
   //
@@ -185,32 +173,60 @@ export default async function CollectionPage({ params }: Props) {
     !(a.reveal_at && new Date(a.reveal_at).getTime() > now)
   ))
 
-  const orderedAlbums = albumIds
-    .map((id) => {
-      const album = visibleAlbums.find((a) => a.id === id)
-      if (!album) return null
-      const albumMedia = (mediaRows ?? []).filter((row) => row.album_id === id)
-      const pinned = album.cover_photo_id
-        ? albumMedia.find((row) => row.id === album.cover_photo_id)
-        : undefined
-      const cover = pinned ?? albumMedia.find((row) => row.media_type === 'image') ?? albumMedia[0]
-      return {
-        ...album,
-        cover_url: cover
-          ? cover.media_type === 'video'
-            ? cover.stream_thumbnail_url || cover.poster_url || null
-            : cover.url
-          : null,
-        media_count: albumMedia.length,
-        video_count: albumMedia.filter((row) => row.media_type === 'video').length,
-      }
-    })
-    .filter(
-      (
-        a,
-      ): a is AlbumSummary & { cover_url: string | null; media_count: number; video_count: number } =>
-        Boolean(a),
-    )
+  // Bounded: a collection is a shop window, not a catalogue. Past this many albums the page would
+  // be unreadable anyway, and the cost of building it stops being bounded.
+  const MAX_COLLECTION_ALBUMS = 60
+  const shown = albumIds
+    .map((id) => visibleAlbums.find((a) => a.id === id))
+    .filter((a): a is AlbumSummary => Boolean(a))
+    .slice(0, MAX_COLLECTION_ALBUMS)
+
+  // Per album: two counts and one cover row. Counts come back from Postgres as counts — never by
+  // fetching rows and measuring the array, which is what produced the wrong numbers.
+  // NOT hidden, everywhere: on an album with require_approval every guest upload starts hidden, and
+  // the earliest one was becoming this page's cover — publishing a photo the owner had not approved
+  // and counting it, on a public URL, against a promise the pricing page makes in writing.
+  const perAlbum = await Promise.all(shown.map(async (album) => {
+    const base = () => admin.from('photos').select('id', { count: 'exact', head: true })
+      .eq('album_id', album.id).eq('hidden', false)
+    const coverQuery = album.cover_photo_id
+      ? admin.from('photos')
+          .select('id, album_id, url, poster_url, stream_thumbnail_url, media_type, created_at')
+          .eq('id', album.cover_photo_id).eq('hidden', false).maybeSingle<MediaPreview>()
+      : Promise.resolve({ data: null })
+    const [totalRes, videoRes, pinnedRes] = await Promise.all([
+      base(),
+      base().eq('media_type', 'video'),
+      coverQuery,
+    ])
+    let cover = (pinnedRes as { data: MediaPreview | null }).data
+    if (!cover) {
+      // The album's own first photo, preferring an image — one row, ordered, not the whole album.
+      const { data } = await admin.from('photos')
+        .select('id, album_id, url, poster_url, stream_thumbnail_url, media_type, created_at')
+        .eq('album_id', album.id).eq('hidden', false)
+        .order('media_type', { ascending: true })   // 'image' sorts before 'video'
+        .order('created_at', { ascending: true })
+        .limit(1)
+        .maybeSingle<MediaPreview>()
+      cover = data
+    }
+    return {
+      ...album,
+      cover_url: cover
+        ? cover.media_type === 'video'
+          ? cover.stream_thumbnail_url || cover.poster_url || null
+          : cover.url
+        : null,
+      // A count we could not take is not a count of zero — it is unknown, and printing 0 over a
+      // full album is the kind of wrong number rule 20 is about. Falls back to null and the tile
+      // simply omits the figure.
+      media_count: totalRes.count ?? 0,
+      video_count: videoRes.count ?? 0,
+    }
+  }))
+
+  const orderedAlbums = perAlbum
 
   const mediaTotal = orderedAlbums.reduce((sum, a) => sum + a.media_count, 0)
   const videoTotal = orderedAlbums.reduce((sum, a) => sum + a.video_count, 0)
