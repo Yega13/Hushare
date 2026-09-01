@@ -521,6 +521,29 @@ export async function deleteAlbumRequest(
   return { ok: true }
 }
 
+// Start a Polar checkout for this album's package or renewal. The server requires BOTH the owner
+// cookie and a signed-in account; a 401 with code sign_in_required is a normal outcome for a
+// signed-out owner, and the caller turns it into a sign-in redirect rather than an error toast.
+export async function startPackageCheckoutRequest(
+  slug: string,
+  item: 'package_pro' | 'package_max' | 'renewal_pro' | 'renewal_max',
+): Promise<{ ok: true; url: string } | { ok: false; error: string; signInRequired: boolean }> {
+  const res = await fetch('/api/checkout/package', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ slug, item }),
+  })
+  const body = await jsonBody<{ error?: string; code?: string; url?: string }>(res)
+  if (!res.ok || !body.url) {
+    return {
+      ok: false,
+      error: body.error ?? `Checkout failed (${res.status})`,
+      signInRequired: body.code === 'sign_in_required',
+    }
+  }
+  return { ok: true, url: body.url }
+}
+
 // Desktop columns save ALONE, deliberately.
 //
 // saveMediaSettingsRequest already threads seven positional settings; adding an eighth to every

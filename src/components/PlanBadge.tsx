@@ -72,16 +72,22 @@ export default function PlanBadge({
 // own icon the way the old per-row styling could. Opacity alone left colour showing and read as
 // "loading" rather than "locked".
 //
-// Deliberately NOT display:none. Someone who cannot see the control cannot learn the product has
-// it, and a control that vanishes on the free plan is indistinguishable from one that is broken.
-export function gatedRowStyle(locked: boolean): {
+// Deliberately NOT display:none — with ONE carve-out. On a free or subscription album, someone
+// who cannot see the control cannot learn the product has it, so locked rows grey out and carry
+// their badge as an upsell. A PACKAGE album is different by the owner's explicit rule ("don't
+// show anything that is unaccessible"): its owner bought a finished product, and a purchased
+// product that nags about the next tier up is noise. So `hideWhenLocked` — passed as true only
+// for albums with a live package — makes a locked row vanish instead of greying.
+export function gatedRowStyle(locked: boolean, hideWhenLocked = false): {
   cursor: 'not-allowed' | 'pointer'
   opacity: number
   filter: string | undefined
+  display?: 'none'
 } {
   return {
     cursor: locked ? 'not-allowed' : 'pointer',
     opacity: locked ? 0.55 : 1,
     filter: locked ? 'grayscale(1)' : undefined,
+    ...(locked && hideWhenLocked ? { display: 'none' as const } : {}),
   }
 }

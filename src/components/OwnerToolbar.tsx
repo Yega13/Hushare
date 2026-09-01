@@ -3,6 +3,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useT } from '@/i18n/LocaleProvider'
 import { tierAllows, showsAsLocked } from '@/lib/plan-gates'
+import { packageExpired } from '@/lib/album-entitlements'
+import PackageSection from '@/components/owner-toolbar/PackageSection'
 import { useZipDownload } from '@/components/photo-grid/useZipDownload'
 import { Search, ChevronDown, Clock, Copy, Download, FolderPlus, Images, Link2, Loader2, Lock, LockOpen, MonitorPlay, Move, Play, ScanFace, Settings, ShieldCheck, Trash2, X } from 'lucide-react'
 import type { Album, Photo, Tier } from '@/types'
@@ -261,6 +263,25 @@ export default function OwnerToolbar({ album, photos, albumPhotoCount, ownerToke
   const canSetCustomUrl = tierAllows(userTier, 'customUrl')
   const canModeratePhotos = tierAllows(userTier, 'photoModeration')
   const canUseCollections = tierAllows(userTier, 'collections')
+  // A LIVE PACKAGE flips the toolbar into pure-hide: rows the album is not entitled to render
+  // not at all, instead of greyed with an upsell badge. The owner's rule, verbatim: "in packages
+  // don't show anything that is unaccessible." They bought a finished product; a purchased
+  // product that nags about the tier above is noise. Free and subscription albums keep the
+  // grey-and-badge upsell exactly as before.
+  const packagedLive = !packageExpired({
+    tier: album.package_tier ?? null,
+    expiresAt: album.package_expires_at ?? null,
+  })
+  // The renewal email lands on /album?renew=1 — open straight onto the package section so the
+  // person who clicked "Renew" in an email is one tap from paying, not spelunking a settings menu.
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    if (new URLSearchParams(window.location.search).get('renew') !== '1') return
+    setShowSettings(true)
+    setOpenSection('package')
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
   const showLockedCustomUrl = showsAsLocked(userTier, 'customUrl')
   const showLockedModeration = showsAsLocked(userTier, 'photoModeration')
   // APPROVAL ONLY MEANS SOMETHING WHILE GUESTS CAN ADD PHOTOS.
@@ -746,7 +767,7 @@ export default function OwnerToolbar({ album, photos, albumPhotoCount, ownerToke
           {t('ot.slideshow')}
         </button>
 
-        <button
+        {!(packagedLive && showsAsLocked(userTier, 'liveWall')) && <button
           className="hush-press hush-owner-action"
           style={btnBase}
           onClick={() => {
@@ -758,7 +779,7 @@ export default function OwnerToolbar({ album, photos, albumPhotoCount, ownerToke
         >
           <MonitorPlay className="w-4 h-4" style={{ color: '#7C5C3E' }} />
           {t('ot.liveWall')} <PlanBadge need="studio" tier={userTier} />
-        </button>
+        </button>}
 
         <button
           className="hush-press hush-owner-action hush-owner-arrange-action"
@@ -1214,6 +1235,14 @@ export default function OwnerToolbar({ album, photos, albumPhotoCount, ownerToke
               </section>
 
               {/* Files */}
+              <PackageSection
+                album={album}
+                packagedLive={packagedLive}
+                open={openSection === 'package'}
+                onToggle={() => toggleSection('package')}
+                t={t}
+              />
+
               <section style={settingsSectionStyle}>
                 <button type="button" className="hush-motion" style={accordionButton} onClick={() => toggleSection('guests')}>
                   <ShieldCheck className="w-4 h-4" style={{ color: '#7C5C3E' }} />
@@ -1291,7 +1320,7 @@ export default function OwnerToolbar({ album, photos, albumPhotoCount, ownerToke
                       />
                     </label>
 
-                    <label className="flex items-center justify-between gap-4 rounded-xl px-3 py-3" style={{ background: '#FDFAF5', border: '1px solid #DDD5C5', ...gatedRowStyle(showLockedModeration || moderationIsMoot) }}>
+                    <label className="flex items-center justify-between gap-4 rounded-xl px-3 py-3" style={{ background: '#FDFAF5', border: '1px solid #DDD5C5', ...gatedRowStyle(showLockedModeration || moderationIsMoot, packagedLive && showLockedModeration) }}>
                       <span>
                         <span className="block text-sm font-semibold" style={{ color: '#630826' }}>
                           {t('ot.requireApproval')} <PlanBadge need="pro" tier={userTier} />
@@ -1370,7 +1399,7 @@ export default function OwnerToolbar({ album, photos, albumPhotoCount, ownerToke
                         not-allowed/dimmed treatment the locked Collections row already uses. */}
                     <label
                       className="flex items-center justify-between gap-4 rounded-xl px-3 py-3"
-                      style={{ background: '#FDFAF5', border: '1px solid #DDD5C5', ...gatedRowStyle(album.branding_locked || showLockedBranding) }}
+                      style={{ background: '#FDFAF5', border: '1px solid #DDD5C5', ...gatedRowStyle(album.branding_locked || showLockedBranding, packagedLive && showLockedBranding) }}
                     >
                       <span>
                         <span className="flex items-center gap-2 text-sm font-semibold" style={{ color: '#630826' }}>
@@ -1417,7 +1446,7 @@ export default function OwnerToolbar({ album, photos, albumPhotoCount, ownerToke
 
                     <label
                       className="flex items-center justify-between gap-4 rounded-xl px-3 py-3"
-                      style={{ background: '#FDFAF5', border: '1px solid #DDD5C5', ...gatedRowStyle(showsAsLocked(userTier, 'faceFinder')) }}
+                      style={{ background: '#FDFAF5', border: '1px solid #DDD5C5', ...gatedRowStyle(showsAsLocked(userTier, 'faceFinder'), packagedLive) }}
                     >
                       <span>
                         <span className="flex items-center gap-2 text-sm font-semibold" style={{ color: '#630826' }}>
@@ -1569,7 +1598,7 @@ export default function OwnerToolbar({ album, photos, albumPhotoCount, ownerToke
                     <p className="text-xs mb-3" style={{ color: '#7C5C3E' }}>
                       {t('ot.customUrlSub')}
                     </p>
-                    <div className="flex items-stretch rounded-lg overflow-hidden" style={{ border: '1px solid #DDD5C5', background: '#FDFAF5', ...gatedRowStyle(showLockedCustomUrl) }}>
+                    <div className="flex items-stretch rounded-lg overflow-hidden" style={{ border: '1px solid #DDD5C5', background: '#FDFAF5', ...gatedRowStyle(showLockedCustomUrl, packagedLive) }}>
                       <span className="text-xs flex items-center px-2 select-none" style={{ color: '#A89880' }}>hushare.space/</span>
                       <input
                         type="text"
@@ -1713,7 +1742,8 @@ export default function OwnerToolbar({ album, photos, albumPhotoCount, ownerToke
                 })()}
               </section>
 
-              {/* Collections */}
+              {/* Collections — hidden outright on a packaged album that is not entitled */}
+              {!(packagedLive && showLockedCollections) && (
               <section style={settingsSectionStyle}>
                 <button type="button" className="hush-motion" style={accordionButton} onClick={() => toggleSection('collection')}>
                   <FolderPlus className="w-4 h-4" style={{ color: showLockedCollections ? '#A89880' : '#7C5C3E' }} />
@@ -1773,6 +1803,7 @@ export default function OwnerToolbar({ album, photos, albumPhotoCount, ownerToke
                   </div>
                 )}
               </section>
+              )}
 
               {/* Delete album */}
               <section style={{ ...settingsSectionStyle, marginBottom: 0 }}>

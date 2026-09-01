@@ -63,7 +63,7 @@ const SIZE_BUDGET: Record<string, number> = {
   // 1827 (2026-08-31): the photo-order control was added and then removed the same day —
   // newest-first is right for essentially every album and dragging already covers the rest, so
   // the switch was not worth the room it took in Settings. Back to where it started.
-  'src/components/OwnerToolbar.tsx': 1900,
+  'src/components/OwnerToolbar.tsx': 1931,
   // +23 (2026-08-31): fallback-poll wiring for realtime REFUSAL — the cadence decision is in
   // lib/realtime-fallback.ts; the timer must live beside the channel it covers (rule 15).
   // +17 (2026-08-31, review finding): channel-identity guard + timer hygiene in the reconnect

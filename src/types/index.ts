@@ -107,6 +107,11 @@ export type Album = {
   media_caps: UploadCaps;
   /** The ALBUM OWNER'S plan — what the server gates on. Not the viewer's. */
   plan?: Tier;
+  // A one-off package bought for THIS album. plan above already reflects it (the server computes
+  // the effective tier); these two exist for the package UI — the status line, the renewal card,
+  // and the pure-hide toolbar mode.
+  package_tier?: 'pro' | 'studio' | null;
+  package_expires_at?: string | null;
   last_activity_at: string;
   last_notification_at: string | null;
   created_at: string;
