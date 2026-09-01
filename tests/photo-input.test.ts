@@ -182,3 +182,23 @@ describe('the prefix helper builds what the checks compare against', () => {
     expect(r2UrlPrefix(HOST, ALBUM, 'thumbs')).toBe(`https://${HOST}/thumbs/${ALBUM}/`)
   })
 })
+
+
+describe('a URL that resolves to somebody else’s file cannot be stored', () => {
+  // THE ATTACK, closed at the writing end.
+  //
+  // r2KeyFromUrl strips a query string, so `<victim>.jpg?x` names the victim's object while being
+  // a different STRING. A guest could post rows whose thumb_url was exactly that: they render
+  // broken, which is what makes an owner select and delete them, and the delete then destroyed the
+  // real photo's thumbnail. Nothing regenerates a thumbnail server-side, and there is no backup.
+  it('rejects a query string or a fragment in any stored URL', () => {
+    expect(hasTraversal('https://h/thumbs/a/real.jpg?x'), 'query string').toBe(true)
+    expect(hasTraversal('https://h/thumbs/a/real.jpg#x'), 'fragment').toBe(true)
+    expect(hasTraversal('https://h/thumbs/a/real.jpg?'), 'bare question mark').toBe(true)
+  })
+
+  it('still accepts an ordinary key', () => {
+    // The guard must not start refusing real uploads — every key we mint is <uuid>.<ext>.
+    expect(hasTraversal('https://h/thumbs/a/9f8e7d6c-1234-4a5b-8c9d-000000000000.jpg')).toBe(false)
+  })
+})

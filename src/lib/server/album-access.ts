@@ -391,9 +391,9 @@ export async function fetchAuthorizedPhotos(
     // bib_min/bib_max come from the ALBUM, never from the caller. They decide which OCR readings
     // count, so accepting them from the request would let anyone widen the race's numbering and
     // pull back photos the owner's bounds were set to exclude.
-    .select('id, user_id, owner_token, password_hash, reveal_at, retired_at, bib_search_enabled, bib_min, bib_max, photo_order')
+    .select('id, user_id, owner_token, password_hash, reveal_at, retired_at, bib_search_enabled, bib_min, bib_max, photo_order, package_tier, package_expires_at')
     .eq('id', albumId)
-    .maybeSingle<{ id: string; user_id: string | null; owner_token: string; password_hash: string | null; reveal_at: string | null; retired_at: string | null; bib_search_enabled: boolean; bib_min: number | null; bib_max: number | null; photo_order: string }>()
+    .maybeSingle<{ id: string; user_id: string | null; owner_token: string; password_hash: string | null; reveal_at: string | null; retired_at: string | null; bib_search_enabled: boolean; bib_min: number | null; bib_max: number | null; photo_order: string; package_tier: 'pro' | 'studio' | null; package_expires_at: string | null }>()
 
   if (!album || album.retired_at) return { kind: 'notfound' }
 
@@ -445,14 +445,25 @@ export async function fetchAuthorizedPhotos(
   // client is not a gate. It is a convention.
   if (opts.bib !== undefined || opts.statsOnly) {
     if (!album.bib_search_enabled) return { kind: 'ok', photos: [], total: 0 }
-    if (!album.user_id) return { kind: 'ok', photos: [], total: 0 }
+    // THE ALBUM'S entitlement, not its owner's account. A Max PACKAGE bought for a free account is
+    // this feature's buyer: resolveAlbum unmasks the search bar on the album's effective tier, and
+    // this gate — 200 lines away — used to answer from the owner's subscription alone. Every runner
+    // typing their number was told "No photos with that number", final, on the one feature a race
+    // organiser bought the package for. The indexer beside it was corrected and the search that
+    // reads the index was missed; tests/plan-gates now enumerates these sites instead of listing
+    // them by hand, so a third one cannot hide.
+    //
     // RESOLVED, not merely fetched. getUserTierById degrades to 'free' when the subscriptions query
     // fails, and this gate refuses by returning ZERO PHOTOS — so a single blip would have told
     // every runner at a race "No photos with that number", stated as final with no retry offered.
     // An empty result is only honest when we actually know the album is not entitled.
     const resolved = await getUserTierResolved(album.user_id)
     if (!resolved.authoritative) return { kind: 'unavailable' }
-    if (resolved.tier !== 'studio') return { kind: 'ok', photos: [], total: 0 }
+    const entitled = albumEffectiveTier(resolved.tier, {
+      tier: album.package_tier,
+      expiresAt: album.package_expires_at,
+    })
+    if (entitled !== 'studio') return { kind: 'ok', photos: [], total: 0 }
   }
 
   // Stats with no search: the bar shows "still reading photos, 1,200 of 5,000" before anyone has

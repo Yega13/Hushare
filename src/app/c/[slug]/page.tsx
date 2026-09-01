@@ -33,6 +33,11 @@ type AlbumSummary = {
   cover_photo_id: string | null
   created_at: string
   owner_token: string
+  // THE GATES. A collection is a PUBLIC page, so everything it shows about a member album has to
+  // answer the same access question /{slug} answers — see the filter below.
+  password_hash: string | null
+  reveal_at: string | null
+  retired_at: string | null
 }
 
 type MediaPreview = {
@@ -122,14 +127,19 @@ export default async function CollectionPage({ params }: Props) {
     albumIds.length
       ? admin
           .from('albums')
-          .select('id, slug, custom_slug, title, cover_photo_id, created_at, owner_token')
+          .select('id, slug, custom_slug, title, cover_photo_id, created_at, owner_token, password_hash, reveal_at, retired_at')
           .in('id', albumIds)
           .returns<AlbumSummary[]>()
       : Promise.resolve({ data: [] as AlbumSummary[], error: null }),
     albumIds.length
       ? admin
           .from('photos')
+          // NOT hidden. On an album with require_approval every guest upload starts hidden, and the
+          // earliest one was becoming this page's cover — publishing a photo the owner had not
+          // approved, on a public URL, and counting it. The product promises the opposite in
+          // writing on the pricing page.
           .select('id, album_id, url, poster_url, stream_thumbnail_url, media_type, created_at')
+          .eq('hidden', false)
           .in('album_id', albumIds)
           .order('created_at', { ascending: true })
           .returns<MediaPreview[]>()
@@ -156,9 +166,28 @@ export default async function CollectionPage({ params }: Props) {
   const albums = albumsResult.data
   const mediaRows = mediaResult.data
 
+  // A COLLECTION MAY NOT PUBLISH WHAT THE ALBUM ITSELF WITHHOLDS.
+  //
+  // This page is public — no sign-in, no password — and it was re-implementing the album read with
+  // createAdminClient() instead of going through resolveAlbum, so it skipped every gate that file
+  // owns. A password-protected wedding put into a collection (the "show my clients my work"
+  // feature, so exactly the expected use) published its title, its exact photo count, and a
+  // full-resolution URL of one of its photos to anyone holding the collection link, while
+  // /{slug} for the same album correctly asked for the password. Two answers to one question.
+  //
+  // A gated album is dropped from the page entirely rather than shown locked: the collection is a
+  // shop window, and a tile that says "this one is private" still leaks that it exists and how
+  // many photos are in it.
+  const now = Date.now()
+  const visibleAlbums = (albums ?? []).filter((a) => (
+    !a.retired_at &&
+    !a.password_hash &&
+    !(a.reveal_at && new Date(a.reveal_at).getTime() > now)
+  ))
+
   const orderedAlbums = albumIds
     .map((id) => {
-      const album = (albums ?? []).find((a) => a.id === id)
+      const album = visibleAlbums.find((a) => a.id === id)
       if (!album) return null
       const albumMedia = (mediaRows ?? []).filter((row) => row.album_id === id)
       const pinned = album.cover_photo_id

@@ -1389,12 +1389,17 @@ async function uploadImageToR2(
     const err = await presignRes.json().catch(() => ({})) as { error?: string }
     throw new Error(err.error ?? `Presign failed (${presignRes.status})`)
   }
-  const { presignedUrl, key, publicUrl, thumb } = await readJson<{
+  const { presignedUrl, key, publicUrl, thumb, contentType: signedContentType } = await readJson<{
     presignedUrl: string
     key: string
     publicUrl: string
+    contentType?: string
     thumb?: { presignedUrl: string; key: string; publicUrl: string }
   }>(presignRes)
+  // The PUT must carry exactly the type the server signed — content-type is inside the signature
+  // now, so a mismatch is a rejected upload, not a mislabelled file. Falls back to our own value
+  // for an older worker still in rotation mid-deploy, which is the pair that already matched.
+  const putContentType = signedContentType ?? processed.mimeType
   onProgress(16)
 
   // Main and thumbnail PUT in PARALLEL — the ~30KB thumb rides along for free instead of
@@ -1413,7 +1418,7 @@ async function uploadImageToR2(
 
   const main = await putImageWithRelay(
     key, publicUrl, presignedUrl,
-    { albumId, fileName: processed.name, contentType: processed.mimeType, isThumb: false },
+    { albumId, fileName: processed.name, contentType: putContentType, isThumb: false },
     processed.blob, pct => onProgress(16 + Math.round(pct * 0.8)), signal,
   )
   const thumbUrl = await thumbPut

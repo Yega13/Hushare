@@ -3,6 +3,7 @@ import { createServerClient, type CookieOptions } from '@supabase/ssr'
 import type { EmailOtpType } from '@supabase/supabase-js'
 import { hasAccountAccess } from '@/lib/access'
 import { checkRateLimit, clientIpKey } from '@/lib/rate-limit'
+import { forbidCrossSiteRequest } from '@/lib/request-security'
 
 export const runtime = 'nodejs'
 
@@ -21,6 +22,20 @@ const VALID_TYPES: ReadonlySet<string> = new Set<EmailOtpType>([
 
 export async function POST(req: NextRequest) {
   const origin = new URL(req.url).origin
+
+  // LOGIN CSRF IS ACCOUNT THEFT HERE, not a nuisance.
+  //
+  // This was the one browser-facing mutating route without the check. Set-Cookie on a 303 is
+  // honoured whatever SameSite says — SameSite governs SENDING a cookie, not receiving one — so a
+  // cross-site auto-submitting form carrying the ATTACKER's own single-use magic-link token signed
+  // the victim's browser in as the attacker, silently, landing on any same-origin path the
+  // attacker chose. The victim then opens their own #owner= link for an album they made while
+  // signed out, the claim stamps that album onto the attacker's account, and it is one-way by
+  // design: the real owner can never take it back, while the attacker holds the management link
+  // and the delete button. The real form is same-origin and browsers always send Origin on a form
+  // POST, so this rejects only the attack.
+  const csrf = forbidCrossSiteRequest(req)
+  if (csrf) return csrf
 
   // High-entropy token_hash makes guessing impractical, but a cheap IP cap keeps this from being a
   // free oracle. failOpen: true — a rate-limit store outage must not lock everyone out of signing in.

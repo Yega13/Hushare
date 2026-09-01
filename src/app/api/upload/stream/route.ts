@@ -14,6 +14,7 @@ import {
 import { forbidCrossSiteRequest } from '@/lib/request-security'
 import { gateAllowsContribution, ALBUM_GATE_COLS } from '@/lib/server/album-access'
 import { cookies } from 'next/headers'
+import { createClient } from '@/lib/supabase/server'
 
 export const runtime = 'nodejs'
 
@@ -106,9 +107,24 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: 'Uploads disabled for this album' }, { status: 403, headers: NO_STORE })
   }
 
+  // The album's own signed-in OWNER counts as proof, exactly as photos/create already treats it.
+  // Without this the gate refused the owner on their own password-protected album whenever the
+  // owner cookie was absent — a new device, a new tab, or simply past its 7 days — and it refused
+  // them HERE, before a single byte moved, so the fix that already existed one route later was
+  // unreachable for any new upload. That is the "wrong no" that cost a customer 163 uploads.
+  // A failed session lookup means "not signed in" and never throws into the upload path.
+  let signedInUserId: string | null = null
+  try {
+    const supabase = await createClient()
+    const { data: { user } } = await supabase.auth.getUser()
+    signedInUserId = user?.id ?? null
+  } catch {
+    signedInUserId = null
+  }
+
   // A password or reveal gate applies to contributing, not just to viewing — same check the image
   // path and the photo listing use, so all three can never disagree about who may add to an album.
-  const gate = await gateAllowsContribution(album, await cookies())
+  const gate = await gateAllowsContribution(album, await cookies(), signedInUserId)
   if (!gate.ok) {
     return NextResponse.json({ error: gate.error }, { status: 403, headers: NO_STORE })
   }

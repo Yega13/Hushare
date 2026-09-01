@@ -38,6 +38,13 @@ export function r2UrlPrefix(host: string, albumId: string, prefix: 'albums' | 't
 }
 
 export function hasTraversal(s: string): boolean {
+  // '?' and '#' are here because r2KeyFromUrl STRIPS a query string: `<victim>.jpg?x` resolves to
+  // the victim's key while matching no exact-string lookup. That is how a guest could store a row
+  // naming a real photo's thumbnail without appearing to, and have the owner's own delete destroy
+  // it — permanently, with nothing able to regenerate a thumbnail. Two notions of identity
+  // disagreed; this closes the writing half, and rowsReferencingKeys closes it for rows already
+  // stored (rule 13: a rule enforced only at write time does nothing about what is already there).
+  if (s.includes('?') || s.includes('#')) return true
   // Check literal "..", null bytes, backslash (Windows path separator), URL-encoded variants
   if (s.includes('..') || s.includes('\x00') || s.includes('%00') || s.includes('\\')) return true
   const lower = s.toLowerCase()

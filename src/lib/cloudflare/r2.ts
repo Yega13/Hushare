@@ -84,7 +84,23 @@ export async function createPresignedPut(
     ContentLength: contentLength,
     CacheControl: cacheControl,
   })
-  return getSignedUrl(getS3Client(), command, { expiresIn: expiresInSeconds })
+  // CONTENT-TYPE MUST BE IN THE SIGNATURE, and it takes an explicit override to get it there.
+  //
+  // @aws-sdk/s3-request-presigner calls `unsignableHeaders.add("content-type")` before signing, so
+  // ContentType above shaped nothing: R2 stored whatever type the PUT actually carried. A stranger
+  // could presign as image/jpeg and PUT `Content-Type: text/html`, and the object then served
+  // executable HTML from videos.hushare.space — a sibling of the app, where the app's CSP and
+  // nosniff headers do not reach, and where a page can set cookies on .hushare.space. The
+  // allow-list of image types only ever filtered the DECLARED type, so it bought nothing here.
+  //
+  // signableHeaders wins over that exclusion in @smithy/signature-v4's getCanonicalHeaders, which
+  // is what makes this the fix rather than a hopeful option: the browser must now send exactly the
+  // type we signed or R2 rejects the upload. tests/r2-presign.test.ts asserts the signed set, so a
+  // future SDK bump that quietly drops it fails the suite instead of reopening the hole.
+  return getSignedUrl(getS3Client(), command, {
+    expiresIn: expiresInSeconds,
+    signableHeaders: new Set(['content-type']),
+  })
 }
 
 export async function createPresignedGet(

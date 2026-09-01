@@ -57,7 +57,8 @@ const SIZE_BUDGET: Record<string, number> = {
   // processors (the decision itself is lib/upload-policy's maxImageDimFor, tested there).
   // +2 (2026-09-01, review finding): isOwner joins startUploads' deps with the comment saying
   // why — the stale closure encoded the owner's first post-flip batch at guest size.
-  'src/components/UploadZone.tsx': 2854,
+  // +6 (2026-09-01, security audit): the PUT carries exactly the content-type the server signed.
+  'src/components/UploadZone.tsx': 2860,
   // +3 on 2026-08-30: the branding toggle gained a real plan check (it was dimmed but still
   // clickable), and Face Finder and bib search stopped riding on the collections flag. Three
   // lines of reasoning for three gates that were wrong. Deliberate.

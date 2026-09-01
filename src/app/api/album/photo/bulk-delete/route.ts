@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { verifyOwnerViaCookieWithRateLimit } from '@/lib/album-owner-access'
 import { forbidCrossSiteRequest } from '@/lib/request-security'
-import { deleteR2KeysChunked, collectDeletionTargets, withoutStillReferenced } from '@/lib/album-delete'
+import { deleteR2KeysChunked, collectDeletionTargets, withoutStillReferenced, rowsReferencingKeys } from '@/lib/album-delete'
 import { deleteStreamVideo } from '@/lib/cloudflare/stream'
 import { deleteFaces } from '@/lib/rekognition'
 import { getCloudflareContext } from '@opennextjs/cloudflare'
@@ -140,30 +140,20 @@ export async function POST(req: Request) {
   // is the route that matters most: a guest can post many junk rows all copying real thumbnails,
   // and bulk-delete is exactly how an owner clears junk. Asked AFTER the rows are gone, so what
   // comes back is precisely the survivors, and a failed lookup deletes nothing (rule 19).
-  const surviveCols = 'id, storage_backend, storage_path, thumb_url, poster_url, stream_uid'
-  const values = <K extends 'storage_path' | 'thumb_url' | 'poster_url' | 'stream_uid'>(k: K) =>
-    [...new Set(validPhotos.map(p => p[k]).filter((v): v is string => !!v))]
-  const lookups: PromiseLike<{ data: unknown[] | null; error: unknown }>[] = []
-  for (const col of ['storage_path', 'thumb_url', 'poster_url', 'stream_uid'] as const) {
-    const vals = values(col)
-    // Chunked: an .in() carrying 500 URLs builds a request line long enough to be truncated,
-    // and a truncated filter silently matches fewer survivors than exist.
-    for (let i = 0; i < vals.length; i += 50) {
-      lookups.push(
-        admin.from('photos').select(surviveCols).eq('album_id', access.album.id)
-          .in(col, vals.slice(i, i + 50)).limit(500),
-      )
-    }
-  }
-  const results = await Promise.all(lookups)
-  const survErr = results.find(r => r.error)?.error
-  const survivors = results.flatMap(r => (r.data ?? [])) as Parameters<typeof withoutStillReferenced>[1]
-  const safe = survErr
-    ? { r2Keys: new Set<string>(), streamUids: new Set<string>() }
-    : withoutStillReferenced({ r2Keys: new Set(r2Keys), streamUids: new Set(streamUids) }, survivors)
-  if (survErr) {
+  // By KEY, across every URL column — the exact-string per-column lookup this replaces returned
+  // an empty survivor set for a row storing `...jpg?x` (same file, different string) or copying
+  // another row's poster_url into its thumb_url, and an empty survivor set means "delete it all".
+  // This is the route that matters most: junk rows copying real thumbnails are cleared here.
+  let safe = { r2Keys: new Set<string>(), streamUids: new Set<string>() }
+  try {
+    const survivors = await rowsReferencingKeys(admin, access.album.id, r2Keys)
+    safe = withoutStillReferenced(
+      { r2Keys: new Set(r2Keys), streamUids: new Set(streamUids) },
+      survivors,
+    )
+  } catch (e) {
     console.error('[photo/bulk-delete] survivor check failed — deleting no files:',
-      survErr instanceof Error ? survErr.message : String(survErr))
+      e instanceof Error ? e.message : String(e))
   }
 
   await deleteR2Keys([...safe.r2Keys])

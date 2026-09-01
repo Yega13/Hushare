@@ -180,6 +180,67 @@ export function collectDeletionTargets(
  * while a live row still points at it is a photo missing from somebody's wedding, and there is no
  * backup of R2 (rule 19).
  */
+/** The file name of an R2 key — `albums/<id>/<uuid>.jpg` → `<uuid>.jpg`. */
+export function keyFileName(key: string): string | null {
+  const name = key.split('/').pop() ?? ''
+  // Keys are minted server-side as `<uuid>.<ext>`; anything else is not ours to match on, and a
+  // value with a PostgREST metacharacter in it must never reach a filter string.
+  return /^[A-Za-z0-9._-]+$/.test(name) ? name : null
+}
+
+/**
+ * Every row in this album that still references any of these R2 keys — ACROSS ALL URL COLUMNS.
+ *
+ * THE BUG THIS REPLACES, in two halves that both had to be fixed (rule 13):
+ *
+ *   The old lookup asked `thumb_url IN (<the exact string>)`, column by column. But the key a row
+ *   RESOLVES to is not its URL string: `r2KeyFromUrl` strips a query string, so a stored
+ *   `...jpg?x` names the same file while matching no exact-string query — and a guest can store
+ *   exactly that, because it passes validatePhoto. It also compared `thumb_url` only against
+ *   `thumb_url`, so a row whose thumb_url copied another row's poster_url was invisible to both
+ *   halves. Either way the survivor set came back EMPTY, withoutStillReferenced filtered nothing,
+ *   and the owner's delete took a real photo's thumbnail with it — permanently, with no backup and
+ *   nothing able to regenerate it.
+ *
+ * So the match is on the file NAME, which is what actually identifies the object, and it is asked
+ * of every column that can hold one. `like` with a name validated to [A-Za-z0-9._-] carries no
+ * PostgREST metacharacter, so the filter cannot be broken out of.
+ *
+ * Throws on a query error rather than returning nothing: an empty survivor set means "delete it
+ * all", and that must never be what a failed question looks like (rule 19).
+ */
+export async function rowsReferencingKeys(
+  admin: AdminClient,
+  albumId: string,
+  r2Keys: Iterable<string>,
+): Promise<PhotoToDelete[]> {
+  const names = [...new Set([...r2Keys].map(keyFileName).filter((n): n is string => n !== null))]
+  if (names.length === 0) return []
+
+  const cols = 'id, storage_backend, storage_path, thumb_url, poster_url, stream_uid'
+  const out: PhotoToDelete[] = []
+  // Batched: the or-string grows with the number of names and PostgREST takes it in the URL.
+  const PER_QUERY = 25
+  for (let i = 0; i < names.length; i += PER_QUERY) {
+    const slice = names.slice(i, i + PER_QUERY)
+    const terms = slice.flatMap((n) => [
+      `url.like.*${n}*`,
+      `thumb_url.like.*${n}*`,
+      `poster_url.like.*${n}*`,
+      `storage_path.like.*${n}*`,
+    ])
+    const { data, error } = await admin
+      .from('photos')
+      .select(cols)
+      .eq('album_id', albumId)
+      .or(terms.join(','))
+      .limit(500)
+    if (error) throw new Error(`survivor lookup failed: ${error.message}`)
+    out.push(...((data ?? []) as unknown as PhotoToDelete[]))
+  }
+  return out
+}
+
 export function withoutStillReferenced(
   targets: { r2Keys: Set<string>; streamUids: Set<string> },
   surviving: PhotoToDelete[],

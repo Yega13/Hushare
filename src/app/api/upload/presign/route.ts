@@ -86,6 +86,11 @@ export async function POST(req: Request) {
       presignedUrl,
       key,
       publicUrl,
+      // THE EXACT TYPE THAT WAS SIGNED. Content-type is now part of the signature, so the PUT must
+      // carry this byte-for-byte or R2 refuses it. The client used to send its own copy, which
+      // matched only because both sides happened to lowercase; returning the signed value removes
+      // the coincidence rather than relying on it (rule 13 — one fact, one place).
+      contentType: finalContentType,
       ...(thumbKey && thumbPresignedUrl
         ? { thumb: { presignedUrl: thumbPresignedUrl, key: thumbKey, publicUrl: r2PublicUrl(thumbKey) } }
         : {}),

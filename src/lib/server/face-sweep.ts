@@ -1,5 +1,5 @@
 import { createAdminClient } from '@/lib/supabase/admin'
-import { getUserTierById } from '@/lib/subscriptions'
+import { albumHasTier } from '@/lib/require-tier'
 import { ensureCollection, indexPhotoFaces } from '@/lib/rekognition'
 
 // Server-side face indexing, mirroring src/lib/server/bib-index.ts.
@@ -82,10 +82,13 @@ export async function indexAlbumFacesBatch(albumId: string, max: number = BATCH)
     .maybeSingle<{ face_finder_enabled: boolean; user_id: string | null }>()
   if (!album?.face_finder_enabled) return 0
 
-  // AND the owner must still be on Max. The flag alone is not enough: it can be switched on while
-  // the feature is free, or survive a downgrade, and indexing is a BILLED call to AWS on every
-  // photo. Without this we pay to build an index for a search the server then refuses.
-  if (!album.user_id || (await getUserTierById(album.user_id)) !== 'studio') return 0
+  // AND the ALBUM must still be entitled to Max — by its owner's subscription OR a live package.
+  // The flag alone is not enough: it can survive a downgrade, and indexing is a BILLED call to AWS
+  // on every photo. Asking the OWNER's account here meant a Max Package album was never swept, so
+  // Face Finder silently fell back to indexing one photo per request from the first guest's phone —
+  // about an hour of holding a tab open on a race album, and it stops when they close it. Its
+  // sibling in bib-index.ts was corrected; this one was missed.
+  if (!(await albumHasTier({ id: albumId, user_id: album.user_id }, 'studio'))) return 0
 
   const { data: pending } = await admin
     .from('photos')

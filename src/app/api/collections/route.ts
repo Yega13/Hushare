@@ -167,8 +167,15 @@ export async function POST(req: Request) {
   if ('error' in collection) return collection.error
 
   if (album) {
-    // Claim the album to the user's account if it was created anonymously.
-    await admin.from('albums').update({ user_id: user.id }).eq('id', album.id).is('user_id', null)
+    // NO CLAIM HERE. This used to write `user_id` directly, which was a THIRD claim path outside
+    // lib/album-claim — the module that exists because a second one was written once before
+    // without the plan cap. It meant an account already at its album limit could collect anonymous
+    // albums' owner links and take ownership of every one of them by adding them to a collection,
+    // overriding the `at_cap` decision verifyOwnerViaCookie had just made a few lines earlier.
+    //
+    // Adding an album to a collection is a filing action, not an ownership action. The claim
+    // belongs to the owner-access path, which already ran above and applied the cap correctly;
+    // whatever it decided stands.
 
     const { error: linkError } = await admin
       .from('collection_albums')

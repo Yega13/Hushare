@@ -3,7 +3,7 @@ import { deleteFaces } from '@/lib/rekognition'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { verifyOwnerViaCookieWithRateLimit } from '@/lib/album-owner-access'
 import { forbidCrossSiteRequest } from '@/lib/request-security'
-import { deleteR2KeysChunked, collectDeletionTargets, withoutStillReferenced } from '@/lib/album-delete'
+import { deleteR2KeysChunked, collectDeletionTargets, withoutStillReferenced, rowsReferencingKeys } from '@/lib/album-delete'
 import { deleteStreamVideo } from '@/lib/cloudflare/stream'
 import { getCloudflareContext } from '@opennextjs/cloudflare'
 import { track } from '@/lib/analytics'
@@ -126,25 +126,20 @@ export async function POST(req: Request) {
   // took the real photo's thumbnail with it. Asked AFTER the row is gone, so what comes back is
   // precisely the survivors. A lookup that fails deletes nothing: keeping bytes costs cents,
   // destroying somebody's photo is unrecoverable (rule 19).
-  const surviveCols = 'id, storage_backend, storage_path, thumb_url, poster_url, stream_uid'
-  // One query per column that actually has a value, using .in() so PostgREST escapes the values.
-  // An .or() string would be parsed as filter syntax, and these values are URLs full of dots and
-  // slashes — the sort of thing that fails silently rather than loudly.
-  const lookups: PromiseLike<{ data: unknown[] | null; error: unknown }>[] = []
-  const base = () => admin.from('photos').select(surviveCols).eq('album_id', access.album.id).limit(50)
-  if (photo.storage_path) lookups.push(base().in('storage_path', [photo.storage_path]))
-  if (photo.thumb_url) lookups.push(base().in('thumb_url', [photo.thumb_url]))
-  if (photo.poster_url) lookups.push(base().in('poster_url', [photo.poster_url]))
-  if (photo.stream_uid) lookups.push(base().in('stream_uid', [photo.stream_uid]))
-  const results = await Promise.all(lookups)
-  const survErr = results.find(r => r.error)?.error
-  const survivors = results.flatMap(r => (r.data ?? [])) as Parameters<typeof withoutStillReferenced>[1]
-  const safe = survErr
-    ? { r2Keys: new Set<string>(), streamUids: new Set<string>() }
-    : withoutStillReferenced({ r2Keys: new Set(r2Keys), streamUids: new Set<string>() }, survivors)
-  if (survErr) {
+  // Asked by KEY across every URL column — see rowsReferencingKeys for the two ways the old
+  // exact-string, per-column lookup returned an empty survivor set and let a real photo's
+  // thumbnail be deleted.
+  let safe = { r2Keys: new Set<string>(), streamUids: new Set<string>() }
+  try {
+    const survivors = await rowsReferencingKeys(admin, access.album.id, r2Keys)
+    safe = withoutStillReferenced(
+      { r2Keys: new Set(r2Keys), streamUids: photo.stream_uid ? new Set([photo.stream_uid]) : new Set<string>() },
+      survivors,
+    )
+  } catch (e) {
+    // A failed question is not an answer: keep every byte (rule 19).
     console.error('[photo/delete] survivor check failed — deleting no files:',
-      survErr instanceof Error ? survErr.message : String(survErr))
+      e instanceof Error ? e.message : String(e))
   }
 
   // Best-effort asset cleanup — non-fatal after DB row is gone
