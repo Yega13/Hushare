@@ -40,15 +40,35 @@ export async function POST(req: Request) {
   const admin = createAdminClient()
   const { data: row } = await admin
     .from('photos')
-    .select('id')
+    .select('id, duration_seconds')
     .eq('stream_uid', uid)
     .limit(1)
-    .maybeSingle<{ id: string }>()
+    .maybeSingle<{ id: string; duration_seconds: number | null }>()
   if (!row) {
     return NextResponse.json({ error: 'Not found' }, { status: 404, headers: NO_STORE })
   }
 
   const status = await getStreamVideoStatus(uid)
+
+  // THE LENGTH WE STORE COMES FROM CLOUDFLARE, NOT FROM THE BROWSER.
+  //
+  // duration_seconds arrived in the upload request and nothing ever checked it. It is what the
+  // album's video BUDGET is spent against, so declaring one second per clip let an album hold a
+  // real hour while its accounting showed a minute — and Stream storage is a purchased ceiling
+  // whose exhaustion makes every video upload fail for every album at once, which at an event is
+  // the whole room. Cloudflare knows the true length once the video is ready; this is the first
+  // moment it can be asked, and the client polls here anyway.
+  //
+  // Only ever corrected UPWARD-or-different, never invented: a null reading changes nothing. This
+  // is reconciliation on the ordinary path, not enforcement — a client that never polls keeps its
+  // claim until something sweeps it, which is a known residual, not a fix that half-works.
+  if (status?.duration != null) {
+    const measured = Math.max(1, Math.round(status.duration))
+    if (row.duration_seconds !== measured) {
+      const { error } = await admin.from('photos').update({ duration_seconds: measured }).eq('id', row.id)
+      if (error) console.error('[video-status] duration reconcile failed:', error.message)
+    }
+  }
   // Unknown reads as ready on purpose. Showing the player's own error on a genuinely broken video
   // is a smaller failure than hiding a working one behind a notice that never clears.
   return NextResponse.json(

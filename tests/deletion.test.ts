@@ -448,3 +448,34 @@ describe('the file name a deletion key is matched by', () => {
     expect(keyFileName('')).toBeNull()
   })
 })
+
+
+describe('deleting an album cannot take another album’s design assets', () => {
+  // isOwnAlbumAsset closed this at WRITE time. A rule enforced only at write time does nothing
+  // about rows already stored — the same lesson withoutStillReferenced encodes for photos — so a
+  // row still holding another album's logo URL would have had that album's LIVE mark deleted the
+  // moment its holder was deleted. Zero such rows exist today; this is for the one that appears
+  // tomorrow, and it errs toward orphaning rather than deleting.
+  const OWN = '11111111-1111-4111-8111-111111111111'
+  const OTHER = '22222222-2222-4222-8222-222222222222'
+  const host = process.env.R2_PUBLIC_HOST ?? 'videos.hushare.space'
+
+  it('keeps its own keys and drops another album’s', () => {
+    const keys = albumAssetKeys({
+      logo_url: `https://${host}/logos/${OWN}/mine.png`,
+      header_image: `https://${host}/headers/${OTHER}/theirs.jpg`,
+      sponsor_logos: [{ url: `https://${host}/sponsors/${OTHER}/theirs.png` }],
+    }, OWN)
+    expect(keys).toContain(`logos/${OWN}/mine.png`)
+    expect(keys.some((k) => k.includes(OTHER)), 'another album’s asset must never be deleted').toBe(false)
+  })
+
+  it('a READING caller still sees every key', () => {
+    // The storage audit passes no id: it is deciding what is REFERENCED, and a key it fails to see
+    // would be reported as an orphan and could then be deleted — the same damage from the other end.
+    const keys = albumAssetKeys({
+      logo_url: `https://${host}/logos/${OTHER}/theirs.png`,
+    })
+    expect(keys).toContain(`logos/${OTHER}/theirs.png`)
+  })
+})

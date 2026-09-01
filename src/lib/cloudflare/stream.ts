@@ -148,7 +148,7 @@ export async function createStreamUpload(
 // "still processing" notice that never goes away.
 export async function getStreamVideoStatus(
   uid: string,
-): Promise<{ ready: boolean; pct: number } | null> {
+): Promise<{ ready: boolean; pct: number; duration: number | null } | null> {
   const accountId = process.env.CLOUDFLARE_ACCOUNT_ID
   const token = process.env.CLOUDFLARE_STREAM_TOKEN
   if (!accountId || !token) return null
@@ -161,13 +161,18 @@ export async function getStreamVideoStatus(
     if (!res.ok) return null
     const body = await res.json() as {
       success?: boolean
-      result?: { readyToStream?: boolean; status?: { state?: string; pctComplete?: string } }
+      // duration is what CLOUDFLARE measured, in seconds — the only authority on how long a video
+      // actually is. Everything else we hold came from the browser that uploaded it.
+      result?: { readyToStream?: boolean; duration?: number; status?: { state?: string; pctComplete?: string } }
     }
     if (!body.success || !body.result) return null
     const pct = Number(body.result.status?.pctComplete)
+    const duration = Number(body.result.duration)
     return {
       ready: body.result.readyToStream === true,
       pct: Number.isFinite(pct) ? Math.max(0, Math.min(100, Math.round(pct))) : 0,
+      // Cloudflare reports -1 while it is still working it out; only a real positive is an answer.
+      duration: Number.isFinite(duration) && duration > 0 ? duration : null,
     }
   } catch {
     return null

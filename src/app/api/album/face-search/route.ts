@@ -5,6 +5,7 @@ import { timingSafeEqual } from '@/lib/timing-safe'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { searchFacesByImage } from '@/lib/rekognition'
 import { forbidCrossSiteRequest } from '@/lib/request-security'
+import { reportServerError } from '@/lib/report-server-error'
 import { albumHasTier } from '@/lib/require-tier'
 import { checkRateLimit, clientIpKey } from '@/lib/rate-limit'
 import { track } from '@/lib/analytics'
@@ -24,6 +25,19 @@ function isValidSlug(s: string): boolean { return SLUG_RE.test(s) }
 const SEARCH_WINDOW_SECONDS = 60
 const SEARCH_IP_MAX = 120
 const SEARCH_ALBUM_MAX = 120
+
+// A DAILY CEILING, because the per-minute one has no top.
+//
+// 120 searches a minute is right for a finish line — hundreds of runners arriving at once, all
+// from the venue's single IP. But sustained, it is 172,800 Rekognition calls a day against one
+// album, roughly $170 a day, from one stranger with a public album's slug, indefinitely, with no
+// alarm anywhere. The per-minute limit shapes a crowd; it does not bound a bill.
+//
+// 6,000/day is far above any real event — the largest album here has 4,566 photos and a runner
+// searches once or twice — and it caps the worst case near $6. A real album that somehow reaches
+// it degrades to "try tomorrow" rather than costing us a month of revenue in an afternoon.
+const SEARCH_DAY_SECONDS = 86_400
+const SEARCH_ALBUM_DAY_MAX = 6_000
 
 export async function POST(req: Request) {
   const forbidden = forbidCrossSiteRequest(req)
@@ -119,6 +133,20 @@ async function handlePost(req: Request) {
     return NextResponse.json(
       { error: 'Too many searches. Please wait a minute and try again.' },
       { status: 429, headers: { ...NO_STORE, 'Retry-After': String(albumLimit.retryAfterSeconds) } },
+    )
+  }
+
+  // And the daily ceiling on top — the per-minute limit shapes a crowd, this one bounds the bill.
+  const albumDayLimit = await checkRateLimit(
+    `face_search_album_day:${album.id}`, SEARCH_DAY_SECONDS, SEARCH_ALBUM_DAY_MAX, { failOpen: false },
+  )
+  if (!albumDayLimit.ok) {
+    reportServerError('face-search', 'Album hit its DAILY face-search ceiling', {
+      context: { albumId: album.id, dailyMax: SEARCH_ALBUM_DAY_MAX },
+    })
+    return NextResponse.json(
+      { error: 'This album has had a lot of searches today. Please try again tomorrow.' },
+      { status: 429, headers: { ...NO_STORE, 'Retry-After': String(albumDayLimit.retryAfterSeconds) } },
     )
   }
 

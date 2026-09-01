@@ -44,8 +44,24 @@ type AlbumDeleteTarget = AlbumAssets & {
  * `#ffe476` (a colour) or `stock:pexels-20954747` (a stock reference), and neither is an object in
  * the bucket — which is why the prefix is checked rather than the column being non-empty.
  */
-export function albumAssetKeys(album: AlbumAssets): string[] {
+export function albumAssetKeys(album: AlbumAssets, ownAlbumId?: string): string[] {
   const keys: string[] = []
+  // SCOPED TO THIS ALBUM WHEN THE CALLER IS DELETING.
+  //
+  // isOwnAlbumAsset closed the cross-album hole at WRITE time — but a rule enforced only at write
+  // time does nothing about rows already stored, which is the same lesson withoutStillReferenced
+  // encodes one file over. A row still holding another album's logo URL from before that fix would
+  // have had THAT album's live mark deleted the moment its holder was deleted.
+  //
+  // Checked against the live database on 2026-09-01: zero cross-album asset URLs exist today. This
+  // is the guard for the row that appears tomorrow, and it errs toward ORPHANING — a key we cannot
+  // prove belongs to this album is left in the bucket, costing cents, rather than deleted, which
+  // could take out somebody else's live logo (rule 19).
+  //
+  // Callers that are only READING (the storage audit) pass no id and get every key, which is what
+  // that tool needs: it is deciding what is referenced, not what to delete.
+  const belongsHere = (key: string) =>
+    ownAlbumId === undefined || key.split('/')[1] === ownAlbumId
   // typeof-checked, not just null-checked. sponsor_logos is jsonb, so a url field can be a number
   // or an object if anything ever wrote one — and r2KeyFromUrl calls startsWith on it. That throws,
   // and it throws in the middle of deleting an album or of scanning the bucket, which is the worst
@@ -53,7 +69,7 @@ export function albumAssetKeys(album: AlbumAssets): string[] {
   const add = (url: unknown) => {
     if (typeof url !== 'string') return
     const key = r2KeyFromUrl(url)
-    if (key) keys.push(key)
+    if (key && belongsHere(key)) keys.push(key)
   }
 
   add(album.background_theme?.startsWith('image:') ? album.background_theme.slice(6) : null)
@@ -306,7 +322,9 @@ export async function deleteAlbumAssetsAndRows(
 
   // The album's own design assets — background, logo, header, sponsor marks — collected once
   // rather than per page. Three of these four were never collected at all before.
-  for (const k of albumAssetKeys(album)) r2Keys.add(k)
+  // The album's OWN id — this is the deleting path, so anything that cannot be proved to belong
+  // to this album stays in the bucket.
+  for (const k of albumAssetKeys(album, album.id)) r2Keys.add(k)
 
   // Step 2a: Delete pending_stream_uploads rows for this album. These may not have a DB-level
   // CASCADE (depending on schema migration order), so we clean them up explicitly. Best-effort.
