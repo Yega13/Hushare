@@ -353,7 +353,22 @@ export default async function RootLayout({
         <link rel="preconnect" href="https://videodelivery.net" />
         <link rel="dns-prefetch" href="https://challenges.cloudflare.com" />
       </head>
-      <body className="min-h-full flex flex-col">
+      {/* translate="no" ON THE WHOLE APP — a crash fix, and the watch that decided it has fired.
+          Android Chrome auto-translates a page whose language does not match the reader's, WITHOUT
+          being asked, by rewriting text nodes and wrapping them in <font> elements. React holds
+          direct references to the nodes it created, so its next commit reaches for a child that is
+          no longer there and the tree throws "Failed to execute 'insertBefore'/'removeChild'". The
+          photo grid was marked in August and lib/report-error recorded the rest at warn with a
+          note: if it ever became frequent, the answer would be to reconsider what is marked.
+          Fifteen occurrences later — and one on 2026-09-01 that hit the CREATE page and left a
+          visitor with two abandoned empty albums where they had meant to make one — it is.
+          The cost, stated plainly: a visitor whose language we do not ship (Spanish and Japanese
+          are the two seen here) can no longer have the browser translate the interface. They get
+          English, or Russian or Armenian from our own switcher. That is the better half of the
+          trade — nobody CHOSE the translation that broke their page, Chrome did it to them, and a
+          working site you half-read beats a crashing site in your own language. Reconsider only by
+          shipping the language properly. */}
+      <body translate="no" className="min-h-full flex flex-col">
         <script dangerouslySetInnerHTML={{ __html: PRELOADER_INIT_SCRIPT }} />
         {/* type="application/ld+json" is inert data, not executable script — browsers never run
             it under script-src, so it is unaffected by CSP either way. */}
