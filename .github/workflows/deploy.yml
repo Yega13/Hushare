@@ -49,7 +49,14 @@ jobs:
       - name: Apply DB migrations (if configured)
         run: |
           if [ -n "$SUPABASE_DB_URL" ]; then
-            npm run db:migrate && npm run db:check
+            # Each guarded EXPLICITLY. These used to be `migrate && check` with the drift line
+            # after them — so a failed migration skipped the check, fell through to the drift
+            # line whose `|| echo` always succeeds, and the JOB WENT GREEN. The 2026-08-31
+            # media_type index migration failed on a real deploy exactly this way, with a red
+            # line in a collapsed log nobody opens. Code that needs a migration that silently
+            # did not apply breaks in production, so this failure must be the deploy's failure.
+            npm run db:migrate || { echo '::error::db:migrate FAILED - the code is about to deploy against a database it does not match'; exit 1; }
+            npm run db:check || { echo '::error::db:check FAILED - live schema is missing something the code requires'; exit 1; }
             # The dumper's --check mode existed and nothing ever ran it, so schema.sql could drift
             # from the live database indefinitely — which is how it came to be missing every
             # foreign key without anyone noticing. Raised from ::warning:: to ::error:: after an
