@@ -258,11 +258,18 @@ export async function resolveAlbum(
       // hide_branding above documents why this exists: a stored `true` from when the album was paid
       // kept taking effect after the payment stopped. The album logo (Pro) and the sponsor marks
       // (Max) were gated only at WRITE time and never looked at again — so one month of Pro at the
-      // intro price bought a custom logo on every album, permanently. Identical shape, same fix,
-      // and unlike require_approval nothing here is being un-hidden: a mark disappearing costs the
-      // owner a mark, not their guests' privacy.
-      logo_url: effectiveTier === 'free' ? null : album.logo_url,
-      sponsor_logos: effectiveTier === 'studio' ? album.sponsor_logos : [],
+      // intro price bought a custom logo on every album, permanently.
+      //
+      // MASKED FOR GUESTS, TRUE FOR THE OWNER, and that asymmetry is the point. The mark must stop
+      // being PUBLISHED when the plan lapses — that is the leak. But AlbumDesigner renders
+      // album.logo_url as the owner's current logo, so masking it for them too would show an empty
+      // slot on a file we still hold, and the honest reading of that is "Hushare deleted my logo".
+      // The owner keeps seeing their own asset, with the PRO/MAX badge beside it saying what makes
+      // it visible; nobody else sees a mark that is not paid for. Unlike require_approval, nothing
+      // here is being un-hidden — a mark disappearing costs the owner a mark, not their guests'
+      // privacy.
+      logo_url: (isOwner || effectiveTier !== 'free') ? album.logo_url : null,
+      sponsor_logos: (isOwner || effectiveTier === 'studio') ? album.sponsor_logos : [],
       media_caps: uploadCapsForTier(effectiveTier),
       // The ONE deliberately account-scoped feature. A collection groups albums across an
       // account, so a single-album package must not unlock it — `plan` above would say it does.

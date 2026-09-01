@@ -175,8 +175,8 @@ describe('a paid mark does not outlive the plan that paid for it', () => {
 
   it('the album logo is withheld from a free album', () => {
     expect(
-      /logo_url:.*effectiveTier === 'free' \? null/.test(read('lib/server/album-access.ts')),
-      "resolveAlbum must null logo_url when the album's effective tier is free",
+      /logo_url:.*effectiveTier !== 'free'.*: null/.test(read('lib/server/album-access.ts')),
+      "resolveAlbum must withhold logo_url when the album's effective tier is free",
     ).toBe(true)
   })
 
@@ -185,6 +185,16 @@ describe('a paid mark does not outlive the plan that paid for it', () => {
       /sponsor_logos:.*effectiveTier === 'studio'/.test(read('lib/server/album-access.ts')),
       'resolveAlbum must withhold sponsor_logos unless the album is entitled to Max',
     ).toBe(true)
+  })
+
+  it('but the OWNER always sees their own marks', () => {
+    // AlbumDesigner renders album.logo_url as the owner's current logo. Masking it for them too
+    // shows an empty slot on a file we still hold, and the honest reading of that is "Hushare
+    // deleted my logo" — so the owner keeps seeing their own asset with the plan badge beside it.
+    // The leak being closed is PUBLISHING the mark, not the owner knowing it exists.
+    const src = read('lib/server/album-access.ts')
+    expect(/logo_url: \(isOwner \|\|/.test(src), 'logo_url must pass through for the owner').toBe(true)
+    expect(/sponsor_logos: \(isOwner \|\|/.test(src), 'sponsor_logos must pass through for the owner').toBe(true)
   })
 
   it('both are masked on the ALBUM tier, so a package still unlocks them', () => {
