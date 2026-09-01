@@ -82,7 +82,10 @@ const SIZE_BUDGET: Record<string, number> = {
   // +17 (2026-09-01): the two package surfaces the money path was missing — the renewal card
   // (?renew=1, for an email opened without an owner link) and the post-payment banner
   // (?package=thanks, which Polar returns to with no owner fragment at all).
-  'src/app/[slug]/AlbumPageClient.tsx': 1706,
+  // +21 (2026-09-01): the photo lists that feed the grid are memoised. Their IDENTITY is what
+  // decides whether thousands of tiles re-render, and a bib search or a review queue was
+  // rebuilding them on every parent render.
+  'src/app/[slug]/AlbumPageClient.tsx': 1727,
   'src/app/card-editor/CardEditorClient.tsx': 873,
   // +1 (2026-08-31): pass collectionTotal to the lightbox counter.
   // +2 (2026-08-31): morphAllowed gate on open and close.
@@ -91,7 +94,11 @@ const SIZE_BUDGET: Record<string, number> = {
   // +11 (2026-09-01): viewerPhotos resolves through a Map instead of .find-in-map. It was the
   // only quadratic path on the page — ~20.8M comparisons per render during a whole-album
   // slideshow — and the comment explaining why the .filter must stay is most of the growth.
-  'src/components/PhotoGrid.tsx': 875,
+  // 819 (2026-09-01): the tile list moved to photo-grid/PhotoTileList behind React.memo, so the
+  // lightbox's own state stops re-rendering thousands of tiles. A reduction, locked in.
+  // +2 (2026-09-01): the tile list takes the three album FIELDS it reads instead of the album
+  // object, so a title or background edit no longer re-renders every tile.
+  'src/components/PhotoGrid.tsx': 821,
   'src/components/AlbumDesigner.tsx': 774,
   // +3 net (2026-08-31): deleted the duplicate ±1 prefetch loop, added strip windowing wired
   // to lib/lightbox-plan.ts.

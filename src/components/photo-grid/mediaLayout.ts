@@ -78,6 +78,10 @@ export type MasonryColumn = { items: MasonryItem[] }
 // Place each photo (in order) into the currently-shortest column, keeping its true aspect ratio.
 // Equal-width columns, variable heights — the classic balanced masonry. Returns one item list per
 // column; each item carries only its pixel height (width is the column width, set by flex).
+/** The gap between masonry tiles, in px. Used by the packer AND by the CSS that renders it —
+ *  they must agree or the columns overflow their container. */
+export const MASONRY_GAP = 8
+
 export function computeMasonryColumns(
   photos: Photo[],
   aspects: Map<string, number>,

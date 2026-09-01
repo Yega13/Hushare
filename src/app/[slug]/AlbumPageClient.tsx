@@ -62,6 +62,10 @@ type Props = {
 
 // Full album view server-renders the first window; a BIG album (> first window) loads its tail on
 // demand. Small albums (every album today) load fully in the first window — pagination never engages.
+// A single frozen empty list. An inline [] is a new array every render, which would defeat the
+// memos below the moment an album has nothing awaiting review — i.e. almost always.
+const EMPTY_PHOTOS: Photo[] = []
+
 const ALBUM_FIRST_WINDOW = 500 // must match ALBUM_PAGE_SIZE in lib/server/album-access.ts
 // Above this many new photos a delta stops being cheaper than just taking the window again, and
 // the merge has more chances to be wrong. 100 rows is roughly 85 KB against the window's 424 KB.
@@ -1479,17 +1483,34 @@ export default function AlbumPageClient({ initialAlbum = null, initialPhotos, in
   // approval is off there is no queue, and a hidden photo stays where it always was — in the grid
   // with its badge, owner-only. Distinguishing them properly needs a column of its own; until
   // there is one, the album's own setting is the honest signal for which meaning applies.
-  const pendingPhotos = effectiveIsOwner && album.require_approval ? photos.filter((p) => p.hidden) : []
-  const publishedPhotos = pendingPhotos.length > 0 ? photos.filter((p) => !p.hidden) : photos
-  const pendingIds = pendingPhotos.length > 0 ? new Set(pendingPhotos.map((p) => p.id)) : null
-  const visiblePhotos = album.bib_search_enabled && bibDigits
-    // The SERVER returns hidden rows to an owner, so a bib search re-admitted the very photos the
-    // review strip just took out of the grid — the same photo in both places, the one below
-    // reading as already published.
-    ? (bibServerAnswered
-        ? (pendingIds ? bibServerPhotos.filter((p) => !pendingIds.has(p.id)) : bibServerPhotos)
-        : publishedPhotos.filter((p) => bibMatches(p, bibQuery, bibRange)))
-    : publishedPhotos
+  // These three feed the grid's identity, so they are memoised together — see visiblePhotos below.
+  // Without it an owner with photos awaiting review rebuilt the whole list on every parent render.
+  const pendingPhotos = useMemo(
+    () => (effectiveIsOwner && album.require_approval ? photos.filter((p) => p.hidden) : EMPTY_PHOTOS),
+    [effectiveIsOwner, album.require_approval, photos])
+  const publishedPhotos = useMemo(
+    () => (pendingPhotos.length > 0 ? photos.filter((p) => !p.hidden) : photos),
+    [pendingPhotos, photos])
+  const pendingIds = useMemo(
+    () => (pendingPhotos.length > 0 ? new Set(pendingPhotos.map((p) => p.id)) : null),
+    [pendingPhotos])
+  // MEMOISED because this array's IDENTITY is what decides whether the grid re-renders.
+  //
+  // In the plain case it is `photos` itself and identity holds for free. But with a bib search
+  // running, or for an owner whose review queue is non-empty, the .filter() built a fresh array on
+  // every parent render — which invalidates both the masonry pack and the tile list's memo, on
+  // exactly the two albums where that costs most (a race album mid-search, an event album mid-upload).
+  const visiblePhotos = useMemo(() => (
+    album.bib_search_enabled && bibDigits
+      // The SERVER returns hidden rows to an owner, so a bib search re-admitted the very photos the
+      // review strip just took out of the grid — the same photo in both places, the one below
+      // reading as already published.
+      ? (bibServerAnswered
+          ? (pendingIds ? bibServerPhotos.filter((p) => !pendingIds.has(p.id)) : bibServerPhotos)
+          : publishedPhotos.filter((p) => bibMatches(p, bibQuery, bibRange)))
+      : publishedPhotos
+  ), [album.bib_search_enabled, bibDigits, bibServerAnswered, bibServerPhotos, pendingIds,
+      publishedPhotos, bibQuery, bibRange])
   // `total` counts hidden rows for an owner (the server does not filter them from the count), and
   // since pending photos left the grid it no longer describes what is on screen: the lightbox
   // read "1 / 10" over seven photos and wrapped at seven.

@@ -5,7 +5,7 @@ import { morphPhoto, morphPhotoClosed, supportsViewTransitions } from '@/compone
 import { morphAllowed } from '@/lib/lightbox-plan'
 import { resolveGridColumns } from '@/lib/grid-columns'
 import type { Album, Photo } from '@/types'
-import { DEFAULT_SLIDESHOW_INTERVAL_MS, cssMediaDisplayFilter } from '@/lib/media-display'
+import { DEFAULT_SLIDESHOW_INTERVAL_MS } from '@/lib/media-display'
 import { MEDIA_AUTHOR_MAX, MEDIA_CAPTION_MAX, SUPPRESS_CLICK_AFTER_REORDER_MS, BTT_UPDATE_EVENT } from '@/lib/constants'
 import { showAppToast } from '@/components/AppToast'
 import { savePhotoHiddenRequest } from '@/components/owner-toolbar/api'
@@ -23,16 +23,15 @@ import { downloadPhoto } from '@/components/photo-grid/downloadPhoto'
 import { useLightboxMedia } from '@/components/photo-grid/useLightboxMedia'
 import { useSlideshow } from '@/components/photo-grid/useSlideshow'
 import { useSwipeNavigation } from '@/components/photo-grid/useSwipeNavigation'
-import PhotoTile, { type TileHandlers } from '@/components/photo-grid/PhotoTile'
-import { useMediaAspects, computeMasonryColumns } from '@/components/photo-grid/mediaLayout'
+import { type TileHandlers } from '@/components/photo-grid/PhotoTile'
+import { useMediaAspects, computeMasonryColumns, MASONRY_GAP } from '@/components/photo-grid/mediaLayout'
+import PhotoTileList from '@/components/photo-grid/PhotoTileList'
 import { X, Play, Move } from 'lucide-react'
 import { createPortal } from 'react-dom'
 import SignInPrompt from '@/components/SignInPrompt'
 import { createClient } from '@/lib/supabase/client'
-import { photoStyleTile } from '@/lib/album-design'
 import { resolveSlideshowMotion, slideshowMotionVars, slideshowMotionIsStill } from '@/lib/slideshow-motion'
 
-const MASONRY_GAP = 8
 
 type Props = {
   // Total photos in the album, before any filtering. Only used to decide how many masonry columns
@@ -590,90 +589,37 @@ export default function PhotoGrid({ album, photos, albumPhotoCount, isOwner, slu
           </button>
         </div>
       )}
-      {(() => {
-        // Reduce every collection (Sets, the currently-dragged/flipped/edited photo id) down to
-        // per-tile PRIMITIVES before handing props to PhotoTile. This is what lets React.memo's
-        // shallow prop comparison actually skip re-rendering the other ~2000 tiles when only one
-        // photo's selection/drag/flip/settings-preview state changes — see the note in
-        // PhotoTile.tsx. isReorderMode/isDragging only flip at drag start/end (rare); isDropTarget
-        // is the one that changes on every pointer move, and now only affects the 1-2 tiles it's
-        // actually true for instead of forcing every tile to re-render.
-        const isReorderMode = arrangeMode || reorderDraggingId != null
-        // Album "photo style": a named style overrides every tile's radius and adds a white matte
-        // when "framed"; the default style keeps the album's own per-tile radius.
-        const ps = album.photo_style
-        const psActive = ps === 'edge' || ps === 'rounded' || ps === 'framed'
-        const psFramed = ps === 'framed'
-        const psRadius = photoStyleTile(ps, 0).radius
-        const renderTile = (photo: Photo, index: number, boxW?: number, boxH?: number) => (
-          <PhotoTile
-            key={photo.id}
-            photo={photo}
-            index={index}
-            mediaRadius={psActive ? psRadius : previewRadiusFor(photo)}
-            framed={psFramed}
-            filter={cssMediaDisplayFilter(previewFilterFor(photo))}
-            arrangeMode={arrangeMode}
-            isReorderMode={isReorderMode}
-            isDragging={reorderDraggingId === photo.id}
-            isDropTarget={reorderDraggingId != null && reorderTargetId === photo.id && reorderDraggingId !== photo.id}
-            isFlipped={flippedPhotoId === photo.id}
-            isBroken={broken.has(photo.id)}
-            isPosterBroken={posterBroken.has(photo.id)}
-            isOwner={isOwner}
-            isHeaderPhoto={coverPhotoId === photo.id}
-            selectMode={selectMode}
-            isSelected={selectedIds.has(photo.id)}
-            handlers={tileHandlersRef}
-            boxW={boxW}
-            boxH={boxH}
-            eager={index < eagerFirstRowCount}
-          />
-        )
-
-        // translate="no" on both grids below is a fix for a CRASH, not a preference.
-        //
-        // Android Chrome auto-translates a page whose language does not match the reader's, and it
-        // does so by REPLACING text nodes in place. React holds direct references to the nodes it
-        // created, so the next commit reaches for a node that is no longer where it believes it is
-        // and the whole tree throws: "Failed to execute 'insertBefore' on 'Node'". The album is
-        // replaced by "Something went wrong" — a working album killed by a browser feature.
-        //
-        // Reported from Android 10 on 2026-08-20 and AGAIN on 2026-08-21, after the one-shot
-        // recovery reload shipped. That recurrence is what turned this from a suspicion into the
-        // fix; it was deliberately not done first, because the stack proves the DOM was
-        // inconsistent, not what made it so.
-        //
-        // Scoped to the grid rather than the document on purpose: the site's own UI stays
-        // translatable, and the only text sealed off is what should never be translated anyway —
-        // the captions and names guests type. Rewriting a person's name into another language is a
-        // bug in its own right.
-        if (masonry) {
-          return (
-            <div ref={gridRef} translate="no" className="hush-masonry" style={{ gap: MASONRY_GAP }}>
-              {masonryColumns.map((col, ci) => (
-                <div key={ci} className="hush-masonry-col" style={{ gap: MASONRY_GAP }}>
-                  {col.items.map((item) => renderTile(item.photo, item.index, undefined, item.height))}
-                </div>
-              ))}
-            </div>
-          )
-        }
-
-        return (
-          <div
-            ref={gridRef}
-            translate="no"
-            className="hush-photo-grid grid gap-3 xl:gap-4"
-            style={{
-              '--hush-grid-cols': gridColumns.mobile,
-              '--hush-grid-cols-desktop': gridColumns.desktop,
-            } as React.CSSProperties}
-          >
-            {photos.map((photo, index) => renderTile(photo, index))}
-          </div>
-        )
-      })()}
+      {/* The tiles live behind React.memo (PhotoTileList). Every value they depend on is passed
+          explicitly, so the lightbox's own state — index, zoom, swipe, which originals loaded —
+          can change as fast as a finger moves without re-rendering thousands of tiles behind it.
+          That, not the tiles themselves, is what made the biggest album's lightbox take seconds. */}
+      <PhotoTileList
+        gridRef={gridRef}
+        photos={photos}
+        masonry={masonry}
+        masonryColumns={masonryColumns}
+        gridColumnsMobile={gridColumns.mobile}
+        gridColumnsDesktop={gridColumns.desktop}
+        eagerFirstRowCount={eagerFirstRowCount}
+        mediaRadius={album.media_radius}
+        mediaFilter={album.media_filter}
+        photoStyle={album.photo_style ?? null}
+        forceGlobalRadius={forceGlobalRadius}
+        settingsPhotoId={settingsPhoto?.id ?? null}
+        settingsRadius={settingsRadius}
+        settingsFilter={settingsFilter}
+        arrangeMode={arrangeMode === true}
+        reorderDraggingId={reorderDraggingId}
+        reorderTargetId={reorderTargetId}
+        flippedPhotoId={flippedPhotoId}
+        broken={broken}
+        posterBroken={posterBroken}
+        isOwner={isOwner}
+        coverPhotoId={coverPhotoId ?? null}
+        selectMode={selectMode}
+        selectedIds={selectedIds}
+        handlers={tileHandlersRef}
+      />
 
       {current && (
         <LightboxOverlay

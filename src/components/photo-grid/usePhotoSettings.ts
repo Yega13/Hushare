@@ -56,6 +56,38 @@ function filterFor(
   return (photo.display_filter ?? album.media_filter) as MediaDisplayFilter
 }
 
+/**
+ * The radius a tile SHOWS — the album's, the photo's own override, or the live value of the
+ * slider while this photo's settings modal is open.
+ *
+ * Pure and exported because two callers need it: this hook (which owns the modal) and the
+ * memoised tile list (which must not take a closure from the hook, or React.memo can never
+ * bail and every lightbox keystroke re-renders the whole album).
+ */
+export function previewRadius(
+  photo: Photo,
+  album: Pick<Album, 'media_radius'>,
+  forceGlobalRadius: boolean,
+  settingsPhotoId: string | null,
+  settingsRadius: number,
+): number {
+  if (settingsPhotoId === photo.id) return settingsRadius
+  return radiusFor(photo, album, forceGlobalRadius)
+}
+
+/** The filter a tile SHOWS, including the unsaved choice in an open settings modal. */
+export function previewFilter(
+  photo: Photo,
+  album: Pick<Album, 'media_filter'>,
+  settingsPhotoId: string | null,
+  settingsFilter: string,
+): MediaDisplayFilter {
+  if (settingsPhotoId === photo.id) {
+    return (settingsFilter === 'global' ? album.media_filter : settingsFilter) as MediaDisplayFilter
+  }
+  return filterFor(photo, album)
+}
+
 export function usePhotoSettings({
   album,
   slug,
@@ -91,15 +123,11 @@ export function usePhotoSettings({
   }
 
   function previewRadiusFor(photo: Photo): number {
-    if (settingsPhoto?.id === photo.id) return settingsRadius
-    return radiusFor(photo, album, forceGlobalRadius)
+    return previewRadius(photo, album, forceGlobalRadius, settingsPhoto?.id ?? null, settingsRadius)
   }
 
   function previewFilterFor(photo: Photo): MediaDisplayFilter {
-    if (settingsPhoto?.id === photo.id) {
-      return (settingsFilter === 'global' ? album.media_filter : settingsFilter) as MediaDisplayFilter
-    }
-    return filterFor(photo, album)
+    return previewFilter(photo, album, settingsPhoto?.id ?? null, settingsFilter)
   }
 
   function applySettingsRadius(value: number) {
