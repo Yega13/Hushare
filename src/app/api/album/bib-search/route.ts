@@ -60,7 +60,7 @@ export async function POST(req: Request) {
   // directions freezes the setting onto the album of anyone who is not on the plan any more, which
   // costs them the ability to undo a choice rather than costing them a feature.
   if (enabled) {
-    const refusal = await refuseBelowTier(access.album.user_id, 'studio', 'Bib number search')
+    const refusal = await refuseBelowTier(access.album, 'studio', 'Bib number search')
     if (refusal) return refusal
   }
 

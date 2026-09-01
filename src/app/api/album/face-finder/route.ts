@@ -63,7 +63,7 @@ export async function POST(req: Request) {
   // "is this ALBUM on the plan", handles the guest-album (no account) case, and names the plan in
   // the error so the owner knows what to buy.
   if (enabled) {
-    const refusal = await refuseBelowTier(access.album.user_id, 'studio', 'Face Finder')
+    const refusal = await refuseBelowTier(access.album, 'studio', 'Face Finder')
     if (refusal) return refusal
   }
 

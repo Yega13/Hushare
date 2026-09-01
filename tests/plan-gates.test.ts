@@ -27,27 +27,27 @@ function source(rel: string): string {
 const ENFORCEMENT: Record<PaidFeature, { file: string; expect: (src: string, tier: string) => boolean; how: string }> = {
   bibSearch: {
     file: 'app/api/album/bib-search/route.ts', how: 'refuseBelowTier',
-    expect: (s, t) => s.includes(`refuseBelowTier(access.album.user_id, '${t}'`),
+    expect: (s, t) => s.includes(`refuseBelowTier(access.album, '${t}'`),
   },
   faceFinder: {
     file: 'app/api/album/face-finder/route.ts', how: 'refuseBelowTier',
-    expect: (s, t) => s.includes(`refuseBelowTier(access.album.user_id, '${t}'`),
+    expect: (s, t) => s.includes(`refuseBelowTier(access.album, '${t}'`),
   },
   sponsorLogos: {
     file: 'app/api/album/sponsors/route.ts', how: 'refuseBelowTier',
-    expect: (s, t) => s.includes(`refuseBelowTier(access.album.user_id, '${t}'`),
+    expect: (s, t) => s.includes(`refuseBelowTier(access.album, '${t}'`),
   },
   albumLogo: {
     file: 'app/api/album/logo/route.ts', how: 'refuseBelowTier',
-    expect: (s, t) => s.includes(`refuseBelowTier(access.album.user_id, '${t}'`),
+    expect: (s, t) => s.includes(`refuseBelowTier(access.album, '${t}'`),
   },
   photoModeration: {
     file: 'app/api/album/media-settings/route.ts', how: 'refuseBelowTier',
-    expect: (s, t) => s.includes(`refuseBelowTier(access.album.user_id, '${t}'`),
+    expect: (s, t) => s.includes(`refuseBelowTier(access.album, '${t}'`),
   },
   countdownReveal: {
     file: 'app/api/album/reveal/route.ts', how: 'refuseBelowTier',
-    expect: (s, t) => s.includes(`refuseBelowTier(access.album.user_id, '${t}'`),
+    expect: (s, t) => s.includes(`refuseBelowTier(access.album, '${t}'`),
   },
   // These two reject the free tier directly instead of naming the tier they need. Equivalent to
   // requiring 'pro', and asserted as such so a move to Max-only cannot pass unnoticed.

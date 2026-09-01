@@ -146,7 +146,7 @@ const UNTESTED_LEGACY = new Set([
   'access', 'album-backgrounds', 'analytics', 'auth',
   'broadcast', 'cf-analytics', 'constants', 'country-names', 'email', 'engagement', 'exif',
   'heic-worker', 'my-albums', 'polls', 'provision-user',
-  'rekognition', 'report-server-error', 'require-tier', 'slideshow-motion', 'useIsNarrow', 'utils',
+  'rekognition', 'report-server-error', 'slideshow-motion', 'useIsNarrow', 'utils',
 ])
 
 describe('a new decision module arrives with its tests', () => {

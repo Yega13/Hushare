@@ -73,7 +73,7 @@ export async function POST(req: Request) {
   // album for good. api/album/branding and api/album/media-settings already got this right and say
   // why: a lapsed or absent subscription should cost someone a feature, never the ability to undo it.
   if (value !== null) {
-    const refusal = await refuseBelowTier(access.album.user_id, 'pro', 'A custom album logo')
+    const refusal = await refuseBelowTier(access.album, 'pro', 'A custom album logo')
     if (refusal) return refusal
   }
 

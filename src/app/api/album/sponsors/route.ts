@@ -92,7 +92,7 @@ export async function POST(req: Request) {
   const currentKeys = new Set(current.map((sponsor) => `${String(sponsor?.id)}|${String(sponsor?.url)}`))
   const addsSomething = next.some((sponsor) => !currentKeys.has(`${sponsor.id}|${sponsor.url}`))
   if (addsSomething) {
-    const refusal = await refuseBelowTier(access.album.user_id, 'studio', 'Sponsor logos')
+    const refusal = await refuseBelowTier(access.album, 'studio', 'Sponsor logos')
     if (refusal) return refusal
   }
 

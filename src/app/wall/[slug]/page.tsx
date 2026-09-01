@@ -36,7 +36,7 @@ export default async function WallPage({ params }: Props) {
     const admin = createAdminClient()
     const { data: owner } = await admin
       .from('albums').select('user_id').eq('id', resolved.album.id).maybeSingle()
-    if (!(await albumHasTier((owner?.user_id as string | null) ?? null, 'studio'))) {
+    if (!(await albumHasTier({ id: resolved.album.id, user_id: (owner?.user_id as string | null) ?? null }, 'studio'))) {
       return (
         <main style={{ minHeight: '100dvh', display: 'grid', placeItems: 'center', background: '#160A12', color: '#F3E0BC', textAlign: 'center', padding: 24, fontFamily: 'var(--font-serif)' }}>
           <div>

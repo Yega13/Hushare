@@ -141,7 +141,7 @@ export async function POST(req: Request) {
   // Only turning it ON is checked. Turning it off must always work: a lapsed subscription must never
   // leave an album holding photos for approval that its owner can no longer reach.
   if (updates.require_approval === true) {
-    const refusal = await refuseBelowTier(access.album.user_id, 'pro', 'Photo moderation')
+    const refusal = await refuseBelowTier(access.album, 'pro', 'Photo moderation')
     if (refusal) return refusal
   }
 

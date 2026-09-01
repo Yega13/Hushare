@@ -55,7 +55,7 @@ export async function POST(req: Request) {
   // Worst case here was not cosmetic: an album with a future reveal date stays SEALED, so freezing
   // the setting would have left its owner locked out of their own album until the countdown ran out.
   if (revealAt !== null) {
-    const refusal = await refuseBelowTier(access.album.user_id, 'pro', 'The countdown reveal')
+    const refusal = await refuseBelowTier(access.album, 'pro', 'The countdown reveal')
     if (refusal) return refusal
   }
 
