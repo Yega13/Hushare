@@ -17,6 +17,7 @@ import {
 import type { DictKey } from '@/i18n/dictionaries/en'
 import type { PlanKey } from '@/lib/polar'
 import { PLAN_CATALOGUE, formatPrice, monthsSaved } from '@/lib/plan-catalogue'
+import { PACKAGE_CATALOGUE, RENEWAL_CATALOGUE } from '@/lib/package-catalogue'
 
 export const runtime = 'nodejs'
 
@@ -663,6 +664,58 @@ export default async function PricingPage() {
         >
           {dict['pricing.disclaimer']}
         </p>
+      </section>
+
+      {/* ── One-off packages: buy a single album outright, no subscription ──
+          Every number is interpolated from package-catalogue, the same file checkout charges
+          from — this page cannot advertise a price or an allowance the webhook will not honour.
+          The CTA goes to the account page rather than a checkout: a package is bought FOR an
+          album, from that album's own settings, so the page points at where the albums are. */}
+      <section className="hush-container pb-16" id="packages">
+        <div className="text-center mb-8">
+          <h2 style={{ ...SERIF, ...INK, fontSize: 'clamp(1.5rem, 3vw, 2.1rem)', fontWeight: 700 }}>
+            {tt('pricing.pkg.title')}
+          </h2>
+          <p className="mt-2 text-sm sm:text-base mx-auto" style={{ color: '#6B5A4E', maxWidth: '520px' }}>
+            {tt('pricing.pkg.subtitle')}
+          </p>
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 md:gap-5 items-stretch mx-auto" style={{ maxWidth: '720px' }}>
+          {([
+            { key: 'package_pro', spec: PACKAGE_CATALOGUE.package_pro, renewal: RENEWAL_CATALOGUE.renewal_pro, nameKey: 'pricing.pkg.proName', featKey: 'pricing.pkg.proFeatures' },
+            { key: 'package_max', spec: PACKAGE_CATALOGUE.package_max, renewal: RENEWAL_CATALOGUE.renewal_max, nameKey: 'pricing.pkg.maxName', featKey: 'pricing.pkg.maxFeatures' },
+          ] as const).map((p) => (
+            <article
+              key={p.key}
+              className="hush-hover-lift relative rounded-3xl flex flex-col p-7"
+              style={{ background: '#FFFFFF', color: '#630826', border: '1px solid #DDD5C5' }}
+            >
+              <h3 style={{ ...SERIF, fontSize: '1.35rem', fontWeight: 700 }}>{tt(p.nameKey)}</h3>
+              <div className="flex items-baseline gap-2 mt-3 mb-4">
+                <span style={{ ...SERIF, fontSize: '2.6rem', fontWeight: 700, lineHeight: 1 }}>
+                  {formatPrice(p.spec.amountCents)}
+                </span>
+                <span className="text-sm" style={{ color: '#8B6F4E' }}>{tt('pricing.pkg.once')}</span>
+              </div>
+              <ul className="space-y-2 text-sm flex-1" style={{ color: '#5C4A3C' }}>
+                <li>{interpolate(dict['pricing.pkg.items'], { items: p.spec.items.toLocaleString('en-US') })}</li>
+                <li>{tt(p.featKey)}</li>
+                <li>{interpolate(dict['pricing.pkg.years'], { years: String(p.spec.years), renewal: formatPrice(p.renewal.amountCents) })}</li>
+                <li>{tt('pricing.pkg.noSub')}</li>
+              </ul>
+              <Link
+                href="/account"
+                className="hush-press mt-6 inline-block rounded-xl py-3 text-center text-sm font-semibold"
+                style={{ background: '#630826', color: '#FDFAF5' }}
+              >
+                {tt('pricing.pkg.cta')}
+              </Link>
+              <p className="mt-2 text-center text-xs" style={{ color: '#8B6F4E' }}>
+                {tt('pricing.pkg.ctaSub')}
+              </p>
+            </article>
+          ))}
+        </div>
       </section>
 
       {/* Why pay section */}
