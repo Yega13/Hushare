@@ -414,8 +414,13 @@ export const en = {
   'ot.packageSub': 'Buy this album outright — one payment, two years included, no subscription.',
   'ot.packageProName': 'Pro Package',
   'ot.packageMaxName': 'Max Package',
-  'ot.packageProLine': '{items} photos & videos · every Pro feature · {years} years included',
-  'ot.packageMaxLine': '{items} photos & videos · every Max feature · {years} years included',
+  // "on this album", not "every Pro/Max feature". A package is an ALBUM entitlement, and some
+  // paid features are account-scoped — Collections is gated on the owner's own tier and is
+  // deliberately not granted by a package (tests/plan-gates.test.ts holds that). The bare claim was
+  // made on the screen where the $99 is actually paid, while the pricing page enumerated the real
+  // list. Overclaiming at the point of purchase is the one place it costs trust.
+  'ot.packageProLine': '{items} photos & videos · Pro features on this album · {years} years included',
+  'ot.packageMaxLine': '{items} photos & videos · Max features on this album · {years} years included',
   'ot.packageGet': 'Get',
   'ot.packageUntil': 'Active until',
   'ot.packageRenew': 'Renew —',

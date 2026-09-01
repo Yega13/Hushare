@@ -30,6 +30,23 @@ export const PLAN_CATALOGUE: Record<PlanKey, PlanPrice> = {
   studio_yearly:  { amountCents: 10000, interval: 'year',  envVar: 'POLAR_PRODUCT_STUDIO_YEARLY',  label: 'Max yearly ($100/yr)' },
 }
 
+/**
+ * The FIRST-MONTH intro price on each monthly plan.
+ *
+ * These had no home in code at all. They existed in exactly two places — eighteen sentences of
+ * marketing copy across three languages, and a discount object in Polar's dashboard — with nothing
+ * holding the two together. That pairing has already failed once in production: the Pro discount
+ * env var held the MAX discount id, Polar refused it, and three customers were charged full price
+ * while every page still advertised $1.99. Copy that promises a price nothing in the system knows
+ * is a promise we cannot keep.
+ *
+ * Keyed by the tier the customer sees, so pro_monthly and studio_monthly find their own intro.
+ */
+export const INTRO_FIRST_MONTH_CENTS: Record<'pro' | 'studio', number> = {
+  pro: 199,
+  studio: 699,
+}
+
 /** Cents to the string a customer reads. Trailing ".00" is dropped because every current price
  *  is whole dollars and "$4" is what the pricing page says; a future $4.50 renders in full. */
 export function formatPrice(amountCents: number): string {

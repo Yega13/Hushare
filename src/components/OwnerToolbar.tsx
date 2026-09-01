@@ -348,9 +348,22 @@ export default function OwnerToolbar({ album, photos, albumPhotoCount, ownerToke
   useEffect(() => {
     if (!showSettings) {
       // Cancel any pending debounced save so closing the panel doesn't persist uncommitted changes.
+      //
+      // AND CLEAR THE PENDING FLAG WITH IT. mediaEditPendingRef is set when an edit is scheduled and
+      // cleared only in saveMediaSettings' finally — so cancelling the timer here meant the save
+      // never ran, the finally never ran, and the flag stayed true for the rest of the page session.
+      // Every later close then hit the `if (mediaEditPendingRef.current) return` below and skipped
+      // the resync entirely, which is what the resync exists to prevent: the laptop keeps showing a
+      // stale phone-grid value, and the owner's next edit of ANY setting writes that stale value
+      // back over the phone's choice — the grid "merge", reached through the side door.
+      //
+      // Reproduced by: open Settings, drag corner roundness, tap outside within the debounce window.
       if (debouncedSaveRef.current !== null) {
         window.clearTimeout(debouncedSaveRef.current)
         debouncedSaveRef.current = null
+        // The cancelled save is the only thing that would have cleared this. Nothing is in flight
+        // now, so nothing is pending.
+        mediaEditPendingRef.current = false
       }
       setCustomUrlInput(album.custom_slug ?? '')
       setCustomUrlError('')

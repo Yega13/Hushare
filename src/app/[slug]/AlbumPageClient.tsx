@@ -10,7 +10,7 @@ import { shouldHoldForOwnerCheck } from '@/lib/owner-view'
 import { applyPhotoWindow, mergePreservingExtras, shouldApplyRefresh } from '@/lib/photo-window'
 import { createSettingsSync, shouldCommitSettings } from '@/lib/settings-sync'
 import { fallbackPollDelay } from '@/lib/realtime-fallback'
-import { albumChanged, deltaRowsNeeded, type AlbumFreshness } from '@/lib/album-freshness'
+import { albumChanged, deltaRowsNeeded, forcedRefreshAllowed, type AlbumFreshness } from '@/lib/album-freshness'
 import type { Album, Photo, Tier } from '@/types'
 import AlbumSkeleton from '@/components/AlbumSkeleton'
 import PasswordGate from '@/components/PasswordGate'
@@ -930,6 +930,9 @@ export default function AlbumPageClient({ initialAlbum = null, initialPhotos, in
     let retryCount = 0
     let retryTimer: ReturnType<typeof setTimeout> | null = null
     let refetchTimer: ReturnType<typeof setTimeout> | null = null
+    // Session-scoped stamp for the forced-refresh bound above. Per effect, so a reconnect does not
+    // hand an attacker a fresh allowance on every socket flap.
+    let lastForcedRefreshAt: number | null = null
     let currentChannel: RealtimeChannel | null = null
     // Fallback poll — runs ONLY while the channel is down. The backoff below handles drops;
     // this handles REFUSAL (venue networks that block websockets, or the realtime service at
@@ -981,7 +984,13 @@ export default function AlbumPageClient({ initialAlbum = null, initialPhotos, in
             // force: a broadcast means something DID change, and a reorder changes neither of the
             // two fields the probe compares. Skipping on "counts look the same" left every other
             // viewer on the old order until the next upload.
-            void refreshIfChanged(albumId, r => { if (active) applyWindowRefresh(r) }, { force: true })
+            //
+            // RATE-LIMITED, because anyone holding the album link can publish this broadcast with
+            // the public anon key, and an unbounded force turns one forged message into a
+            // full-window fetch on every connected phone. See forcedRefreshAllowed.
+            const force = forcedRefreshAllowed(lastForcedRefreshAt, Date.now())
+            if (force) lastForcedRefreshAt = Date.now()
+            void refreshIfChanged(albumId, r => { if (active) applyWindowRefresh(r) }, { force })
           }, Math.round(REFETCH_DEBOUNCE_MS * (0.75 + Math.random() * 0.5)))
         })
         // DELETE and UPDATE used to arrive on postgres_changes for instant per-row feedback. They

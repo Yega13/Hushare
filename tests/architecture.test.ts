@@ -72,7 +72,12 @@ const SIZE_BUDGET: Record<string, number> = {
   // the switch was not worth the room it took in Settings. Back to where it started.
   // +3 (2026-09-01): the package section refuses to offer a second purchase while one is in
   // flight — the prop and its plumbing.
-  'src/components/OwnerToolbar.tsx': 1936,
+  // +13: clearing mediaEditPendingRef when the panel-close effect cancels a pending save, and the
+  // note explaining why. The ref was set on every scheduled edit and cleared only in the save's
+  // finally, so cancelling the timer stranded it at true for the rest of the session and every
+  // later close skipped the settings resync — which is how the phone/desktop grid "merge" came
+  // back through a side door. Comment, not code, is most of the growth.
+  'src/components/OwnerToolbar.tsx': 1949,
   // +23 (2026-08-31): fallback-poll wiring for realtime REFUSAL — the cadence decision is in
   // lib/realtime-fallback.ts; the timer must live beside the channel it covers (rule 15).
   // +17 (2026-08-31, review finding): channel-identity guard + timer hygiene in the reconnect
@@ -95,7 +100,12 @@ const SIZE_BUDGET: Record<string, number> = {
   // +5 (2026-09-01, incident): bibRange memoised for identity — a fresh {} in visiblePhotos'
   // deps re-rendered every tile during an active bib search.
   // +3 (2026-09-01): pass isOwner to UploadZone for the full-quality owner uploads.
-  'src/app/[slug]/AlbumPageClient.tsx': 1735,
+  // +8: rate-limiting the forced full-window refetch a `changed` broadcast triggers. Anyone holding
+  // an album link can publish to that channel with the public anon key, so an unbounded force turned
+  // one forged message into a ~228-424 KB fetch on every connected phone, billed to the shared
+  // database transfer allowance. The DECISION lives in lib/album-freshness (forcedRefreshAllowed,
+  // tested including the clock-jump cases); what stayed here is the call and the stamp.
+  'src/app/[slug]/AlbumPageClient.tsx': 1743,
   'src/app/card-editor/CardEditorClient.tsx': 873,
   // +1 (2026-08-31): pass collectionTotal to the lightbox counter.
   // +2 (2026-08-31): morphAllowed gate on open and close.

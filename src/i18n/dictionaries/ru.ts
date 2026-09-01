@@ -397,8 +397,10 @@ export const ru: Partial<Record<DictKey, string>> = {
   'ot.packageSub': 'Купите этот альбом навсегда — один платёж, два года включены, без подписки.',
   'ot.packageProName': 'Pro Package',
   'ot.packageMaxName': 'Max Package',
-  'ot.packageProLine': '{items} фото и видео · все функции Pro · {years} года включены',
-  'ot.packageMaxLine': '{items} фото и видео · все функции Max · {years} года включены',
+  // "в этом альбоме" replaces "все функции" — see the note in en.ts. A package grants album
+  // features; Collections is account-scoped and never comes with one.
+  'ot.packageProLine': '{items} фото и видео · функции Pro в этом альбоме · {years} года включены',
+  'ot.packageMaxLine': '{items} фото и видео · функции Max в этом альбоме · {years} года включены',
   'ot.packageGet': 'Купить',
   'ot.packageUntil': 'Действует до',
   'ot.packageRenew': 'Продлить —',

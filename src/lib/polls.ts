@@ -22,6 +22,13 @@ export const POLLS: Record<string, PollDef> = {
   },
 }
 
+// hasOwn, not `POLLS[key] ?? null`: a plain object inherits from Object.prototype, so the keys
+// 'constructor', 'toString', '__proto__' and friends all resolved to truthy inherited members and
+// sailed past the caller's `if (!poll) return 404`. GET /api/poll/constructor answered 200 with a
+// malformed body after running a real database query for a poll that does not exist, and POST threw
+// on `poll.options` being undefined — a 500 on an unauthenticated route. Neither leaked anything,
+// but "Unknown poll" is a promise the lookup has to keep for every key, not just the ones that are
+// not also property names (rule 20: say no when the answer is no).
 export function getPoll(key: string): PollDef | null {
-  return POLLS[key] ?? null
+  return Object.hasOwn(POLLS, key) ? POLLS[key] : null
 }

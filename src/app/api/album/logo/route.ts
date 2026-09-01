@@ -83,9 +83,10 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: 'Invalid logo_url value' }, { status: 403, headers: NO_STORE })
   }
 
-  // NOTE: the logo was gated to paid tiers. Gating is deliberately OFF while we get every design
-  // feature working end-to-end; revisit pricing once the feature set settles. Keeping this comment
-  // (and hasPaidAccess in lib) so re-adding the gate is a two-line change, not an archaeology dig.
+  // The logo IS gated — see the entitlement check earlier in this handler. This comment used to say
+  // the opposite ("gating is deliberately OFF"), left behind when the gate was added, and a comment
+  // that contradicts the code ten lines above it is worse than no comment: it is a confident wrong
+  // answer for the next person deciding whether a free album can set a logo.
   const admin = createAdminClient()
   const { error } = await admin.from('albums').update({ logo_url: value }).eq('id', access.album.id)
   if (error) {

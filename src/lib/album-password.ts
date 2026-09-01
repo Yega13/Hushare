@@ -25,8 +25,25 @@ export const MAX_PASSWORD_LEN = 128
 
 export async function hashPassword(password: string): Promise<string> {
   // The NEW minimum: hashing only ever happens when a password is being set.
-  if (password.length < MIN_NEW_PASSWORD_LEN || password.length > MAX_PASSWORD_LEN) {
-    throw new Error(`[album-password] password must be ${MIN_NEW_PASSWORD_LEN}–${MAX_PASSWORD_LEN} characters`)
+  return hashPasswordAtLength(password, MIN_NEW_PASSWORD_LEN)
+}
+
+/**
+ * The hashing itself, with the minimum length as a parameter.
+ *
+ * EXISTS SO THE ACCEPT FLOOR CAN BE TESTED AT ALL. Eight live albums have a 4- or 5-character
+ * password, hashed when that was the only minimum, and verifyPassword must keep opening them —
+ * raising the verify floor would turn real guests away at a real event while they type the correct
+ * password. Nothing could prove that: hashPassword refuses to create a short hash, so the test
+ * asserted verifyPassword against a FAKE hash, which returns false for every length and therefore
+ * distinguished nothing. Mutating the verify floor from 4 to 6 left the whole suite green.
+ *
+ * This reproduces exactly how those eight rows were made, so the test can verify a real one.
+ * Production code must keep calling hashPassword — the minimum is not a caller's choice.
+ */
+export async function hashPasswordAtLength(password: string, minLen: number): Promise<string> {
+  if (password.length < minLen || password.length > MAX_PASSWORD_LEN) {
+    throw new Error(`[album-password] password must be ${minLen}–${MAX_PASSWORD_LEN} characters`)
   }
   const [pepper] = passwordPeppers()
   const salt = crypto.getRandomValues(new Uint8Array(16))

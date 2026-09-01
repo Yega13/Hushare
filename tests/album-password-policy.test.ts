@@ -48,11 +48,32 @@ describe('the two minimums are deliberately different', () => {
     expect(mod.MIN_NEW_PASSWORD_LEN).toBeGreaterThanOrEqual(6)
   })
 
-  it('verification still accepts a 4-character password by length', async () => {
-    // Cannot be proven by round trip any more — hashPassword refuses to create one. What CAN be
-    // proven is that verifyPassword does not reject it on length: a wrong-password answer and a
-    // too-short answer are both `false`, so this asserts the floor the code compares against.
-    expect(mod.MIN_PASSWORD_LEN).toBeLessThanOrEqual(4)
-    expect(await mod.verifyPassword('1234', 'pbkdf2$100000$AAAA$BBBB')).toBe(false)
+  it('verification still accepts a 4-character password — proven against a REAL hash', async () => {
+    // THIS TEST USED TO PROVE NOTHING, and a mutation run caught it: it asserted
+    // `verifyPassword('1234', <fake hash>) === false`, which is false whether the floor is 4, 6, or
+    // absent, because a fake hash can never match. Changing verifyPassword to compare against
+    // MIN_NEW_PASSWORD_LEN — which locks every guest out of the eight live albums whose password is
+    // 4 or 5 characters, at their event, while they type the correct password — left the entire
+    // 835-test suite green.
+    //
+    // hashPassword refuses to MAKE a 4-character hash now, so the hash is built the way the eight
+    // live rows were built: with the accept-floor still in force. That is the only construction
+    // that reproduces an existing customer's stored password, and verifying it is the only
+    // assertion that can distinguish the two constants.
+    const legacy = await mod.hashPasswordAtLength('1234', mod.MIN_PASSWORD_LEN)
+    expect(await mod.verifyPassword('1234', legacy)).toBe(true)
+    expect(await mod.verifyPassword('12345', legacy)).toBe(false)
+  })
+
+  it('a five-character legacy password also still opens its album', async () => {
+    const legacy = await mod.hashPasswordAtLength('12345', mod.MIN_PASSWORD_LEN)
+    expect(await mod.verifyPassword('12345', legacy)).toBe(true)
+  })
+
+  it('but something below the ACCEPT floor is still refused', async () => {
+    // The floor has to mean something in the other direction too, or "accepts 4" is just "accepts
+    // anything" and the mutation above would still pass.
+    const legacy = await mod.hashPasswordAtLength('123', 1)
+    expect(await mod.verifyPassword('123', legacy)).toBe(false)
   })
 })

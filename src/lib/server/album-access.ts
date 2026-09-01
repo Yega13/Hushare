@@ -98,6 +98,14 @@ function maybeAutoSuggestHeader(admin: ReturnType<typeof createAdminClient>, alb
       .select('id, width, height')
       .eq('album_id', album.id)
       .eq('media_type', 'image')
+      // NEVER a photo awaiting the owner's approval. The OG/link-preview query carries this same
+      // clause with a comment explaining the hazard, and this one did not — one rule, two places,
+      // enforced in only one of them (rule 13). On an album with require_approval on, the first
+      // guest upload became the album's cover the next time ANYONE loaded the page. It rendered as
+      // nothing for guests (hidden rows are stripped before the header resolves), so the visible
+      // cost was a blank header band the owner could not see and had never chosen — and their
+      // header then changed by itself when they later approved or deleted that photo.
+      .eq('hidden', false)
       .order('created_at', { ascending: true })
       .limit(20)
       .returns<{ id: string; width: number | null; height: number | null }[]>()

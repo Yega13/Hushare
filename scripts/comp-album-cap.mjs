@@ -24,6 +24,7 @@
 
 import pg from 'pg'
 import { connectionString } from './db-connection.mjs'
+import { validateCap } from './comp-cap-validate.mjs'
 
 // Mirrors MAX_MEDIA_CAP_OVERRIDE in src/lib/album-entitlements.ts. Duplicated because a script
 // cannot import TypeScript; the number is asserted against the real one by
@@ -43,8 +44,11 @@ if (flag && flag !== '--cap' && flag !== '--clear') {
 let newCap = null
 if (flag === '--cap') {
   newCap = Number(value)
-  if (!Number.isInteger(newCap) || newCap <= 0 || newCap > MAX_CAP) {
-    console.error(`--cap needs a whole number between 1 and ${MAX_CAP.toLocaleString('en-US')}`)
+  // The check lives in comp-cap-validate.mjs so a test can run it. Inline here, it was unreachable
+  // from any test and a mutation deleting it entirely went unnoticed.
+  const capError = validateCap(value, MAX_CAP)
+  if (capError) {
+    console.error(capError)
     process.exit(1)
   }
 }

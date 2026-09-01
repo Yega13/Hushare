@@ -176,10 +176,15 @@ export default async function CollectionPage({ params }: Props) {
   // Bounded: a collection is a shop window, not a catalogue. Past this many albums the page would
   // be unreadable anyway, and the cost of building it stops being bounded.
   const MAX_COLLECTION_ALBUMS = 60
-  const shown = albumIds
+  const allVisible = albumIds
     .map((id) => visibleAlbums.find((a) => a.id === id))
     .filter((a): a is AlbumSummary => Boolean(a))
-    .slice(0, MAX_COLLECTION_ALBUMS)
+  const shown = allVisible.slice(0, MAX_COLLECTION_ALBUMS)
+  // The REAL number of albums in this collection, which is not the number of tiles when the cap
+  // bites. The hero printed orderedAlbums.length under the label "Albums", so a photographer with
+  // 61 albums showed their client "60 Albums" and nothing said a cap had been applied — a wrong
+  // number stated as fact on a public page (rule 20).
+  const totalAlbums = allVisible.length
 
   // Per album: two counts and one cover row. Counts come back from Postgres as counts — never by
   // fetching rows and measuring the array, which is what produced the wrong numbers.
@@ -218,18 +223,27 @@ export default async function CollectionPage({ params }: Props) {
           ? cover.stream_thumbnail_url || cover.poster_url || null
           : cover.url
         : null,
-      // A count we could not take is not a count of zero — it is unknown, and printing 0 over a
-      // full album is the kind of wrong number rule 20 is about. Falls back to null and the tile
-      // simply omits the figure.
-      media_count: totalRes.count ?? 0,
-      video_count: videoRes.count ?? 0,
+      // A count we could not take is not a count of zero — it is unknown, and printing "0 items"
+      // over a full wedding album, on the public page a photographer shows their clients, is
+      // exactly the wrong number rule 20 is about. So it falls back to NULL and the tile omits the
+      // figure entirely.
+      //
+      // This comment described that behaviour while the code said `?? 0`, which is the failure the
+      // comment warns against: `count` is null on any error, and the error was never read at all.
+      media_count: totalRes.error ? null : totalRes.count,
+      video_count: videoRes.error ? null : videoRes.count,
     }
   }))
 
   const orderedAlbums = perAlbum
 
-  const mediaTotal = orderedAlbums.reduce((sum, a) => sum + a.media_count, 0)
-  const videoTotal = orderedAlbums.reduce((sum, a) => sum + a.video_count, 0)
+  // A total built from counts that are partly unknown is not a total. If any album's count could
+  // not be read, the hero figure would silently understate the collection — so it is withheld
+  // rather than printed wrong (rule 20: "still looking" and "nothing" must not look the same).
+  const mediaTotal = orderedAlbums.some((a) => a.media_count === null)
+    ? null : orderedAlbums.reduce((sum, a) => sum + (a.media_count ?? 0), 0)
+  const videoTotal = orderedAlbums.some((a) => a.video_count === null)
+    ? null : orderedAlbums.reduce((sum, a) => sum + (a.video_count ?? 0), 0)
   const heroCover = orderedAlbums.find((a) => a.cover_url)?.cover_url
 
   return (
@@ -304,10 +318,10 @@ export default async function CollectionPage({ params }: Props) {
           </div>
           <div className="relative z-10 mt-8 grid grid-cols-3 gap-3 max-w-xl">
             {([
-              [orderedAlbums.length === 1 ? dict['c.statAlbum'] : dict['c.statAlbums'], orderedAlbums.length],
+              [totalAlbums === 1 ? dict['c.statAlbum'] : dict['c.statAlbums'], totalAlbums],
               [dict['c.statMedia'], mediaTotal],
               [videoTotal === 1 ? dict['c.statVideo'] : dict['c.statVideos'], videoTotal],
-            ] as const).map(([label, value]) => (
+            ] as const).filter(([, value]) => value !== null).map(([label, value]) => (
               <div
                 key={label}
                 className="rounded-xl px-3 py-3 text-center"
@@ -360,12 +374,16 @@ export default async function CollectionPage({ params }: Props) {
                       {dict['c.noCover']}
                     </div>
                   )}
-                  <span
-                    className="absolute right-3 top-3 rounded-full px-2 py-1 text-xs font-semibold"
-                    style={{ background: 'rgba(253,250,245,0.92)', color: '#630826' }}
-                  >
-                    {interpolate(dict[album.media_count === 1 ? 'c.itemOne' : 'c.itemMany'], { n: album.media_count })}
-                  </span>
+                  {/* Omitted entirely when the count is unknown — a missing badge says nothing,
+                      while "0 items" over a full album states something false. */}
+                  {album.media_count !== null && (
+                    <span
+                      className="absolute right-3 top-3 rounded-full px-2 py-1 text-xs font-semibold"
+                      style={{ background: 'rgba(253,250,245,0.92)', color: '#630826' }}
+                    >
+                      {interpolate(dict[album.media_count === 1 ? 'c.itemOne' : 'c.itemMany'], { n: album.media_count })}
+                    </span>
+                  )}
                 </div>
                 <div className="p-4">
                   <h2 className="font-semibold mb-2 truncate" style={{ color: '#630826' }}>
