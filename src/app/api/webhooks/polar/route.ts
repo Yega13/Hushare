@@ -2,10 +2,10 @@ import { NextResponse } from 'next/server'
 import { reportServerError } from '@/lib/report-server-error'
 import { randomUUID } from 'node:crypto'
 import { createAdminClient } from '@/lib/supabase/admin'
-import { verifyWebhookSignature, tierFromProduct, getCustomerEmail } from '@/lib/polar'
+import { verifyWebhookSignature, tierFromProduct, getCustomerEmail, getOrder } from '@/lib/polar'
 import { findOrCreateUserByEmail } from '@/lib/provision-user'
 import { track } from '@/lib/analytics'
-import { packageGrantForProduct, applyPackageGrant, orderAmountLooksPaid, revokeForRefund } from '@/lib/package-purchase'
+import { packageGrantForProduct, applyPackageGrant, orderAmountLooksPaid, refundOutcome } from '@/lib/package-purchase'
 import { PACKAGE_CATALOGUE, RENEWAL_CATALOGUE, type PackageKey, type RenewalKey } from '@/lib/package-catalogue'
 
 export const runtime = 'nodejs'
@@ -230,6 +230,28 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'apply_raced' }, { status: 500, headers: NO_STORE })
     }
 
+    // RECORD THE ORDER IN THE LEDGER, so the nightly reconcile knows this one was honoured.
+    //
+    // package_last_order_id holds ONE id, so as soon as a second order lands on this album the
+    // first stops looking applied — and the reconcile, which re-reads historical orders, would
+    // grant it again every night forever. The ledger is the set of orders already turned into
+    // entitlement; without this write the repair job cannot tell "the webhook handled it" from
+    // "the webhook was lost", and it defaults to granting.
+    //
+    // AFTER the grant, deliberately: if this insert fails, the customer still has what they paid
+    // for and the worst case is a duplicate grant the reconcile's compare-and-swap has to catch.
+    // Doing it first would risk the reverse — a recorded order that was never actually granted.
+    const { error: ledgerErr } = await admin
+      .from('package_order_grants')
+      .upsert({ order_id: order.id, album_id: album.id, source: 'webhook' },
+        { onConflict: 'order_id', ignoreDuplicates: true })
+    if (ledgerErr) {
+      console.error('[polar/webhook] ledger write failed:', ledgerErr.message)
+      reportServerError('polar-webhook', 'Package applied but NOT recorded in the order ledger', {
+        context: { orderId: order.id, albumId: album.id, detail: ledgerErr.message.slice(0, 200) },
+      })
+    }
+
     console.info(`[polar/webhook] ${grant.label} applied to album ${album.id} until ${next.package_expires_at}`)
     track({ name: grant.kind === 'package' ? 'package_purchased' : 'package_renewed', albumId: album.id, product: grant.key })
     return NextResponse.json({ ok: true, applied: grant.key }, { headers: NO_STORE })
@@ -242,8 +264,9 @@ export async function POST(req: Request) {
   // only by accident (a refund usually cancels the subscription, and isSubActive then expires it);
   // a package is a tier and a date on one row with no lifecycle behind it, so nothing took it back.
   //
-  // Only the order that GRANTED the package may revoke it — see revokeForRefund. A refund of an
-  // earlier order must never strip time a later order has since paid for.
+  // Only the order that GRANTED the package may revoke it, and only a refund of substantially the
+  // WHOLE order revokes anything — see refundOutcome. A refund of an earlier order must never strip
+  // time a later order has since paid for, and a partial refund must never strip anything at all.
   if (event.type === 'order.refunded' || event.type === 'refund.created') {
     const refund = event.data as unknown as { order_id?: string; id?: string }
     const orderId = refund?.order_id ?? refund?.id
@@ -271,16 +294,44 @@ export async function POST(req: Request) {
       // A refunded subscription order, or a package already superseded by a later purchase.
       return NextResponse.json({ ok: true, ignored: 'refund matches no package' }, { headers: NO_STORE })
     }
-    const revoked = revokeForRefund(
+    // HOW MUCH WENT BACK, asked of the ORDER rather than of this event.
+    //
+    // A refund.created payload describes ONE refund and carries no order total, so it cannot answer
+    // "is this purchase cancelled or is this a $1 goodwill credit" — and two $50 refunds against a
+    // $99 order are a full refund that neither event states alone. Only the order's cumulative
+    // refunded_amount against its total says so. An order.refunded payload IS the order and already
+    // carries both, so it is used directly and no extra call is made.
+    const eventOrder = event.data as unknown as { refunded_amount?: number; total_amount?: number; net_amount?: number }
+    const haveAmounts = typeof eventOrder?.refunded_amount === 'number'
+      && (typeof eventOrder?.total_amount === 'number' || typeof eventOrder?.net_amount === 'number')
+    const order = haveAmounts ? eventOrder : await getOrder(orderId)
+    if (!order) {
+      // Could not ask Polar. 500 so it retries rather than guessing: revoking on a failed lookup
+      // would take a paying customer's album away because a network call timed out.
+      console.error('[polar/webhook] refund: could not fetch order', orderId)
+      return NextResponse.json({ error: 'refund_order_fetch_failed' }, { status: 500, headers: NO_STORE })
+    }
+
+    const outcome = refundOutcome(
       { tier: album.package_tier, expiresAt: album.package_expires_at, lastOrderId: album.package_last_order_id },
       orderId,
+      { totalCents: order.total_amount ?? order.net_amount, refundedCents: order.refunded_amount },
     )
-    if (!revoked) {
-      return NextResponse.json({ ok: true, ignored: 'nothing to revoke' }, { headers: NO_STORE })
+    if (outcome.action === 'keep') {
+      // A partial refund against a live package is a customer conversation, not a silent skip: we
+      // chose to send money back and deliberately did NOT take the features, so somebody should
+      // know. 'unknown' is louder still — it means the amounts could not be read at all, and the
+      // safe direction was taken on purpose.
+      if (outcome.reason === 'partial' || outcome.reason === 'unknown') {
+        reportServerError('polar-webhook', `Refund on a paid package — package KEPT (${outcome.reason})`, {
+          context: { orderId, albumId: album.id, tier: album.package_tier, reason: outcome.reason },
+        })
+      }
+      return NextResponse.json({ ok: true, ignored: outcome.reason }, { headers: NO_STORE })
     }
     const { error: updErr } = await admin
       .from('albums')
-      .update(revoked)
+      .update(outcome.update)
       .eq('id', album.id)
       .eq('package_last_order_id', orderId)
     if (updErr) {

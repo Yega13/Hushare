@@ -167,10 +167,18 @@ export async function listAllSubscriptions(): Promise<PolarSubscriptionItem[]> {
   return out
 }
 
-/** One paid order as Polar reports it. Only the fields the package reconcile needs. */
+/** One paid order as Polar reports it. Only the fields the package reconcile needs.
+ *
+ *  BOTH SHAPES, for the same reason PolarSubscriptionItem accepts both: the list API nests
+ *  product as an object while webhook payloads use a flat product_id. The reconcile reads the
+ *  product to decide what was bought, so a shape it does not recognise does not fail loudly — it
+ *  finds no grant, skips the order, and reports `applied: 0`, which is indistinguishable from a
+ *  quiet night. A repair job that has silently stopped repairing is the worst possible failure for
+ *  a repair job, so it accepts either rather than betting on one. */
 export type PolarOrderItem = {
   id?: string
-  product_id?: string
+  product_id?: string | null
+  product?: { id?: string | null } | null
   status?: string
   net_amount?: number
   total_amount?: number
@@ -179,6 +187,37 @@ export type PolarOrderItem = {
   refunded_amount?: number
   created_at?: string
   metadata?: { albumId?: string; userId?: string }
+}
+
+/** Normalise either shape to the flat product id. Mirrors subProductId — one question, one answer. */
+export function orderProductId(order: PolarOrderItem): string | null {
+  return order.product_id ?? order.product?.id ?? null
+}
+
+/**
+ * One order, fetched fresh from Polar.
+ *
+ * The refund branch needs the order's CUMULATIVE refunded amount against its total, and a
+ * `refund.created` payload carries neither — it describes one refund, not the order's position.
+ * Two $50 refunds against a $99 order are a full refund that no single event states; only the
+ * order says so. Null means "could not ask", which the caller must treat as "do not act" rather
+ * than as "nothing was refunded".
+ */
+export async function getOrder(orderId: string): Promise<PolarOrderItem | null> {
+  try {
+    const res = await fetch(`${apiBase()}/v1/orders/${encodeURIComponent(orderId)}`, {
+      headers: { Authorization: `Bearer ${apiKey()}` },
+      signal: AbortSignal.timeout(8000),
+    })
+    if (!res.ok) {
+      console.error('[polar] getOrder failed:', res.status)
+      return null
+    }
+    return (await res.json()) as PolarOrderItem
+  } catch (err) {
+    console.error('[polar] getOrder threw:', err instanceof Error ? err.message : String(err))
+    return null
+  }
 }
 
 /**

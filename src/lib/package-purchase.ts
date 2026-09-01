@@ -89,26 +89,87 @@ export function orderAmountLooksPaid(
 }
 
 /**
- * The album's package after a REFUND or a chargeback: the grant is withdrawn.
+ * The album's package after a REFUND or a chargeback.
  *
- * Nothing handled this at all. order.refunded was 200-ignored along with every other non-
- * subscription event, so the sequence "buy a $99 Max Package, ask Polar for a refund, keep the
+ * Nothing handled this at all at first. order.refunded was 200-ignored along with every other
+ * non-subscription event, so the sequence "buy a $99 Max Package, ask Polar for a refund, keep the
  * album" worked, once per album, for anyone who tried it. Subscriptions were covered only by
  * accident — a refund usually cancels the subscription and isSubActive then expires it — while a
  * package is a tier and a date on one row, with no lifecycle behind it.
  *
- * ONLY the order that granted it may revoke it. The album carries package_last_order_id precisely
- * so a refund of order A cannot strip a package that order B has since paid for and extended —
- * that would be us destroying a real customer's paid album because an unrelated refund arrived.
- * When the ids do not match, this returns null and the caller leaves the album alone.
+ * The decision and BOTH of its conditions live in one function on purpose (rule 15). The first
+ * version returned a bare update object once the order ids matched, and the caller had no reason
+ * to consult an amount it was never handed — which is precisely how a $1 refund came to erase a
+ * $99 purchase. A caller cannot now revoke without the amounts, because there is no path to the
+ * update object that does not pass the amount check.
  */
-export function revokeForRefund(
+export type RefundOutcome =
+  | { action: 'revoke'; update: { package_tier: null; package_expires_at: null } }
+  | { action: 'keep'; reason: 'nothing-to-revoke' | 'other-order' | 'partial' | 'unknown' }
+
+/**
+ * A PARTIAL REFUND IS NOT A CANCELLED PURCHASE, and treating it as one destroys a real album.
+ *
+ * The first version of this read only the refunded order's ID and revoked. Any refund of any size
+ * took the whole package: a $1 goodwill credit, a tax correction or a chargeback fee against a $99
+ * Max Package dropped the album to its owner's tier — Face Finder, bib search, sponsor logos, live
+ * wall and the custom logo all off, the item cap down from 10,000, and two years of paid retention
+ * erased with package_expires_at nulled. The nightly repair then refused to help, because it skips
+ * any order with refunded_amount > 0, so the album could only be restored by editing the database
+ * by hand. A customer who paid $99 and was refunded $1 would have lost everything they bought.
+ *
+ * WHICH WAY THIS ERRS, and what each direction costs (rule 19). It revokes only when the refund is
+ * substantially the whole order, and otherwise KEEPS the package and reports. The abuse this
+ * appears to open — refund $98 of $99, keep the features — is not available to a customer: refund
+ * amounts are chosen by us at Polar, not by the buyer. The cost of erring the other way is a
+ * paying customer losing their album's features in the middle of their event. So the uncertain
+ * branch does nothing, loudly, and a human decides.
+ *
+ * SAME TOLERANCE AS orderAmountLooksPaid, deliberately: "did the money arrive" and "did the money
+ * go back" are the same question in two directions, and answering them with two different
+ * thresholds is how they come to disagree (rule 13).
+ *
+ * `totalCents`/`refundedCents` absent = Polar did not tell us. That reads as "cannot verify", never
+ * as "fully refunded" — see above for why that direction is the safe one.
+ */
+export function refundOutcome(
   current: { tier: 'pro' | 'studio' | null; expiresAt: string | null; lastOrderId: string | null },
   refundedOrderId: string,
-): { package_tier: null; package_expires_at: null } | null {
-  if (!current.tier && !current.expiresAt) return null       // nothing to take back
-  if (!current.lastOrderId || current.lastOrderId !== refundedOrderId) return null
-  return { package_tier: null, package_expires_at: null }
+  amounts: { totalCents: number | null | undefined; refundedCents: number | null | undefined },
+): RefundOutcome {
+  if (!current.tier && !current.expiresAt) return { action: 'keep', reason: 'nothing-to-revoke' }
+  // ONLY the order that granted it may revoke it. The album carries package_last_order_id precisely
+  // so a refund of order A cannot strip a package that order B has since paid for and extended.
+  if (!current.lastOrderId || current.lastOrderId !== refundedOrderId) {
+    return { action: 'keep', reason: 'other-order' }
+  }
+  if (!refundIsWhole(amounts.totalCents, amounts.refundedCents).whole) {
+    const known = typeof amounts.totalCents === 'number' && typeof amounts.refundedCents === 'number'
+    return { action: 'keep', reason: known ? 'partial' : 'unknown' }
+  }
+  return { action: 'revoke', update: { package_tier: null, package_expires_at: null } }
+}
+
+/**
+ * Has substantially the whole order been refunded?
+ *
+ * Reads the order's CUMULATIVE refunded amount, not one refund event's amount: two $50 refunds
+ * against a $99 order are a full refund that neither event states on its own.
+ *
+ * Shared with the nightly repair, which must not re-grant a wholly refunded order — and must still
+ * repair one that was only partly refunded, because the customer kept most of what they paid for.
+ */
+export function refundIsWhole(
+  totalCents: number | null | undefined,
+  refundedCents: number | null | undefined,
+): { whole: boolean } {
+  if (typeof totalCents !== 'number' || !Number.isFinite(totalCents) || totalCents <= 0) {
+    return { whole: false }
+  }
+  if (typeof refundedCents !== 'number' || !Number.isFinite(refundedCents)) {
+    return { whole: false }
+  }
+  return { whole: refundedCents + PACKAGE_PRICE_TOLERANCE_CENTS >= totalCents }
 }
 
 /**

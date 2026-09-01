@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { packageGrantForProduct, applyPackageGrant , orderAmountLooksPaid, revokeForRefund, PACKAGE_PRICE_TOLERANCE_CENTS } from '../src/lib/package-purchase'
+import { packageGrantForProduct, applyPackageGrant , orderAmountLooksPaid, refundOutcome, PACKAGE_PRICE_TOLERANCE_CENTS } from '../src/lib/package-purchase'
 import { PACKAGE_CATALOGUE, RENEWAL_CATALOGUE } from '../src/lib/package-catalogue'
 
 const NOW = new Date('2026-09-01T12:00:00Z')
@@ -112,26 +112,32 @@ describe('a refunded package is not a package', () => {
   // non-subscription event. Subscriptions were covered only by accident; a package is a tier and a
   // date on one row, with no lifecycle behind it to expire.
 
+  // Every call now carries the AMOUNTS, because a refund's size decides whether it cancels the
+  // purchase at all. A $1 goodwill credit against a $99 package used to revoke the whole thing.
+  const FULL = { totalCents: 9900, refundedCents: 9900 }
+
   it('revokes the package the refunded order paid for', () => {
-    expect(revokeForRefund(
+    expect(refundOutcome(
       { tier: 'studio', expiresAt: '2028-09-01T00:00:00Z', lastOrderId: 'order-1' },
       'order-1',
-    )).toEqual({ package_tier: null, package_expires_at: null })
+      FULL,
+    )).toEqual({ action: 'revoke', update: { package_tier: null, package_expires_at: null } })
   })
 
   it('REFUSES to revoke when a later order has since paid', () => {
     // The dangerous direction. If a refund of an old order could strip the album, we would be
     // destroying a paying customer's album because an unrelated refund arrived — and the album
     // carries package_last_order_id precisely so that cannot happen.
-    expect(revokeForRefund(
+    expect(refundOutcome(
       { tier: 'studio', expiresAt: '2028-09-01T00:00:00Z', lastOrderId: 'order-2' },
       'order-1',
-    )).toBeNull()
+      FULL,
+    )).toEqual({ action: 'keep', reason: 'other-order' })
   })
 
   it('does nothing when there is no package, and when the order is unknown', () => {
-    expect(revokeForRefund({ tier: null, expiresAt: null, lastOrderId: null }, 'order-1')).toBeNull()
-    expect(revokeForRefund({ tier: 'pro', expiresAt: '2028-01-01T00:00:00Z', lastOrderId: null }, 'order-1')).toBeNull()
+    expect(refundOutcome({ tier: null, expiresAt: null, lastOrderId: null }, 'order-1', FULL).action).toBe('keep')
+    expect(refundOutcome({ tier: 'pro', expiresAt: '2028-01-01T00:00:00Z', lastOrderId: null }, 'order-1', FULL).action).toBe('keep')
   })
 })
 
