@@ -6,6 +6,7 @@ import { checkRateLimit, clientIpKey } from '@/lib/rate-limit'
 import { getUserTier } from '@/lib/subscriptions'
 import { albumCountLimitForTier } from '@/lib/media'
 import { decideClaim, type ClaimOutcome } from '@/lib/album-claim'
+import { countAlbumsAgainstCap } from '@/lib/server/count-albums-against-cap'
 
 // Allowlist of columns that callers may request beyond the base set.
 // Never pass caller-supplied column names directly into .select() — SQL injection vector.
@@ -114,9 +115,8 @@ async function claimAlbumIfNeeded<T extends AlbumOwnerBase>(
     // anything. Enough of them and a free account holds any number of albums.
     const tier = await getUserTier(user)
     cap = albumCountLimitForTier(tier)
-    const { count, error: countErr } = await admin
-      .from('albums').select('id', { count: 'exact', head: true })
-      .eq('user_id', user.id).is('retired_at', null)
+    // Shared with album/create — packaged albums are excluded, see the helper for why.
+    const { count, error: countErr } = await countAlbumsAgainstCap(admin, user.id)
 
     if (countErr) {
       // A count we could not take is not a count of zero. Treating it as zero waves the album

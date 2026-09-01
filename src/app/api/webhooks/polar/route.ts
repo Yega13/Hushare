@@ -77,7 +77,7 @@ export async function POST(req: Request) {
     const order = event.data as unknown as {
       id?: string
       product_id?: string
-      metadata?: { albumId?: string }
+      metadata?: { albumId?: string; userId?: string }
     }
     const grant = packageGrantForProduct(order?.product_id)
     if (!grant) {
@@ -105,11 +105,12 @@ export async function POST(req: Request) {
     const admin = createAdminClient()
     const { data: album, error: albumErr } = await admin
       .from('albums')
-      .select('id, package_tier, package_expires_at, package_last_order_id')
+      .select('id, user_id, package_tier, package_expires_at, package_last_order_id')
       .eq('id', albumId)
       .is('retired_at', null)
       .maybeSingle<{
         id: string
+        user_id: string | null
         package_tier: 'pro' | 'studio' | null
         package_expires_at: string | null
         package_last_order_id: string | null
@@ -141,12 +142,20 @@ export async function POST(req: Request) {
       new Date(),
     )
 
+    // PAYMENT CLAIMS THE ALBUM. Checkout requires a signed-in buyer, so if the album is still
+    // anonymous the buyer in the metadata becomes its owner — the album cap deliberately does not
+    // apply here (packaged albums are excluded from it), so nothing can strand a paid album off
+    // its buyer's account. An album that already HAS an owner is never re-owned: a package is a
+    // gift anyone holding the owner link may add, not a way to take the album.
+    const buyerId = order.metadata?.userId
+    const claim = !album.user_id && buyerId && UUID_RE.test(buyerId) ? { user_id: buyerId } : {}
+
     // The order-id predicate repeats in the WHERE so two concurrent deliveries of the same event
     // cannot both apply: the loser matches zero rows, and zero rows is success here — the winner
     // already did the work.
     const { error: updErr } = await admin
       .from('albums')
-      .update({ ...next, package_last_order_id: order.id })
+      .update({ ...next, ...claim, package_last_order_id: order.id })
       .eq('id', album.id)
       .or(`package_last_order_id.is.null,package_last_order_id.neq.${order.id}`)
 

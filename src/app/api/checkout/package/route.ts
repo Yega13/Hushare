@@ -15,12 +15,19 @@ const NO_STORE = { 'Cache-Control': 'no-store' }
 
 // BUY A PACKAGE FOR ONE ALBUM.
 //
-// A package belongs to an ALBUM, not an account — so the proof required here is proof about the
-// album: the owner cookie, the same one every album mutation demands. An account is NOT required.
-// Deliberately: the buyer most likely to want a $49 one-off is an event organiser who made the
-// album five minutes ago without signing up, and sending them through account creation to hand us
-// money is how a sale dies. Polar collects their email at checkout for the receipt and the
-// renewal reminders either way.
+// Two proofs, both required:
+//
+//   the OWNER COOKIE — proof about the album, the same one every album mutation demands
+//   a SIGNED-IN ACCOUNT — the owner's explicit call, overriding an earlier no-account design:
+//   "losing it is going to affect us detrimentally and finding it later is going to be hard
+//   among 100s of albums." A $99 album reachable only through a link in somebody's browser is a
+//   support case waiting to happen, and the renewal emails two years out need somewhere to land.
+//
+// Requiring the account has two consequences handled elsewhere, deliberately:
+//   - payment CLAIMS the album: the webhook stamps the buyer's user_id if it is still unowned,
+//     so a paid album can never sit anonymous (money is the strongest proof of intent we get);
+//   - packaged albums do not count against the account's album cap (they are paid for
+//     individually), so the free 3-album cap can never strand the album someone just bought.
 //
 // The albumId rides in the checkout metadata and comes back on the order.paid webhook, which is
 // where the entitlement is actually written. This route writes NOTHING — money changes state via
@@ -66,9 +73,16 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: access.error }, { status: access.status, headers: NO_STORE })
   }
 
-  // If they happen to be signed in, prefill the email so the receipt lands somewhere they read.
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
+  if (!user || !user.email) {
+    // JSON with a code, not a redirect: the buy button is a fetch, and the UI turns this into its
+    // own sign-in prompt without losing the album the person was standing on.
+    return NextResponse.json(
+      { error: 'Sign in to buy a package — it keeps the album on your account.', code: 'sign_in_required' },
+      { status: 401, headers: NO_STORE },
+    )
+  }
 
   const site = process.env.NEXT_PUBLIC_SITE_URL ?? 'https://hushare.space'
   let checkout
@@ -76,14 +90,14 @@ export async function POST(req: Request) {
     checkout = await createCheckout({
       productId,
       successUrl: `${site}/${slug}?package=thanks`,
-      customerEmail: user?.email,
-      metadata: { albumId: access.album.id, item: String(item) },
+      customerEmail: user.email,
+      metadata: { albumId: access.album.id, item: String(item), userId: user.id },
     })
   } catch (e) {
     console.error('[checkout/package] createCheckout failed:', e instanceof Error ? e.message : String(e))
     return NextResponse.json({ error: 'Could not start checkout. Please try again.' }, { status: 502, headers: NO_STORE })
   }
 
-  track({ name: 'checkout_started', userId: user?.id ?? null, tier: spec === RENEWAL_CATALOGUE.renewal_max || spec === PACKAGE_CATALOGUE.package_max ? 'studio' : 'pro', cycle: 'package' })
+  track({ name: 'checkout_started', userId: user.id, tier: spec === RENEWAL_CATALOGUE.renewal_max || spec === PACKAGE_CATALOGUE.package_max ? 'studio' : 'pro', cycle: 'package' })
   return NextResponse.json({ url: checkout.url }, { headers: NO_STORE })
 }

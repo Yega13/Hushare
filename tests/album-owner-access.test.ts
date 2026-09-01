@@ -34,7 +34,14 @@ vi.mock('@/lib/supabase/admin', () => ({
       select: (_cols: string, opts?: { count?: string }) => {
         if (opts?.count) {
           // The claim-cap count: select('id', {count}).eq('user_id', ...).is('retired_at', null)
-          return { eq: () => ({ is: async () => (cfg.countError ? { count: null, error: { message: 'boom' } } : { count: cfg.ownedCount, error: null }) }) }
+          // The cap count chains .is() twice now (retired_at, then package_tier — packaged
+          // albums do not occupy a subscription slot). A thenable that also returns itself from
+          // .is() tracks the real chain instead of hardcoding its length.
+          const result = () => (cfg.countError ? { count: null, error: { message: 'boom' } } : { count: cfg.ownedCount, error: null })
+          const chain: Record<string, unknown> = {}
+          chain.is = () => chain
+          chain.then = (resolve: (v: unknown) => void) => resolve(result())
+          return { eq: () => chain }
         }
         // The album lookup: select(cols).or(...).is(...).limit(2).returns()
         return {

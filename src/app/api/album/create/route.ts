@@ -6,6 +6,7 @@ import { checkRateLimit, clientIpKey } from '@/lib/rate-limit'
 import { forbidCrossSiteRequest } from '@/lib/request-security'
 import { getUserTier } from '@/lib/subscriptions'
 import { albumCountLimitForTier, ANON_ALBUM_LIMIT, ANON_ALBUM_DAILY_IP_LIMIT } from '@/lib/media'
+import { countAlbumsAgainstCap } from '@/lib/server/count-albums-against-cap'
 import { track } from '@/lib/analytics'
 
 export const runtime = 'nodejs'
@@ -98,9 +99,8 @@ export async function POST(req: Request) {
   if (user) {
     const tier = await getUserTier(user)
     const cap = albumCountLimitForTier(tier)
-    const { count } = await admin
-      .from('albums').select('id', { count: 'exact', head: true })
-      .eq('user_id', user.id).is('retired_at', null)
+    // Shared with the auto-claim path — packaged albums are excluded, see the helper for why.
+    const { count } = await countAlbumsAgainstCap(admin, user.id)
     if ((count ?? 0) >= cap) {
       return NextResponse.json(
         { error: `You've reached your plan's album limit.${tier === 'studio' ? '' : ' Upgrade your plan to create more albums.'}` },
