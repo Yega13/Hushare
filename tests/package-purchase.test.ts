@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { packageGrantForProduct, applyPackageGrant } from '../src/lib/package-purchase'
+import { packageGrantForProduct, applyPackageGrant , orderAmountLooksPaid, revokeForRefund, PACKAGE_PRICE_TOLERANCE_CENTS } from '../src/lib/package-purchase'
 import { PACKAGE_CATALOGUE, RENEWAL_CATALOGUE } from '../src/lib/package-catalogue'
 
 const NOW = new Date('2026-09-01T12:00:00Z')
@@ -102,5 +102,70 @@ describe('applyPackageGrant — money in, entitlement out, twice-safe', () => {
     const once = applyPackageGrant(null, renewPro, NOW)
     const twice = applyPackageGrant({ tier: 'pro', expiresAt: once.package_expires_at }, renewPro, NOW)
     expect(twice.package_expires_at).toBe('2028-09-01T12:00:00.000Z')
+  })
+})
+
+
+describe('a refunded package is not a package', () => {
+  // "Buy a $99 Max Package, ask Polar for a refund, keep the album" worked — once per album, for
+  // anyone who tried it. order.refunded was acknowledged and dropped along with every other
+  // non-subscription event. Subscriptions were covered only by accident; a package is a tier and a
+  // date on one row, with no lifecycle behind it to expire.
+
+  it('revokes the package the refunded order paid for', () => {
+    expect(revokeForRefund(
+      { tier: 'studio', expiresAt: '2028-09-01T00:00:00Z', lastOrderId: 'order-1' },
+      'order-1',
+    )).toEqual({ package_tier: null, package_expires_at: null })
+  })
+
+  it('REFUSES to revoke when a later order has since paid', () => {
+    // The dangerous direction. If a refund of an old order could strip the album, we would be
+    // destroying a paying customer's album because an unrelated refund arrived — and the album
+    // carries package_last_order_id precisely so that cannot happen.
+    expect(revokeForRefund(
+      { tier: 'studio', expiresAt: '2028-09-01T00:00:00Z', lastOrderId: 'order-2' },
+      'order-1',
+    )).toBeNull()
+  })
+
+  it('does nothing when there is no package, and when the order is unknown', () => {
+    expect(revokeForRefund({ tier: null, expiresAt: null, lastOrderId: null }, 'order-1')).toBeNull()
+    expect(revokeForRefund({ tier: 'pro', expiresAt: '2028-01-01T00:00:00Z', lastOrderId: null }, 'order-1')).toBeNull()
+  })
+})
+
+describe('what was actually paid decides whether a package is granted', () => {
+  // The grant was decided by product id alone. Polar's checkout shows a promo-code field we never
+  // switched off, so a discounted — or 100%-off — order wrote a full two-year Max grant.
+
+  it('accepts the advertised price', () => {
+    expect(orderAmountLooksPaid(9900, 9900).ok).toBe(true)
+  })
+
+  it('accepts a few cents short, because conversion and rounding are not fraud', () => {
+    // Refusing a real customer over three cents is a worse failure than honouring a small gap.
+    expect(orderAmountLooksPaid(9900, 9900 - PACKAGE_PRICE_TOLERANCE_CENTS).ok).toBe(true)
+    expect(orderAmountLooksPaid(9900, 9897).ok).toBe(true)
+  })
+
+  it('refuses a real discount', () => {
+    const free = orderAmountLooksPaid(9900, 0)
+    expect(free.ok).toBe(false)
+    if (!free.ok) expect(free.reason).toBe('short')
+    const half = orderAmountLooksPaid(9900, 4950)
+    expect(half.ok).toBe(false)
+    if (!half.ok) expect(half.reason).toBe('short')
+  })
+
+  it('an amount Polar did not send is "unknown", not "unpaid"', () => {
+    // These are two different answers and must not collapse: refusing a signature-verified
+    // purchase because a webhook field moved would break paying customers to stop a hypothetical
+    // one. The caller grants and reports it instead.
+    for (const missing of [undefined, null, NaN]) {
+      const r = orderAmountLooksPaid(9900, missing as number | null | undefined)
+      expect(r.ok).toBe(false)
+      if (!r.ok) expect(r.reason).toBe('unknown')
+    }
   })
 })

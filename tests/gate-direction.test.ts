@@ -163,6 +163,39 @@ describe('a collaboration album cannot hide the Hushare mark', () => {
   })
 })
 
+describe('a paid mark does not outlive the plan that paid for it', () => {
+  // hide_branding already had this fix and its comment says why: a value stored while the album was
+  // paid kept taking effect after the payment stopped, because the gate ran only at WRITE time.
+  // The album logo (Pro) and the sponsor marks (Max) were left in exactly that state — one month of
+  // Pro at the intro price bought a custom logo on every album, permanently.
+  //
+  // Read-time masks, checked at the source, because resolveAlbum is a database call and this is a
+  // one-line expression inside it — the same way the branding mask beside it is checked.
+  const read = (rel: string) => readFileSync(join(process.cwd(), 'src', ...rel.split('/')), 'utf8')
+
+  it('the album logo is withheld from a free album', () => {
+    expect(
+      /logo_url:.*effectiveTier === 'free' \? null/.test(read('lib/server/album-access.ts')),
+      "resolveAlbum must null logo_url when the album's effective tier is free",
+    ).toBe(true)
+  })
+
+  it('sponsor marks are withheld below Max', () => {
+    expect(
+      /sponsor_logos:.*effectiveTier === 'studio'/.test(read('lib/server/album-access.ts')),
+      'resolveAlbum must withhold sponsor_logos unless the album is entitled to Max',
+    ).toBe(true)
+  })
+
+  it('both are masked on the ALBUM tier, so a package still unlocks them', () => {
+    // effectiveTier, never ownerTier: a Max Package bought for a free account is exactly the
+    // customer these marks are sold to, and masking on the account would blank what they paid for.
+    const src = read('lib/server/album-access.ts')
+    expect(/logo_url:.*ownerTier/.test(src)).toBe(false)
+    expect(/sponsor_logos:.*ownerTier/.test(src)).toBe(false)
+  })
+})
+
 describe('a plan gate never blocks turning a feature off', () => {
   for (const [route, guard] of Object.entries(OFF_SWITCH_GUARDS)) {
     it(`${route} gates only the "on" direction`, () => {

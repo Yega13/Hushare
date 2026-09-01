@@ -253,6 +253,16 @@ export async function resolveAlbum(
       // has not opened yet. A plan boundary must never be the thing that reveals someone's photos.
       face_finder_enabled: album.face_finder_enabled && effectiveTier === 'studio',
       bib_search_enabled: album.bib_search_enabled && effectiveTier === 'studio',
+      // THE SAME RE-CHECK FOR THE TWO PAID MARKS, which survived a lapsed plan forever.
+      //
+      // hide_branding above documents why this exists: a stored `true` from when the album was paid
+      // kept taking effect after the payment stopped. The album logo (Pro) and the sponsor marks
+      // (Max) were gated only at WRITE time and never looked at again — so one month of Pro at the
+      // intro price bought a custom logo on every album, permanently. Identical shape, same fix,
+      // and unlike require_approval nothing here is being un-hidden: a mark disappearing costs the
+      // owner a mark, not their guests' privacy.
+      logo_url: effectiveTier === 'free' ? null : album.logo_url,
+      sponsor_logos: effectiveTier === 'studio' ? album.sponsor_logos : [],
       media_caps: uploadCapsForTier(effectiveTier),
       // The ONE deliberately account-scoped feature. A collection groups albums across an
       // account, so a single-album package must not unlock it — `plan` above would say it does.

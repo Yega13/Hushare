@@ -5,7 +5,8 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { verifyWebhookSignature, tierFromProduct, getCustomerEmail } from '@/lib/polar'
 import { findOrCreateUserByEmail } from '@/lib/provision-user'
 import { track } from '@/lib/analytics'
-import { packageGrantForProduct, applyPackageGrant } from '@/lib/package-purchase'
+import { packageGrantForProduct, applyPackageGrant, orderAmountLooksPaid, revokeForRefund } from '@/lib/package-purchase'
+import { PACKAGE_CATALOGUE, RENEWAL_CATALOGUE, type PackageKey, type RenewalKey } from '@/lib/package-catalogue'
 
 export const runtime = 'nodejs'
 
@@ -77,6 +78,12 @@ export async function POST(req: Request) {
     const order = event.data as unknown as {
       id?: string
       product_id?: string
+      // What was actually collected. Polar names the post-discount, post-refund figure net_amount;
+      // total_amount is the gross. Both are read so a build against either shape still verifies,
+      // and the SMALLER is used — the question is "did the money arrive", not "was it invoiced".
+      net_amount?: number
+      total_amount?: number
+      amount?: number
       metadata?: { albumId?: string; userId?: string }
     }
     const grant = packageGrantForProduct(order?.product_id)
@@ -134,6 +141,33 @@ export async function POST(req: Request) {
     // both count — that is somebody buying two renewals, which is two real years.
     if (album.package_last_order_id === order.id) {
       return NextResponse.json({ ok: true, already: order.id }, { headers: NO_STORE })
+    }
+
+    // WHAT WAS ACTUALLY PAID, against what the catalogue advertises. Without this the grant was
+    // decided by product id alone, and Polar's checkout offers a promo-code field we never turned
+    // off — so a discounted or free order bought a full two-year grant. A shortfall is reported and
+    // refused rather than silently honoured; an amount Polar did not send is reported and ALLOWED,
+    // because refusing a signature-verified purchase over a missing field would break real
+    // customers to stop a hypothetical one (rule 19 — and here the safe direction is to let the
+    // paying customer through and tell ourselves about it).
+    const expectedCents = grant.kind === 'package'
+      ? PACKAGE_CATALOGUE[grant.key as PackageKey].amountCents
+      : RENEWAL_CATALOGUE[grant.key as RenewalKey].amountCents
+    const paidCandidates = [order.net_amount, order.total_amount, order.amount]
+      .filter((v): v is number => typeof v === 'number' && Number.isFinite(v))
+    const paidCents = paidCandidates.length ? Math.min(...paidCandidates) : null
+    const paidCheck = orderAmountLooksPaid(expectedCents, paidCents)
+    if (!paidCheck.ok && paidCheck.reason === 'short') {
+      console.error(`[polar/webhook] ${grant.label} paid ${paidCents} of ${expectedCents} — not granting`)
+      reportServerError('polar-webhook', 'Package order paid LESS than the advertised price', {
+        context: { orderId: order.id, albumId, product: grant.label, expectedCents, paidCents },
+      })
+      return NextResponse.json({ error: 'amount_short' }, { status: 400, headers: NO_STORE })
+    }
+    if (!paidCheck.ok) {
+      reportServerError('polar-webhook', 'Package order carried no amount — granted unverified', {
+        context: { orderId: order.id, albumId, product: grant.label, expectedCents },
+      })
     }
 
     const next = applyPackageGrant(
@@ -199,6 +233,68 @@ export async function POST(req: Request) {
     console.info(`[polar/webhook] ${grant.label} applied to album ${album.id} until ${next.package_expires_at}`)
     track({ name: grant.kind === 'package' ? 'package_purchased' : 'package_renewed', albumId: album.id, product: grant.key })
     return NextResponse.json({ ok: true, applied: grant.key }, { headers: NO_STORE })
+  }
+
+  // ── A REFUNDED PACKAGE IS NOT A PACKAGE ─────────────────────────────────────
+  //
+  // These events were acknowledged and dropped, so "buy a $99 Max Package, ask Polar for a refund,
+  // keep the album" worked — once per album, for anyone who tried it. Subscriptions were covered
+  // only by accident (a refund usually cancels the subscription, and isSubActive then expires it);
+  // a package is a tier and a date on one row with no lifecycle behind it, so nothing took it back.
+  //
+  // Only the order that GRANTED the package may revoke it — see revokeForRefund. A refund of an
+  // earlier order must never strip time a later order has since paid for.
+  if (event.type === 'order.refunded' || event.type === 'refund.created') {
+    const refund = event.data as unknown as { order_id?: string; id?: string }
+    const orderId = refund?.order_id ?? refund?.id
+    if (!orderId) {
+      return NextResponse.json({ ok: true, ignored: 'refund without an order id' }, { headers: NO_STORE })
+    }
+    const admin = createAdminClient()
+    const { data: album, error: lookupErr } = await admin
+      .from('albums')
+      .select('id, package_tier, package_expires_at, package_last_order_id')
+      .eq('package_last_order_id', orderId)
+      .maybeSingle<{
+        id: string
+        package_tier: 'pro' | 'studio' | null
+        package_expires_at: string | null
+        package_last_order_id: string | null
+      }>()
+    if (lookupErr) {
+      // 500 so Polar retries: silently keeping a refunded package is the failure this branch exists
+      // to prevent, and a lookup that failed has not answered the question.
+      console.error('[polar/webhook] refund lookup failed:', lookupErr.message)
+      return NextResponse.json({ error: 'refund_lookup_failed' }, { status: 500, headers: NO_STORE })
+    }
+    if (!album) {
+      // A refunded subscription order, or a package already superseded by a later purchase.
+      return NextResponse.json({ ok: true, ignored: 'refund matches no package' }, { headers: NO_STORE })
+    }
+    const revoked = revokeForRefund(
+      { tier: album.package_tier, expiresAt: album.package_expires_at, lastOrderId: album.package_last_order_id },
+      orderId,
+    )
+    if (!revoked) {
+      return NextResponse.json({ ok: true, ignored: 'nothing to revoke' }, { headers: NO_STORE })
+    }
+    const { error: updErr } = await admin
+      .from('albums')
+      .update(revoked)
+      .eq('id', album.id)
+      .eq('package_last_order_id', orderId)
+    if (updErr) {
+      console.error('[polar/webhook] refund revoke failed:', updErr.message)
+      return NextResponse.json({ error: 'revoke_failed' }, { status: 500, headers: NO_STORE })
+    }
+    // Loud on purpose: money went back and an album lost its paid features. That is a customer
+    // conversation, not a log line — the album keeps every photo (retirement checks activity, not
+    // this), but Face Finder and the rest switch off and somebody may ask why.
+    reportServerError('polar-webhook', 'Package REFUNDED — entitlement revoked', {
+      context: { orderId, albumId: album.id, wasTier: album.package_tier },
+    })
+    console.info(`[polar/webhook] refund ${orderId} revoked the package on album ${album.id}`)
+    return NextResponse.json({ ok: true, revoked: album.id }, { headers: NO_STORE })
   }
 
   // Only act on subscription lifecycle events. Other events (order.created, etc.) are

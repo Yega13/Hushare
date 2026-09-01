@@ -54,6 +54,64 @@ export function packageGrantForProduct(
 }
 
 /**
+ * Was the money for this order actually collected in full?
+ *
+ * THE GRANT IS DECIDED BY PRODUCT ID ALONE, and nothing ever looked at what was paid. Polar's
+ * checkout shows a promo-code field on package sessions (we never asked it not to), and any
+ * discount in the org that is not product-scoped can be typed in — so a heavily discounted, or
+ * 100%-off, order wrote a full two-year Max grant. The catalogue price is already the pinned truth
+ * and is already compared against Polar's product price by checkPackageProducts; it was simply
+ * never compared against what the customer handed over.
+ *
+ * A SMALL SHORTFALL IS NOT FRAUD. Currency conversion, tax handling and Polar's own rounding all
+ * move the collected amount by a few cents, and refusing a real customer's paid package over three
+ * cents is a far worse failure than honouring a discount we chose to offer. So this asks whether
+ * the payment is within a small tolerance of the advertised price, and anything below that is
+ * reported rather than silently granted.
+ *
+ * `paidCents` null/absent = Polar did not tell us. That reads as "cannot verify", NOT as unpaid:
+ * the alternative is refusing a genuine purchase because a webhook field moved, and the order
+ * itself is signature-verified. It is surfaced to the admin panel by the caller instead.
+ */
+export const PACKAGE_PRICE_TOLERANCE_CENTS = 100
+
+export function orderAmountLooksPaid(
+  expectedCents: number,
+  paidCents: number | null | undefined,
+): { ok: true } | { ok: false; reason: 'short' | 'unknown'; paidCents: number | null } {
+  if (typeof paidCents !== 'number' || !Number.isFinite(paidCents)) {
+    return { ok: false, reason: 'unknown', paidCents: null }
+  }
+  if (paidCents + PACKAGE_PRICE_TOLERANCE_CENTS < expectedCents) {
+    return { ok: false, reason: 'short', paidCents }
+  }
+  return { ok: true }
+}
+
+/**
+ * The album's package after a REFUND or a chargeback: the grant is withdrawn.
+ *
+ * Nothing handled this at all. order.refunded was 200-ignored along with every other non-
+ * subscription event, so the sequence "buy a $99 Max Package, ask Polar for a refund, keep the
+ * album" worked, once per album, for anyone who tried it. Subscriptions were covered only by
+ * accident — a refund usually cancels the subscription and isSubActive then expires it — while a
+ * package is a tier and a date on one row, with no lifecycle behind it.
+ *
+ * ONLY the order that granted it may revoke it. The album carries package_last_order_id precisely
+ * so a refund of order A cannot strip a package that order B has since paid for and extended —
+ * that would be us destroying a real customer's paid album because an unrelated refund arrived.
+ * When the ids do not match, this returns null and the caller leaves the album alone.
+ */
+export function revokeForRefund(
+  current: { tier: 'pro' | 'studio' | null; expiresAt: string | null; lastOrderId: string | null },
+  refundedOrderId: string,
+): { package_tier: null; package_expires_at: null } | null {
+  if (!current.tier && !current.expiresAt) return null       // nothing to take back
+  if (!current.lastOrderId || current.lastOrderId !== refundedOrderId) return null
+  return { package_tier: null, package_expires_at: null }
+}
+
+/**
  * The album's package after this purchase.
  *
  * Two rules, both directions of rule 19:

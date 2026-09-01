@@ -42,6 +42,18 @@ export async function createCheckout(input: CheckoutInput): Promise<CheckoutResu
   }
   if (input.customerEmail) body.customer_email = input.customerEmail
   if (input.discountId) body.discount_id = input.discountId
+  // NO PROMO-CODE FIELD unless this checkout was created WITH a discount we chose.
+  //
+  // Polar shows a promo-code box by default, so any discount in the org that is not product-scoped
+  // could be typed into a $49/$99 package session — and the webhook granted on product id alone,
+  // so a heavily discounted or free order bought a full two-year entitlement. The intro discounts
+  // are managed by hand in a dashboard, which is exactly the kind of thing that gets created,
+  // forgotten, and later applies somewhere nobody intended.
+  //
+  // Where we DO pass a discountId, the box stays available — that is a discount we picked for this
+  // product on purpose. The webhook verifies the collected amount either way; this just stops the
+  // offer being made.
+  if (!input.discountId) body.allow_discount_codes = false
 
   const res = await fetch(`${apiBase()}/v1/checkouts/`, {
     method: 'POST',
