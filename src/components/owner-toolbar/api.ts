@@ -71,69 +71,50 @@ export async function saveDesignRequest(
   return { ok: true }
 }
 
-export async function saveMediaSettingsRequest(
-  slug: string,
-  mediaRadius: number,
-  videoAutoplay: boolean,
-  mediaFilter: MediaDisplayFilter,
-  mobileGridColumns: MobileGridColumns,
-  slideshowIntervalMs: number,
-  slideshowAnimation: SlideshowAnimation,
-  resetRadiusOverrides: boolean,
-  resetFilterOverrides: boolean,
-): Promise<{
-  ok: true
+export type MediaSettingsChanges = Partial<{
   media_radius: number
   video_autoplay: boolean
   media_filter: MediaDisplayFilter
   mobile_grid_columns: MobileGridColumns
   slideshow_interval_ms: number
   slideshow_animation: SlideshowAnimation
-} | { ok: false; error: string }> {
+}>
+
+// SENDS ONLY WHAT CHANGED — this used to thread seven positional settings and post all of them
+// from local state on every save. That made every save a write of every field, so a tab holding a
+// stale phone-grid value silently re-wrote it whenever the owner dragged the RADIUS: set desktop
+// 6 and phone 3, come back later, both are 6. The route always updated only the fields present in
+// the body; it was this function that insisted on presenting everything it half-knew.
+export async function saveMediaSettingsRequest(
+  slug: string,
+  changes: MediaSettingsChanges,
+  resetRadiusOverrides: boolean,
+  resetFilterOverrides: boolean,
+): Promise<{ ok: true; applied: MediaSettingsChanges } | { ok: false; error: string }> {
   const res = await fetch('/api/album/media-settings', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       slug,
-      media_radius: mediaRadius,
-      video_autoplay: videoAutoplay,
-      media_filter: mediaFilter,
-      mobile_grid_columns: mobileGridColumns,
-      slideshow_interval_ms: slideshowIntervalMs,
-      slideshow_animation: slideshowAnimation,
+      ...changes,
       reset_radius_overrides: resetRadiusOverrides,
       reset_filter_overrides: resetFilterOverrides,
     }),
   })
-  const body = await jsonBody<{
-    error?: string
-    media_radius?: number
-    video_autoplay?: boolean
-    media_filter?: MediaDisplayFilter
-    mobile_grid_columns?: MobileGridColumns
-    slideshow_interval_ms?: number
-    slideshow_animation?: SlideshowAnimation
-  }>(res)
-  if (
-    !res.ok ||
-    body.media_radius == null ||
-    body.video_autoplay == null ||
-    !body.media_filter ||
-    !body.mobile_grid_columns ||
-    body.slideshow_interval_ms == null ||
-    !body.slideshow_animation
-  ) {
+  const body = await jsonBody<{ error?: string } & MediaSettingsChanges>(res)
+  if (!res.ok) {
     return { ok: false, error: body.error ?? `Save failed (${res.status})` }
   }
-  return {
-    ok: true,
-    media_radius: body.media_radius,
-    video_autoplay: body.video_autoplay,
-    media_filter: body.media_filter,
-    mobile_grid_columns: body.mobile_grid_columns,
-    slideshow_interval_ms: body.slideshow_interval_ms,
-    slideshow_animation: body.slideshow_animation,
-  }
+  // The route echoes back exactly the fields it applied; undefined keys vanish in JSON, so what
+  // arrives is the applied subset and nothing else.
+  const applied: MediaSettingsChanges = {}
+  if (body.media_radius !== undefined) applied.media_radius = body.media_radius
+  if (body.video_autoplay !== undefined) applied.video_autoplay = body.video_autoplay
+  if (body.media_filter !== undefined) applied.media_filter = body.media_filter
+  if (body.mobile_grid_columns !== undefined) applied.mobile_grid_columns = body.mobile_grid_columns
+  if (body.slideshow_interval_ms !== undefined) applied.slideshow_interval_ms = body.slideshow_interval_ms
+  if (body.slideshow_animation !== undefined) applied.slideshow_animation = body.slideshow_animation
+  return { ok: true, applied }
 }
 
 // Storable image types for a design asset. Deliberately narrower than the main photo pipeline's

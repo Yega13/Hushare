@@ -192,8 +192,10 @@ export async function POST(req: Request) {
 
   queueAlbumSettingsBroadcast(access.album.id, updates)
 
-  // Echo back the applied values so the client can synchronise its state.
-  // OwnerToolbar always sends all 7 fields, so updates always contains every key.
+  // Echo back the applied values so the client can synchronise its state. The client sends only
+  // the fields that changed (undefined keys vanish in JSON), so this echo is the applied SUBSET —
+  // the old comment claiming "always all 7 fields" described the bug, not a guarantee: posting
+  // every field from local state is how a stale tab merged the phone and desktop grids.
   return NextResponse.json({
     ok: true,
     media_radius: updates.media_radius,

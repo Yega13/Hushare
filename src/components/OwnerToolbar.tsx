@@ -17,6 +17,7 @@ import {
   type SlideshowAnimation,
 } from '@/lib/media-display'
 import { DESKTOP_COLUMN_CHOICES, resolveGridColumns } from '@/lib/grid-columns'
+import { confirmedMediaSettings, diffMediaSettings } from '@/lib/media-settings-diff'
 import {
   DEFAULT_SLIDESHOW_MOTION,
   MAX_SLIDESHOW_DURATION_MS,
@@ -42,6 +43,7 @@ import {
   saveRequireApprovalRequest,
   savePhotoLayoutRequest,
   saveMediaSettingsRequest,
+  type MediaSettingsChanges,
   saveDesktopGridColumns,
   savePasswordRequest,
   saveSlideshowMotionRequest,
@@ -160,6 +162,10 @@ export default function OwnerToolbar({ album, photos, albumPhotoCount, ownerToke
   const [motionPreviewKey, setMotionPreviewKey] = useState(0)
   const motionSaveTimerRef = useRef<number | null>(null)
   const [mediaError, setMediaError] = useState('')
+  // True from the moment a slider edit is scheduled until its save settles. The resync effect
+  // below must not stomp local state in that window — that stomp is how an unsaved phone-grid
+  // value got replaced by the album prop and then persisted by the next unrelated save.
+  const mediaEditPendingRef = useRef(false)
 
   const [revealInput, setRevealInput] = useState(() => toDatetimeLocal(album.reveal_at ?? null))
   const [revealSaving, setRevealSaving] = useState(false)
@@ -327,6 +333,11 @@ export default function OwnerToolbar({ album, photos, albumPhotoCount, ownerToke
       setPasswordSaved(false)
       setPasswordInput('')
       setCollectionError('')
+      // MID-EDIT, THE PROP LOSES. This resync exists so another device's changes appear, but
+      // while an edit is pending here the album prop is by definition older than the owner's
+      // intent — resetting from it clobbered the value they just chose, and the next save of
+      // any OTHER setting then persisted the clobber (the phone/desktop grid "merge").
+      if (mediaEditPendingRef.current) return
       setMediaRadius(album.media_radius ?? 16)
       setMediaRadiusDraft(String(album.media_radius ?? 16))
       setMediaRadiusEditing(false)
@@ -452,50 +463,57 @@ export default function OwnerToolbar({ album, photos, albumPhotoCount, ownerToke
     nextSlideshowAnimation = slideshowAnimation,
   ) {
     setMediaError('')
+    mediaEditPendingRef.current = true
     try {
+      // Only what differs from the album's CONFIRMED values goes on the wire — the decision
+      // lives in lib/media-settings-diff, where its tests hold the grid "merge" bug shut.
+      const changes = diffMediaSettings(
+        confirmedMediaSettings(album, DEFAULT_SLIDESHOW_INTERVAL_MS),
+        {
+          media_radius: nextRadius,
+          video_autoplay: nextAutoplay,
+          media_filter: nextFilter,
+          mobile_grid_columns: nextMobileGridColumns,
+          slideshow_interval_ms: nextSlideshowIntervalMs,
+          slideshow_animation: nextSlideshowAnimation,
+        },
+      ) as MediaSettingsChanges
+
       const resetRadiusOverrides = nextRadius !== savedMediaRadius
       const resetFilterOverrides = nextFilter !== savedMediaFilter
-      const result = await saveMediaSettingsRequest(
-        album.slug,
-        nextRadius,
-        nextAutoplay,
-        nextFilter,
-        nextMobileGridColumns,
-        nextSlideshowIntervalMs,
-        nextSlideshowAnimation,
-        resetRadiusOverrides,
-        resetFilterOverrides,
-      )
+      if (Object.keys(changes).length === 0 && !resetRadiusOverrides && !resetFilterOverrides) {
+        return
+      }
+
+      const result = await saveMediaSettingsRequest(album.slug, changes, resetRadiusOverrides, resetFilterOverrides)
       if (!result.ok) {
         setMediaError(result.error)
         showAppToast(result.error, 'error')
         return
       }
-      setMediaRadius(result.media_radius)
-      setSavedMediaRadius(result.media_radius)
-      setVideoAutoplay(result.video_autoplay)
-      setMediaFilter(result.media_filter)
-      setSavedMediaFilter(result.media_filter)
-      setMobileGridColumns(result.mobile_grid_columns)
-      setSlideshowIntervalMs(result.slideshow_interval_ms)
-      setSlideshowAnimation(result.slideshow_animation)
-      onAlbumUpdated(
-        {
-          media_radius: result.media_radius,
-          video_autoplay: result.video_autoplay,
-          media_filter: result.media_filter,
-          mobile_grid_columns: result.mobile_grid_columns,
-          slideshow_interval_ms: result.slideshow_interval_ms,
-          slideshow_animation: result.slideshow_animation,
-        },
-        { forceGlobalRadius: false, resetRadiusOverrides, resetFilterOverrides },
-      )
+      const a = result.applied
+      if (a.media_radius !== undefined) { setMediaRadius(a.media_radius); setSavedMediaRadius(a.media_radius) }
+      if (a.video_autoplay !== undefined) setVideoAutoplay(a.video_autoplay)
+      if (a.media_filter !== undefined) { setMediaFilter(a.media_filter); setSavedMediaFilter(a.media_filter) }
+      if (a.mobile_grid_columns !== undefined) setMobileGridColumns(a.mobile_grid_columns)
+      if (a.slideshow_interval_ms !== undefined) setSlideshowIntervalMs(a.slideshow_interval_ms)
+      if (a.slideshow_animation !== undefined) setSlideshowAnimation(a.slideshow_animation)
+      // The album prop learns only the applied fields, so an untouched setting can never be
+      // "updated" to a stale copy of itself.
+      if (Object.keys(a).length > 0) {
+        onAlbumUpdated(a, { forceGlobalRadius: false, resetRadiusOverrides, resetFilterOverrides })
+      }
     } catch (e) {
       const message = e instanceof Error ? e.message : t('common.networkError')
       setMediaError(message)
       showAppToast(message, 'error')
+    } finally {
+      // Settled either way: the album prop now carries the truth (or the edit failed and the
+      // owner was told), so the resync effect may speak again.
+      mediaEditPendingRef.current = false
     }
   }
+
 
   // Debounced auto-save for slider controls. 500ms lets the user settle on a value.
   const debouncedSaveRef = useRef<number | null>(null)
@@ -513,6 +531,7 @@ export default function OwnerToolbar({ album, photos, albumPhotoCount, ownerToke
     nextSlideshowIntervalMs: number,
     nextSlideshowAnimation: SlideshowAnimation,
   ) {
+    mediaEditPendingRef.current = true
     if (debouncedSaveRef.current !== null) {
       window.clearTimeout(debouncedSaveRef.current)
     }
