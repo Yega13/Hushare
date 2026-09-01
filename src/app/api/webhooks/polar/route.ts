@@ -5,6 +5,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { verifyWebhookSignature, tierFromProduct, getCustomerEmail } from '@/lib/polar'
 import { findOrCreateUserByEmail } from '@/lib/provision-user'
 import { track } from '@/lib/analytics'
+import { packageGrantForProduct, applyPackageGrant } from '@/lib/package-purchase'
 
 export const runtime = 'nodejs'
 
@@ -64,6 +65,99 @@ export async function POST(req: Request) {
     event = JSON.parse(rawBody) as PolarEvent
   } catch {
     return NextResponse.json({ error: 'Malformed JSON' }, { status: 400, headers: NO_STORE })
+  }
+
+  // ── ONE-TIME PACKAGE ORDERS ──────────────────────────────────────────────────
+  //
+  // order.paid is where a $49/$99 package or a $9/$19 renewal becomes an album entitlement.
+  // Subscriptions ALSO emit order events, so the branch keys on the PRODUCT: a product id that
+  // matches none of the four package products falls through untouched, and the subscription
+  // handling below stays exactly as it was.
+  if (event.type === 'order.paid') {
+    const order = event.data as unknown as {
+      id?: string
+      product_id?: string
+      metadata?: { albumId?: string }
+    }
+    const grant = packageGrantForProduct(order?.product_id)
+    if (!grant) {
+      // A subscription's order, or a product this build does not know. The subscription's own
+      // lifecycle events carry the entitlement, so this is an acknowledgement, not a drop.
+      return NextResponse.json({ ok: true, ignored: 'order for non-package product' }, { headers: NO_STORE })
+    }
+    if (!order.id) {
+      return NextResponse.json({ error: 'Missing order id' }, { status: 400, headers: NO_STORE })
+    }
+
+    const albumId = order.metadata?.albumId
+    if (!albumId || !UUID_RE.test(albumId)) {
+      // Paid, and we cannot say for which album. 500, not 200 — the same reasoning as the
+      // unknown-product branch below: a 200 stops Polar retrying and the only trace of a real
+      // payment is a log line. Retries cover a transient bug; the permanent ones land in front
+      // of someone with the order id attached.
+      console.error('[polar/webhook] package order without a usable albumId:', order.id)
+      reportServerError('polar-webhook', 'Package PAID but no album to apply it to', {
+        context: { orderId: order.id, product: grant.label },
+      })
+      return NextResponse.json({ error: 'no_album_in_metadata' }, { status: 500, headers: NO_STORE })
+    }
+
+    const admin = createAdminClient()
+    const { data: album, error: albumErr } = await admin
+      .from('albums')
+      .select('id, package_tier, package_expires_at, package_last_order_id')
+      .eq('id', albumId)
+      .is('retired_at', null)
+      .maybeSingle<{
+        id: string
+        package_tier: 'pro' | 'studio' | null
+        package_expires_at: string | null
+        package_last_order_id: string | null
+      }>()
+
+    if (albumErr) {
+      console.error('[polar/webhook] album lookup failed for package order:', albumErr.message)
+      return NextResponse.json({ error: 'album_lookup_failed' }, { status: 500, headers: NO_STORE })
+    }
+    if (!album) {
+      // Paid for an album that is gone — deleted or retired between checkout and webhook. Money
+      // for nothing is a support case, not a silent log line.
+      reportServerError('polar-webhook', 'Package PAID for an album that no longer exists', {
+        context: { orderId: order.id, albumId, product: grant.label },
+      })
+      return NextResponse.json({ error: 'album_gone' }, { status: 500, headers: NO_STORE })
+    }
+
+    // THE SAME ORDER, DELIVERED AGAIN, MUST NOT ADD A SECOND YEAR. Polar redelivers until it gets
+    // a 200 and re-sends when unsure; the order id is the idempotency key. Two DIFFERENT orders
+    // both count — that is somebody buying two renewals, which is two real years.
+    if (album.package_last_order_id === order.id) {
+      return NextResponse.json({ ok: true, already: order.id }, { headers: NO_STORE })
+    }
+
+    const next = applyPackageGrant(
+      { tier: album.package_tier, expiresAt: album.package_expires_at },
+      grant,
+      new Date(),
+    )
+
+    // The order-id predicate repeats in the WHERE so two concurrent deliveries of the same event
+    // cannot both apply: the loser matches zero rows, and zero rows is success here — the winner
+    // already did the work.
+    const { error: updErr } = await admin
+      .from('albums')
+      .update({ ...next, package_last_order_id: order.id })
+      .eq('id', album.id)
+      .or(`package_last_order_id.is.null,package_last_order_id.neq.${order.id}`)
+
+    if (updErr) {
+      console.error('[polar/webhook] package apply failed:', updErr.message)
+      return NextResponse.json({ error: 'apply_failed' }, { status: 500, headers: NO_STORE })
+    }
+
+    console.info(`[polar/webhook] ${grant.label} applied to album ${album.id} until ${next.package_expires_at}`)
+    track({ name: grant.kind === 'package' ? 'package_purchased' : 'package_renewed', albumId: album.id, product: grant.key })
+    return NextResponse.json({ ok: true, applied: grant.key }, { headers: NO_STORE })
   }
 
   // Only act on subscription lifecycle events. Other events (order.created, etc.) are

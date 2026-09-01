@@ -77,6 +77,7 @@ create table if not exists public.albums (
   photo_order text default 'newest'::text not null,
   package_tier text,
   package_expires_at timestamp with time zone,
+  package_last_order_id text,
   primary key (id)
 );
 alter table public.albums enable row level security;

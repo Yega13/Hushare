@@ -18,8 +18,14 @@ function apiKey(): string {
 export type CheckoutInput = {
   productId: string
   successUrl: string
-  customerEmail: string
-  metadata: { userId: string; tier: 'pro' | 'studio'; cycle: 'monthly' | 'yearly' }
+  /** Optional: package checkout does not require an account, and Polar collects the email itself
+   *  when we cannot prefill it. Sending `customer_email: undefined` would be rejected, so the
+   *  field is omitted from the request body entirely when absent. */
+  customerEmail?: string
+  // Subscription checkouts carry {userId, tier, cycle}; package checkouts carry {albumId, item}.
+  // The webhook trusts the PRODUCT to say what was bought and reads metadata only for addressing,
+  // so a loose shape here cannot grant anything by itself.
+  metadata: Record<string, string>
   discountId?: string
 }
 
@@ -32,9 +38,9 @@ export async function createCheckout(input: CheckoutInput): Promise<CheckoutResu
   const body: Record<string, unknown> = {
     products: [input.productId],
     success_url: input.successUrl,
-    customer_email: input.customerEmail,
     metadata: input.metadata,
   }
+  if (input.customerEmail) body.customer_email = input.customerEmail
   if (input.discountId) body.discount_id = input.discountId
 
   const res = await fetch(`${apiBase()}/v1/checkouts/`, {

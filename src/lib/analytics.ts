@@ -28,6 +28,9 @@ export type AnalyticsEvent =
   | { name: 'subscription_active';  userId?: string | null; tier: Tier }
   | { name: 'subscription_canceled'; userId?: string | null; tier: Tier }
   | { name: 'album_retired';        albumId: string }
+  // One-off package purchases — album-scoped money, unlike the user-scoped subscription events.
+  | { name: 'package_purchased';    albumId: string; product: string }
+  | { name: 'package_renewed';      albumId: string; product: string }
   | { name: 'support_submitted' }
   | { name: 'report_submitted' }
   // Support-chat turn. blob5 = outcome, blob6 = the visitor's question (PII-redacted, truncated).
@@ -97,6 +100,10 @@ function shape(e: AnalyticsEvent): { blobs: string[]; doubles: number[] } {
     case 'subscription_active':
     case 'subscription_canceled':
       return { blobs: [e.name, '', s(e.userId), e.tier, '', ''], doubles: [1, 0] }
+    case 'package_purchased':
+    case 'package_renewed':
+      // Same column plan as the subscription events: blob2 the album, blob6 the product key.
+      return { blobs: [e.name, s(e.albumId), '', '', '', e.product], doubles: [1, 0] }
     case 'album_retired':
       return { blobs: [e.name, s(e.albumId), '', '', '', ''], doubles: [1, 0] }
     case 'support_submitted':
