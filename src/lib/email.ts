@@ -208,15 +208,20 @@ export async function sendBillingReminderEmail(
 export async function sendPackageRenewalEmail(
   ownerEmail: string,
   albumTitle: string,
-  albumUrl: string,
+  albumSlug: string,
   daysLeft: number,
   priceLabel: string,   // "$9" / "$19" — formatted by the caller from the catalogue
 ) {
-  requireSafeUrl(albumUrl, 'albumUrl')
   const MAILING_ADDRESS = process.env.MAILING_ADDRESS ?? 'Hushare, Yerevan, Armenia'
   const subject = `Keep "${safeSubjectField(albumTitle)}" online — ${daysLeft} day${daysLeft === 1 ? '' : 's'} left`
 
-  const renewUrl = `${albumUrl}?renew=1`
+  // THE ACCOUNT PAGE, NOT THE ALBUM. This link is opened two years after the event, on whatever
+  // device reads the mail. The album can be behind a password or a reveal date — and weddings, the
+  // albums most worth keeping, are exactly the ones with passwords — so pointing at it dead-ended
+  // the only person who could pay. The account page needs nothing but the sign-in that checkout
+  // requires anyway, and it lists every album of theirs that is running out.
+  const renewUrl = `${SITE_URL}/account?renew=${encodeURIComponent(albumSlug)}`
+  requireSafeUrl(renewUrl, 'renewUrl')
   const html = `
 <div style="font-family:-apple-system,system-ui,sans-serif;color:#630826;max-width:560px;margin:0 auto;padding:24px;">
   <h2 style="margin:0 0 16px;font-size:18px;">Your album's package is running out</h2>

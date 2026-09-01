@@ -5,7 +5,7 @@ import { timingSafeEqual } from '@/lib/timing-safe'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { searchFacesByImage } from '@/lib/rekognition'
 import { forbidCrossSiteRequest } from '@/lib/request-security'
-import { getUserTierById } from '@/lib/subscriptions'
+import { albumHasTier } from '@/lib/require-tier'
 import { checkRateLimit, clientIpKey } from '@/lib/rate-limit'
 import { track } from '@/lib/analytics'
 
@@ -89,7 +89,9 @@ async function handlePost(req: Request) {
   if (!album) {
     return NextResponse.json({ error: 'Album not found' }, { status: 404, headers: NO_STORE })
   }
-  if (!album.face_finder_enabled || (await getUserTierById(album.user_id)) !== 'studio') {
+  // The ALBUM'S entitlement, package included — a Max Package on a free account is the buyer
+  // this feature was sold to, and asking the owner's subscription here 403'd every search on it.
+  if (!album.face_finder_enabled || !(await albumHasTier(album, 'studio'))) {
     return NextResponse.json({ error: 'Face Finder is not enabled for this album' }, { status: 403, headers: NO_STORE })
   }
 

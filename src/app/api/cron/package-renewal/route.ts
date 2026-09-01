@@ -9,7 +9,6 @@ import { sendPackageRenewalEmail } from '@/lib/email'
 export const runtime = 'nodejs'
 
 const NO_STORE = { 'Cache-Control': 'no-store' }
-const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL ?? 'https://hushare.space'
 const BATCH_SIZE = 100
 
 // THE RENEWAL EMAILS FOR PACKAGE ALBUMS — 30 days before lapse, and again at 7.
@@ -104,7 +103,6 @@ export async function POST(req: Request) {
       const renewalSpec = RENEWAL_CATALOGUE[
         album.package_tier === 'studio' ? PACKAGE_CATALOGUE.package_max.renewal : PACKAGE_CATALOGUE.package_pro.renewal
       ]
-      const albumUrl = `${SITE_URL}/${album.custom_slug || album.slug}`
 
       // SEND FIRST, then stamp — same order notify-expiry uses, for the same reason: a stamp
       // written before a failed send silences the window with nobody warned, and these two emails
@@ -113,7 +111,7 @@ export async function POST(req: Request) {
       await sendPackageRenewalEmail(
         email,
         album.title,
-        albumUrl,
+        album.custom_slug || album.slug,
         daysUntil(new Date(album.package_expires_at), now),
         formatPrice(renewalSpec.amountCents),
       )

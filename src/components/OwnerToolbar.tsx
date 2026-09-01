@@ -262,7 +262,10 @@ export default function OwnerToolbar({ album, photos, albumPhotoCount, ownerToke
   // vanishing is worse than a few hundred milliseconds of a control that does nothing.
   const canSetCustomUrl = tierAllows(userTier, 'customUrl')
   const canModeratePhotos = tierAllows(userTier, 'photoModeration')
-  const canUseCollections = tierAllows(userTier, 'collections')
+  // Collections are the one ACCOUNT-scoped feature: userTier here is the ALBUM'S plan (package
+  // included), but the collections API gates on the signed-in account — so this reads the
+  // account-level answer the server sent, or the row unlocks on packaged albums and 403s on use.
+  const canUseCollections = album.collections_enabled === true
   // A LIVE PACKAGE flips the toolbar into pure-hide: rows the album is not entitled to render
   // not at all, instead of greyed with an upsell badge. The owner's rule, verbatim: "in packages
   // don't show anything that is unaccessible." They bought a finished product; a purchased
@@ -295,7 +298,7 @@ export default function OwnerToolbar({ album, photos, albumPhotoCount, ownerToke
   // silently publishing the next guest photo straight into a wedding album.
   const moderationIsMoot = !guestUploadsEnabled
   const moderationDisabled = !canModeratePhotos || moderationIsMoot
-  const showLockedCollections = showsAsLocked(userTier, 'collections')
+  const showLockedCollections = !canUseCollections
   // Branding removal is gated by api/album/branding, and it had NO badge and NO dimming — a free
   // owner saw an ordinary switch, flipped it, and learned it was paid from the error that came
   // back. The row simply never asked.

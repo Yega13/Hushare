@@ -1,4 +1,6 @@
 import { redirect } from 'next/navigation'
+import AccountRenewals from './AccountRenewals'
+import { renewalNotices } from '@/lib/package-renewal'
 import type { Metadata } from 'next'
 import Image from 'next/image'
 import Link from 'next/link'
@@ -64,7 +66,7 @@ export const metadata: Metadata = {
 }
 
 type Props = {
-  searchParams: Promise<{ welcome?: string }>
+  searchParams: Promise<{ welcome?: string; renew?: string }>
 }
 
 type AccountCollection = {
@@ -85,6 +87,10 @@ type AccountAlbum = {
   // The owner_token is used to build the management link. Safe to include here: this is
   // the signed-in user's OWN album, on their own authenticated dashboard page.
   owner_token: string
+  // The package this album is on, if any — the account page is the renewal surface, because it is
+  // the only one a password or a reveal date cannot gate. See lib/package-renewal.
+  package_tier: 'pro' | 'studio' | null
+  package_expires_at: string | null
 }
 
 type AccountMediaRow = {
@@ -98,7 +104,7 @@ type AccountMediaRow = {
 }
 
 export default async function AccountPage({ searchParams }: Props) {
-  const { welcome } = await searchParams
+  const { welcome, renew } = await searchParams
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
 
@@ -218,7 +224,7 @@ export default async function AccountPage({ searchParams }: Props) {
       .returns<AccountCollection[]>(),
     admin
       .from('albums')
-      .select('id, slug, custom_slug, title, cover_photo_id, created_at, owner_token')
+      .select('id, slug, custom_slug, title, cover_photo_id, created_at, owner_token, package_tier, package_expires_at')
       .eq('user_id', user.id)
       .order('created_at', { ascending: false })
       .returns<AccountAlbum[]>(),
@@ -342,6 +348,8 @@ export default async function AccountPage({ searchParams }: Props) {
   })
 
   const recentAlbums = albumsWithMedia.slice(0, 6)
+  // Packages inside the 30-day warning window (and lapsed ones, which are still worth saving).
+  const renewalsDue = renewalNotices(accountAlbums, new Date())
   // An unknown count poisons the total: 0 + 4,572 reads as a real figure and is simply wrong.
   const mediaKnown = photoTotal !== null && videoTotal !== null
   const mediaTotal = mediaKnown ? photoTotal + videoTotal : null
@@ -387,6 +395,8 @@ export default async function AccountPage({ searchParams }: Props) {
               </div>
             </div>
           </section>
+
+          <AccountRenewals notices={renewalsDue} highlightSlug={renew ?? null} />
 
           {/* Stats */}
           <section className="hush-account-stats grid grid-cols-2 gap-3 sm:grid-cols-4 mb-6">

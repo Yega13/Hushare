@@ -49,15 +49,16 @@ const ENFORCEMENT: Record<PaidFeature, { file: string; expect: (src: string, tie
     file: 'app/api/album/reveal/route.ts', how: 'refuseBelowTier',
     expect: (s, t) => s.includes(`refuseBelowTier(access.album, '${t}'`),
   },
-  // These two reject the free tier directly instead of naming the tier they need. Equivalent to
-  // requiring 'pro', and asserted as such so a move to Max-only cannot pass unnoticed.
+  // These two used to reject `tier === 'free'` read off the OWNER's account — which a package
+  // never changes, so a paid Pro Package album kept 403ing both. Now the same package-aware call
+  // as every other row.
   customUrl: {
-    file: 'app/api/album/custom-url/route.ts', how: "rejects tier === 'free'",
-    expect: (s, t) => t === 'pro' && /if \(tier === 'free'\)/.test(s),
+    file: 'app/api/album/custom-url/route.ts', how: 'refuseBelowTier',
+    expect: (s, t) => s.includes(`refuseBelowTier(access.album, '${t}'`),
   },
   hideBranding: {
-    file: 'app/api/album/branding/route.ts', how: "rejects tier === 'free'",
-    expect: (s, t) => t === 'pro' && /if \(tier === 'free'\)/.test(s),
+    file: 'app/api/album/branding/route.ts', how: 'refuseBelowTier',
+    expect: (s, t) => s.includes(`refuseBelowTier(access.album, '${t}'`),
   },
   collections: {
     file: 'app/c/[slug]/page.tsx', how: 'inline tier check on the public page',
@@ -162,9 +163,24 @@ describe('the owner toolbar reads the same table as the server', () => {
     // this test listed four names and passed while Face Finder and bib search were both still
     // riding on the 'collections' flag — identical tier today, so nothing looked wrong, and
     // repackaging Face Finder as Pro would have left its switch Max-only in silence.
-    for (const feature of ['customUrl', 'photoModeration', 'collections', 'hideBranding', 'faceFinder', 'bibSearch']) {
+    for (const feature of ['customUrl', 'photoModeration', 'hideBranding', 'faceFinder', 'bibSearch']) {
       expect(toolbar.includes(`'${feature}'`), `${feature} must be gated by name`).toBe(true)
     }
+  })
+
+  it('gates COLLECTIONS on the account, because a package cannot grant it', () => {
+    // The one feature that is not the album's to unlock: a collection groups albums across an
+    // account, so a single-album package must not open it. The toolbar's `userTier` is the ALBUM's
+    // plan (package included), so gating this row on the tier table showed an unlocked control on
+    // every Max Package album and the collections API then 403'd it. It reads the account-level
+    // answer the server sends instead.
+    expect(toolbar, 'must use the account-scoped flag').toContain('album.collections_enabled === true')
+    expect(
+      /(?:tierAllows|showsAsLocked)\(userTier, 'collections'\)/.test(toolbar),
+      'the album tier must not decide an account feature',
+    ).toBe(false)
+    // And the server must be the one computing it, from the OWNER's tier and not the album's.
+    expect(source('lib/server/album-access.ts')).toContain("collections_enabled: ownerTier === 'studio'")
   })
 
   it('disables a gated control, not merely dims it', () => {
@@ -206,4 +222,24 @@ describe('the admin page selects what its filters read', () => {
     expect(page.includes('for (const u of allUsers)'), 'admins without rows must be listed').toBe(true)
     expect(page.includes("'admin · comped'"), 'an admin who also holds a comp row shows once, labelled with both').toBe(true)
   })
+})
+
+describe('the BILLED feature paths ask the ALBUM, never the owner account', () => {
+  // A Max Package on a free account is the package's core buyer. Each of these three runs (or
+  // refuses) the AWS work guests actually trigger, and each once asked the owner's subscription:
+  // the search 403'd behind a working button, and both indexers returned 0 silently — bib search
+  // "worked" and found nothing, rule 20's exact shape. getUserTierById is banned from these files;
+  // the package can only be seen through albumHasTier.
+  const BILLED = [
+    'app/api/album/face-search/route.ts',
+    'app/api/album/face-index/route.ts',
+    'lib/server/bib-index.ts',
+  ]
+  for (const file of BILLED) {
+    it(`${file}`, () => {
+      const s = source(file)
+      expect(s, 'must gate through the album-entitlement module').toContain('albumHasTier(')
+      expect(s, 'owner-account tier reads are banned here').not.toContain('getUserTierById')
+    })
+  }
 })

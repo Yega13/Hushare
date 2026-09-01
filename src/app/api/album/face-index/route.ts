@@ -4,7 +4,7 @@ import { ALBUM_GATE_COLS, gateAllowsContribution } from '@/lib/server/album-acce
 import { createAdminClient } from '@/lib/supabase/admin'
 import { ensureCollection, indexPhotoFaces } from '@/lib/rekognition'
 import { forbidCrossSiteRequest } from '@/lib/request-security'
-import { getUserTierById } from '@/lib/subscriptions'
+import { albumHasTier } from '@/lib/require-tier'
 import { checkRateLimit, clientIpKey } from '@/lib/rate-limit'
 
 export const runtime = 'nodejs'
@@ -42,9 +42,12 @@ async function resolveAlbum(slug: string) {
   return { admin, album }
 }
 
-async function faceFinderAvailable(album: { user_id: string | null; face_finder_enabled: boolean }): Promise<boolean> {
+async function faceFinderAvailable(album: { id: string; user_id: string | null; face_finder_enabled: boolean }): Promise<boolean> {
   if (!album.face_finder_enabled) return false
-  return (await getUserTierById(album.user_id)) === 'studio'
+  // The ALBUM'S entitlement, package included. Owner-tier here meant a Max Package album's
+  // toggle switched on (that route is package-aware) while indexing refused every photo —
+  // a switch that works wired to a feature that never runs.
+  return albumHasTier(album, 'studio')
 }
 
 function rateLimitResponse(retryAfterSeconds: number) {

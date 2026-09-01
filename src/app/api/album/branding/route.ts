@@ -1,8 +1,8 @@
 import { NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { verifyOwnerViaCookieWithRateLimit } from '@/lib/album-owner-access'
+import { refuseBelowTier } from '@/lib/require-tier'
 import { forbidCrossSiteRequest } from '@/lib/request-security'
-import { getUserTierById } from '@/lib/subscriptions'
 import { queueAlbumSettingsBroadcast } from '@/lib/broadcast'
 
 export const runtime = 'nodejs'
@@ -66,13 +66,9 @@ export async function POST(req: Request) {
   // leave an album permanently unbranded with its owner unable to undo it — punishing someone for
   // cancelling by taking away a choice rather than a feature.
   if (hide) {
-    const tier = await getUserTierById(ownerId)
-    if (tier === 'free') {
-      return NextResponse.json(
-        { error: 'Removing Hushare branding requires a Pro or Max plan' },
-        { status: 403, headers: NO_STORE },
-      )
-    }
+    // Package-aware: a Pro/Max Package entitles THIS album whatever the account's plan is.
+    const refused = await refuseBelowTier(access.album, 'pro', 'Removing Hushare branding')
+    if (refused) return refused
   }
 
   const admin = createAdminClient()

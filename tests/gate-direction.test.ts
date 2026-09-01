@@ -23,9 +23,9 @@ const OFF_SWITCH_GUARDS: Record<string, RegExp> = {
   'api/album/logo/route.ts': /if \(value !== null\) \{[\s\S]{0,200}?refuseBelowTier/,
   'api/album/sponsors/route.ts': /if \(addsSomething\) \{[\s\S]{0,200}?refuseBelowTier/,
   'api/album/bib-search/route.ts': /if \(enabled\) \{[\s\S]{0,200}?refuseBelowTier/,
-  'api/album/custom-url/route.ts': /if \(newCustomSlug !== null\) \{[\s\S]{0,300}?Custom URLs require a Pro or Max plan/,
+  'api/album/custom-url/route.ts': /if \(newCustomSlug !== null\) \{[\s\S]{0,300}?refuseBelowTier/,
   'api/album/face-finder/route.ts': /if \(enabled\) \{[\s\S]{0,200}?refuseBelowTier/,
-  'api/album/branding/route.ts': /if \(hide\) \{[\s\S]{0,300}?requires a Pro or Max plan/,
+  'api/album/branding/route.ts': /if \(hide\) \{[\s\S]{0,300}?refuseBelowTier/,
   'api/album/media-settings/route.ts': /if \(updates\.require_approval === true\) \{[\s\S]{0,200}?refuseBelowTier/,
 }
 

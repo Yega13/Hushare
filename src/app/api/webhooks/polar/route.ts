@@ -150,18 +150,50 @@ export async function POST(req: Request) {
     const buyerId = order.metadata?.userId
     const claim = !album.user_id && buyerId && UUID_RE.test(buyerId) ? { user_id: buyerId } : {}
 
-    // The order-id predicate repeats in the WHERE so two concurrent deliveries of the same event
-    // cannot both apply: the loser matches zero rows, and zero rows is success here — the winner
-    // already did the work.
-    const { error: updErr } = await admin
+    // COMPARE-AND-SWAP ON THE EXPIRY WE READ. `next` was computed in JS from the row above, so
+    // whoever writes last wins — and with two DIFFERENT orders in flight at once (a double
+    // purchase, or Polar retrying two orders together) both read the same expiry, both add a year
+    // to it, and one paid year silently disappears while both callers get a 200. The order-id
+    // predicate alone does not catch that: it only excludes the SAME order.
+    //
+    // So the UPDATE also requires the expiry to still be exactly what we based the sum on. If
+    // anything moved underneath us the WHERE matches nothing, and this returns 500 so Polar
+    // redelivers — the retry re-reads the new expiry and stacks its year on top of it.
+    const casExpiry = album.package_expires_at
+    let q = admin
       .from('albums')
       .update({ ...next, ...claim, package_last_order_id: order.id })
       .eq('id', album.id)
-      .or(`package_last_order_id.is.null,package_last_order_id.neq.${order.id}`)
+    // The order-id predicate is belt-and-braces on top of the CAS, and it is INTERPOLATED into a
+    // PostgREST filter — a comma or paren in an id would rewrite the filter into something else.
+    // Checked against the live database: every real Polar id is a UUID (the only non-UUID row is a
+    // comp subscription we wrote ourselves). A surprise still must not cost anyone their package,
+    // so an unexpected shape drops this predicate rather than refusing the payment: the CAS below
+    // already makes double-application impossible on its own (rule 19 — the uncertain branch gives
+    // up the extra guard, never the money).
+    if (UUID_RE.test(order.id)) {
+      q = q.or(`package_last_order_id.is.null,package_last_order_id.neq.${order.id}`)
+    }
+    q = casExpiry === null ? q.is('package_expires_at', null) : q.eq('package_expires_at', casExpiry)
+    // Read the write back: without this, "no error" also covers "matched zero rows", which is how
+    // an album deleted between the SELECT and the UPDATE would take the money, log success, and
+    // return a 200 that stops Polar ever retrying.
+    const { data: applied, error: updErr } = await q.select('id')
 
     if (updErr) {
       console.error('[polar/webhook] package apply failed:', updErr.message)
       return NextResponse.json({ error: 'apply_failed' }, { status: 500, headers: NO_STORE })
+    }
+    if (!applied || applied.length === 0) {
+      // Nothing matched: the row changed under us, or it is gone. Never a success — 500 asks Polar
+      // to redeliver, and the retry either short-circuits on the order id (somebody else applied
+      // this very order) or recomputes from the current expiry. Reported because a package that
+      // needs a retry to land is worth seeing even when the retry works.
+      console.error('[polar/webhook] package apply matched no rows:', order.id)
+      reportServerError('polar-webhook', 'Package PAID but the apply matched no rows', {
+        context: { orderId: order.id, albumId: album.id, product: grant.label },
+      })
+      return NextResponse.json({ error: 'apply_raced' }, { status: 500, headers: NO_STORE })
     }
 
     console.info(`[polar/webhook] ${grant.label} applied to album ${album.id} until ${next.package_expires_at}`)

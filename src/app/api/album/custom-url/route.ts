@@ -1,9 +1,9 @@
 import { NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { verifyOwnerViaCookieWithRateLimit } from '@/lib/album-owner-access'
+import { refuseBelowTier } from '@/lib/require-tier'
 import { forbidCrossSiteRequest } from '@/lib/request-security'
 import { validateCustomSlug } from '@/lib/custom-slug'
-import { getUserTierById } from '@/lib/subscriptions'
 import { queueAlbumSettingsBroadcast } from '@/lib/broadcast'
 
 export const runtime = 'nodejs'
@@ -63,10 +63,9 @@ export async function POST(req: Request) {
   // Releasing a custom URL also frees the name for someone else, so refusing it holds a public
   // address hostage to a plan the owner may no longer be on.
   if (newCustomSlug !== null) {
-    const tier = await getUserTierById(ownerId)
-    if (tier === 'free') {
-      return NextResponse.json({ error: 'Custom URLs require a Pro or Max plan' }, { status: 403, headers: NO_STORE })
-    }
+    // Package-aware: a Pro/Max Package entitles THIS album whatever the account's plan is.
+    const refused = await refuseBelowTier(access.album, 'pro', 'A custom URL')
+    if (refused) return refused
   }
 
   const admin = createAdminClient()

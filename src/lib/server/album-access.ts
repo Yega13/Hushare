@@ -253,6 +253,11 @@ export async function resolveAlbum(
       face_finder_enabled: album.face_finder_enabled && effectiveTier === 'studio',
       bib_search_enabled: album.bib_search_enabled && effectiveTier === 'studio',
       media_caps: uploadCapsForTier(effectiveTier),
+      // The ONE deliberately account-scoped feature. A collection groups albums across an
+      // account, so a single-album package must not unlock it — `plan` above would say it does.
+      // The toolbar needs this separate truth to hide the section on a packaged album (pure-hide)
+      // instead of showing an unlocked control the collections API then refuses.
+      collections_enabled: ownerTier === 'studio',
     } as unknown as Album,
   }
 }
