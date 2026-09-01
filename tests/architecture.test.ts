@@ -53,7 +53,11 @@ const SIZE_BUDGET: Record<string, number> = {
   // of ticking every video green, including ones that were never written.
   // +4 (2026-08-31): the camera button explains what it does on a face-finder album, and goes
   // outline there so it stops outshouting "Find my photos".
-  'src/components/UploadZone.tsx': 2845,
+  // +7 (2026-09-01): the owner's uploads keep full camera quality — maxDim threads through the
+  // processors (the decision itself is lib/upload-policy's maxImageDimFor, tested there).
+  // +2 (2026-09-01, review finding): isOwner joins startUploads' deps with the comment saying
+  // why — the stale closure encoded the owner's first post-flip batch at guest size.
+  'src/components/UploadZone.tsx': 2854,
   // +3 on 2026-08-30: the branding toggle gained a real plan check (it was dimmed but still
   // clickable), and Face Finder and bib search stopped riding on the collections flag. Three
   // lines of reasoning for three gates that were wrong. Deliberate.
@@ -87,7 +91,8 @@ const SIZE_BUDGET: Record<string, number> = {
   // rebuilding them on every parent render.
   // +5 (2026-09-01, incident): bibRange memoised for identity — a fresh {} in visiblePhotos'
   // deps re-rendered every tile during an active bib search.
-  'src/app/[slug]/AlbumPageClient.tsx': 1732,
+  // +3 (2026-09-01): pass isOwner to UploadZone for the full-quality owner uploads.
+  'src/app/[slug]/AlbumPageClient.tsx': 1735,
   'src/app/card-editor/CardEditorClient.tsx': 873,
   // +1 (2026-08-31): pass collectionTotal to the lightbox counter.
   // +2 (2026-08-31): morphAllowed gate on open and close.

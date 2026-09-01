@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   MAX_IMG_DIM, SHRINK_LADDER, needsReEncode, outputMimeFor, nextShrinkDim,
+  maxImageDimFor, shrinkLadderFor, OWNER_IMG_DIM,
   backoffDelay, isNetworkClass, isExpectedRefusal, EXPECTED_REFUSAL_PREFIXES,
   createRelayPolicy, verdictForResponse, verdictForThrow,
 } from '@/lib/upload-policy'
@@ -296,5 +297,51 @@ describe('is this failure worth another attempt', () => {
   it('retries a dead connection while time remains, and stops when it does not', () => {
     expect(verdictForThrow({ aborted: false, withinDeadline: true })).toBe('retry')
     expect(verdictForThrow({ aborted: false, withinDeadline: false })).toBe('give-up')
+  })
+})
+
+
+describe('whose upload keeps how many pixels', () => {
+  // 3500px was right for guests (fast on venue WiFi, bigger than a phone photo) and silently
+  // halved the detail of the first professional photographer's entire event — 4,566 photos, every
+  // original larger, every stored copy exactly 3500px, discovered from their runners' downloads.
+  // The owner is not on venue WiFi and the pictures are their work.
+
+  it('the owner keeps full camera quality; a guest keeps the fast upload', () => {
+    expect(maxImageDimFor(true)).toBe(OWNER_IMG_DIM)
+    expect(maxImageDimFor(false)).toBe(MAX_IMG_DIM)
+  })
+
+  it('the owner cap actually covers a 24MP full-frame camera', () => {
+    // 6000x4000 is the standard 24MP frame. If OWNER_IMG_DIM ever dips below its long edge, the
+    // exact photos this exists for get shrunk again and nobody is told.
+    expect(OWNER_IMG_DIM).toBeGreaterThanOrEqual(6000)
+    expect(OWNER_IMG_DIM, 'above ~8K the lightbox download stops being viewable on a phone plan')
+      .toBeLessThanOrEqual(8000)
+  })
+
+  it('the ladder starts at the cap that was asked for — callers index rung 0', () => {
+    expect(shrinkLadderFor(MAX_IMG_DIM)[0]).toBe(MAX_IMG_DIM)
+    expect(shrinkLadderFor(OWNER_IMG_DIM)[0]).toBe(OWNER_IMG_DIM)
+  })
+
+  it("the owner's ladder still descends to sizes that fit any album's byte cap", () => {
+    // An owner photo too big in BYTES at 6000px must be able to come down the same rungs a guest
+    // photo does — otherwise the last-rung guarantee ("a refused upload is worse than a smaller
+    // photo") silently stops holding for exactly the largest files.
+    const ladder = shrinkLadderFor(OWNER_IMG_DIM)
+    expect(ladder).toEqual([OWNER_IMG_DIM, ...SHRINK_LADDER])
+  })
+
+  it('the guest cap yields exactly the guest ladder', () => {
+    expect(shrinkLadderFor(MAX_IMG_DIM)).toEqual(SHRINK_LADDER)
+  })
+
+  it('a cap BELOW the ladder never climbs back above itself', () => {
+    // The invariant is ladder[0] === the cap asked for — for every cap, not just today's two.
+    // An early version returned the guest ladder here, so a hypothetical 1920 cap would have
+    // encoded its first attempt at 3500: above its own cap, silently.
+    expect(shrinkLadderFor(1920)).toEqual([1920])
+    expect(shrinkLadderFor(3000)).toEqual([3000, 2560, 1920])
   })
 })

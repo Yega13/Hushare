@@ -16,10 +16,51 @@ import { VIDEO_TOO_LONG_PREFIX, VIDEO_ALBUM_FULL_PREFIX } from '@/lib/album-enti
 export const MAX_IMG_DIM = 3500
 
 /**
+ * Longest edge for the ALBUM OWNER's own uploads.
+ *
+ * 3500px was chosen for guests: prints a full A4 page without visible loss, uploads three times
+ * faster on saturated venue WiFi, and phone photos barely exceed it anyway. Then the first
+ * professional photographer used us — VMF, 4,566 photos, every original ~6000px — and the same
+ * cap silently halved the detail of a paying customer's entire event, discovered only when their
+ * runners compared downloads against the originals. The owner is not a guest on venue WiFi: they
+ * upload from a laptop, after the event, and the pictures are their work. 6000px covers a 24MP
+ * full-frame camera edge-to-edge; a re-encoded file lands ~5MB, and a straight-from-camera JPEG
+ * already at or under 6000px keeps its ORIGINAL bytes (metadata stripped), which can run to the
+ * album's byte cap — that is the point, the owner keeps their pixels. Uncapped DIMENSIONS were
+ * considered and rejected: a 61MP file is a 15MB+ lightbox download for every viewer, forever.
+ */
+export const OWNER_IMG_DIM = 6000
+
+/**
+ * Which longest-edge cap applies to this upload.
+ *
+ * A COURTESY, NOT A GATE — this runs in the uploader's own browser, so it cannot be enforcement
+ * and does not need to be: someone who lies about being the owner uploads bigger files that the
+ * server's per-file BYTE cap still bounds, gaining nothing. The asymmetry is deliberate and is
+ * the whole feature: guests keep fast, reliable event-WiFi uploads; the owner keeps their pixels.
+ */
+export function maxImageDimFor(isOwner: boolean): number {
+  return isOwner ? OWNER_IMG_DIM : MAX_IMG_DIM
+}
+
+/**
  * Rungs to come down, in order, when a photo is STILL over the album's cap at MAX_IMG_DIM.
  * The first rung IS MAX_IMG_DIM: a photo only reaches the later ones if 3500px did not fit.
  */
 export const SHRINK_LADDER = [3500, 2560, 1920] as const
+
+/**
+ * The ladder for a given starting cap. For the guest cap this IS the ladder above; a larger cap
+ * (the owner's) is prepended so rung 0 stays "the size we actually want" and the descent still
+ * ends at sizes that fit any album's byte cap. The invariant callers rely on: ladder[0] === the
+ * cap they asked for.
+ */
+export function shrinkLadderFor(maxDim: number): readonly number[] {
+  // The rungs BELOW the cap only — a cap under 3500 must not climb back above itself, or the
+  // first encode exceeds the very cap that was asked for. Unreachable with today's two caps;
+  // load-bearing the day a third appears.
+  return [maxDim, ...SHRINK_LADDER.filter((rung) => rung < maxDim)]
+}
 
 /**
  * Is re-encoding this photo necessary at all?

@@ -1632,7 +1632,9 @@ export default function AlbumPageClient({ initialAlbum = null, initialPhotos, in
         )}
 
         {(album.guest_uploads_enabled || effectiveIsOwner) && (
-          <UploadZone album={album} onPhotosUploaded={handlePhotosUploaded} />
+          // isOwner switches the owner's uploads to full camera quality (6000px vs the guest
+          // 3500px). effectiveIsOwner, so a leftover cookie on the plain guest URL stays a guest.
+          <UploadZone album={album} isOwner={effectiveIsOwner} onPhotosUploaded={handlePhotosUploaded} />
         )}
 
         {/* The renewal email's landing spot. Rendered from the URL param, NOT from owner

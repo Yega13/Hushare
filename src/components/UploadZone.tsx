@@ -8,7 +8,7 @@ import { stripExifFromJpeg, jpegOrientation, stripMetadataFromPng, stripMetadata
 // in what format, how far it is shrunk, and whether a failure is worth retrying. Pure, and
 // tested in tests/upload-policy.test.ts, because none of it was reachable from inside here.
 import {
-  MAX_IMG_DIM, needsReEncode, outputMimeFor, nextShrinkDim,
+  maxImageDimFor, shrinkLadderFor, needsReEncode, outputMimeFor, nextShrinkDim,
   backoffDelay, isNetworkClass, isExpectedRefusal, createRelayPolicy,
   verdictForResponse, verdictForThrow,
 } from '@/lib/upload-policy'
@@ -363,7 +363,7 @@ async function drawSourceToBlob(
 // renders them (the same path that makes the picked photo's PREVIEW appear). We load the file
 // into an <img> element and re-encode it through a canvas, producing FRESH in-memory bytes we
 // can actually upload. The <img> element auto-applies EXIF orientation, so the pixels are upright.
-async function processViaImgElement(file: File): Promise<ProcessedImage | null> {
+async function processViaImgElement(file: File, maxDim: number): Promise<ProcessedImage | null> {
   const url = URL.createObjectURL(file)
   try {
     const img = await loadImageElement(url)
@@ -375,7 +375,7 @@ async function processViaImgElement(file: File): Promise<ProcessedImage | null> 
     try {
       thumbBlob = (await drawSourceToBlob(img, img.naturalWidth, img.naturalHeight, THUMB_MAX_DIM, 'image/jpeg', THUMB_QUALITY)).blob
     } catch { /* thumb best-effort */ }
-    const main = await drawSourceToBlob(img, img.naturalWidth, img.naturalHeight, MAX_IMG_DIM, outMime, MAIN_QUALITY)
+    const main = await drawSourceToBlob(img, img.naturalWidth, img.naturalHeight, maxDim, outMime, MAIN_QUALITY)
     const name = outMime === 'image/jpeg' ? file.name.replace(/\.[^.]+$/, '.jpg') : file.name
     return { blob: main.blob, thumbBlob, mimeType: outMime, name, width: main.width, height: main.height }
   } catch {
@@ -399,16 +399,16 @@ type ProcessedImage = {
   height: number | null
 }
 
-async function processImage(file: File, capBytes: number): Promise<ProcessedImage> {
+async function processImage(file: File, capBytes: number, maxDim: number): Promise<ProcessedImage> {
   const release = await decodeSem.acquire()
   try {
-    return await processImageInner(file, capBytes)
+    return await processImageInner(file, capBytes, maxDim)
   } finally {
     release()
   }
 }
 
-async function processImageInner(file: File, capBytes: number): Promise<ProcessedImage> {
+async function processImageInner(file: File, capBytes: number, maxDim: number): Promise<ProcessedImage> {
   const isHeic = /heic|heif/i.test(file.type) || /\.(heic|heif)$/i.test(file.name)
 
   if (isHeic) {
@@ -421,7 +421,7 @@ async function processImageInner(file: File, capBytes: number): Promise<Processe
     if (native) {
       try {
         const thumbBlob = await deriveThumb(native)
-        const main = await scaleAndEncode(native, MAX_IMG_DIM, 'image/jpeg', MAIN_QUALITY)
+        const main = await scaleAndEncode(native, maxDim, 'image/jpeg', MAIN_QUALITY)
         return { blob: main.blob, thumbBlob, mimeType: 'image/jpeg', name: jpgName, width: main.width, height: main.height }
       } finally {
         native.close()
@@ -455,8 +455,8 @@ async function processImageInner(file: File, capBytes: number): Promise<Processe
       // A HARD 2 MB, not the album's cap, and that is deliberate: HEIC to JPEG can inflate wildly
       // (a 48MP ProRAW becomes a 30 MB JPEG), so this re-encodes on bloat rather than on whether
       // the album would accept it.
-      if (needsReEncode(Math.max(bitmap.width, bitmap.height), jpegBlob.size, 2 * 1024 * 1024)) {
-        const main = await scaleAndEncode(bitmap, MAX_IMG_DIM, 'image/jpeg', MAIN_QUALITY)
+      if (needsReEncode(Math.max(bitmap.width, bitmap.height), jpegBlob.size, 2 * 1024 * 1024, maxDim)) {
+        const main = await scaleAndEncode(bitmap, maxDim, 'image/jpeg', MAIN_QUALITY)
         return { blob: main.blob, thumbBlob, mimeType: 'image/jpeg', name: jpgName, width: main.width, height: main.height }
       }
       // Small conversion output: keep it losslessly (single lossy generation), EXIF-stripped.
@@ -494,7 +494,7 @@ async function processImageInner(file: File, capBytes: number): Promise<Processe
     // uploadable bytes. This is what finally fixes the camera/gallery "Could not read this file"
     // error — every raw-byte path (arrayBuffer/FileReader/blob-URL fetch) has already failed by
     // the time we reach here (snapshotFiles tried them), but the <img> pipeline succeeds.
-    const viaImg = await processViaImgElement(file)
+    const viaImg = await processViaImgElement(file, maxDim)
     if (viaImg) return viaImg
     // Undecodable AND a format the server will not accept. Every conversion route has already
     // failed, so there is nothing left to turn it into -- uploading would spend the bytes and then
@@ -536,7 +536,7 @@ async function processImageInner(file: File, capBytes: number): Promise<Processe
     // re-encoded and the original thrown away, including images already smaller than the target.
     // Testing the long edge instead means a photo at or under 3500px takes the lossless path below:
     // original bytes, metadata stripped, nothing re-encoded. Only genuinely larger images pay.
-    if (needsReEncode(Math.max(bitmap.width, bitmap.height), file.size, capBytes)) {
+    if (needsReEncode(Math.max(bitmap.width, bitmap.height), file.size, capBytes, maxDim)) {
       // PNG/WebP are re-encoded IN THEIR OWN FORMAT — never to JPEG — so transparency is
       // preserved (a JPEG re-encode turned transparent areas solid black). Canvas re-encode
       // needs no EXIF strip (metadata never survives it) and bakes orientation into pixels.
@@ -544,11 +544,12 @@ async function processImageInner(file: File, capBytes: number): Promise<Processe
       // Walk the ladder and stop at the first size that fits, so a photo 10% over the cap loses
       // almost nothing while a genuinely enormous one still gets through. The last rung is used
       // regardless — a refused upload is worse than a smaller photo.
-      let main = await scaleAndEncode(bitmap, MAX_IMG_DIM, outMime, MAIN_QUALITY)
+      const ladder = shrinkLadderFor(maxDim)
+      let main = await scaleAndEncode(bitmap, ladder[0], outMime, MAIN_QUALITY)
       // Only if 3500px STILL does not fit the album's cap does it come down further, one rung at a
       // time. A refused upload is worse than a smaller photo.
       for (let rung = 0; ; rung++) {
-        const dim = nextShrinkDim(rung, main.blob.size, capBytes)
+        const dim = nextShrinkDim(rung, main.blob.size, capBytes, ladder)
         if (dim === null) break
         main = await scaleAndEncode(bitmap, dim, outMime, MAIN_QUALITY)
       }
@@ -576,14 +577,14 @@ async function processImageInner(file: File, capBytes: number): Promise<Processe
       try {
         raw = new Uint8Array(await readFileRobust(file))
       } catch {
-        const main = await scaleAndEncode(bitmap, MAX_IMG_DIM, 'image/jpeg', 0.92)
+        const main = await scaleAndEncode(bitmap, maxDim, 'image/jpeg', 0.92)
         return { blob: main.blob, thumbBlob, mimeType: 'image/jpeg', name: file.name, width: main.width, height: main.height }
       }
       if (jpegOrientation(raw) !== 1) {
         // The lossless strip drops APP1 — including the EXIF orientation tag — so a rotated
         // photo would upload sideways. Re-encode instead: createImageBitmap already baked the
         // rotation into the pixels. Higher quality (0.92) since these files are small anyway.
-        const main = await scaleAndEncode(bitmap, MAX_IMG_DIM, 'image/jpeg', 0.92)
+        const main = await scaleAndEncode(bitmap, maxDim, 'image/jpeg', 0.92)
         return { blob: main.blob, thumbBlob, mimeType: 'image/jpeg', name: file.name, width: main.width, height: main.height }
       }
       const stripped = stripExifFromJpeg(raw)
@@ -601,7 +602,7 @@ async function processImageInner(file: File, capBytes: number): Promise<Processe
     // reach here, and a small one skips the resize branch above that would have re-encoded it).
     // The pixels are already in hand, so convert rather than refuse.
     if (!isAllowedImage(mimeType)) {
-      const main = await scaleAndEncode(bitmap, MAX_IMG_DIM, 'image/jpeg', MAIN_QUALITY)
+      const main = await scaleAndEncode(bitmap, maxDim, 'image/jpeg', MAIN_QUALITY)
       return { blob: main.blob, thumbBlob, mimeType: 'image/jpeg', name: file.name.replace(/\.[^.]+$/, '.jpg'), width: main.width, height: main.height }
     }
 
@@ -619,7 +620,7 @@ async function processImageInner(file: File, capBytes: number): Promise<Processe
       raw = new Uint8Array(await readFileRobust(file))
     } catch {
       const want = mimeType === 'image/png' ? 'image/png' : 'image/webp'
-      const main = await scaleAndEncode(bitmap, MAX_IMG_DIM, want, MAIN_QUALITY)
+      const main = await scaleAndEncode(bitmap, maxDim, want, MAIN_QUALITY)
       // Label what came OUT, not what was asked for — the same canvas-falls-back-to-PNG problem
       // handled in the resize branch above, which this path was left out of. iOS 15/16 cannot encode
       // WebP, so a small WebP here would be stored as PNG bytes under a .webp name.
@@ -1354,13 +1355,14 @@ async function uploadImageToR2(
   file: File,
   albumId: string,
   imageCapBytes: number,
+  maxDim: number,
   onProgress: (pct: number) => void,
   signal?: AbortSignal,
 ): Promise<PhotoRow> {
   // Process BEFORE presigning — fileSize in presign must match the actual blob we PUT.
   // One decode yields the upload blob, the thumbnail AND the dimensions (see processImage).
   onProgress(2)
-  const processed = await processImage(file, imageCapBytes)
+  const processed = await processImage(file, imageCapBytes, maxDim)
   onProgress(12)
 
   // Cap enforced on the PROCESSED size — what actually uploads. A 30MB phone photo that
@@ -1925,6 +1927,9 @@ function createRowSaver(
 type Props = {
   album: Album
   onPhotosUploaded?: () => void
+  /** The OWNER's uploads keep full camera quality (lib/upload-policy: maxImageDimFor). A courtesy
+   *  decided client-side, not a gate — the server's byte caps still bound whatever arrives. */
+  isOwner?: boolean
 }
 
 // Explicit video MIME types instead of video/* — avoids silently accepting
@@ -1937,7 +1942,7 @@ type Props = {
 // extension only and hide HEIC otherwise.
 const FILE_ACCEPT = [...ALLOWED_IMAGE_TYPES, ...ALLOWED_VIDEO_TYPES, '.heic', '.heif'].join(',')
 
-export default function UploadZone({ album, onPhotosUploaded }: Props) {
+export default function UploadZone({ album, onPhotosUploaded, isOwner }: Props) {
   const { t } = useT()
   const [entries, setEntries] = useState<FileEntry[]>([])
   const [isDragging, setIsDragging] = useState(false)
@@ -2159,7 +2164,7 @@ export default function UploadZone({ album, onPhotosUploaded }: Props) {
           }
 
           const row = kind === 'image'
-            ? await uploadImageToR2(entry.file, album.id, caps.image, pct => patchEntry(entry.id, { progress: pct }), signal)
+            ? await uploadImageToR2(entry.file, album.id, caps.image, maxImageDimFor(isOwner === true), pct => patchEntry(entry.id, { progress: pct }), signal)
             : await uploadVideoToStream(entry.file, album.id, pct => patchEntry(entry.id, { progress: pct }), signal, entry.videoResume)
 
           // Bytes are in storage; the saver flips this tile to 'done' when the row commits.
@@ -2295,7 +2300,12 @@ export default function UploadZone({ album, onPhotosUploaded }: Props) {
     // and only if still mounted (prevents leaking a timer in AlbumPageClient)
     if (mountedRef.current && savedCount > 0) onPhotosUploaded?.()
     abortCtrlsRef.current.delete(abortCtrl)
-  }, [album.id, caps, concurrency, noteVideoOutcome, patchEntry, flushProgress, onPhotosUploaded])
+  // isOwner is a REAL dependency: owner verification is a round trip, so the page always
+  // mounts as guest and flips later. Without it here, a batch started right after the flip
+  // ran with the stale guest closure and encoded the owner's photos at 3500px — the exact
+  // silent shrink this feature exists to end, live for that whole batch. (Correctness used
+  // to depend, by accident, on `caps` changing identity after the owner refetch.)
+  }, [album.id, caps, concurrency, isOwner, noteVideoOutcome, patchEntry, flushProgress, onPhotosUploaded])
 
   const addFiles = useCallback((files: File[]) => {
     const valid = files.filter(f => detectKind(f) !== null)
