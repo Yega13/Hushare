@@ -254,3 +254,66 @@ written with bare `\n` matched zero times on these files.
 assert the find-string hit count is exactly 1; print the mutated line back off disk; refuse a
 verdict rather than guessing. This is rule 16's "assert the mutation applied", and it has now nearly
 produced false proofs three times.
+
+## 2026-09-02 — Circle 3, clearing the backlog before circle 4
+
+### 20. MY MUTATION HARNESS PRINTED BACK A LINE THE MUTATION NEVER TOUCHED
+
+Entry 19 one level up. I wrote the harness that fixes entry 19, and its readback located the mutated
+line by searching for the REPLACEMENT string. Replacing `await signedInUserForGate(album))` with
+`null)` printed:
+
+    KILLED   IMAGE: the signed-in lookup is replaced by a hardcoded null
+             on disk -> 75: .is('retired_at', null)
+
+`null)` is not unique, so it found the first match — thirty lines above the change. The mutation had
+genuinely applied and the kill was genuinely real, but the EVIDENCE was of a different line. Had it
+been a survivor I would have investigated the wrong code.
+
+It now diffs the before and after text and prints the line at the first differing byte, which cannot
+point anywhere else.
+
+**Habit to build:** a proof that cannot be wrong about WHICH thing it proved. "The replacement is in
+the file somewhere" is not the same claim as "this line changed".
+
+### 21. THREE TIMES IN ONE SESSION, A FILE'S OWN DOCUMENTATION DISARMED ITS OWN CHECK
+
+Same shape, three places, found within an hour of each other:
+
+1. `tests/architecture.test.ts` scans every test file for `@/lib/x` to decide what is tested. I added
+   a comment TO THAT FILE explaining that mocking `@/lib/report-server-error` must not count as
+   coverage — and the comment's own mention of the path marked it covered and took it off the debt
+   register.
+2. `tests/error-spike-email.test.ts` asserted `toContain('23')` on a fixture whose album slug was
+   `abc123`. The assertion was already satisfied by the LINK; it would have passed a build that
+   printed no count at all.
+3. `supabase/migrations/…_album_video_seconds.sql` opens by quoting the query it replaces, including
+   `media_type = 'video'`. My test asserted the function still filters on that — and deleting the
+   real filter from the function body left the test green, because the paragraph explaining the fix
+   answered for it.
+
+**Habit to build:** when a test greps a file, ask what ELSE in that file can answer. Strip comments,
+scope to the construct (the function body, not the file), and never assert on a needle short enough
+to appear by accident. Two characters is a coincidence, not an assertion.
+
+### 22. I ADDED A SECOND GUARD THAT COULD NOT FIRE AND CALLED IT DEFENCE IN DEPTH
+
+After moving the video sum into SQL I validated the returned total — null, non-finite, negative all
+rejected — and THEN also passed it through `sumVideoSeconds`, with a comment about belt and braces.
+A mutation deleting that second call changed no test, because the first check had already excluded
+every input it could catch.
+
+That is not defence in depth, it is a line that makes the real guard look optional: the next person
+to read it cannot tell which of the two is load-bearing, and deleting the wrong one is silent.
+
+**Habit to build:** if a guard cannot be made to fire by any input, it is decoration — delete it and
+make the real one obvious. Rule 15 applies to guards, not just to timers.
+
+### 23. I WROTE AN ASSERTION THAT CONTRADICTED MY OWN FIXTURE
+
+A decode test set the fake to label its output `'decoded'` and then asserted `'bitmap-of-frame'`.
+Caught in seconds by running it — recorded because the instinct on a red test is to suspect the
+CODE, and here the code was right and the test was wrong. I nearly edited `image-decode.ts`.
+
+**Habit to build:** on a fresh test's first failure, re-read the fixture before the subject.
+

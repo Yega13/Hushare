@@ -92,10 +92,28 @@ export async function POST(req: Request) {
 
   // Claim BEFORE sending. If the send then fails we lose one alert; if we sent first and the write
   // failed, every subsequent tick would send again — the failure that actually hurts.
+  //
+  // AND THE CLAIM HAS TO STICK. This was awaited and its result thrown away, which made the ordering
+  // above decorative: supabase-js returns { error } for a failed write rather than throwing, so a
+  // claim that did not land was indistinguishable from one that did, the email went, and NOTHING was
+  // recorded — so the next tick sent again, and the one after that, for as long as the incident
+  // lasted. The cooldown AND the hourly ceiling both live in this row, so neither bounds it. That is
+  // an unbounded mail loop during an incident: the precise failure the comment above claims this
+  // ordering prevents.
+  //
+  // Not sending errs toward one missed alert, which the next tick sends (rule 19) — the alternative
+  // errs toward a mailbox nobody can read at the moment they most need to.
   const nowIso = new Date().toISOString()
-  await admin.from('system_state').upsert({
+  const claim = await admin.from('system_state').upsert({
     key: STATE_KEY, value: JSON.stringify(verdict.nextState), updated_at: nowIso,
-  })
+  }).then(
+    (r: { error: { message: string } | null }) => r?.error?.message ?? null,
+    (e: unknown) => (e instanceof Error ? e.message : String(e)),
+  )
+  if (claim !== null) {
+    console.error('[cron/error-alert] could not claim the cooldown — not sending, to avoid a mail loop:', claim)
+    return NextResponse.json({ ok: false, count, alerted: false, reason: 'cooldown not claimed' }, { headers: NO_STORE })
+  }
 
   const devices = new Set((rows ?? []).map(r => (r.ua ?? '').match(/\((.*?)\)/)?.[1] ?? 'unknown'))
 
@@ -114,18 +132,29 @@ export async function POST(req: Request) {
   const unresolved = albumTallies.map(t => ({ album_id: t.albumId, count: t.count, album: undefined }))
   let enriched: Array<{ album_id: string | null; count: number; album?: { title: string; slug: string; email: string } | null }> = []
   if (albumTallies.length > 0) {
-    enriched = await Promise.race([
-      attachAlbumOwners(admin, albumTallies.map(t => ({ album_id: t.albumId, count: t.count })))
-        .catch((e: unknown) => {
-          console.error('[cron/error-alert] album enrichment failed:', e instanceof Error ? e.message : String(e))
-          return unresolved
+    // CLEARED WHEN THE RACE IS OVER. Without this the timer still fired on a run that had already
+    // succeeded, printing "album enrichment timed out — sending without it" four seconds after an
+    // enrichment that worked and an email that had gone. A log line describing something that did
+    // not happen is worse than no line: it is what somebody reads at 3am while deciding whether the
+    // alert can be trusted (rule 20).
+    let timer: ReturnType<typeof setTimeout> | undefined
+    try {
+      enriched = await Promise.race([
+        attachAlbumOwners(admin, albumTallies.map(t => ({ album_id: t.albumId, count: t.count })))
+          .catch((e: unknown) => {
+            console.error('[cron/error-alert] album enrichment failed:', e instanceof Error ? e.message : String(e))
+            return unresolved
+          }),
+        new Promise<typeof unresolved>((resolve) => {
+          timer = setTimeout(() => {
+            console.error('[cron/error-alert] album enrichment timed out — sending without it')
+            resolve(unresolved)
+          }, ENRICH_TIMEOUT_MS)
         }),
-      new Promise<typeof unresolved>((resolve) =>
-        setTimeout(() => {
-          console.error('[cron/error-alert] album enrichment timed out — sending without it')
-          resolve(unresolved)
-        }, ENRICH_TIMEOUT_MS)),
-    ])
+      ])
+    } finally {
+      if (timer !== undefined) clearTimeout(timer)
+    }
   }
 
   const { albums, moreAlbums, lookupFailed } = albumBlockFor(enriched, unlistedByCap)
@@ -142,6 +171,30 @@ export async function POST(req: Request) {
     })
   } catch (e) {
     console.error('[cron/error-alert] send failed:', e instanceof Error ? e.message : String(e))
+    // GIVE THE HOURLY SLOT BACK. The claim above is written before the send on purpose — if we
+    // wrote it after, a failed write would make every tick send again. But the claim also
+    // INCREMENTS the hourly ceiling, and counting a send that never left means four failures while
+    // Resend is down spend the whole hour: `hourly-cap` for the next sixty minutes with zero emails
+    // delivered, at exactly the moment something is wrong enough to be alerting.
+    //
+    // So sentAt and signature stay — those stop a retry storm on the same incident — and only the
+    // COUNTER is rolled back. Best effort: if this write fails too, the worst case is the old
+    // behaviour, which is why it is not awaited into the response path.
+    await admin.from('system_state').upsert({
+      key: STATE_KEY,
+      // No Math.max here, and that is deliberate rather than an omission: alertVerdict only ever
+      // emits `sentThisHour + 1` from a count that is already >= 0, so the value being decremented
+      // is always >= 1 and the clamp could never fire. It was here for one commit and no mutation
+      // could kill it — an unreachable guard makes the reachable one look optional (rule 15). The
+      // invariant it was guarding is asserted where it is actually decided, in
+      // tests/error-alert-grouping.test.ts. And if it were ever violated, parseAlertState's reader
+      // requires `> 0` before believing the field, so a negative would read as zero, not as room.
+      value: JSON.stringify({ ...verdict.nextState, sentThisHour: (verdict.nextState.sentThisHour ?? 1) - 1 }),
+      updated_at: new Date().toISOString(),
+    }).then(
+      () => {},
+      (err: unknown) => console.error('[cron/error-alert] could not release the hourly slot:', err),
+    )
     return NextResponse.json({ ok: false, count, alerted: false, reason: 'send failed' }, { headers: NO_STORE })
   }
 

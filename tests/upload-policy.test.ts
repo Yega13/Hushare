@@ -1,8 +1,10 @@
 import { describe, it, expect } from 'vitest'
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
 import {
   MAX_IMG_DIM, SHRINK_LADDER, needsReEncode, outputMimeFor, nextShrinkDim,
   maxImageDimFor, shrinkLadderFor, OWNER_IMG_DIM, isMissingContentLengthFailure, tusFailureAction,
-  isHeicConversionUnsupported,
+  isEvalBlockedByCsp,
   backoffDelay, isNetworkClass, isExpectedRefusal, EXPECTED_REFUSAL_PREFIXES,
   createRelayPolicy, verdictForResponse, verdictForThrow,
 } from '@/lib/upload-policy'
@@ -476,32 +478,59 @@ describe('a guest must not be shown a security-policy dump', () => {
   // Chrome on Android cannot, falls through to the WASM converter, and heic2any's emscripten glue
   // calls new Function — which our CSP refuses in the worker and on the main thread alike. There is
   // no retry that helps, so the message has to say something true and actionable instead.
-  it('recognises the CSP refusal in its several wordings', () => {
-    expect(isHeicConversionUnsupported(
-      'heic Evaluating a string as JavaScript violates the following Content Security Policy directive',
+  it('recognises the CSP refusal by the error NAME, whatever the browser writes after it', () => {
+    // THE NAME IS THE ONLY BROWSER-INDEPENDENT FACT. The prose differs per engine and is not a
+    // contract, so an EvalError must be recognised even when its message says nothing familiar --
+    // this is the case that was unreachable while the caller passed err.message alone.
+    expect(isEvalBlockedByCsp('EvalError: refused')).toBe(true)
+    expect(isEvalBlockedByCsp('EvalError: ')).toBe(true)
+  })
+
+  it('recognises it in its several wordings too', () => {
+    // Chrome.
+    expect(isEvalBlockedByCsp(
+      'EvalError: Evaluating a string as JavaScript violates the following Content Security Policy directive',
     )).toBe(true)
-    expect(isHeicConversionUnsupported('HEIC EvalError: call to Function() blocked by CSP')).toBe(true)
-    expect(isHeicConversionUnsupported("heic refused: script-src lacks 'unsafe-eval'")).toBe(true)
+    // Firefox, which names neither "content security policy" nor "evaluating a string".
+    expect(isEvalBlockedByCsp('call to Function() blocked by CSP')).toBe(true)
+    // A wrapped error that lost the name but kept the directive.
+    expect(isEvalBlockedByCsp("refused: script-src lacks 'unsafe-eval'")).toBe(true)
   })
 
   it('does NOT swallow an ordinary conversion failure', () => {
-    // Those are worth reporting as themselves — a corrupt file, an out-of-memory decode, a timeout.
+    // Those are worth reporting as themselves -- a corrupt file, an out-of-memory decode, a timeout.
     // Reading them all as "your browser cannot do this" would hide real bugs behind a polite line.
-    expect(isHeicConversionUnsupported('heic HEIC conversion timed out')).toBe(false)
-    expect(isHeicConversionUnsupported('heic worker crashed')).toBe(false)
-    expect(isHeicConversionUnsupported('heic out of memory')).toBe(false)
+    expect(isEvalBlockedByCsp('Error: HEIC conversion timed out')).toBe(false)
+    expect(isEvalBlockedByCsp('Error: worker crashed')).toBe(false)
+    expect(isEvalBlockedByCsp('RangeError: out of memory')).toBe(false)
+    expect(isEvalBlockedByCsp('TypeError: cannot read properties of undefined')).toBe(false)
   })
 
-  it('does not fire on a CSP error that has nothing to do with HEIC', () => {
-    // The page reports other CSP violations too; only the converter path may claim this message.
-    expect(isHeicConversionUnsupported(
-      'Content Security Policy directive blocked an inline script',
-    )).toBe(false)
+  it('no longer asks whether the text mentions HEIC -- the CALL SITE decides that', () => {
+    // It used to require the word, and its one caller passed `heic ${detail}` -- so the caller wrote
+    // the word the guard checked for and the check could never fail. Deliberately true now: what
+    // proves this is the HEIC path is where it is called from, and this function answers the other
+    // half of the question. The pairing is asserted in the call-site test below.
+    expect(isEvalBlockedByCsp('EvalError: blocked')).toBe(true)
+  })
+
+  it('is called from exactly one place, and only inside the HEIC converter failure path', () => {
+    // THE HALF THAT MOVED TO THE CALL SITE, PINNED. Dropping the word from the classifier is only
+    // safe while its callers are all already inside a HEIC catch -- calling it on a general error
+    // handler would start telling guests their browser cannot read iPhone photos whenever any CSP
+    // violation occurred anywhere. Read off the source, because there is nothing else that can
+    // notice a second caller appearing.
+    const src = readFileSync(join(process.cwd(), 'src', 'components', 'UploadZone.tsx'), 'utf8')
+    const callSites = src.split('isEvalBlockedByCsp(').length - 1
+    expect(callSites, 'one call, in convertHeicMainThread catch').toBe(1)
+    // And it must be given the NAME, not just the message -- the whole reason the name branch was
+    // dead for three commits.
+    expect(src).toContain('${mainErr.name}: ${mainErr.message}')
   })
 
   it('survives whatever it is handed', () => {
     for (const bad of [null, undefined, 0, {}, []]) {
-      expect(isHeicConversionUnsupported(bad), String(bad)).toBe(false)
+      expect(isEvalBlockedByCsp(bad), String(bad)).toBe(false)
     }
   })
 })

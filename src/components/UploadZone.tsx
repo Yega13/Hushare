@@ -9,10 +9,11 @@ import { stripExifFromJpeg, jpegOrientation, stripMetadataFromPng, stripMetadata
 // tested in tests/upload-policy.test.ts, because none of it was reachable from inside here.
 import {
   maxImageDimFor, shrinkLadderFor, needsReEncode, outputMimeFor, nextShrinkDim,
-  isMissingContentLengthFailure, tusFailureAction, isHeicConversionUnsupported,
+  isMissingContentLengthFailure, tusFailureAction, isEvalBlockedByCsp,
   backoffDelay, isNetworkClass, isExpectedRefusal, createRelayPolicy,
   verdictForResponse, verdictForThrow,
 } from '@/lib/upload-policy'
+import { decodeBitmapSafe, decodeImageSource } from '@/lib/image-decode'
 import { snapshotFileRobust, readFileRobust, isFileReadFailure } from '@/lib/file-read'
 import { trackUploadStep } from '@/lib/engagement'
 import { showAppToast } from '@/components/AppToast'
@@ -252,68 +253,6 @@ const decodeSem = new Semaphore(
   typeof navigator !== 'undefined' && /Mobi|Android/i.test(navigator.userAgent) ? 2 : 4,
 )
 
-/**
- * The PLATFORM's own decoder, via WebCodecs — a second native attempt before the WASM converter.
- *
- * createImageBitmap is the first attempt and handles HEIC on Safari, which is why iPhones never
- * reach the converter. Chrome on Android cannot decode HEIC that way, so it fell through to
- * heic2any — whose emscripten glue calls `new Function(...)`, which our Content-Security-Policy
- * refuses in the worker and on the main thread alike. That guest simply could not upload the photo,
- * and the only alternatives on the table were weakening script-src for the whole site or telling
- * them no.
- *
- * ImageDecoder is the third option. Android has HEIF support at the OS level and Chrome exposes it
- * here, so where it works this needs no eval, no CSP change, no extra dependency — and it is
- * BETTER than the converter path, because it decodes once instead of converting to JPEG and
- * re-encoding, which is two lossy generations.
- *
- * Strictly additive and cannot make anything worse: isTypeSupported is asked first, every failure
- * returns null, and null falls through to exactly the behaviour that exists today.
- */
-async function decodeViaImageDecoder(source: Blob): Promise<ImageBitmap | null> {
-  try {
-    if (typeof ImageDecoder === 'undefined') return null
-    const type = source.type
-    if (!type) return null
-    // Asked, never assumed: an unsupported type here throws inside the decoder instead of
-    // answering, and this path must stay silent when the platform cannot help.
-    if (!(await ImageDecoder.isTypeSupported(type))) return null
-
-    const decoder = new ImageDecoder({ data: await source.arrayBuffer(), type })
-    try {
-      const { image } = await decoder.decode({ frameIndex: 0 })
-      try {
-        // A VideoFrame, not an ImageBitmap — createImageBitmap accepts it and gives the rest of the
-        // pipeline the type it already works with.
-        return await createImageBitmap(image)
-      } finally {
-        image.close()
-      }
-    } finally {
-      decoder.close()
-    }
-  } catch {
-    return null
-  }
-}
-
-async function decodeBitmapSafe(source: Blob): Promise<ImageBitmap | null> {
-  try {
-    // EXPLICIT imageOrientation: 'from-image' bakes EXIF rotation into the pixels. Modern
-    // browsers default to this, but older Android WebViews defaulted to 'none' — which would
-    // decode a rotated photo un-rotated, so the re-encoded upload would be sideways. Being
-    // explicit guarantees correct orientation everywhere.
-    return await createImageBitmap(source, { imageOrientation: 'from-image' })
-  } catch {
-    // Retry without options in case a very old engine rejects the options bag outright.
-    try {
-      return await createImageBitmap(source)
-    } catch {
-      return null
-    }
-  }
-}
-
 async function bitmapToBlob(bitmap: CanvasImageSource, w: number, h: number, mime: string, quality: number): Promise<Blob> {
   // OffscreenCanvas first (convertToBlob missing on Safari < 16.4) — HTMLCanvas fallback.
   if (typeof OffscreenCanvas !== 'undefined') {
@@ -467,7 +406,7 @@ async function processImageInner(file: File, capBytes: number, maxDim: number): 
     // Then the PLATFORM decoder, for browsers where createImageBitmap cannot but WebCodecs can —
     // Chrome on Android, where the WASM converter is refused by our CSP and the guest was simply
     // told no. Same single-generation quality, and it costs nothing where it is unsupported.
-    const native = (await decodeBitmapSafe(file)) ?? (await decodeViaImageDecoder(file))
+    const native = await decodeImageSource(file)
     if (native) {
       try {
         const thumbBlob = await deriveThumb(native)
@@ -487,11 +426,18 @@ async function processImageInner(file: File, capBytes: number, maxDim: number): 
         jpegBlob = await convertHeicMainThread(file)
       } catch (mainErr) {
         const detail = mainErr instanceof Error ? mainErr.message : String(mainErr)
+        // CLASSIFIED ON THE ERROR'S NAME, NOT ONLY ITS TEXT. `EvalError` is the browser-independent
+        // fact that the CSP refused `new Function`; the sentence after it is Chrome's phrasing and
+        // Firefox writes a different one. `.message` drops the name, so the classifier's own
+        // 'evalerror' branch could never match anything and every browser depended on matching
+        // prose. This is the one line that makes it reachable — `detail` stays message-only,
+        // because a guest is never shown the name.
+        const signature = mainErr instanceof Error ? `${mainErr.name}: ${mainErr.message}` : String(mainErr)
         // A GUEST MUST NOT BE HANDED A SECURITY-POLICY DUMP. When the converter cannot run in this
         // browser at all — Chrome on Android, where heic2any's `new Function` is refused by our CSP
         // — retrying changes nothing, so the message says what is true and what they can do about
         // it instead of quoting a script-src directive at somebody at a wedding.
-        if (isHeicConversionUnsupported(`heic ${detail}`)) {
+        if (isEvalBlockedByCsp(signature)) {
           throw new Error(
             'This browser cannot convert iPhone photo files (HEIC). '
             + 'Ask for the photo as a JPEG, or add it from an iPhone.',

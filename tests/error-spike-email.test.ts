@@ -37,7 +37,11 @@ afterEach(() => { globalThis.fetch = originalFetch })
 const { sendErrorSpikeEmail } = await import('@/lib/email')
 
 const TO = 'ops@example.com'
-const base = { count: 23, windowMinutes: 10, deviceCount: 4, top: [['upload failed', 20]] as [string, number][] }
+// A COUNT NO OTHER FIXTURE CAN SPELL. It was 23, and the slug in most of these tests is
+// 'abc123' — so `toContain('23')` was already satisfied by the LINK, and would have passed a
+// build that printed no count at all the moment an album block appeared in that test. Two
+// characters is not an assertion, it is a coincidence waiting to be believed.
+const base = { count: 8341, windowMinutes: 10, deviceCount: 4, top: [['upload failed', 20]] as [string, number][] }
 
 describe('the album block says only what is true', () => {
   it('names each album, its count, and a way to reach the owner', async () => {
@@ -102,8 +106,8 @@ describe('the album block says only what is true', () => {
     // is allowed to fail without losing the alarm.
     await sendErrorSpikeEmail(TO, { ...base, albums: [], moreAlbums: 0 })
     const [msg] = sent
-    expect(msg.subject).toContain('23')
-    expect(msg.html).toContain('23')
+    expect(msg.subject).toContain('8341')
+    expect(msg.html).toContain('8341')
   })
 })
 
@@ -226,5 +230,112 @@ describe('nothing a customer wrote can break out of the markup', () => {
       moreAlbums: 0,
     })
     expect(sent[0].html).not.toContain('x'.repeat(100))
+  })
+})
+
+describe('a real alert never reads like a test, and says what broke', () => {
+  // FOUR MUTATIONS SURVIVED IN THIS BLOCK, and it is the only part of the email that says WHAT is
+  // wrong. The heading, the explanation and the message list were all unasserted.
+
+  it('a real alert does not claim to be a test', async () => {
+    // `const heading = true` survived: the subject would read "8341 uploads or pages failed" while
+    // the body read "This is a test. Nothing is wrong." An alert that contradicts itself is exactly
+    // what teaches an operator to ignore the next one.
+    await sendErrorSpikeEmail(TO, { ...base, albums: [], moreAlbums: 0 })
+    const [msg] = sent
+    expect(msg.html).not.toContain('This is a test')
+    expect(msg.html).not.toContain('Nothing is wrong')
+    expect(msg.html).toContain('8341 things failed')
+  })
+
+  it('a TEST alert says so in both the subject and the body', async () => {
+    await sendErrorSpikeEmail(TO, { ...base, albums: [], moreAlbums: 0, test: true })
+    const [msg] = sent
+    expect(msg.subject).toContain('test alert')
+    expect(msg.html).toContain('This is a test')
+  })
+
+  it('names the failing messages, with their counts, in BOTH parts', async () => {
+    // Emptying the list, zeroing the counts, and replacing the body with a literal all survived.
+    // This is the only content that answers "what is broken".
+    await sendErrorSpikeEmail(TO, {
+      ...base,
+      top: [['tus chunk failed', 777], ['presign timed out', 3]],
+      albums: [], moreAlbums: 0,
+    })
+    const [msg] = sent
+    expect(msg.html).toContain('tus chunk failed')
+    expect(msg.html).toContain('777')
+    expect(msg.text).toContain('777x tus chunk failed')
+    expect(msg.html).toContain('presign timed out')
+  })
+
+  it('escapes a hostile failure message — it arrives from an unauthenticated POST', async () => {
+    // Every `top` value in this file was 'upload failed', metacharacter-free, so removing
+    // escapeHtml here survived. The string comes straight from /api/log/client-error into the
+    // operator's inbox HTML.
+    await sendErrorSpikeEmail(TO, {
+      ...base,
+      top: [['<img src=x onerror=alert(1)>', 9]],
+      albums: [], moreAlbums: 0,
+    })
+    const [msg] = sent
+    expect(msg.html).not.toContain('<img src=x')
+    expect(msg.html).toContain('&lt;img src=x')
+  })
+
+  it('truncates a very long failure message', async () => {
+    await sendErrorSpikeEmail(TO, { ...base, top: [['z'.repeat(600), 9]], albums: [], moreAlbums: 0 })
+    expect(sent[0].html).not.toContain('z'.repeat(200))
+  })
+
+  it('states the window, and the device count with the right plural', async () => {
+    await sendErrorSpikeEmail(TO, { ...base, deviceCount: 1, albums: [], moreAlbums: 0 })
+    expect(sent[0].html).toContain('10 minutes')
+    expect(sent[0].html).toContain('1 device')
+    expect(sent[0].html).not.toContain('1 devices')
+  })
+
+  it('links to the dashboard, in both parts', async () => {
+    // Replacing the link with about:blank survived in HTML and text. It is the only action in the
+    // email — an alert you cannot act from is a notification.
+    await sendErrorSpikeEmail(TO, { ...base, albums: [], moreAlbums: 0 })
+    const [msg] = sent
+    expect(msg.html).toContain('/admin#errors')
+    expect(msg.text).toContain('/admin#errors')
+  })
+})
+
+describe('an album we could not identify gets no link', () => {
+  it('never offers the marketing home page as an album link', async () => {
+    // `${SITE_URL}/${slug}` with an empty slug is https://hushare.space/ — the marketing page —
+    // rendered as a confident link to that album, in the email an operator opens during an
+    // incident. Not reachable today, because attachAlbumOwners resolves all-or-nothing and the
+    // all-failed case renders a different block. It is guarded anyway: the uncertain branch must do
+    // nothing rather than guess (rule 19), and every "not reachable today" in this file's history
+    // became reachable when somebody made a resolution partial.
+    await sendErrorSpikeEmail(TO, {
+      ...base,
+      albums: [{ slug: '', title: 'Mystery album', count: 5, owner: '(unknown user)' }],
+      moreAlbums: 0,
+    })
+    const [msg] = sent
+    expect(msg.html).toContain('could not be identified')
+    expect(msg.html).not.toMatch(/href="https:\/\/hushare\.space\/"/)
+    expect(msg.text).toContain('could not be identified')
+    expect(msg.text).not.toMatch(/— https:\/\/hushare\.space\/ —/)
+  })
+
+  it('still links an album that DID resolve, in the same email', async () => {
+    await sendErrorSpikeEmail(TO, {
+      ...base,
+      albums: [
+        { slug: '', title: 'Mystery', count: 5, owner: '(unknown user)' },
+        { slug: 'realslug', title: 'Real', count: 3, owner: 'a@b.com' },
+      ],
+      moreAlbums: 0,
+    })
+    expect(sent[0].html).toContain('/realslug')
+    expect(sent[0].text).toContain('/realslug')
   })
 })

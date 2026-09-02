@@ -37,7 +37,8 @@ const inserts: unknown[] = []
 // it, so assertion (2) below cannot pass by accident.
 const RESERVATION = 4321
 
-const cfg: { authOk: boolean; refusal: Response | null } = { authOk: true, refusal: null }
+const cfg: { authOk: boolean; refusal: Response | null; ipRlOk: boolean; rateLimitCalls: unknown[][] } =
+  { authOk: true, refusal: null, ipRlOk: true, rateLimitCalls: [] }
 
 vi.mock('@/lib/server/video-upload-authorization', () => ({
   authorizeVideoUpload: async (params: unknown) => {
@@ -64,8 +65,14 @@ vi.mock('@/lib/supabase/admin', () => ({
   }),
 }))
 vi.mock('@/lib/rate-limit', () => ({
-  checkRateLimit: async () => ({ ok: true }),
-  clientIpKey: () => 'test-key',
+  // Records its arguments AND can refuse. The route's own per-IP limit is the one thing the module
+  // docstring says the CALLER still owns, and `if (false)` on it survived all ten of these tests
+  // because the mock always said yes and nobody looked at what was asked.
+  checkRateLimit: async (...args: unknown[]) => {
+    cfg.rateLimitCalls.push(args)
+    return cfg.ipRlOk ? { ok: true } : { ok: false, retryAfterSeconds: 60 }
+  },
+  clientIpKey: (_req: unknown, prefix: string) => `${prefix}:test`,
 }))
 vi.mock('@/lib/report-server-error', () => ({ reportServerError: () => {} }))
 
@@ -91,6 +98,8 @@ beforeEach(() => {
   inserts.length = 0
   cfg.authOk = true
   cfg.refusal = null
+  cfg.ipRlOk = true
+  cfg.rateLimitCalls = []
 })
 
 describe('the route cannot skip authorization', () => {
@@ -189,5 +198,31 @@ describe('malformed requests never reach the authorizer', () => {
     }))
     expect(res.status).not.toBe(200)
     expect(authCalls).toHaveLength(0)
+  })
+})
+
+describe('the limit the route still owns for itself', () => {
+  it('checks the per-IP limit, keyed and failing closed', async () => {
+    // The module docstring says the caller keeps CSRF, the per-IP limit and field validation. The
+    // first two were tested and this one was not — `if (false)` on it passed every test here.
+    await POST(post(VALID))
+    expect(cfg.rateLimitCalls).toHaveLength(1)
+    const [key, window, ceiling, opts] = cfg.rateLimitCalls[0]
+    expect(key).toBe('stream_ip:test')
+    expect(window).toBe(3600)
+    expect(typeof ceiling).toBe('number')
+    // failOpen:false is deliberate: a limiter we cannot consult must refuse on the only path that
+    // bounds Cloudflare Stream cost.
+    expect(opts).toEqual({ failOpen: false })
+  })
+
+  it('429s a hammered IP before authorizing anything', async () => {
+    // Ordering: a flooded IP must cost no album lookup and no subscription lookup.
+    cfg.ipRlOk = false
+    const res = await POST(post(VALID))
+    expect(res.status).toBe(429)
+    expect(res.headers.get('Retry-After')).toBe('60')
+    expect(authCalls, 'a rate-limited request must not reach authorization').toHaveLength(0)
+    expect(streamCalls).toHaveLength(0)
   })
 })

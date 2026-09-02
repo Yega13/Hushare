@@ -7,7 +7,7 @@ import { uploadCapsForTier, tooLargeMessage, STUDIO_VIDEO_BYTES } from '@/lib/me
 import { getUserTierById } from '@/lib/subscriptions'
 import { resolveMaxDurationSeconds } from '@/lib/stream-duration'
 import { reportServerError } from '@/lib/report-server-error'
-import { videoCaps, videoBudgetExceeded, videoAlbumFullMessage, albumEffectiveTier, sumVideoSeconds } from '@/lib/album-entitlements'
+import { videoCaps, videoBudgetExceeded, videoAlbumFullMessage, albumEffectiveTier } from '@/lib/album-entitlements'
 import { gateAllowsContribution, signedInUserForGate, ALBUM_GATE_COLS } from '@/lib/server/album-access'
 import type { Tier } from '@/types'
 
@@ -151,40 +151,51 @@ export async function authorizeVideoUpload(
   // well-compressed 200 MB file can be half an hour.
   const vcaps = videoCaps(effectiveTier)
 
-  // Summed, not counted: the budget is minutes, so minutes are what has to be measured.
+  // SUMMED IN THE DATABASE, which is the permanent fix for a limit that truncated.
   //
-  // THE media_type FILTER IS LOAD-BEARING, and only because of the limit beneath it. Photo rows
-  // have a NULL duration, so dropping the filter does not change the arithmetic — it changes WHICH
-  // thousand rows come back. On an album past 1,000 items the thousand returned would be
-  // overwhelmingly photos, the sum would read 0, and the video budget would stop being enforced
-  // entirely, silently, on exactly the largest albums. A database-side sum() is the permanent fix
-  // and is tracked separately; until then this filter is what keeps the limit real.
+  // This read up to 1,000 duration rows and added them up here. A free album caps at 1,000 items so
+  // it could never overflow that, but Pro caps at 3,000 and Max at 10,000 — and past a thousand
+  // video rows the sum came from an arbitrary subset (there was no ORDER BY either) and read LOW,
+  // so the budget quietly stopped binding on precisely the paid albums. It also shipped a thousand
+  // rows over the network on the hot path of every video upload to produce one number.
+  //
+  // album_video_seconds does the clamp INSIDE the sum, matching sumVideoSeconds row for row — see
+  // the migration, which explains why that repetition is the one rule 13 permits and which test
+  // holds the two numbers together.
   //
   // The read happens once and the insert happens later, so simultaneous uploads can overshoot by
   // roughly what is in flight — the same bounded overshoot the item cap accepts.
-  const { data: durations, error: videoSumErr } = await admin
-    .from('photos')
-    .select('duration_seconds')
-    .eq('album_id', params.albumId)
-    .eq('media_type', 'video')
-    .limit(1000)
-    .returns<{ duration_seconds: number | null }[]>()
+  const { data: usedFromDb, error: videoSumErr } = await admin
+    .rpc('album_video_seconds', { p_album_id: params.albumId })
+    .returns<number>()
 
-  if (videoSumErr) {
+  // A NUMBER WE CANNOT TRUST IS THE SAME EVENT AS A QUERY THAT FAILED. Postgres returns bigint,
+  // which some drivers hand back as a string and some as null when the shape changes; a value that
+  // is not a finite number ≥ 0 means the budget is NOT being enforced, and that has to reach the
+  // panel rather than quietly becoming "0 seconds used" — which reads as an empty album and lets
+  // everything through with nobody told (rule 20).
+  const usedFromDbNum = Number(usedFromDb)
+  const unusable = !videoSumErr && (usedFromDb == null || !Number.isFinite(usedFromDbNum) || usedFromDbNum < 0)
+
+  if (videoSumErr || unusable) {
     // Fails OPEN, in the same direction as every other counted limit here: a total we could not
     // read does not block the upload. Letting a few extra minutes through during a database blip is
     // far cheaper than refusing every guest at a live event — but a budget that has silently
     // stopped being enforced belongs in the panel, not only in a log nobody reads.
-    console.error('[stream] video budget NOT enforced — sum failed for album', params.albumId, ':', videoSumErr.message)
+    const reason = videoSumErr ? videoSumErr.message : `unusable total: ${String(usedFromDb)}`
+    console.error('[stream] video budget NOT enforced — sum failed for album', params.albumId, ':', reason)
     reportServerError('stream', 'Video budget NOT enforced — the duration query failed', {
       albumId: params.albumId,
-      context: { reason: videoSumErr.message.slice(0, 200) },
+      context: { reason: reason.slice(0, 200) },
     })
   } else {
-    // sumVideoSeconds, not an inline reduce: it clamps EVERY ROW rather than the total. The inline
-    // version summed whatever was stored, and one negative row disabled this album's budget for
-    // good. Imported so the arithmetic that bounds Stream cost exists once (rule 17).
-    const usedSeconds = sumVideoSeconds(durations ?? [])
+    // Used directly, because `unusable` above has ALREADY rejected null, non-finite and negative —
+    // every case the old sumVideoSeconds([{ duration_seconds: … }]) wrapper would have caught. That
+    // wrapper was here for one commit and a mutation deleting it changed no test, which is the
+    // definition of decoration: a second guard that cannot fire is not defence in depth, it is a
+    // line that makes the real guard look optional (rule 15). The validation is above, and it is
+    // tested for each bad shape.
+    const usedSeconds = usedFromDbNum
     if (videoBudgetExceeded(usedSeconds, params.durationSeconds, vcaps)) {
       // 403, NOT 429. lib/upload-policy treats 429 as retryable and runs the whole route four more
       // times behind a backoff — for a refusal that is permanent until somebody deletes something.

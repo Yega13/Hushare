@@ -28,24 +28,42 @@ const cfg: {
   tier: string
   tierThrows: boolean
   rateLimitCalls: unknown[][]
+  /** What the album lookup was actually filtered on, as `eq:col` / `is:col`. */
+  albumFilters: Record<string, unknown>
+  /** The album row signedInUserForGate was asked about, once per call. */
+  signedInLookups: unknown[]
+  /** What the signed-in lookup answers. A real id, so dropping it is visible. */
+  signedInUserId: string | null
+  gateCalls: Array<{ albumId: string | undefined; signedInUserId: string | null | undefined }>
 } = {
   album: null, albumError: false, photoCount: 0, countError: false,
   gateOk: true, ipRlOk: true, albumRlOk: true, tier: 'free', tierThrows: false,
   rateLimitCalls: [],
+  albumFilters: {}, signedInLookups: [], signedInUserId: 'signed-in-account-id', gateCalls: [],
 }
 
 vi.mock('@/lib/supabase/admin', () => ({
   createAdminClient: () => ({
     from: (table: string) => {
       if (table === 'albums') {
+        // RECORDS ITS FILTERS. Ignoring them meant `.is('retired_at', null)` could become
+        // `.is('deleted_at', null)` — a column that does not exist on this table — and every test
+        // still passed, while a retired album (retention expired, data queued for deletion) went on
+        // accepting uploads into storage nobody is paying for any more.
         return {
           select: () => ({
-            eq: () => ({
-              is: () => ({
-                maybeSingle: async () =>
-                  (cfg.albumError ? { data: null, error: { message: 'boom' } } : { data: cfg.album, error: null }),
-              }),
-            }),
+            eq: (col: string, val: unknown) => {
+              cfg.albumFilters[`eq:${col}`] = val
+              return {
+                is: (col2: string, val2: unknown) => {
+                  cfg.albumFilters[`is:${col2}`] = val2
+                  return {
+                    maybeSingle: async () =>
+                      (cfg.albumError ? { data: null, error: { message: 'boom' } } : { data: cfg.album, error: null }),
+                  }
+                },
+              }
+            },
           }),
         }
       }
@@ -81,8 +99,19 @@ vi.mock('@/lib/server/album-access', async (orig) => {
   const actual = await orig() as Record<string, unknown>
   return {
     ...actual,
-    gateAllowsContribution: async () => (cfg.gateOk ? { ok: true } : { ok: false, error: 'Enter the album password before adding photos' }),
-    signedInUserForGate: async () => null,
+    // BOTH RECORD. signedInUserForGate used to answer `null` here, which is the value the gate
+    // assumes anyway — so deleting the lookup, or dropping the third argument to the gate, changed
+    // nothing any test could see. That argument is the fix for the customer who set a password from
+    // another tab and had her next 163 uploads refused on her own album (rule 25). Answering a
+    // distinctive id makes its absence visible.
+    gateAllowsContribution: async (album: { id: string }, _cookies: unknown, signedInUserId?: string | null) => {
+      cfg.gateCalls.push({ albumId: album?.id, signedInUserId })
+      return cfg.gateOk ? { ok: true } : { ok: false, error: 'Enter the album password before adding photos' }
+    },
+    signedInUserForGate: async (album: unknown) => {
+      cfg.signedInLookups.push(album)
+      return cfg.signedInUserId
+    },
   }
 })
 vi.mock('@/lib/report-server-error', () => ({ reportServerError: () => {} }))
@@ -117,6 +146,10 @@ beforeEach(() => {
   cfg.tier = 'free'
   cfg.tierThrows = false
   cfg.rateLimitCalls = []
+  cfg.albumFilters = {}
+  cfg.signedInLookups = []
+  cfg.signedInUserId = 'signed-in-account-id'
+  cfg.gateCalls = []
 })
 
 describe('an ordinary guest photo is allowed', () => {
@@ -328,5 +361,46 @@ describe('when something cannot be determined', () => {
     // count query failed is the worse error, and presign-budget errs open by design (rule 19).
     cfg.countError = true
     expect((await authorizeImageUpload(req, params())).ok).toBe(true)
+  })
+})
+
+describe('the album it authorizes is the album it looked up', () => {
+  it('filters on this album id AND on the album not being retired', async () => {
+    // Both filters were invisible: the mock ignored its arguments, so `.is('retired_at', null)`
+    // could name any column at all and every test still passed. A retired album is one whose
+    // retention has run out and whose media is queued for deletion — it must not take new uploads,
+    // and it must not be found here.
+    await authorizeImageUpload(req, params())
+    expect(cfg.albumFilters['eq:id']).toBe(ALBUM_ID)
+    expect(cfg.albumFilters).toHaveProperty('is:retired_at')
+    expect(cfg.albumFilters['is:retired_at']).toBeNull()
+  })
+})
+
+describe('the signed-in owner is recognized on a device with no owner cookie', () => {
+  it('asks who is signed in, about THIS album, and hands the answer to the gate', async () => {
+    // The customer who lost 163 uploads: she set a password from another tab, so the tab she was
+    // uploading from had no owner cookie, and the gate had no second way to recognise her. The
+    // account is the stronger proof and it is passed as the gate's third argument.
+    //
+    // Until now this mock answered null — the same value the gate assumes when nobody asks — so
+    // deleting the lookup, or dropping the argument, was invisible to all forty tests here.
+    await authorizeImageUpload(req, params())
+    expect(cfg.signedInLookups, 'the signed-in account must be looked up').toHaveLength(1)
+    expect(cfg.signedInLookups[0]).toMatchObject({ id: ALBUM_ID })
+    expect(cfg.gateCalls).toHaveLength(1)
+    expect(cfg.gateCalls[0].signedInUserId, 'the gate must receive the account id').toBe('signed-in-account-id')
+  })
+
+  it('passes null through unchanged when nobody is signed in', async () => {
+    // The null must reach the gate as null and not, say, as undefined-because-the-call-was-dropped.
+    cfg.signedInUserId = null
+    await authorizeImageUpload(req, params())
+    expect(cfg.gateCalls[0].signedInUserId).toBeNull()
+  })
+
+  it('gates the album it was asked about', async () => {
+    await authorizeImageUpload(req, params())
+    expect(cfg.gateCalls[0].albumId).toBe(ALBUM_ID)
   })
 })

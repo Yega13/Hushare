@@ -2,6 +2,30 @@ import { describe, it, expect } from 'vitest'
 import { readFileSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
 
+/**
+ * Every matching file at ANY depth, absolute paths, deterministic order.
+ *
+ * The rules in this file are only worth what their walk can see, and the walk is where they have
+ * failed twice. `readdirSync(dir).filter(f => f.endsWith('.ts'))` never matches a directory, so
+ * everything under src/lib/server was exempt from "a new module arrives with its tests" without
+ * anyone choosing that — which is how the authorization chain for 98.5% of all media reached
+ * production untested through two rounds of adversarial review. Unrolling one level by hand fixed
+ * the case that had already bitten and left the identical hole one level deeper.
+ *
+ * A recursive walk has no depth to get wrong. node_modules and dot-directories are skipped because
+ * they are not ours.
+ */
+function walkTs(dir: string, match: RegExp): string[] {
+  const out: string[] = []
+  for (const entry of readdirSync(dir, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) {
+    if (entry.name.startsWith('.') || entry.name === 'node_modules') continue
+    const full = join(dir, entry.name)
+    if (entry.isDirectory()) out.push(...walkTs(full, match))
+    else if (match.test(entry.name)) out.push(full)
+  }
+  return out
+}
+
 // A RATCHET, NOT A STANDARD.
 //
 // This file does not assert that the architecture is good. It asserts that it does not get worse.
@@ -70,7 +94,11 @@ const SIZE_BUDGET: Record<string, number> = {
   // leaving that guest unable to upload the photo at all. The alternatives were weakening
   // script-src for the whole site or telling them no; this is neither. Strictly additive: every
   // failure returns null and falls through to exactly the previous behaviour.
-  'src/components/UploadZone.tsx': 2927,
+  // -54 (2026-09-02): both decode attempts moved to lib/image-decode with tests. Four mutations to
+  // them had survived the whole suite while they sat here — deleting the WebCodecs attempt,
+  // reversing the two attempts' order, dropping image.close(), and skipping isTypeSupported — which
+  // is rule 14 stated as a measurement rather than an opinion. 10/10 killed after the move.
+  'src/components/UploadZone.tsx': 2873,
   // +3 on 2026-08-30: the branding toggle gained a real plan check (it was dimmed but still
   // clickable), and Face Finder and bib search stopped riding on the collections flag. Three
   // lines of reasoning for three gates that were wrong. Deliberate.
@@ -248,12 +276,35 @@ describe('a new decision module arrives with its tests', () => {
   // lib/report-server-error as "tested now, take it off the register" the moment an unrelated test
   // stubbed it — which would have swapped a truthful debt entry for a false claim of coverage, in
   // the one file whose whole job is to keep that register honest.
-  const testSource = readdirSync(join(process.cwd(), 'tests'))
-    .filter((f) => /\.tsx?$/.test(f))
-    .map((f) => readFileSync(join(process.cwd(), 'tests', f), 'utf8'))
-    .join('\n')
-    .split('\n')
-    .filter((line) => !/vi\.mock\s*\(/.test(line))
+  //
+  // STRIPPED STRUCTURALLY, NOT BY LINE. Dropping every line matching `vi.mock(` misses the two
+  // shapes that are certain to appear eventually: a call whose path sits on the NEXT line
+  //
+  //     vi.mock(
+  //       '@/lib/report-server-error',
+  //       () => ({ reportServerError: () => {} }),
+  //     )
+  //
+  // and `vi.doMock`, which prettier and every conditional-mock refactor produce. Either one puts the
+  // module path back into the haystack and quietly re-marks a stubbed module as covered. Removing
+  // the first string ARGUMENT instead works whatever the formatting, because the thing being
+  // searched for is exactly that string.
+  const stripMockPaths = (src: string) =>
+    src.replace(/\bvi\s*\.\s*(?:do)?[Mm]ock(?:Require)?\s*\(\s*(['"`])(?:[^'"`\\]|\\.)*\1/g, "vi.mock('<stubbed>'")
+
+  // COMMENTS ARE NOT COVERAGE. Naming a module inside a comment marked it tested — and the first
+  // victim was this file: the paragraph above, explaining that mocking report-server-error must not
+  // count, mentions the path, and that mention alone took it off the register. A test file that
+  // documents what it does not test would disarm this rule by describing it.
+  //
+  // It can only ever REMOVE text, so the direction it errs in is a module wrongly reported as
+  // untested — which fails loudly and gets looked at (rule 19). URLs inside string literals get
+  // clipped as collateral; nothing here searches for one.
+  const stripComments = (src: string) =>
+    src.replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/(^|[^:])\/\/[^\n]*/g, '$1')
+
+  const testSource = walkTs(join(process.cwd(), 'tests'), /\.tsx?$/)
+    .map((f) => stripMockPaths(stripComments(readFileSync(f, 'utf8'))))
     .join('\n')
 
   // ONE LEVEL DOWN AS WELL. `readdirSync(...).filter(f => f.endsWith('.ts'))` only ever saw
@@ -265,17 +316,44 @@ describe('a new decision module arrives with its tests', () => {
   // the same per-tier cap and the same per-album ceiling as the video path — has no test at all,
   // and went unnoticed through two rounds of adversarial review because this walk could not see it.
   // The rule the video module was just held to would not have applied to the video module either.
-  const libs = [
-    ...readdirSync(join(process.cwd(), 'src', 'lib'), { withFileTypes: true })
-      .filter((e) => e.isFile() && e.name.endsWith('.ts'))
-      .map((e) => e.name.replace(/\.ts$/, '')),
-    ...readdirSync(join(process.cwd(), 'src', 'lib'), { withFileTypes: true })
-      .filter((e) => e.isDirectory())
-      .flatMap((dir) =>
-        readdirSync(join(process.cwd(), 'src', 'lib', dir.name), { withFileTypes: true })
-          .filter((e) => e.isFile() && e.name.endsWith('.ts'))
-          .map((e) => `${dir.name}/${e.name.replace(/\.ts$/, '')}`)),
-  ]
+  // Fixed once by hand-unrolling ONE level, which left `src/lib/a/b.ts` covered and `src/lib/a/b/c.ts`
+  // exempt — the same silent hole one level deeper, waiting for the first module to be filed two
+  // deep. It walks all the way down now.
+  const libRoot = join(process.cwd(), 'src', 'lib')
+  const libs = walkTs(libRoot, /\.ts$/)
+    .map((f) => f.slice(libRoot.length + 1).replace(/\\/g, '/').replace(/\.ts$/, ''))
+
+  // THE RULE'S OWN MACHINERY, TESTED. Everything above is only worth what the walk can see and what
+  // the strippers remove, and BOTH have already failed silently — the walk skipped a whole directory
+  // for months, and the stripper marked a module covered because a comment in this very file named
+  // it. A rule whose reach is not itself asserted is a rule that reports "all clear" from a blind
+  // spot, which is worse than not having it (rule 20). Literal inputs, so nothing here can drift
+  // with the repo's contents.
+  describe('the guard can actually see what it claims to', () => {
+    it('walks past the first directory level', () => {
+      expect(libs, 'one level down').toContain('server/album-access')
+      // Depth 2 is the hole the hand-unrolled fix left. Asserted against the walk, not the disk, by
+      // giving it a tree it must descend twice.
+      const deep = walkTs(join(process.cwd(), 'src', 'app', 'api'), /route\.ts$/)
+      expect(deep.length, 'src/app/api nests several levels deep').toBeGreaterThan(20)
+    })
+
+    it('does not count a mocked path as a tested one, however it is written', () => {
+      expect(stripMockPaths("vi.mock('@/lib/x', () => ({}))")).not.toContain('@/lib/x')
+      // The two shapes the old line-based strip let through.
+      expect(stripMockPaths("vi.doMock('@/lib/x', () => ({}))")).not.toContain('@/lib/x')
+      expect(stripMockPaths("vi.mock(\n  '@/lib/x',\n  () => ({}),\n)")).not.toContain('@/lib/x')
+      expect(stripMockPaths('vi.mock("@/lib/x")')).not.toContain('@/lib/x')
+      // A real import must survive, or every module reads as untested and the rule inverts.
+      expect(stripMockPaths("import { x } from '@/lib/x'")).toContain('@/lib/x')
+    })
+
+    it('does not count a path named in a comment', () => {
+      expect(stripComments("// see @/lib/x for why")).not.toContain('@/lib/x')
+      expect(stripComments("/* @/lib/x is stubbed */")).not.toContain('@/lib/x')
+      expect(stripComments("import { x } from '@/lib/x' // fine")).toContain('@/lib/x')
+    })
+  })
 
   it('has no untested module that is not already on the debt register', () => {
     const isTested = (name: string) =>

@@ -151,7 +151,7 @@ export function isMissingContentLengthFailure(message: unknown): boolean {
 }
 
 /**
- * Did the HEIC converter fail because this browser will not let it run?
+ * Did this fail because the browser's Content-Security-Policy refused to evaluate a string?
  *
  * A guest was shown this, verbatim, as the reason their photo did not upload:
  *
@@ -167,18 +167,30 @@ export function isMissingContentLengthFailure(message: unknown): boolean {
  * worker and on the main thread alike, because both inherit the document's policy. There is no
  * retry that helps: the conversion cannot run in this browser at all.
  *
- * Matched on the message because that is all the exception carries — an EvalError's text is the
- * CSP report, and no error code distinguishes it. Both the spec wording and Chrome's phrasing are
- * checked; a false positive costs one honest message instead of a cryptic one.
+ * IT NO LONGER ASKS WHETHER THE TEXT SAYS "HEIC", and that removal is the point. It used to, and
+ * its one caller passed `` `heic ${detail}` `` — so the caller wrote the word the guard checked
+ * for, and the check could never fail. A condition satisfied by its own caller's literal is not a
+ * guard, it is decoration that reads like one. What proves this is the HEIC path is WHERE it is
+ * called from, which the call site already knows; what this function decides is the other half.
+ *
+ * MATCHED ON THE NAME FIRST. `EvalError` is the browser-independent fact — the wording after the
+ * colon is Chrome's, Firefox says "call to Function() blocked by CSP", and neither is a contract.
+ * The name was already listed here and was unreachable for exactly that reason: the caller passed
+ * `err.message`, which never contains it. The call site passes `name: message` now.
+ *
+ * Errs toward saying yes: a false positive costs one honest sentence instead of a cryptic one,
+ * while a false negative puts a CSP directive in front of a guest (rule 19).
  */
-export function isHeicConversionUnsupported(message: unknown): boolean {
+export function isEvalBlockedByCsp(message: unknown): boolean {
   if (typeof message !== 'string') return false
   const m = message.toLowerCase()
-  if (!m.includes('heic')) return false
-  return m.includes('content security policy')
-    || m.includes('evalerror')
+  return m.includes('evalerror')
+    || m.includes('content security policy')
     || m.includes('evaluating a string as javascript')
     || m.includes('unsafe-eval')
+    // Firefox: "call to Function() blocked by CSP". Missing this showed a Firefox-on-Android guest
+    // the raw directive while Chrome's identical failure got the readable sentence.
+    || m.includes('blocked by csp')
 }
 
 /**

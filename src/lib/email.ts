@@ -354,6 +354,17 @@ export async function sendErrorSpikeEmail(
   // plain fact it is. Deciding on '@' rather than on a separate flag keeps this template unable to
   // turn a label into a broken mailto: link, whatever a future caller passes.
   const albumRows = albums.map((a) => {
+    // NO SLUG MEANS NO LINK. An album we could not resolve has an empty slug, and `${SITE_URL}/`
+    // is the marketing home page — so the row would have offered the operator a confident link to
+    // entirely the wrong thing, labelled as that album. Not reachable today (attachAlbumOwners
+    // resolves all-or-nothing, and the all-failed case renders a different block), but the uncertain
+    // branch must do nothing rather than guess (rule 19), and "not reachable today" is how the last
+    // three of these started.
+    if (!a.slug) {
+      return `<li style="margin:0 0 8px;"><strong>${a.count}×</strong> `
+        + `${escapeHtml(a.title.slice(0, 60))}`
+        + `<br><span style="font-size:13px;color:#8B6F4E;">album could not be identified</span></li>`
+    }
     const url = `${SITE_URL}/${a.slug}`
     const owner = a.owner.includes('@')
       ? `<a href="mailto:${escapeHtml(a.owner)}" style="color:#630826;">${escapeHtml(a.owner)}</a>`
@@ -398,7 +409,9 @@ export async function sendErrorSpikeEmail(
     // HTML omitted the whole block the text still carried that line, pointing at nothing.
     ...(lookupFailed ? ['', 'Which albums: could not be looked up — open the dashboard.'] : []),
     ...(!lookupFailed && albums.length ? ['', 'Which albums:'] : []),
-    ...(lookupFailed ? [] : albums.map(a => `${a.count}x ${a.title} — ${SITE_URL}/${a.slug} — ${a.owner}`)),
+    ...(lookupFailed ? [] : albums.map(a => a.slug
+      ? `${a.count}x ${a.title} — ${SITE_URL}/${a.slug} — ${a.owner}`
+      : `${a.count}x ${a.title} — album could not be identified`)),
     ...(!lookupFailed && albums.length && moreAlbums > 0
       ? [`and ${moreAlbums} more album${moreAlbums === 1 ? '' : 's'}`] : []),
     '',

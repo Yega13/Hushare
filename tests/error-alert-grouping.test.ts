@@ -300,3 +300,32 @@ describe('the album block the email renders', () => {
     expect(albumBlockFor([], 0)).toEqual({ albums: [], moreAlbums: 0, lookupFailed: false })
   })
 })
+
+describe('the hourly counter can never be sent backwards', () => {
+  it('always claims at least one, whatever the previous state', () => {
+    // THE INVARIANT THE CRON'S ROLLBACK DEPENDS ON. When a send fails, the route gives the hourly
+    // slot back by subtracting one from what it claimed. That is only safe while a claim is always
+    // >= 1 — and it is, because this function emits `sentThisHour + 1` from a count it has already
+    // floored at zero. Asserted here, where the number is decided, rather than clamped again at the
+    // call site where no test could ever make the clamp fire (rule 15).
+    const previous = [
+      null,
+      {},
+      { sentThisHour: 0 },
+      { sentThisHour: -5 },
+      { sentThisHour: 0.5 },
+      { sentThisHour: Number.NaN },
+      { sentThisHour: 1, hourStartedAt: new Date().toISOString() },
+    ]
+    for (const prev of previous) {
+      const v = alertVerdict({
+        count: 999, signature: `sig-${JSON.stringify(prev)}`,
+        previous: prev as never, nowMs: Date.now(),
+      })
+      if (!v.send) continue
+      expect(v.nextState.sentThisHour, `previous=${JSON.stringify(prev)}`).toBeGreaterThanOrEqual(1)
+      // And it is a whole number, or the rollback leaves a fraction behind that never returns to 0.
+      expect(Number.isInteger(v.nextState.sentThisHour)).toBe(true)
+    }
+  })
+})
