@@ -80,12 +80,16 @@ export async function POST(req: Request) {
     // Both also run CONCURRENTLY within a round: they are waiting on AWS, not competing for CPU,
     // so overlapping them roughly halves the wall-clock time for an album that uses both.
     // ONE batch of each per invocation, alternating ticks — not a loop, and not both at once.
-    // Cloudflare's free plan allows 50 subrequests per Worker invocation and each photo costs
-    // roughly three (fetch the image, call Rekognition, write the row). Looping until the time
-    // budget ran out therefore never finished a tick's work: it blew the subrequest ceiling and
-    // every remaining photo in that invocation failed. Running bib and face together doubled it.
-    // Throughput is now bounded by that ceiling (~15 photos/invocation) rather than by time, which
-    // is the honest limit until the account moves to the paid plan (50 -> 1000 subrequests).
+    // Each photo costs roughly three subrequests (fetch the image, call Rekognition, write the
+    // row). Looping until the time budget ran out never finished a tick's work: it blew the
+    // subrequest ceiling and every remaining photo in that invocation failed. Running bib and face
+    // together doubled it. Throughput is bounded by that ceiling rather than by time.
+    //
+    // THE NUMBERS LIVE IN lib/server/index-budget, NOT HERE. This comment used to state the free
+    // plan's 50-subrequest ceiling and "~15 photos/invocation"; the account is on the paid plan and
+    // the real budget is 1,000 — so anyone reasoning about throughput from this paragraph got an
+    // answer about eighteen times too low. Corrected 2026-09-03. Read index-budget for the live
+    // arithmetic; do not re-copy it into this file (rule 13).
     if (album.bib_search_enabled) {
       const cap = budget.affordable(BIB_BATCH)
       if (cap > 0) {

@@ -553,6 +553,7 @@ create index if not exists error_events_level_created_idx ON public.error_events
 create index if not exists error_events_unresolved_created_idx ON public.error_events USING btree (created_at DESC) WHERE (resolved_at IS NULL);
 create index if not exists package_order_grants_album_idx ON public.package_order_grants USING btree (album_id);
 create index if not exists pending_stream_uploads_album_consumed_idx ON public.pending_stream_uploads USING btree (album_id, consumed_at);
+create index if not exists pending_stream_uploads_album_hold_idx ON public.pending_stream_uploads USING btree (album_id, created_at) INCLUDE (declared_duration_seconds) WHERE (consumed_at IS NULL);
 create index if not exists pending_stream_uploads_album_id_idx ON public.pending_stream_uploads USING btree (album_id);
 create index if not exists pending_stream_uploads_created_at_idx ON public.pending_stream_uploads USING btree (created_at);
 create index if not exists photos_album_id_idx ON public.photos USING btree (album_id);
@@ -704,10 +705,19 @@ CREATE OR REPLACE FUNCTION public.album_video_seconds(p_album_id uuid)
  LANGUAGE sql
  STABLE
 AS $function$
-  select coalesce(sum(greatest(0, least(coalesce(duration_seconds, 0), 21600))), 0)::bigint
-  from public.photos
-  where album_id = p_album_id
-    and media_type = 'video'
+  select coalesce((
+      select sum(greatest(0, least(coalesce(duration_seconds, 0), 21600)))
+      from public.photos
+      where album_id = p_album_id
+        and media_type = 'video'
+    ), 0)
+    + coalesce((
+      select sum(greatest(0, least(coalesce(declared_duration_seconds, 60), 21600)))
+      from public.pending_stream_uploads
+      where album_id = p_album_id
+        and consumed_at is null
+        and created_at > now() - interval '30 minutes'
+    ), 0)
 $function$;
 
 CREATE OR REPLACE FUNCTION public.batch_set_sort_order(p_album_id uuid, p_ids uuid[], p_orders integer[])

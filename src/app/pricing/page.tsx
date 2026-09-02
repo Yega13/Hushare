@@ -142,7 +142,7 @@ const tiers: Tier[] = [
       'Countdown reveal and photo moderation',
       'Custom album URLs (e.g. hushare.space/anna-and-david)',
       'No inactivity expiry - albums live as long as you subscribe',
-      'HD video - large uploads up to 1 GB (Free: 50 MB)',
+      'HD video - large uploads up to 1 GB (Free: 200 MB)',
       'Larger photos - up to 200 MB per upload',
       'Account dashboard to manage your subscription',
       'Up to 3,000 photos & videos per album',

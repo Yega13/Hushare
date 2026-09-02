@@ -13,7 +13,25 @@ import {
   backoffDelay, isNetworkClass, isExpectedRefusal, createRelayPolicy,
   verdictForResponse, verdictForThrow,
 } from '@/lib/upload-policy'
-import { decodeBitmapSafe, decodeImageSource } from '@/lib/image-decode'
+import { decodeBitmapSafe, decodeImageSource, setFallbackDecodeReporter } from '@/lib/image-decode'
+import { reportClientError } from '@/lib/report-error'
+
+// A SIDEWAYS PHOTO IS THE ONE FAILURE HERE THAT NEVER ERRORS. decodeBitmapSafe falls back to a
+// bare decode when the orientation-preserving one is rejected, and on the old Android WebViews
+// where that option matters the fallback returns an UN-rotated bitmap — which the JPEG branch
+// below then re-encodes believing the rotation was already applied. Stored sideways, permanently,
+// with nothing on screen and nothing in the panel.
+//
+// Reported as a WARNING, not an error: the upload still succeeded and the guest is not affected in
+// any way they can see. It is here so that if this never appears, there is nothing to fix — and if
+// it does, it names the device and the reason, which is what fixing it properly would need.
+setFallbackDecodeReporter((reason) => {
+  reportClientError({
+    source: 'decode:orientation-fallback',
+    level: 'warn',
+    message: `Decoded without EXIF orientation — a photo may be stored rotated (${reason})`,
+  })
+})
 import { snapshotFileRobust, readFileRobust, isFileReadFailure } from '@/lib/file-read'
 import { trackUploadStep } from '@/lib/engagement'
 import { showAppToast } from '@/components/AppToast'

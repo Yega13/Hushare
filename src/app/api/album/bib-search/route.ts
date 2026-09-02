@@ -10,9 +10,16 @@ export const runtime = 'nodejs'
 
 const NO_STORE = { 'Cache-Control': 'no-store' }
 
-// The owner's "this is a race" switch. Free for everyone: bib search exists for race organisers,
-// and gating it would block the exact people it's for. Turning it ON is the ONLY thing that causes
-// an album's photos to be sent for OCR — that consent step is why non-race albums never do.
+// The owner's "this is a race" switch. MAX ONLY — see the refuseBelowTier call in POST, and
+// FEATURE_TIER.bibSearch in lib/plan-gates, which is the one place that answers this.
+//
+// This comment used to say "free for everyone", fifty lines above the code that refuses anything
+// below Max. It was wrong from the day the gate was added and nothing could notice, because a
+// comment is not held to anything. Corrected 2026-09-03. If bib search is ever ungated, change
+// lib/plan-gates first and let tests/plan-gates.test.ts find every site that has to follow.
+//
+// Turning it ON is the ONLY thing that causes an album's photos to be sent for OCR — that consent
+// step is why non-race albums never do.
 export async function POST(req: Request) {
   const csrfError = forbidCrossSiteRequest(req)
   if (csrfError) return csrfError

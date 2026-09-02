@@ -75,9 +75,39 @@ describe('the SQL sum and the TypeScript one agree about the bounds', () => {
     //
     // Containment cannot catch an ADDITION. Equality can.
     expect(FLAT).toBe(
-      'select coalesce(sum(greatest(0, least(coalesce(duration_seconds, 0), 21600))), 0)::bigint '
-      + "from public.photos where album_id = p_album_id and media_type = 'video'",
+      'select coalesce(( select sum(greatest(0, least(coalesce(duration_seconds, 0), 21600))) '
+      + "from public.photos where album_id = p_album_id and media_type = 'video' ), 0) "
+      + '+ coalesce(( select sum(greatest(0, least(coalesce(declared_duration_seconds, 60), 21600))) '
+      + 'from public.pending_stream_uploads where album_id = p_album_id and consumed_at is null '
+      + "and created_at > now() - interval '30 minutes' ), 0)",
     )
+  })
+
+  it('counts video that is APPROVED but still uploading', () => {
+    // THE SEAT IS TAKEN WHEN WE SAY YES. The budget is checked when an upload is approved and the
+    // photos row is written when it completes — minutes apart over venue wifi. Counting only stored
+    // video meant ten guests each starting a ten-minute clip on an empty free album all read "0
+    // used", all passed, and the album ended 10x over. Omitting the duration was always approved and
+    // stored NULL, so ~67 requests carrying zero bytes could reserve the whole Stream ceiling.
+    expect(BODY).toContain('from public.pending_stream_uploads')
+    expect(BODY, 'a completed upload must stop being a hold').toContain('consumed_at is null')
+  })
+
+  it('releases the hold on a timer, so one abandoned upload cannot block an album', () => {
+    // A hold that is never released is its own outage. 30 minutes: a 200 MB video — the largest a
+    // Pro album takes — is about 27 minutes on a 1 Mbps venue connection, so a real upload has
+    // finished. Cloudflare's own expiry is 2 HOURS, and using that here would let one abandoned
+    // reservation block a free album's video for two hours, which is worse than the bug.
+    expect(BODY).toContain("created_at > now() - interval '30 minutes'")
+  })
+
+  it('takes a real hold for video whose length could not be read', () => {
+    // About one video in six has no readable duration. Those stored NULL and counted ZERO, which is
+    // the whole zero-byte trick. 60 seconds is enough that it runs out of budget after a handful of
+    // requests, and small enough not to refuse a guest posting genuinely short clips.
+    expect(BODY).toContain('coalesce(declared_duration_seconds, 60)')
+    expect(BODY, 'the provisional must never be zero, or the hole is still open')
+      .not.toContain('coalesce(declared_duration_seconds, 0)')
   })
 
   it('clamps every ROW, not the total', () => {

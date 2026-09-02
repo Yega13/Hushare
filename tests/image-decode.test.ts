@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
-import { decodeBitmapSafe, decodeViaImageDecoder, decodeImageSource } from '@/lib/image-decode'
+import { decodeBitmapSafe, decodeViaImageDecoder, decodeImageSource, setFallbackDecodeReporter } from '@/lib/image-decode'
 
 // THE DECODE CHAIN A GUEST'S PHOTO ACTUALLY TAKES.
 //
@@ -293,5 +293,51 @@ describe('an Android read that blips does not cost the guest their photo', () =>
     await vi.advanceTimersByTimeAsync(30_000)
     expect(await p).toBeNull()
     vi.useRealTimers()
+  })
+})
+
+describe('the silent sideways-photo path reports itself', () => {
+  // It is the one failure here that never errors: the fallback decode returns an UN-rotated bitmap
+  // on the engines where the orientation option matters, and UploadZone then re-encodes it believing
+  // the rotation was applied. Stored sideways, permanently, with nothing on screen and nothing in the
+  // panel. Narrowing the retry would turn a transient failure into a FAILED upload, which is worse —
+  // so the case is made visible instead, and fixed properly if it ever actually appears.
+  const seen: string[] = []
+  beforeEach(() => { seen.length = 0; setFallbackDecodeReporter((r) => seen.push(r)) })
+  afterEach(() => setFallbackDecodeReporter(undefined))
+
+  it('reports when the orientation-preserving decode had to fall back', async () => {
+    let first = true
+    cfg.bitmapFrom = () => {
+      if (first) { first = false; return 'throw' }
+      return { closed: false, label: 'plain' }
+    }
+    const r = await decodeBitmapSafe(blob('image/jpeg'))
+    expect(r, 'the upload must still succeed — this is a warning, not a failure').not.toBeNull()
+    expect(seen, 'the one case that is otherwise invisible').toHaveLength(1)
+    expect(seen[0], 'and it carries the reason, which a real fix would need').toContain('cannot decode')
+  })
+
+  it('says NOTHING on the ordinary path', async () => {
+    // A warning that fires on every upload is noise, and noise is what buries the reports that
+    // matter. This must only speak when the fallback actually ran.
+    await decodeBitmapSafe(blob('image/jpeg'))
+    expect(seen).toEqual([])
+  })
+
+  it('does not report when BOTH attempts fail', async () => {
+    // Then nothing was stored at all, so there is no sideways photo to warn about — the caller's own
+    // failure path handles it.
+    cfg.bitmapFrom = () => 'throw'
+    expect(await decodeBitmapSafe(blob('image/jpeg'))).toBeNull()
+    expect(seen, 'reported once for the fallback attempt, and not again for the failure').toHaveLength(1)
+  })
+
+  it('a decode with no reporter wired still works', async () => {
+    // Every other caller of this module, and every test above, runs with no reporter set.
+    setFallbackDecodeReporter(undefined)
+    let first = true
+    cfg.bitmapFrom = () => { if (first) { first = false; return 'throw' } return { closed: false, label: 'x' } }
+    expect(await decodeBitmapSafe(blob('image/jpeg'))).not.toBeNull()
   })
 })

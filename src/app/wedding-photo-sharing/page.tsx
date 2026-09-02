@@ -108,7 +108,7 @@ export default function WeddingPhotoSharingPage() {
         },
         {
           q: 'Can we password-protect the wedding album?',
-          a: 'Yes. With a Hushare Pro plan, you can add a password to your album. Share it with invited guests and no one else can see the photos.',
+          a: 'Yes, on every plan including Free. Add a password to your album, share it with invited guests, and no one else can see the photos.',
         },
         {
           q: 'How do I print the QR code for the tables?',

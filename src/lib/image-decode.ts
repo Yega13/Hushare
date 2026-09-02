@@ -49,13 +49,40 @@ import { readFileRobust } from '@/lib/file-read'
 export async function decodeBitmapSafe(source: ImageBitmapSource): Promise<ImageBitmap | null> {
   try {
     return await createImageBitmap(source, { imageOrientation: 'from-image' })
-  } catch {
+  } catch (e) {
+    // THE FALLBACK IS REPORTED, because its failure mode is silent and permanent.
+    //
+    // This retry exists for an engine that rejects the options bag outright — but it fires on ANY
+    // rejection, including a transient out-of-memory on a large photo. On the old Android WebViews
+    // where `imageOrientation` actually matters (their default is 'none'), winning on the second
+    // attempt returns an UN-rotated bitmap, and UploadZone's JPEG branch then re-encodes it while
+    // its comment asserts the rotation was already baked in. The photo is stored sideways, for
+    // good, and NOTHING errors: not the guest, not the panel, not us.
+    //
+    // Narrowing the retry to a TypeError would fix that and would turn a transient failure into a
+    // failed upload, which is worse. So instead this makes the invisible case VISIBLE: if the line
+    // below never appears, the case never happens and there is nothing to fix. If it does appear,
+    // it carries the device and the reason, which is what a real fix would need.
+    onFallbackDecode?.(e instanceof Error ? `${e.name}: ${e.message}` : String(e))
     try {
       return await createImageBitmap(source)
     } catch {
       return null
     }
   }
+}
+
+/**
+ * Called when the orientation-preserving decode failed and the bare retry was used.
+ *
+ * A hook rather than a direct import so this module stays free of the reporting layer — and so the
+ * test can observe it, which is the only way the branch above is provable at all.
+ */
+let onFallbackDecode: ((reason: string) => void) | undefined
+
+/** Wire the reporter in once, from the client. Passing undefined disables it again (for tests). */
+export function setFallbackDecodeReporter(fn: ((reason: string) => void) | undefined): void {
+  onFallbackDecode = fn
 }
 
 /**

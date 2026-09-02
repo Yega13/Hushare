@@ -99,7 +99,14 @@ const SIZE_BUDGET: Record<string, number> = {
   // them had survived the whole suite while they sat here — deleting the WebCodecs attempt,
   // reversing the two attempts' order, dropping image.close(), and skipping isTypeSupported — which
   // is rule 14 stated as a measurement rather than an opinion. 10/10 killed after the move.
-  'src/components/UploadZone.tsx': 2873,
+  // +18 (2026-09-03): the orientation fallback reports itself. decodeBitmapSafe retries WITHOUT
+  // the EXIF-orientation option on any rejection, and on the old Android WebViews where that
+  // option matters the retry returns an un-rotated bitmap — which the JPEG branch below then
+  // re-encodes believing the rotation was applied, storing the photo sideways permanently with
+  // nothing on screen and nothing in the panel. Narrowing the retry would turn a transient
+  // failure into a failed upload, which is worse, so the invisible case is made visible instead.
+  // Almost all of it is the comment saying why.
+  'src/components/UploadZone.tsx': 2891,
   // +3 on 2026-08-30: the branding toggle gained a real plan check (it was dimmed but still
   // clickable), and Face Finder and bib search stopped riding on the collections flag. Three
   // lines of reasoning for three gates that were wrong. Deliberate.
