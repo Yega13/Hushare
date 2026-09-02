@@ -157,7 +157,21 @@ describe('DOM-corruption detection', () => {
 describe('foreign-error filtering', () => {
   it('drops code injected by browsers and in-app browsers', () => {
     expect(isForeignError('anything', 'chrome-extension://abc/x.js')).toBe(true)
+    // AN EXTENSION TALKING TO ITSELF, with no file to identify it. Extensions run in OUR page's
+    // context, so their internal messaging failures surface as unhandled rejections on
+    // hushare.space — and an unhandled rejection carries only the stringified value, no filename,
+    // so the origin test above cannot see them. Seen 2026-09-02 from Safari on macOS.
+    expect(isForeignError('Error: No Listener: tabs:outgoing.message.ready')).toBe(true)
+    expect(isForeignError('Could not establish connection. Receiving end does not exist.')).toBe(true)
+    expect(isForeignError('The message port closed before a response was received.')).toBe(true)
+    expect(isForeignError('Extension context invalidated.')).toBe(true)
     expect(isForeignError('Error invoking postMessage', 'iabjs://navigation_performance_logger_android')).toBe(true)
+    // THE DIRECTION THAT COSTS MORE. A filter that swallows our own failures is worse than the
+    // noise it removes — these must all still reach the panel.
+    expect(isForeignError('Minified React error #310')).toBe(false)
+    expect(isForeignError('tus: unable to resume upload')).toBe(false)
+    expect(isForeignError('Failed to fetch')).toBe(false)
+    expect(isForeignError('No photos found for this album')).toBe(false)
     expect(isForeignError('Script error.')).toBe(true)
     expect(isForeignError("Cannot redefine property: ethereum on #<Window>")).toBe(true)
   })

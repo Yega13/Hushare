@@ -258,43 +258,59 @@ describe('the enrichment race is cleaned up after itself', () => {
 })
 
 describe('a send that never left does not spend the hour', () => {
-  it('gives the hourly slot back when the mailer throws', async () => {
-    // Four failures while Resend is down would otherwise burn the whole hourly ceiling: `hourly-cap`
-    // for the next sixty minutes with zero emails delivered, at exactly the moment something is
-    // wrong enough to be alerting.
+  it('undoes the WHOLE claim when the mailer throws, not just the counter', async () => {
+    // It used to give back only the hourly counter and keep sentAt + the signature, so one 500 from
+    // the mail API meant the next 59 ticks answered 'same-incident' for an alert that was never
+    // delivered. Sixty minutes of silence about the incident that was actually happening.
+    cfg.state = JSON.stringify({
+      sentAt: new Date(Date.now() - 90 * 60_000).toISOString(),
+      signature: 'an older incident',
+      alerted: ['an older incident'],
+      sentThisHour: 2,
+      hourStart: new Date().toISOString(),
+    })
     cfg.sendThrows = true
     const res = await POST(post())
     expect(await res.json()).toMatchObject({ alerted: false, reason: 'send failed' })
     expect(cfg.upserts).toHaveLength(2)
 
-    const claimed = JSON.parse(cfg.upserts[0].value) as { sentThisHour: number; signature: string; sentAt: string }
-    const rolled = JSON.parse(cfg.upserts[1].value) as { sentThisHour: number; signature: string; sentAt: string }
-    expect(claimed.sentThisHour).toBe(1)
-    expect(rolled.sentThisHour, 'the counter goes back').toBe(0)
-    // sentAt and the signature STAY — those are what stop a retry storm on the same incident. Only
-    // the counter is rolled back.
-    expect(rolled.signature).toBe(claimed.signature)
-    expect(rolled.sentAt).toBe(claimed.sentAt)
+    const claimed = JSON.parse(cfg.upserts[0].value)
+    const after = JSON.parse(cfg.upserts[1].value)
+    expect(claimed.signature, 'the claim went in first, as it must').toBe('upload failed')
+
+    // Everything the claim consumed is given back — not just the counter.
+    expect(after.signature, 'the failed send must not own the signature').toBe('an older incident')
+    expect(after.sentThisHour, 'a send that never left is not a send').toBe(2)
+    expect(after.sentAt).toBe(JSON.parse(cfg.state as string).sentAt)
+    expect(after.lastFailedAt, 'and the failure is marked so the retry waits a moment').toBeTruthy()
   })
 
-  it('rolls back exactly one, from whatever was claimed', async () => {
-    // The invariant that keeps this non-negative is upstream: alertVerdict emits sentThisHour + 1,
-    // so the claim is always at least 1. That is asserted in tests/error-alert-grouping.test.ts,
-    // where it is decided. What belongs HERE is that the rollback subtracts exactly one from the
-    // number that was actually claimed — not a hardcoded zero, and not two.
+  it('and the NEXT tick sends it, instead of staying quiet for an hour', async () => {
+    // THE POINT OF THE CHANGE. The operator must still be told, as soon as the mail service is back.
     cfg.sendThrows = true
-    cfg.state = JSON.stringify({
-      sentAt: new Date(Date.now() - 90 * 60_000).toISOString(),
-      signature: 'earlier incident',
-      sentThisHour: 2,
-      hourStart: new Date().toISOString(),
-    })
     await POST(post())
-    const claimed = JSON.parse(cfg.upserts[0].value) as { sentThisHour: number }
-    const rolled = JSON.parse(cfg.upserts[1].value) as { sentThisHour: number }
-    expect(claimed.sentThisHour).toBeGreaterThanOrEqual(1)
-    expect(rolled.sentThisHour).toBe(claimed.sentThisHour - 1)
+    const afterFailure = cfg.upserts[cfg.upserts.length - 1].value
+
+    // The mail service recovers; the failure marker has aged past the short retry wait.
+    const st = JSON.parse(afterFailure)
+    st.lastFailedAt = new Date(Date.now() - 10 * 60_000).toISOString()
+    cfg.state = JSON.stringify(st)
+    cfg.sendThrows = false
+    cfg.sent = []
+    cfg.upserts = []
+
+    const res = await POST(post())
+    expect(await res.json()).toMatchObject({ alerted: true })
+    expect(cfg.sent, 'the alert must arrive once the mailer is back').toHaveLength(1)
   })
+
+  it('waits a moment before retrying, so a mail outage is not one failing call per tick', async () => {
+    cfg.state = JSON.stringify({ lastFailedAt: new Date(Date.now() - 5_000).toISOString() })
+    const res = await POST(post())
+    expect(await res.json()).toMatchObject({ alerted: false, reason: 'retry-wait' })
+    expect(cfg.sent).toHaveLength(0)
+  })
+
 
   it('says so when the ROLLBACK write is REJECTED rather than thrown', async () => {
     // supabase-js RESOLVES with { error } for a PostgREST failure. This landed in an empty success
@@ -453,5 +469,50 @@ describe('a count drawn from a full sample is reported as a floor', () => {
     await POST(post())
     const { payload } = cfg.sent[0] as { payload: { truncated: boolean } }
     expect(payload.truncated).toBe(false)
+  })
+})
+
+describe('a real incident behind a loud one still reaches you', () => {
+  // THE ENFORCEMENT HALF (rule 15). The grouping module decides suppression from the set of NOTABLE
+  // messages, and the route is what computes that set. If it stops passing it, the module silently
+  // falls back to the single loudest message and the poisoning hole reopens with every test in
+  // lib/error-alert-grouping still green.
+  const noisy = (message: string, n: number) => Array.from({ length: n }, (_, i) => ({
+    album_id: 'album-1', message, source: `s${i}`, ua: 'Mozilla/5.0 (d)', context: { repeats: 1000 },
+  }))
+
+  it('alerts again when a genuine failure appears behind a pinned message', async () => {
+    const attacker = 'ResizeObserver loop limit exceeded'
+    const real = 'tus chunk failed'
+
+    // Tick 1: only the attacker's noise. It alerts once — that is fine and expected.
+    cfg.rows = noisy(attacker, 3)
+    await POST(post())
+    expect(cfg.sent).toHaveLength(1)
+    const claimed = JSON.parse(cfg.upserts[0].value)
+    expect(claimed.alerted, 'the route must record what this alert covered').toContain(attacker)
+
+    // Tick 2, a minute later: the same noise, plus a real failure big enough to matter on its own.
+    cfg.state = JSON.stringify({ ...claimed, sentAt: new Date(Date.now() - 60_000).toISOString() })
+    cfg.sent = []
+    cfg.upserts = []
+    cfg.rows = [...noisy(attacker, 3), ...noisy(real, 1)]
+
+    const res = await POST(post())
+    expect(await res.json(), 'somebody else noise must not hide a real incident').toMatchObject({ alerted: true })
+    expect(cfg.sent).toHaveLength(1)
+  })
+
+  it('and stays quiet when nothing new has appeared', async () => {
+    const attacker = 'ResizeObserver loop limit exceeded'
+    cfg.rows = noisy(attacker, 3)
+    await POST(post())
+    const claimed = JSON.parse(cfg.upserts[0].value)
+
+    cfg.state = JSON.stringify({ ...claimed, sentAt: new Date(Date.now() - 60_000).toISOString() })
+    cfg.sent = []
+    const res = await POST(post())
+    expect(await res.json()).toMatchObject({ alerted: false, reason: 'same-incident' })
+    expect(cfg.sent).toHaveLength(0)
   })
 })

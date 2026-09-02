@@ -4,6 +4,7 @@ import { timingSafeEqual } from '@/lib/timing-safe'
 import { sendErrorSpikeEmail } from '@/lib/email'
 import {
   tallyByAlbum, tallyByMessage, totalOccurrences, alertVerdict, albumBlockFor, parseAlertState,
+  THRESHOLD,
   ALERT_WINDOW_MINUTES,
 } from '@/lib/error-alert-grouping'
 import { attachAlbumOwners } from '@/lib/server/error-attribution'
@@ -105,10 +106,15 @@ export async function POST(req: Request) {
       + 'cooldown and the hourly ceiling live in that row:', stateErr.message)
     return NextResponse.json({ ok: false, count, alerted: false, reason: 'state unreadable' }, { headers: NO_STORE })
   }
+  const previous = parseAlertState(state?.value)
   const verdict = alertVerdict({
     count,
     signature: top[0]?.[0] ?? '',
-    previous: parseAlertState(state?.value),
+    // EVERY message big enough to be an incident by itself. Suppression compares this set, so a
+    // single loud message — which anyone can manufacture through the unauthenticated client-error
+    // endpoint — can no longer hide a genuine failure behind it.
+    notable: tallyByMessage(rows ?? [], 20).filter(([, n]) => n >= THRESHOLD).map(([m]) => m),
+    previous,
     nowMs: Date.now(),
   })
   if (!verdict.send) {
@@ -199,25 +205,23 @@ export async function POST(req: Request) {
     })
   } catch (e) {
     console.error('[cron/error-alert] send failed:', e instanceof Error ? e.message : String(e))
-    // GIVE THE HOURLY SLOT BACK. The claim above is written before the send on purpose — if we
-    // wrote it after, a failed write would make every tick send again. But the claim also
-    // INCREMENTS the hourly ceiling, and counting a send that never left means four failures while
-    // Resend is down spend the whole hour: `hourly-cap` for the next sixty minutes with zero emails
-    // delivered, at exactly the moment something is wrong enough to be alerting.
+    // A SEND THAT NEVER LEFT IS NOT A SEND. The claim is written before the send on purpose — if we
+    // wrote it after, a failed write would make every tick send again — so the whole claim has to be
+    // undone when the send fails, not just part of it.
     //
-    // So sentAt and signature stay — those stop a retry storm on the same incident — and only the
-    // COUNTER is rolled back. Best effort: if this write fails too, the worst case is the old
-    // behaviour, which is why it is not awaited into the response path.
+    // It used to give back only the hourly counter and KEEP sentAt and the signature, which meant
+    // one 500 from the mail API bought sixty minutes of silence about the incident that was
+    // actually happening: the next fifty-nine ticks all answered 'same-incident' for an alert that
+    // was never delivered. Restoring the previous state and marking lastFailedAt means nothing was
+    // consumed, and the next tick tries again after a short wait
+    // (RETRY_AFTER_FAILURE_MINUTES) — which is the only reason that marker exists: without it a mail
+    // outage would mean one failing API call every single tick.
+    //
+    // Best effort: if this write fails too the worst case is the old behaviour, which is why it is
+    // not awaited into the response path.
     await admin.from('system_state').upsert({
       key: STATE_KEY,
-      // No Math.max here, and that is deliberate rather than an omission: alertVerdict only ever
-      // emits `sentThisHour + 1` from a count that is already >= 0, so the value being decremented
-      // is always >= 1 and the clamp could never fire. It was here for one commit and no mutation
-      // could kill it — an unreachable guard makes the reachable one look optional (rule 15). The
-      // invariant it was guarding is asserted where it is actually decided, in
-      // tests/error-alert-grouping.test.ts. And if it were ever violated, parseAlertState's reader
-      // requires `> 0` before believing the field, so a negative would read as zero, not as room.
-      value: JSON.stringify({ ...verdict.nextState, sentThisHour: (verdict.nextState.sentThisHour ?? 1) - 1 }),
+      value: JSON.stringify({ ...(previous ?? {}), lastFailedAt: new Date().toISOString() }),
       updated_at: new Date().toISOString(),
     // READ THE RESULT, for the same reason the claim above does. This was `.then(() => {}, …)`, so a
     // PostgREST-class failure — which RESOLVES with { error } rather than throwing — landed in the

@@ -249,7 +249,31 @@ export function stackFrames(stack: string | undefined): string | undefined {
   return frames.join('\n').slice(0, STACK_CHARS) || undefined
 }
 
+// A BROWSER EXTENSION TALKING TO ITSELF, on our page.
+//
+// Extensions run their content scripts in OUR page's context, so when their internal messaging
+// fails the rejection surfaces as an unhandled rejection on hushare.space and lands in the Errors
+// tab. Seen 2026-09-02 from Safari 26.5 on macOS, on a marketing page:
+//
+//     Error: No Listener: tabs:outgoing.message.ready
+//
+// That string appears nowhere in this codebase. It is an extension whose background listener has
+// gone away — nothing to do with this site and not fixable from here. Unfiltered it is steady
+// unactionable noise, which is exactly what buries the reports that matter (rule 12).
+//
+// Matched on the message because these arrive with NO file: an unhandled rejection carries only
+// whatever the rejection value stringified to, so the extension-origin test below cannot see them.
+// NO WORD-BOUNDARY ESCAPE IN HERE, deliberately. The first version of this line opened with a
+// word-boundary escape written through a shell heredoc, and the heredoc turned it into a literal
+// BACKSPACE character: the regex still compiled, still type-checked, and matched nothing —
+// invisible in the diff and in grep output. That is MISTAKES entry 24, and
+// tests/source-hygiene.test.ts caught it by code point, which is the only thing that ever does.
+// These alternatives are distinctive enough to need no boundary.
+const EXTENSION_MESSAGING_RE =
+  /No Listener:|Could not establish connection\. Receiving end does not exist|The message port closed before a response was received|Extension context invalidated/i
+
 export function isForeignError(message: string, file?: string): boolean {
+  if (EXTENSION_MESSAGING_RE.test(message)) return true
   if (file && EXTENSION_ORIGIN_RE.test(file)) return true
   // "Script error." is all a browser will say about an exception inside a cross-origin script it
   // refuses to describe. No file, no line, no stack — there is nothing to act on even in principle.

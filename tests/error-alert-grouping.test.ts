@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest'
 import {
   occurrencesOf, totalOccurrences, tallyByAlbum, tallyByMessage, MAX_REPEATS_PER_ROW,
   alertVerdict, albumBlockFor, parseAlertState, THRESHOLD, MAX_ALERTS_PER_HOUR,
+  MAX_ALERTED_TRACKED, RETRY_AFTER_FAILURE_MINUTES, COOLDOWN_MINUTES,
 } from '@/lib/error-alert-grouping'
 
 // WHAT THE 3AM EMAIL HAS TO SAY.
@@ -359,32 +360,88 @@ describe('two failure modes at equal weight do not look like two incidents', () 
   })
 })
 
-describe('THE POISONING RESIDUAL — open, and asserted so the comment cannot drift again', () => {
-  // The docstring on alertVerdict used to claim "a poisoner can only silence the incident they are
-  // themselves manufacturing". That was false, and this is the test that keeps the corrected version
-  // honest: it FAILS if the residual is ever actually closed, which forces whoever closes it to
-  // delete this test and update the comment in the same commit (MISTAKES entries 11 and 16).
-  const attackerRows = (n: number) => Array.from({ length: n }, (_, i) => ({
-    album_id: 'victim', message: 'ResizeObserver loop limit exceeded',
-    source: `s${i}`, ua: null, context: { repeats: 100000 },
-  }))
+describe('a loud attacker cannot hide a real incident behind their own message', () => {
+  // THE HOLE THIS CLOSES. /api/log/client-error is unauthenticated, its `source` is attacker-chosen
+  // free text and part of the coalescing key (so N sources = N rows), and MAX_REPEATS_PER_ROW caps a
+  // ROW while tallyByMessage sums ACROSS rows. Whoever shouted loudest therefore owned the
+  // signature — and matching on that ONE message suppressed the entire tick. About 1,340 requests an
+  // hour silenced every genuine incident indefinitely, while a plausible-looking email kept arriving
+  // once an hour, which reads as the alarm working.
+  //
+  // Suppression is keyed to every NOTABLE message now: a tick is "the same incident" only when
+  // nothing in it is new.
+  const attacker = 'ResizeObserver loop limit exceeded'
+  const real = 'tus chunk failed'
+  const minuteAgo = () => new Date(Date.now() - 60_000).toISOString()
 
-  it('MAX_REPEATS_PER_ROW caps a ROW, and tallyByMessage sums ACROSS rows', () => {
-    // So the per-row cap is not a per-message cap: three rows of one attacker-chosen message
-    // out-weigh a genuine 900-occurrence incident.
-    const genuine = { album_id: 'victim', message: 'tus chunk failed', source: 'upload', ua: null, context: { repeats: 900 } }
-    const top = tallyByMessage([...attackerRows(3), genuine])
-    expect(top[0][0]).toBe('ResizeObserver loop limit exceeded')
-    expect(top[0][1]).toBe(MAX_REPEATS_PER_ROW * 3)
-    expect(top[0][1]).toBeGreaterThan(900)
-  })
-
-  it('and a pinned signature suppresses the whole tick, not just the attacker own incident', () => {
-    const signature = tallyByMessage(attackerRows(3))[0][0]
-    const previous = { sentAt: new Date(Date.now() - 60_000).toISOString(), signature, sentThisHour: 1, hourStart: new Date().toISOString() }
-    const v = alertVerdict({ count: 300000, signature, previous, nowMs: Date.now() })
+  it('still suppresses a repeat of the very same thing', () => {
+    // The cooldown has to keep working, or this trade is a bad one.
+    const previous = { sentAt: minuteAgo(), signature: attacker, alerted: [attacker], sentThisHour: 1, hourStart: new Date().toISOString() }
+    const v = alertVerdict({ count: 300000, signature: attacker, notable: [attacker], previous, nowMs: Date.now() })
     expect(v.send).toBe(false)
     if (v.send) return
     expect(v.reason).toBe('same-incident')
+  })
+
+  it('ALERTS when a real failure appears behind the pinned one', () => {
+    // The attacker still dominates the ranking, so the signature is still theirs — but the genuine
+    // message reached the threshold on its own, so it is new, so the alarm fires.
+    const previous = { sentAt: minuteAgo(), signature: attacker, alerted: [attacker], sentThisHour: 1, hourStart: new Date().toISOString() }
+    const v = alertVerdict({
+      count: 300900, signature: attacker, notable: [attacker, real], previous, nowMs: Date.now(),
+    })
+    expect(v.send, 'a real incident must not be suppressed by somebody else noise').toBe(true)
+    if (!v.send) return
+    expect(v.nextState.alerted).toContain(real)
+  })
+
+  it('does not re-alert once that real failure has been reported', () => {
+    const previous = { sentAt: minuteAgo(), signature: attacker, alerted: [attacker, real], sentThisHour: 1, hourStart: new Date().toISOString() }
+    const v = alertVerdict({ count: 300900, signature: attacker, notable: [attacker, real], previous, nowMs: Date.now() })
+    expect(v.send).toBe(false)
+  })
+
+  it('falls back to the signature when no single message is big on its own', () => {
+    // A broad incident: many different small failures that only reach the threshold together. That
+    // is the behaviour that existed before, and it must not change.
+    const previous = { sentAt: minuteAgo(), signature: 'mixed', alerted: ['mixed'], sentThisHour: 1, hourStart: new Date().toISOString() }
+    expect(alertVerdict({ count: 50, signature: 'mixed', notable: [], previous, nowMs: Date.now() }).send).toBe(false)
+    expect(alertVerdict({ count: 50, signature: 'something else', notable: [], previous, nowMs: Date.now() }).send).toBe(true)
+  })
+
+  it('reads an OLD state row, which has no alerted list at all', () => {
+    // A deploy must not make every incident look new (a mail burst) or every incident look old
+    // (silence). The signature is the fallback.
+    const legacy = { sentAt: minuteAgo(), signature: attacker, sentThisHour: 1, hourStart: new Date().toISOString() }
+    expect(alertVerdict({ count: 99, signature: attacker, notable: [attacker], previous: legacy, nowMs: Date.now() }).send).toBe(false)
+    expect(alertVerdict({ count: 99, signature: real, notable: [real], previous: legacy, nowMs: Date.now() }).send).toBe(true)
+  })
+
+  it('bounds what it carries forward, so the state row cannot grow without limit', () => {
+    const many = Array.from({ length: 50 }, (_, i) => `failure ${i}`)
+    const v = alertVerdict({ count: 999, signature: many[0], notable: many, previous: null, nowMs: Date.now() })
+    expect(v.send).toBe(true)
+    if (!v.send) return
+    expect(v.nextState.alerted!.length).toBeLessThanOrEqual(MAX_ALERTED_TRACKED)
+    expect(MAX_ALERTED_TRACKED).toBe(8)
+  })
+})
+
+describe('a failed send is not a send', () => {
+  // One 500 from the mail API used to buy sixty minutes of silence about the incident that was
+  // actually happening: the cooldown was claimed before sending and only the counter was given back.
+  it('waits a short moment, then tries the same incident again', () => {
+    const justFailed = { lastFailedAt: new Date(Date.now() - 5_000).toISOString() }
+    const v1 = alertVerdict({ count: 99, signature: 'boom', notable: ['boom'], previous: justFailed, nowMs: Date.now() })
+    expect(v1.send).toBe(false)
+    if (!v1.send) expect(v1.reason).toBe('retry-wait')
+
+    const older = { lastFailedAt: new Date(Date.now() - (RETRY_AFTER_FAILURE_MINUTES + 1) * 60_000).toISOString() }
+    expect(alertVerdict({ count: 99, signature: 'boom', notable: ['boom'], previous: older, nowMs: Date.now() }).send).toBe(true)
+  })
+
+  it('the wait is short — minutes, not the hour it used to cost', () => {
+    expect(RETRY_AFTER_FAILURE_MINUTES).toBe(2)
+    expect(RETRY_AFTER_FAILURE_MINUTES).toBeLessThan(COOLDOWN_MINUTES)
   })
 })

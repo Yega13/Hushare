@@ -137,6 +137,17 @@ export const ALERT_WINDOW_MINUTES = WINDOW_MINUTES + COALESCE_WINDOW_MINUTES
 export const THRESHOLD = 8
 export const COOLDOWN_MINUTES = 60
 /**
+ * How long to wait after a FAILED send before trying that incident again.
+ *
+ * A failed send used to consume the whole hour: the cooldown was claimed before sending and only
+ * the counter was given back, so one 500 from the mail API meant sixty minutes of silence about the
+ * incident that was actually happening. Nothing is recorded as sent now, so the next tick simply
+ * tries again — this is only here so a mail outage does not mean one failing API call per minute.
+ */
+export const RETRY_AFTER_FAILURE_MINUTES = 2
+/** How many message fingerprints one alert carries forward. Bounds the state row. */
+export const MAX_ALERTED_TRACKED = 8
+/**
  * The most alerts that may be sent in any rolling hour, whatever their signature.
  *
  * The floor under the signature rule below. Four is chosen so a poisoner cannot make the inbox
@@ -147,15 +158,33 @@ export const MAX_ALERTS_PER_HOUR = 4
 
 /** What the last alert recorded, as stored in system_state.value. */
 export type AlertState = {
+  /** When an alert was last DELIVERED. A failed send does not set this. */
   sentAt?: string
   /** The dominating message when that alert was sent — the incident's fingerprint. */
   signature?: string
+  /**
+   * EVERY message the last alert covered, not just the loudest one.
+   *
+   * The signature alone could be pinned by anyone: /api/log/client-error is unauthenticated, its
+   * `source` field is attacker-chosen free text and part of the coalescing key, so N sources make N
+   * rows, and the per-ROW repeat cap is not a per-MESSAGE cap. Whoever shouted loudest owned the
+   * signature, and matching on it suppressed the WHOLE tick — including a genuine incident that had
+   * nothing to do with them.
+   *
+   * Suppression is keyed to this set instead: a tick is only "the same incident" when nothing in it
+   * is new. A real failure that reaches the threshold on its own is never in the poisoner's set, so
+   * it alerts.
+   */
+  alerted?: string[]
+  /** When a send last FAILED, so the next tick waits a little before trying again. */
+  lastFailedAt?: string
   hourStart?: string
+  /** DELIVERED alerts this hour. A send that threw is not one of them. */
   sentThisHour?: number
 }
 
 export type AlertVerdict =
-  | { send: false; reason: 'below-threshold' | 'same-incident' | 'hourly-cap' }
+  | { send: false; reason: 'below-threshold' | 'same-incident' | 'hourly-cap' | 'retry-wait' }
   | { send: true; nextState: AlertState }
 
 /**
@@ -241,10 +270,17 @@ export function parseAlertState(raw: string | null | undefined): AlertState | nu
 export function alertVerdict(input: {
   count: number
   signature: string
+  /**
+   * Every message in this tick big enough to be an incident on its own (>= THRESHOLD occurrences).
+   * This is what suppression compares, so that one loud attacker-chosen message cannot hide a
+   * genuine failure behind it. May be empty — many small distinct messages that only add up
+   * together — in which case the signature is used, exactly as before.
+   */
+  notable?: string[]
   previous: AlertState | null
   nowMs: number
 }): AlertVerdict {
-  const { count, signature, previous, nowMs } = input
+  const { count, signature, notable = [], previous, nowMs } = input
   if (count < THRESHOLD) return { send: false, reason: 'below-threshold' }
 
   const elapsed = (iso: string | undefined): number | null => {
@@ -264,9 +300,27 @@ export function alertVerdict(input: {
     : 0
   if (sentThisHour >= MAX_ALERTS_PER_HOUR) return { send: false, reason: 'hourly-cap' }
 
+  // A SEND THAT FAILED IS NOT A SEND, so nothing above counted it — but do not hammer the mail API
+  // every tick while it is down either. One short wait, then try again.
+  const sinceFailed = elapsed(previous?.lastFailedAt)
+  if (sinceFailed !== null && sinceFailed < RETRY_AFTER_FAILURE_MINUTES * 60_000) {
+    return { send: false, reason: 'retry-wait' }
+  }
+
+  // NOTHING NEW = the same incident. Anything new = alert, whatever else is going on.
+  //
+  // This used to compare one message — the loudest — which anyone could make theirs for about
+  // 1,340 requests an hour, after which every genuine incident was answered 'same-incident'
+  // indefinitely while a plausible email kept arriving each hour.
+  const covered = new Set(previous?.alerted ?? (previous?.signature ? [previous.signature] : []))
+  const somethingNew = notable.length > 0
+    ? notable.some((m) => !covered.has(m))
+    // No single message reached the threshold on its own: fall back to the signature, which is the
+    // behaviour that existed before and is right for a broad, many-message incident.
+    : !covered.has(signature)
+
   const sinceSent = elapsed(previous?.sentAt)
-  const sameIncident = previous?.signature !== undefined && previous.signature === signature
-  if (sameIncident && sinceSent !== null && sinceSent < COOLDOWN_MINUTES * 60_000) {
+  if (!somethingNew && sinceSent !== null && sinceSent < COOLDOWN_MINUTES * 60_000) {
     return { send: false, reason: 'same-incident' }
   }
 
@@ -276,6 +330,8 @@ export function alertVerdict(input: {
     nextState: {
       sentAt: nowIso,
       signature,
+      // What this alert covers. Bounded, because it is written to a row and read every minute.
+      alerted: (notable.length > 0 ? notable : [signature]).slice(0, MAX_ALERTED_TRACKED),
       hourStart: withinHour ? previous?.hourStart : nowIso,
       sentThisHour: sentThisHour + 1,
     },
