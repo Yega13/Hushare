@@ -2,7 +2,10 @@ import { NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { timingSafeEqual } from '@/lib/timing-safe'
 import { sendErrorSpikeEmail } from '@/lib/email'
-import { tallyByAlbum, tallyByMessage, totalOccurrences } from '@/lib/error-alert-grouping'
+import {
+  tallyByAlbum, tallyByMessage, totalOccurrences, alertVerdict, albumBlockFor, parseAlertState,
+  WINDOW_MINUTES, COALESCE_WINDOW_MINUTES,
+} from '@/lib/error-alert-grouping'
 import { attachAlbumOwners } from '@/lib/server/error-attribution'
 
 export const runtime = 'nodejs'
@@ -16,14 +19,9 @@ const NO_STORE = { 'Cache-Control': 'no-store' }
 // Deliberately narrow. It watches level='error' only, so the free-cap and too-large warnings that
 // make up most of a normal day cannot trigger it, and it needs a CLUSTER rather than a single
 // event, because one guest on a dying connection is not an incident.
-const WINDOW_MINUTES = 10
-// Must match the coalescing window in api/log/client-error.
-const COALESCE_WINDOW_MINUTES = 5
-const THRESHOLD = 8
-// One message per incident, not one per minute for as long as it lasts. An alert that arrives 40
-// times gets muted by its reader, which is worse than no alert at all.
-const COOLDOWN_MINUTES = 60
 const STATE_KEY = 'error_alert_last_sent'
+// Matches the 4s bound api/admin/stats uses for a comparable admin lookup.
+const ENRICH_TIMEOUT_MS = 4000
 
 export async function POST(req: Request) {
   const secret = process.env.ALBUM_RETIREMENT_SECRET ?? ''
@@ -73,76 +71,64 @@ export async function POST(req: Request) {
   }
 
   const count = totalOccurrences(rows ?? [])
-  if (count < THRESHOLD) return NextResponse.json({ ok: true, count, alerted: false }, { headers: NO_STORE })
+  // Weighted the same way, so the email names the message that is actually dominating rather than
+  // whichever one happens to own the most rows. The top message is also the incident's SIGNATURE.
+  const top = tallyByMessage(rows ?? [], 5)
 
-  // Cooldown is checked AFTER the threshold so a quiet period does not consume it, and read from
-  // the database rather than memory because each cron tick is a fresh isolate with no recollection
-  // of the previous one.
+  // WHETHER TO SEND AT ALL is one tested decision now. It was four comparisons in this handler, and
+  // twelve mutations to them passed the whole suite — including setting the threshold to 100000,
+  // after which the alarm can never fire again.
   const { data: state } = await admin
     .from('system_state').select('value').eq('key', STATE_KEY).maybeSingle<{ value: string }>()
-  const last = state?.value ? Date.parse(state.value) : 0
-  if (Number.isFinite(last) && Date.now() - last < COOLDOWN_MINUTES * 60_000) {
-    return NextResponse.json({ ok: true, count, alerted: false, reason: 'cooldown' }, { headers: NO_STORE })
+  const verdict = alertVerdict({
+    count,
+    signature: top[0]?.[0] ?? '',
+    previous: parseAlertState(state?.value),
+    nowMs: Date.now(),
+  })
+  if (!verdict.send) {
+    return NextResponse.json({ ok: true, count, alerted: false, reason: verdict.reason }, { headers: NO_STORE })
   }
 
-  // Claim the cooldown BEFORE sending. If the send then fails we lose one alert; if we sent first
-  // and the write failed, every subsequent tick would send again — the failure that actually hurts.
+  // Claim BEFORE sending. If the send then fails we lose one alert; if we sent first and the write
+  // failed, every subsequent tick would send again — the failure that actually hurts.
   const nowIso = new Date().toISOString()
-  await admin.from('system_state').upsert({ key: STATE_KEY, value: nowIso, updated_at: nowIso })
+  await admin.from('system_state').upsert({
+    key: STATE_KEY, value: JSON.stringify(verdict.nextState), updated_at: nowIso,
+  })
 
-  // Weighted the same way, so the email names the message that is actually dominating rather than
-  // whichever one happens to own the most rows.
-  const top = tallyByMessage(rows ?? [], 5)
   const devices = new Set((rows ?? []).map(r => (r.ua ?? '').match(/\((.*?)\)/)?.[1] ?? 'unknown'))
 
   // WHICH ALBUMS, AND WHOSE THEY ARE — through attachAlbumOwners, which already answers exactly
-  // this question for the admin errors tab and the live-stats poll.
+  // this question for the admin errors tab and the live-stats poll, and keeps three states apart
+  // where the hand-rolled copy kept two (rule 13).
   //
-  // This was hand-rolled here: the same albums query, the same getUserById, forty lines from a
-  // tested module that does it better. Two things came free from deleting it. It keeps THREE states
-  // apart where the copy kept two — a lookup that merely failed now reads '(unknown user)' rather
-  // than '(no account)', so a transient GoTrue blip can no longer tell the operator that a paying
-  // customer is uncontactable. And the admin page and this email can no longer disagree about the
-  // same album in the same incident, which they would have (rule 13).
-  // WRAPPED, BECAUSE THE COOLDOWN IS ALREADY CLAIMED. Everything above this point is arithmetic;
-  // this is a database query plus up to five GoTrue round trips, none of them with a timeout, and
-  // they run AFTER the hour has been spent at the upsert above. If any of them hangs or the isolate
-  // dies, the incident is silenced for a full hour and no email is sent at all.
+  // BOUNDED BY A RACE, NOT BY try/catch. The cooldown is already claimed at this point, and this is
+  // a query plus up to five GoTrue round trips with no timeout of their own. try/catch was the
+  // first attempt and it does not bound a HANG — which is precisely the failure that costs the
+  // hour: the tick claims the cooldown, waits forever, sends nothing, and the next 59 ticks are
+  // suppressed. getUserById takes no AbortSignal, so the race is the only real bound available.
   //
-  // So the enrichment is allowed to fail and the alert still goes out — with the count, the
-  // messages, and no album block. A number-only alert is the one this replaced and is far better
-  // than silence (rule 19: the uncertain branch must not be the one that loses the alarm).
+  // Losing the album block is a small loss; losing the alarm is the one that matters (rule 19).
   const { albums: albumTallies, moreAlbums: unlistedByCap } = tallyByAlbum(rows ?? [], 5)
+  const unresolved = albumTallies.map(t => ({ album_id: t.albumId, count: t.count, album: undefined }))
   let enriched: Array<{ album_id: string | null; count: number; album?: { title: string; slug: string; email: string } | null }> = []
-  try {
-    enriched = albumTallies.length > 0
-      ? await attachAlbumOwners(admin, albumTallies.map(t => ({ album_id: t.albumId, count: t.count })))
-      : []
-  } catch (e) {
-    console.error('[cron/error-alert] album enrichment failed:', e instanceof Error ? e.message : String(e))
-    enriched = albumTallies.map(t => ({ album_id: t.albumId, count: t.count, album: undefined }))
+  if (albumTallies.length > 0) {
+    enriched = await Promise.race([
+      attachAlbumOwners(admin, albumTallies.map(t => ({ album_id: t.albumId, count: t.count })))
+        .catch((e: unknown) => {
+          console.error('[cron/error-alert] album enrichment failed:', e instanceof Error ? e.message : String(e))
+          return unresolved
+        }),
+      new Promise<typeof unresolved>((resolve) =>
+        setTimeout(() => {
+          console.error('[cron/error-alert] album enrichment timed out — sending without it')
+          resolve(unresolved)
+        }, ENRICH_TIMEOUT_MS)),
+    ])
   }
 
-  // `album: undefined` means the lookup itself failed; `null` means that album is gone. Only the
-  // second is a reason to drop a row. Reporting an album we could not name still tells the operator
-  // where to look, and silently dropping it would shrink the list for a reason that has nothing to
-  // do with the incident (rule 20).
-  const lookupFailed = enriched.length > 0 && enriched.every(r => r.album === undefined)
-  const albums = enriched
-    .filter(r => r.album !== null)
-    .map(r => ({
-      slug: r.album?.slug ?? '',
-      title: r.album?.title ?? '(could not read this album)',
-      count: r.count,
-      owner: r.album?.email ?? '(unknown user)',
-    }))
-
-  // RECOMPUTED AFTER RESOLUTION, not before. tallyByAlbum only knows how many albums the cap left
-  // out; albums deleted between the failure and this tick are dropped above, and counting only the
-  // first number told the reader "and 3 more" while 5 were unlisted. In the degenerate case — every
-  // album dropped — the HTML omitted the block entirely while the plain text still printed a bare
-  // "and 2 more albums" pointing at nothing, in the lock-screen preview.
-  const moreAlbums = unlistedByCap + (albumTallies.length - albums.length)
+  const { albums, moreAlbums, lookupFailed } = albumBlockFor(enriched, unlistedByCap)
 
   try {
     await sendErrorSpikeEmail(to, {

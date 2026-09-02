@@ -382,7 +382,7 @@ export async function sendErrorSpikeEmail(
     Open the admin dashboard
   </a>
   <p style="margin:20px 0 0;color:#B0A090;font-size:12px;">
-    ${test ? 'Test messages ignore the hourly limit.' : 'You will not get another of these for an hour, however long this lasts.'}
+    ${test ? 'Test messages ignore the hourly limit.' : 'You will not get another about THIS failure for an hour. A different failure still reaches you.'}
   </p>
 </div>`
   // Assembled as lines rather than one escaped template string: the plain-text part is what a

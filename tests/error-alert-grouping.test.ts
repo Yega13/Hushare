@@ -1,5 +1,8 @@
 import { describe, it, expect } from 'vitest'
-import { occurrencesOf, totalOccurrences, tallyByAlbum, tallyByMessage, MAX_REPEATS_PER_ROW } from '@/lib/error-alert-grouping'
+import {
+  occurrencesOf, totalOccurrences, tallyByAlbum, tallyByMessage, MAX_REPEATS_PER_ROW,
+  alertVerdict, albumBlockFor, parseAlertState, THRESHOLD, MAX_ALERTS_PER_HOUR,
+} from '@/lib/error-alert-grouping'
 
 // WHAT THE 3AM EMAIL HAS TO SAY.
 //
@@ -139,5 +142,134 @@ describe('one request must not be able to silence the alarm', () => {
     const flood = [{ context: { repeats: 5000 } }, { context: { repeats: 5000 } }]
     expect(totalOccurrences(flood)).toBe(2 * MAX_REPEATS_PER_ROW)
     expect(totalOccurrences(flood)).toBeGreaterThan(8)
+  })
+})
+
+describe('whether to send at all', () => {
+  // TWELVE MUTATIONS TO THIS LOGIC PASSED THE WHOLE SUITE while it was four comparisons inside the
+  // cron route — including THRESHOLD to 100000, after which the alarm can never fire again, and
+  // deleting the cooldown claim, after which it emails every minute for the length of an incident.
+  const NOW = Date.parse('2026-09-02T12:00:00.000Z')
+  const ago = (mins: number) => new Date(NOW - mins * 60_000).toISOString()
+
+  it('stays quiet below the threshold, and fires exactly AT it', () => {
+    const base = { signature: 'boom', previous: null, nowMs: NOW }
+    expect(alertVerdict({ ...base, count: THRESHOLD - 1 })).toEqual({ send: false, reason: 'below-threshold' })
+    expect(alertVerdict({ ...base, count: THRESHOLD }).send).toBe(true)
+  })
+
+  it('suppresses the SAME incident inside the hour', () => {
+    const previous = { sentAt: ago(30), signature: 'boom', hourStart: ago(30), sentThisHour: 1 }
+    expect(alertVerdict({ count: 50, signature: 'boom', previous, nowMs: NOW }))
+      .toEqual({ send: false, reason: 'same-incident' })
+  })
+
+  it('SENDS a different incident in the same hour — the defect with nobody attacking anything', () => {
+    // A flat hourly cooldown dropped this: different failure, different album, same hour, never
+    // sent. That is the reason to change it; closing the poisoning attack is the side effect.
+    const previous = { sentAt: ago(30), signature: 'boom', hourStart: ago(30), sentThisHour: 1 }
+    expect(alertVerdict({ count: 50, signature: 'a completely different failure', previous, nowMs: NOW }).send).toBe(true)
+  })
+
+  it('sends the same incident again once the hour has passed', () => {
+    const previous = { sentAt: ago(61), signature: 'boom', hourStart: ago(61), sentThisHour: 1 }
+    expect(alertVerdict({ count: 50, signature: 'boom', previous, nowMs: NOW }).send).toBe(true)
+  })
+
+  it('never exceeds the hourly ceiling, whatever the signature', () => {
+    // The floor under the signature rule: a poisoner can make the alarm noisier, never silent, and
+    // never a flood. Worst case is MAX_ALERTS_PER_HOUR emails.
+    const previous = { sentAt: ago(5), signature: 'x', hourStart: ago(50), sentThisHour: MAX_ALERTS_PER_HOUR }
+    expect(alertVerdict({ count: 50, signature: 'brand new', previous, nowMs: NOW }))
+      .toEqual({ send: false, reason: 'hourly-cap' })
+  })
+
+  it('starts a fresh hour once the old one has elapsed', () => {
+    const previous = { sentAt: ago(70), signature: 'x', hourStart: ago(70), sentThisHour: MAX_ALERTS_PER_HOUR }
+    const v = alertVerdict({ count: 50, signature: 'x2', previous, nowMs: NOW })
+    expect(v.send).toBe(true)
+    if (!v.send) return
+    expect(v.nextState.sentThisHour).toBe(1)
+  })
+
+  it('counts sends within the hour so the ceiling can be reached', () => {
+    const previous = { sentAt: ago(5), signature: 'a', hourStart: ago(50), sentThisHour: 2 }
+    const v = alertVerdict({ count: 50, signature: 'b', previous, nowMs: NOW })
+    expect(v.send).toBe(true)
+    if (!v.send) return
+    expect(v.nextState.sentThisHour).toBe(3)
+    expect(v.nextState.hourStart, 'the hour window must not restart on every send').toBe(previous.hourStart)
+  })
+
+  it('a clock that jumped does not suppress an incident', () => {
+    // Rule 22: both elapsed times are differences of two stored readings. Negative or absurd means
+    // the clock moved, not the incident — and the safe reading is to SEND.
+    const backwards = { sentAt: new Date(NOW + 5 * 60_000).toISOString(), signature: 'boom', hourStart: ago(10), sentThisHour: 1 }
+    expect(alertVerdict({ count: 50, signature: 'boom', previous: backwards, nowMs: NOW }).send).toBe(true)
+    const ancient = { sentAt: ago(60 * 48), signature: 'boom', hourStart: ago(60 * 48), sentThisHour: 99 }
+    expect(alertVerdict({ count: 50, signature: 'boom', previous: ancient, nowMs: NOW }).send).toBe(true)
+  })
+
+  it('with no history at all, it sends', () => {
+    expect(alertVerdict({ count: 50, signature: 'boom', previous: null, nowMs: NOW }).send).toBe(true)
+  })
+})
+
+describe('reading the stored alert state', () => {
+  it('understands the OLD bare-timestamp format a deploy will find in the column', () => {
+    // Before this it stored a plain ISO string. Treating that as "no previous alert" would fire
+    // immediately on deploy; throwing would take the alarm out entirely.
+    const parsed = parseAlertState('2026-09-02T11:00:00.000Z')
+    expect(parsed?.sentAt).toBe('2026-09-02T11:00:00.000Z')
+    expect(parsed?.signature, 'a legacy row has no fingerprint, so it cannot suppress by signature').toBeUndefined()
+  })
+
+  it('reads the new format', () => {
+    const parsed = parseAlertState('{"sentAt":"2026-09-02T11:00:00.000Z","signature":"boom","sentThisHour":2}')
+    expect(parsed).toMatchObject({ signature: 'boom', sentThisHour: 2 })
+  })
+
+  it('treats junk as no history, which errs toward sending', () => {
+    for (const junk of [null, undefined, '', '   ', 'not a date', '{oops']) {
+      expect(parseAlertState(junk), String(junk)).toBeNull()
+    }
+  })
+})
+
+describe('the album block the email renders', () => {
+  const resolved = (slug: string, email: string) => ({ title: 'T', slug, email })
+
+  it('keeps an album we could not name, and drops one that is gone', () => {
+    const { albums, moreAlbums, lookupFailed } = albumBlockFor([
+      { album_id: 'a', count: 5, album: resolved('aaa', 'a@b.com') },
+      { album_id: 'b', count: 3, album: null },
+      { album_id: 'c', count: 2, album: undefined },
+    ], 0)
+    expect(albums.map(a => a.slug)).toEqual(['aaa', ''])
+    expect(albums[1].owner).toBe('(unknown user)')
+    expect(moreAlbums, 'the dropped album is counted, not silently lost').toBe(1)
+    expect(lookupFailed).toBe(false)
+  })
+
+  it('says the lookup failed only when NOTHING resolved', () => {
+    expect(albumBlockFor([{ album_id: 'a', count: 1, album: undefined }], 0).lookupFailed).toBe(true)
+    expect(albumBlockFor([
+      { album_id: 'a', count: 1, album: undefined },
+      { album_id: 'b', count: 1, album: resolved('bbb', 'b@c.com') },
+    ], 0).lookupFailed).toBe(false)
+  })
+
+  it('adds the capped-out albums to the dropped ones, and never goes negative', () => {
+    const { moreAlbums } = albumBlockFor([
+      { album_id: 'a', count: 1, album: resolved('aaa', 'a@b.com') },
+      { album_id: 'b', count: 1, album: null },
+      { album_id: 'c', count: 1, album: null },
+    ], 4)
+    expect(moreAlbums).toBe(6)
+    expect(albumBlockFor([], 0).moreAlbums).toBe(0)
+  })
+
+  it('an empty list is not a failed lookup', () => {
+    expect(albumBlockFor([], 0)).toEqual({ albums: [], moreAlbums: 0, lookupFailed: false })
   })
 })
