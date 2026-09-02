@@ -60,7 +60,12 @@ const SIZE_BUDGET: Record<string, number> = {
   // +6 (2026-09-01, security audit): the PUT carries exactly the content-type the server signed.
   // +12 (2026-09-01, incident): a missing-Content-Length 400 switches to the relay instead of
   // abandoning the video (the decision itself is lib/upload-policy, tested there).
-  'src/components/UploadZone.tsx': 2872,
+  // +6 (2026-09-02): a guest was shown a Content-Security-Policy directive dump as the reason their
+  // photo failed. Chrome on Android cannot decode HEIC natively, falls to the WASM converter, and
+  // heic2any's `new Function` is refused by our CSP — so the conversion cannot run at all and no
+  // retry helps. The classifier is in lib/upload-policy (tested); these lines are the branch that
+  // uses it and the sentence a guest can act on.
+  'src/components/UploadZone.tsx': 2878,
   // +3 on 2026-08-30: the branding toggle gained a real plan check (it was dimmed but still
   // clickable), and Face Finder and bib search stopped riding on the collections flag. Three
   // lines of reasoning for three gates that were wrong. Deliberate.

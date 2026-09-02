@@ -9,7 +9,7 @@ import { stripExifFromJpeg, jpegOrientation, stripMetadataFromPng, stripMetadata
 // tested in tests/upload-policy.test.ts, because none of it was reachable from inside here.
 import {
   maxImageDimFor, shrinkLadderFor, needsReEncode, outputMimeFor, nextShrinkDim,
-  isMissingContentLengthFailure, tusFailureAction,
+  isMissingContentLengthFailure, tusFailureAction, isHeicConversionUnsupported,
   backoffDelay, isNetworkClass, isExpectedRefusal, createRelayPolicy,
   verdictForResponse, verdictForThrow,
 } from '@/lib/upload-policy'
@@ -437,7 +437,18 @@ async function processImageInner(file: File, capBytes: number, maxDim: number): 
       try {
         jpegBlob = await convertHeicMainThread(file)
       } catch (mainErr) {
-        throw new Error(`HEIC conversion failed: ${mainErr instanceof Error ? mainErr.message : String(mainErr)}`)
+        const detail = mainErr instanceof Error ? mainErr.message : String(mainErr)
+        // A GUEST MUST NOT BE HANDED A SECURITY-POLICY DUMP. When the converter cannot run in this
+        // browser at all — Chrome on Android, where heic2any's `new Function` is refused by our CSP
+        // — retrying changes nothing, so the message says what is true and what they can do about
+        // it instead of quoting a script-src directive at somebody at a wedding.
+        if (isHeicConversionUnsupported(`heic ${detail}`)) {
+          throw new Error(
+            'This browser cannot convert iPhone photo files (HEIC). '
+            + 'Ask for the photo as a JPEG, or add it from an iPhone.',
+          )
+        }
+        throw new Error(`HEIC conversion failed: ${detail}`)
       }
     }
 

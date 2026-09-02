@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest'
 import {
   MAX_IMG_DIM, SHRINK_LADDER, needsReEncode, outputMimeFor, nextShrinkDim,
   maxImageDimFor, shrinkLadderFor, OWNER_IMG_DIM, isMissingContentLengthFailure, tusFailureAction,
+  isHeicConversionUnsupported,
   backoffDelay, isNetworkClass, isExpectedRefusal, EXPECTED_REFUSAL_PREFIXES,
   createRelayPolicy, verdictForResponse, verdictForThrow,
 } from '@/lib/upload-policy'
@@ -462,5 +463,45 @@ describe('isMissingContentLengthFailure: the first condition, which had no negat
   it('and the relay decision follows it — a 400 it does not recognise stays fatal', () => {
     // The consequence, asserted where it actually costs something.
     expect(tusFailureAction(400, '{"code":10015,"message":"Invalid video duration"}', false)).toBe('fatal')
+  })
+})
+
+describe('a guest must not be shown a security-policy dump', () => {
+  // WHAT A GUEST ACTUALLY SAW when their photo failed:
+  //
+  //   HEIC conversion failed: Evaluating a string as JavaScript violates the following
+  //   Content Security Policy directive: script-src 'self' 'unsafe-inline' ...
+  //
+  // Safari decodes HEIC natively and never reaches the converter, so iPhones are unaffected.
+  // Chrome on Android cannot, falls through to the WASM converter, and heic2any's emscripten glue
+  // calls new Function — which our CSP refuses in the worker and on the main thread alike. There is
+  // no retry that helps, so the message has to say something true and actionable instead.
+  it('recognises the CSP refusal in its several wordings', () => {
+    expect(isHeicConversionUnsupported(
+      'heic Evaluating a string as JavaScript violates the following Content Security Policy directive',
+    )).toBe(true)
+    expect(isHeicConversionUnsupported('HEIC EvalError: call to Function() blocked by CSP')).toBe(true)
+    expect(isHeicConversionUnsupported("heic refused: script-src lacks 'unsafe-eval'")).toBe(true)
+  })
+
+  it('does NOT swallow an ordinary conversion failure', () => {
+    // Those are worth reporting as themselves — a corrupt file, an out-of-memory decode, a timeout.
+    // Reading them all as "your browser cannot do this" would hide real bugs behind a polite line.
+    expect(isHeicConversionUnsupported('heic HEIC conversion timed out')).toBe(false)
+    expect(isHeicConversionUnsupported('heic worker crashed')).toBe(false)
+    expect(isHeicConversionUnsupported('heic out of memory')).toBe(false)
+  })
+
+  it('does not fire on a CSP error that has nothing to do with HEIC', () => {
+    // The page reports other CSP violations too; only the converter path may claim this message.
+    expect(isHeicConversionUnsupported(
+      'Content Security Policy directive blocked an inline script',
+    )).toBe(false)
+  })
+
+  it('survives whatever it is handed', () => {
+    for (const bad of [null, undefined, 0, {}, []]) {
+      expect(isHeicConversionUnsupported(bad), String(bad)).toBe(false)
+    }
   })
 })

@@ -151,6 +151,37 @@ export function isMissingContentLengthFailure(message: unknown): boolean {
 }
 
 /**
+ * Did the HEIC converter fail because this browser will not let it run?
+ *
+ * A guest was shown this, verbatim, as the reason their photo did not upload:
+ *
+ *     HEIC conversion failed: Evaluating a string as JavaScript violates the following
+ *     Content Security Policy directive: script-src 'self' 'unsafe-inline' ...
+ *
+ * That is a security-policy dump handed to somebody at a wedding. It names no cause they
+ * recognise and no action they can take (rule 20).
+ *
+ * WHAT ACTUALLY HAPPENS. Safari decodes HEIC natively and never reaches the converter, so every
+ * iPhone is fine. Chrome on Android cannot, falls through to the WASM converter, and heic2any's
+ * emscripten glue calls `new Function(...)` — which our Content-Security-Policy refuses, in the
+ * worker and on the main thread alike, because both inherit the document's policy. There is no
+ * retry that helps: the conversion cannot run in this browser at all.
+ *
+ * Matched on the message because that is all the exception carries — an EvalError's text is the
+ * CSP report, and no error code distinguishes it. Both the spec wording and Chrome's phrasing are
+ * checked; a false positive costs one honest message instead of a cryptic one.
+ */
+export function isHeicConversionUnsupported(message: unknown): boolean {
+  if (typeof message !== 'string') return false
+  const m = message.toLowerCase()
+  if (!m.includes('heic')) return false
+  return m.includes('content security policy')
+    || m.includes('evalerror')
+    || m.includes('evaluating a string as javascript')
+    || m.includes('unsafe-eval')
+}
+
+/**
  * WHAT THE VIDEO RECOVERY LOOP DOES WITH ONE FAILED TUS ATTEMPT — the whole decision, in order.
  *
  * THE ORDER IS THE ENTIRE POINT, and getting it wrong made the fix above dead code for three
