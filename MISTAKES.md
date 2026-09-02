@@ -185,3 +185,72 @@ throws", never "what if it never returns".
   normalise line endings AND assert the hit count (rule 16's "assert the mutation applied").
 - **Two agents collided in a shared scratchpad**, each writing `scratchpad/mutate.mjs`; one briefly
   ran the other's script. Agents need a namespaced scratch directory, not a shared one.
+
+## 2026-09-02 — Circle 3
+
+### 14. I FIXED ONE DIRECTION OF A BOUND AND SHIPPED THE OTHER AS AN EXPLOIT
+
+Entry 10's shape, but worse, because I was actively editing the line.
+
+`duration_seconds` was unbounded in both directions. I clamped it at the BOTTOM — negative values
+were disabling album budgets — wrote a commit about having fixed it, and left the top open on the
+same expression. Two requests and zero bytes then broke any album's video permanently:
+
+    POST /api/upload/stream        durationSeconds omitted   -> approved, stores nothing
+    POST /api/album/photos/create  duration_seconds: 2147483647
+
+int4 holds that exactly, so the album's total exceeded every budget forever. With require_approval
+on, the poison row is HIDDEN — the owner cannot see the video they are told to delete.
+
+**Habit to build:** a bound has two ends. When clamping one, say out loud what the other end is and
+why it is safe. "Math.max(0, x)" is half a sentence.
+
+### 15. TWO TESTS ASSERTED AGAINST THE CONSTANT THEY WERE TESTING
+
+`expect(chargeableDurationSeconds(BIG)).toBe(MAX_STORED_DURATION_SECONDS)` only ever says n === n.
+Raising that constant to 2147483647 — which re-opens entry 14 completely — passed the whole file.
+Same for MAX_ALERTS_PER_HOUR: every value >= 3 passed, including 99999, which removes the ceiling
+the flood argument depends on.
+
+**Rule 17, in tests written the same day I quoted rule 17 in a commit message.**
+**Habit to build:** a constant's VALUE gets one assertion against a literal, with the reason beside
+it. Everything else may use the import.
+
+### 16. THE SAME FALSE-SECURITY-CLAIM MISTAKE, INSIDE THE COMMIT THAT FIXED IT
+
+Entry 11 was "I put a security claim in a commit title without testing it as an attacker". The
+commit that recorded entry 11 then claimed a poisoner "can make the alarm noisier, never silence".
+Four unauthenticated POSTs with four different messages spend the hourly ceiling and silence a real
+incident for the rest of the hour. Narrower than before, not closed.
+
+**Habit to build:** when writing "X can no longer happen", spend five minutes being the attacker
+first. If the sentence survives, keep it; if not, write the residual down instead. The residual is
+now asserted by a test, because a comment saying it can be believed and a test cannot.
+
+### 17. A TEST THAT NEVER RAN THE THING IT TESTED
+
+Wrote `it('sizes the per-album budget...', () => {` with no `async` and no call to the function.
+It read an empty array and failed on a confusing assertion. Caught immediately, but the shape is
+worth recording: a test whose subject is never invoked can also PASS, if its assertions happen to
+hold on empty input.
+
+### 18. TOOLING: agent worktrees were created FIFTEEN COMMITS BEHIND
+
+Both round-3 agents found their worktree at `28a3ead` rather than `f472e8e`, and both reset
+themselves forward before starting. Round 2's agents were on the same stale base. **A whole round
+could have reviewed code that no longer exists and reported it as sound.**
+
+**Habit to build:** every agent brief must say "verify your HEAD is <sha> before you start, and say
+so in your report". Both round-3 agents did this unprompted; do not rely on that.
+
+### 19. TOOLING: a mutation harness that reported 52/52 kills, all fake
+
+One agent's runner passed `--reporter=basic`, which vitest 4 does not have, so every run crashed
+before loading a test and exited non-zero — scored as KILLED. It only noticed because 52/52 was too
+good to be true. A second agent hit the CRLF version of the same trap: multi-line search strings
+written with bare `\n` matched zero times on these files.
+
+**The rule for any harness here:** pre-flight the UNMUTATED file and require a real summary line;
+assert the find-string hit count is exactly 1; print the mutated line back off disk; refuse a
+verdict rather than guessing. This is rule 16's "assert the mutation applied", and it has now nearly
+produced false proofs three times.

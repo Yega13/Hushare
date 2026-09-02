@@ -41,7 +41,15 @@ function testFilesOnDisk(dir = TESTS_DIR) {
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
     const full = join(dir, entry.name)
     if (entry.isDirectory()) out.push(...testFilesOnDisk(full))
-    else if (/\.test\.tsx?$/.test(entry.name)) out.push(full)
+    // CASE-INSENSITIVE on purpose, and it is not tidiness. vitest's include glob matches
+    // `.test.ts` in lowercase only, so a file saved as `Foo.Test.ts` is run by nobody — and with a
+    // case-SENSITIVE disk check here, this script counted it as absent too, printed
+    // "verified: all N of N test files ran", and exited 0 with a failing test sitting on disk that
+    // neither side had ever looked at. Windows makes that easy to do by accident.
+    //
+    // Matching it here means the counts disagree and the run FAILS, naming the file. That is the
+    // right outcome: the fix is to rename it, and until then the suite must not claim to be whole.
+    else if (/\.test\.tsx?$/i.test(entry.name)) out.push(full)
   }
   return out
 }
@@ -70,7 +78,19 @@ const result = spawnSync(
 // A FILTERED RUN CANNOT BE COMPLETENESS-CHECKED, and must not pretend to be. `npm test -- foo` is
 // meant to run one file; comparing that against the whole directory would fail every time and the
 // check would be turned off within a day.
-if (passthrough.length > 0) {
+//
+// A FLAG IS NOT A FILTER, and treating it as one disabled the guard in silence. This used to skip
+// the check whenever ANY argument was present, so `npm test -- --coverage`, `--bail`, `-u` or
+// `--reporter=verbose` all turned it off — and printed nothing at all, so a guarded run and an
+// unguarded one differed only by the ABSENCE of a line. That is rule 20's own shape, inside the
+// file written to enforce rule 20.
+//
+// Only a non-flag argument narrows which files run. Flags are passed through and still checked.
+const fileFilters = passthrough.filter((a) => !a.startsWith('-'))
+if (fileFilters.length > 0) {
+  // Said out loud, every time. The whole failure above was a guard that went quiet.
+  console.log(`[run-tests] completeness check SKIPPED — filtered to: ${fileFilters.join(' ')}`)
+  console.log('[run-tests] run `npm test` with no file argument before believing a green suite.')
   rmSync(scratch, { recursive: true, force: true })
   process.exit(result.status ?? 1)
 }

@@ -138,6 +138,7 @@ create table if not exists public.pending_stream_uploads (
   created_at timestamp with time zone default now() not null,
   upload_url text,
   consumed_at timestamp with time zone,
+  declared_duration_seconds integer,
   primary key (stream_uid)
 );
 alter table public.pending_stream_uploads enable row level security;
@@ -433,6 +434,12 @@ do $$ begin
   end if;
 end $$;
 do $$ begin
+  if not exists (select 1 from pg_constraint where conname = 'pending_stream_uploads_declared_duration_nonneg'
+    and conrelid = 'pending_stream_uploads'::regclass) then
+    alter table pending_stream_uploads add constraint pending_stream_uploads_declared_duration_nonneg CHECK (((declared_duration_seconds IS NULL) OR (declared_duration_seconds >= 0)));
+  end if;
+end $$;
+do $$ begin
   if not exists (select 1 from pg_constraint where conname = 'pending_stream_uploads_stream_uid_check'
     and conrelid = 'pending_stream_uploads'::regclass) then
     alter table pending_stream_uploads add constraint pending_stream_uploads_stream_uid_check CHECK ((stream_uid ~ '^[a-f0-9]{32}$'::text));
@@ -460,6 +467,12 @@ do $$ begin
   if not exists (select 1 from pg_constraint where conname = 'photos_display_radius_check'
     and conrelid = 'photos'::regclass) then
     alter table photos add constraint photos_display_radius_check CHECK (((display_radius IS NULL) OR ((display_radius >= 0) AND (display_radius <= 10000))));
+  end if;
+end $$;
+do $$ begin
+  if not exists (select 1 from pg_constraint where conname = 'photos_duration_seconds_sane'
+    and conrelid = 'photos'::regclass) then
+    alter table photos add constraint photos_duration_seconds_sane CHECK (((duration_seconds IS NULL) OR ((duration_seconds >= 0) AND (duration_seconds <= 21600)))) NOT VALID;
   end if;
 end $$;
 do $$ begin

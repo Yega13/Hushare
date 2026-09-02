@@ -258,10 +258,32 @@ describe('the limits that stop one album writing bytes nobody can find', () => {
     await authorizeImageUpload(req, params())
     const keys = cfg.rateLimitCalls.map(c => String(c[0]))
     expect(keys).toContain('presign_ip:test')
-    expect(keys.some(k => k.startsWith('presign_album:'))).toBe(true)
+    // THE ALBUM ID IS THE LOAD-BEARING PART, and the first version of this asserted only the
+    // PREFIX — so changing the key to a constant like 'presign_album:shared' passed. In production
+    // that is one global hourly bucket for every album on the platform: one busy event, or one
+    // abuser, starves image uploads for everybody. Exactly the pass-by-coincidence shape that has
+    // already caught me twice.
+    expect(keys).toContain(`presign_album:${ALBUM_ID}`)
     for (const call of cfg.rateLimitCalls) {
       expect(call[3], `${call[0]} must fail closed`).toEqual({ failOpen: false })
     }
+  })
+
+  it('sizes the per-album budget from THIS album, not from a constant', async () => {
+    await authorizeImageUpload(req, params())
+    // presignBudget's arguments were recorded by the mock and never read, so replacing them with a
+    // flat 40000 survived — the module's own comment calls that "roughly a terabyte an hour of
+    // permanent storage for anyone who knows one album id". The budget must move with the album's
+    // remaining room, so an album that is nearly full cannot presign thousands more slots.
+    //
+    // Asserted as a RANGE rather than an exact number: the point is that it is derived, and pinning
+    // the arithmetic here would re-implement presign-budget instead of testing it (rule 17).
+    const albumCall = cfg.rateLimitCalls.find(c => String(c[0]).startsWith('presign_album:'))
+    expect(albumCall, 'the per-album limiter must be consulted at all').toBeDefined()
+    expect(albumCall?.[1], 'window is one hour').toBe(3600)
+    expect(typeof albumCall?.[2]).toBe('number')
+    expect(albumCall?.[2] as number).toBeGreaterThan(0)
+    expect(albumCall?.[2] as number, 'a flat 40000 is the defect this exists to stop').toBeLessThan(40000)
   })
 
   it('429s a hammered IP, with a Retry-After', async () => {
