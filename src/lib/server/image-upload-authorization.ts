@@ -20,7 +20,24 @@ import type { Tier } from '@/types'
 const NO_STORE = { 'Cache-Control': 'no-store' }
 // Client thumbnails are ~20–80KB JPEGs; kept here only for the presign route's paired-thumb size
 // validation — the relay route never handles a paired thumb (see deriveImageKey below).
-const MAX_FILESIZE_HARD_CAP = 200 * 1024 * 1024 // 200 MB absolute ceiling regardless of tier
+/**
+ * The absolute ceiling, above every tier — DERIVED, because it was a second copy of a number that
+ * already exists.
+ *
+ * It was `200 * 1024 * 1024` with a comment calling it an independent safety net. It is not:
+ * PRO_IMAGE_BYTES, the highest image cap any tier gets, is also exactly 200 MB. So the check could
+ * never bind — anything the per-tier cap allows is already at or under it — and a mutation deleting
+ * it entirely changed no behaviour at all, which is how this was found.
+ *
+ * They agreed by coincidence, and the two ways that coincidence ends are both silent: raise
+ * PRO_IMAGE_BYTES and this starts refusing uploads a paying customer was sold, or lower it and this
+ * becomes dead weight nobody notices. Derived from the same source, they cannot part company.
+ *
+ * The check stays rather than being deleted: it runs BEFORE the album lookup, so a hostile
+ * multi-gigabyte declaration is refused without costing a database round trip, which the per-tier
+ * cap several steps later cannot do.
+ */
+const MAX_FILESIZE_HARD_CAP = uploadCapsForTier('studio').image
 
 export type ImageUploadAuthResult =
   | { ok: true; tier: Tier; imageCap: number }

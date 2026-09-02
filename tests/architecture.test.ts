@@ -216,14 +216,14 @@ const UNTESTED_LEGACY = new Set([
   // in .ts at the top level, and directories do not, so three whole folders were exempt from the
   // "a new module arrives with its tests" rule without anyone deciding that.
   //
-  // TAKE server/image-upload-authorization OFF FIRST. It is the entire authorization chain for the
-  // IMAGE path — 98.5% of all media — carrying the same password/reveal gate, the same per-tier
-  // size cap and the same per-album ceiling as the video path, and it has no test at all. Its twin
-  // was tested this week only because a review happened to look at video; nothing would have
-  // flagged this one, through two full rounds of adversarial review, because this walk could not
-  // see it.
-  'server/image-upload-authorization',
-  // Decision-carrying, worth tests in roughly this order after the one above.
+  // server/image-upload-authorization came OFF the same day it went on — it was first on the list
+  // for a reason (the entire authorization chain for 98.5% of all media) and
+  // tests/image-upload-authorization.test.ts now covers the gate, both size ceilings, the type
+  // allowlist, both rate limiters and their fail direction, package entitlement, and the ordering
+  // that refuses an absurd size before it costs a database lookup. Six of seven hostile mutations
+  // died on the first run; the seventh turned out to be a genuine finding rather than a weak test.
+  //
+  // Decision-carrying, worth tests in roughly this order next.
   'server/polar-reconcile', 'server/count-albums-against-cap', 'server/bib-index',
   'server/face-sweep', 'server/album-header',
   // Thin I/O wrappers around Cloudflare and Supabase clients. Genuinely low-value to unit test —
