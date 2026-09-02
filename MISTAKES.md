@@ -317,3 +317,91 @@ CODE, and here the code was right and the test was wrong. I nearly edited `image
 
 **Habit to build:** on a fresh test's first failure, re-read the fixture before the subject.
 
+## 2026-09-02 - Circle 4 (three breakers, one planner, then a real crash)
+
+### 24. I SHIPPED SIX BLIND TESTS IN ONE DAY, AND EVERY ONE PASSED
+
+Circle 4's breakers found nothing wrong with the CODE I had written that morning. They found that
+the tests guarding it could not see it. Six defects, all mine, all green:
+
+- both new alarm tests used `hourStartedAt`; the field is `hourStart`. The claim under test was 1
+  instead of 3, so `sentThisHour: 0` hardcoded passed the test written to prove it was not hardcoded;
+- `cfg.enrichDelayMs` was declared, reset and read by the mock, and no test ever set it, so the
+  4-second bound was unexercised and deleting the whole race passed 13 tests;
+- the SQL guard asserted fragments and passed five wrong functions;
+- the call-site test counted occurrences anywhere in a 2,800-line file, and its two assertions were
+  not bound to each other;
+- the ImageDecoder fake ignored its init and its decode options;
+- a fixture used `image/heic`, which is the value a hardcoding mutation would naturally use - so the
+  fixture could not detect the mutation. Same shape as `toContain('23')` answered by `abc123`.
+
+**Habit to build:** a fixture value must be one the mutation cannot coincide with, and a test that
+reads source must be scoped to the construct. But the real lesson is the count: SIX, in one day,
+after writing MISTAKES entries about exactly this. Writing the rule down is not the same as applying
+it, and only an adversarial agent has ever caught these.
+
+### 25. THE SECOND HALF OF A BUG I HAD JUST FIXED WAS EIGHTY LINES BELOW THE FIRST
+
+I fixed the error-alert cron's cooldown claim to read `{ error }` instead of discarding it, wrote a
+commit explaining that supabase-js RESOLVES with `{ error }` rather than throwing - and left the
+rollback eighty lines further down doing `.then(() => {}, ...)`, the identical defect, in the same
+function, in the same commit.
+
+**Habit to build:** when a defect is a MISUSE OF AN API, grep the file for every other use of that
+API before closing it. Entry 14 was the same shape (one direction of a bound fixed, the other
+shipped as an exploit); this is its third occurrence.
+
+### 26. A COMMENT CLAIMED A SECURITY PROPERTY THE CODE DID NOT HAVE, FOR THE THIRD TIME
+
+`alertVerdict` said "keying the suppression to the dominating message means a poisoner can only
+silence the incident they are themselves manufacturing." An agent disproved it in one run: the
+suppression is on the TICK, `source` is attacker-controlled and part of the coalescing key, the
+per-ROW repeat cap is not a per-MESSAGE cap, and the 200-row newest-first sample lets fresh rows
+evict the real incident. ~1,340 requests an hour silences the alarm indefinitely.
+
+Entries 11 and 16 are the same mistake. The difference this time: the corrected comment is backed by
+a TEST that asserts the residual, so closing the hole fails the test and forces the comment to change
+with it.
+
+**Habit to build:** a comment claiming an attack is closed must name the test that proves it. If
+there is no such test, write what is true instead: "narrower, and not closed."
+
+### 27. I WROTE A NEW MODULE AND MISSED THE CODEBASE'S OWN HARD-WON LESSON THREE LINES ABOVE IT
+
+image-decode.ts read the file with a bare `arrayBuffer()`. `readFileRobust` exists in this repo
+SPECIFICALLY because Android content:// references throw NotReadableError intermittently -
+UploadZone calls it in four places and says so in comments - and production has logged 165 of them.
+The new path is reached ONLY by Android Chrome with a HEIC, which is exactly that population. A blip
+therefore told a guest to "add it from an iPhone" for a photo the decoder had already accepted.
+
+**Habit to build:** when moving code into a new module, grep for how the REST of the codebase does
+that same I/O. The lesson was already written down; I just did not go and read it.
+
+### 28. THE BUG THAT MATTERED MOST WAS FOUND BY A LINT RULE THAT HAD BEEN INSTALLED ALL ALONG
+
+A real guest, unlocking a real password-protected wedding album, got "Something went wrong": five
+useMemo calls below an early return, so the gated first render called five fewer hooks and React
+threw #310 when the album arrived. It survived review, tsc, 1,110 tests, and TWO full adversarial
+rounds - all of which were looking at the code I had just changed, and this was not it.
+
+Worse: I then wrote my own scanner for exactly this pattern. It produced 119 false positives and
+missed the real one. `eslint --rule react-hooks/rules-of-hooks` named all five in a single run. The
+plugin was in node_modules the entire time and nothing in CI ever ran it.
+
+**Habit to build:** before hand-rolling a detector, check whether a purpose-built one is already
+installed. And when a customer error report arrives, the report IS the lead - the two #310 rows named
+the page, the hook type and the build, and I went to the source instead of to the tool that decides
+this exact question. `npm run check:hooks` now gates the deploy.
+
+### 29. THE ERROR REPORT THAT FOUND IT HAD BEEN CRIPPLED BY OUR OWN LIMITS
+
+The #310 report's stack stopped at `at r.useMemo (https://hushare.space/_ne` - one character before
+anything that could name the component. Two independent caps did it: the boundary stored
+`error.stack.slice(0, 400)` and `error.stack` begins with React's ~180-character message, and the
+server DROPPED THE WHOLE CONTEXT when its JSON passed 800 characters. So the deeper the crash, the
+less was recorded about it - a digest, a build id and a path all lost together because the stack
+beside them was long.
+
+**Habit to build:** a truncation rule that discards the whole record is not a size limit, it is a
+data-loss bug that fires hardest on the most serious events. Clamp the field, keep the keys.
+
