@@ -252,6 +252,51 @@ const decodeSem = new Semaphore(
   typeof navigator !== 'undefined' && /Mobi|Android/i.test(navigator.userAgent) ? 2 : 4,
 )
 
+/**
+ * The PLATFORM's own decoder, via WebCodecs — a second native attempt before the WASM converter.
+ *
+ * createImageBitmap is the first attempt and handles HEIC on Safari, which is why iPhones never
+ * reach the converter. Chrome on Android cannot decode HEIC that way, so it fell through to
+ * heic2any — whose emscripten glue calls `new Function(...)`, which our Content-Security-Policy
+ * refuses in the worker and on the main thread alike. That guest simply could not upload the photo,
+ * and the only alternatives on the table were weakening script-src for the whole site or telling
+ * them no.
+ *
+ * ImageDecoder is the third option. Android has HEIF support at the OS level and Chrome exposes it
+ * here, so where it works this needs no eval, no CSP change, no extra dependency — and it is
+ * BETTER than the converter path, because it decodes once instead of converting to JPEG and
+ * re-encoding, which is two lossy generations.
+ *
+ * Strictly additive and cannot make anything worse: isTypeSupported is asked first, every failure
+ * returns null, and null falls through to exactly the behaviour that exists today.
+ */
+async function decodeViaImageDecoder(source: Blob): Promise<ImageBitmap | null> {
+  try {
+    if (typeof ImageDecoder === 'undefined') return null
+    const type = source.type
+    if (!type) return null
+    // Asked, never assumed: an unsupported type here throws inside the decoder instead of
+    // answering, and this path must stay silent when the platform cannot help.
+    if (!(await ImageDecoder.isTypeSupported(type))) return null
+
+    const decoder = new ImageDecoder({ data: await source.arrayBuffer(), type })
+    try {
+      const { image } = await decoder.decode({ frameIndex: 0 })
+      try {
+        // A VideoFrame, not an ImageBitmap — createImageBitmap accepts it and gives the rest of the
+        // pipeline the type it already works with.
+        return await createImageBitmap(image)
+      } finally {
+        image.close()
+      }
+    } finally {
+      decoder.close()
+    }
+  } catch {
+    return null
+  }
+}
+
 async function decodeBitmapSafe(source: Blob): Promise<ImageBitmap | null> {
   try {
     // EXPLICIT imageOrientation: 'from-image' bakes EXIF rotation into the pixels. Modern
@@ -418,7 +463,11 @@ async function processImageInner(file: File, capBytes: number, maxDim: number): 
     // Fast path: Safari decodes HEIC natively — skip the slow WASM converter entirely and
     // encode straight from the native bitmap (also a single lossy generation, so better
     // quality than converter-then-re-encode).
-    const native = await decodeBitmapSafe(file)
+    //
+    // Then the PLATFORM decoder, for browsers where createImageBitmap cannot but WebCodecs can —
+    // Chrome on Android, where the WASM converter is refused by our CSP and the guest was simply
+    // told no. Same single-generation quality, and it costs nothing where it is unsupported.
+    const native = (await decodeBitmapSafe(file)) ?? (await decodeViaImageDecoder(file))
     if (native) {
       try {
         const thumbBlob = await deriveThumb(native)

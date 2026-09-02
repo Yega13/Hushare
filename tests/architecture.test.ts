@@ -65,7 +65,12 @@ const SIZE_BUDGET: Record<string, number> = {
   // heic2any's `new Function` is refused by our CSP — so the conversion cannot run at all and no
   // retry helps. The classifier is in lib/upload-policy (tested); these lines are the branch that
   // uses it and the sentence a guest can act on.
-  'src/components/UploadZone.tsx': 2878,
+  // +49 (2026-09-02): a second NATIVE decode attempt via WebCodecs ImageDecoder, so Chrome on
+  // Android can decode HEIC without the WASM converter — whose `new Function` our CSP refuses,
+  // leaving that guest unable to upload the photo at all. The alternatives were weakening
+  // script-src for the whole site or telling them no; this is neither. Strictly additive: every
+  // failure returns null and falls through to exactly the previous behaviour.
+  'src/components/UploadZone.tsx': 2927,
   // +3 on 2026-08-30: the branding toggle gained a real plan check (it was dimmed but still
   // clickable), and Face Finder and bib search stopped riding on the collections flag. Three
   // lines of reasoning for three gates that were wrong. Deliberate.
