@@ -1,36 +1,39 @@
 import { describe, it, expect } from 'vitest'
 import {
-  videoCaps, clipTooLong, videoBudgetExceeded, videoBudgetLeft, formatClipLimit,
+  videoCaps, videoBudgetExceeded, videoBudgetLeft, formatClipLimit,
   videoAlbumFullMessage, type VideoCaps,
 } from '../src/lib/album-entitlements'
 import { FREE_ALBUM_LIMIT, PRO_ALBUM_LIMIT, STUDIO_ALBUM_LIMIT } from '../src/lib/media'
 
 describe('videoCaps — the agreed ladder', () => {
-  it('gives each plan at least as much as the one below it, on BOTH axes', () => {
+  it('gives each plan at least as much as the one below it', () => {
     // A higher plan giving less than a lower one is incoherent whatever the cost maths says, and
     // it would be invisible on the pricing page until a customer noticed they had paid for less.
     const free = videoCaps('free')
     const pro = videoCaps('pro')
     const max = videoCaps('studio')
 
-    expect(pro.maxClipSeconds).toBeGreaterThanOrEqual(free.maxClipSeconds)
     expect(pro.maxTotalSeconds).toBeGreaterThanOrEqual(free.maxTotalSeconds)
-    expect(max.maxClipSeconds).toBeGreaterThanOrEqual(pro.maxClipSeconds)
     expect(max.maxTotalSeconds).toBeGreaterThanOrEqual(pro.maxTotalSeconds)
   })
 
-  it('is exactly what was agreed', () => {
-    expect(videoCaps('free')).toEqual({ maxClipSeconds: 60, maxTotalSeconds: 600 })
-    expect(videoCaps('pro')).toEqual({ maxClipSeconds: 120, maxTotalSeconds: 1200 })
-    expect(videoCaps('studio')).toEqual({ maxClipSeconds: 600, maxTotalSeconds: 3000 })
+  it('is exactly what was agreed — minutes per album, and NOTHING else', () => {
+    // toEqual, not toMatchObject, on purpose: it fails if a per-clip cap is ever added back. The
+    // limit is one pool of minutes the owner spends however they like — one twenty-minute video or
+    // twenty one-minute ones. A second limit beside it is the thing that was removed.
+    expect(videoCaps('free')).toEqual({ maxTotalSeconds: 600 })
+    expect(videoCaps('pro')).toEqual({ maxTotalSeconds: 1200 })
+    expect(videoCaps('studio')).toEqual({ maxTotalSeconds: 3000 })
   })
 
-  it('never lets one clip consume the whole allowance in a single upload', () => {
-    // The clip limit and the budget do different jobs. If one clip could fill the album, the
-    // budget would stop being a budget and become a second way of saying "one video".
+  it('lets ONE clip use the entire allowance, which is the whole point', () => {
+    // The case the removed cap refused: an empty album must accept a single video exactly as long
+    // as its budget. Pro is 20 minutes, so one 20-minute video has to be allowed.
     for (const tier of ['free', 'pro', 'studio'] as const) {
       const c = videoCaps(tier)
-      expect(c.maxTotalSeconds, tier).toBeGreaterThan(c.maxClipSeconds)
+      expect(videoBudgetExceeded(0, c.maxTotalSeconds, c), tier).toBe(false)
+      // And one second more than the budget is still refused.
+      expect(videoBudgetExceeded(0, c.maxTotalSeconds + 1, c), tier).toBe(true)
     }
   })
 
@@ -76,38 +79,6 @@ describe('videoCaps — the agreed ladder', () => {
   })
 })
 
-describe('clipTooLong', () => {
-  const caps = videoCaps('pro')   // 120 s
-
-  it('refuses a clip over the limit', () => {
-    expect(clipTooLong(600, caps)).toBe(true)
-    expect(clipTooLong(120.6, caps)).toBe(false)   // inside the one-second slack
-    expect(clipTooLong(121.2, caps)).toBe(true)    // a fraction past it still counts
-    expect(clipTooLong(121.5, caps)).toBe(true)
-  })
-
-  it('allows a clip exactly at the limit', () => {
-    // An off-by-one here refuses precisely the clip somebody trimmed to fit.
-    expect(clipTooLong(120, caps)).toBe(false)
-    expect(clipTooLong(119.9, caps)).toBe(false)
-  })
-
-  it('accepts every free-tier clip that has ever been uploaded', () => {
-    // The longest is 54s. A 30s cap would have refused 13% of them; 60s refuses none.
-    expect(clipTooLong(54, videoCaps('free'))).toBe(false)
-    expect(clipTooLong(60.02, videoCaps('free'))).toBe(false)
-    expect(clipTooLong(75, videoCaps('free'))).toBe(true)
-  })
-
-  it('NEVER refuses a clip it could not measure', () => {
-    // 25 of 155 real videos have no duration; one album is 15 for 15. Turning "we could not read
-    // this" into "your video is too long" is wrong and unfixable by the person holding the phone.
-    for (const bad of [null, undefined, 0, -5, NaN, Infinity, 'abc', {}, []]) {
-      expect(clipTooLong(bad, caps), String(bad)).toBe(false)
-    }
-  })
-})
-
 describe('videoBudgetExceeded', () => {
   const caps = videoCaps('free')   // 60s clips, 600s budget
 
@@ -134,7 +105,7 @@ describe('videoBudgetExceeded', () => {
   })
 
   it('lets an unmeasured clip through while there is room, and refuses it when there is not', () => {
-    // Errs in the album's favour below the budget — the same direction clipTooLong errs. Once the
+    // Errs in the album's favour below the budget. Once the
     // allowance is demonstrably spent, an unmeasurable clip is refused rather than being an
     // unlimited hole.
     expect(videoBudgetExceeded(100, undefined, caps)).toBe(false)
@@ -189,7 +160,7 @@ describe('formatClipLimit', () => {
   })
 
   it('formats every real limit the way a customer would read it', () => {
-    expect(formatClipLimit(videoCaps('free').maxClipSeconds)).toBe('1 minute')
+    expect(formatClipLimit(60)).toBe('1 minute')
     expect(formatClipLimit(videoCaps('free').maxTotalSeconds)).toBe('10 minutes')
     expect(formatClipLimit(videoCaps('pro').maxTotalSeconds)).toBe('20 minutes')
     expect(formatClipLimit(videoCaps('studio').maxTotalSeconds)).toBe('50 minutes')

@@ -8,7 +8,7 @@ import { uploadCapsForTier, tooLargeMessage, STUDIO_VIDEO_BYTES } from '@/lib/me
 import { getUserTierById } from '@/lib/subscriptions'
 import { resolveMaxDurationSeconds } from '@/lib/stream-duration'
 import {
-  videoCaps, clipTooLong, videoBudgetExceeded, videoTooLongMessage, videoAlbumFullMessage,
+  videoCaps, videoBudgetExceeded, videoAlbumFullMessage,
   albumEffectiveTier,
 } from '@/lib/album-entitlements'
 import { forbidCrossSiteRequest } from '@/lib/request-security'
@@ -151,12 +151,9 @@ export async function POST(req: Request) {
   // many bytes those minutes take. A well-compressed 200 MB file can be half an hour.
   const vcaps = videoCaps(effective)
 
-  if (clipTooLong(durationSeconds, vcaps)) {
-    return NextResponse.json(
-      { code: 'video_too_long', error: videoTooLongMessage(vcaps) },
-      { status: 413, headers: NO_STORE },
-    )
-  }
+  // No per-clip length check. The album's minute pool below is the only video limit: a clip of any
+  // length is fine while the album has room for it. A length cap used to sit here and refuse clips
+  // the album had plenty of budget for.
 
   // HOW MUCH VIDEO TIME THIS ALBUM HAS ALREADY SPENT.
   //

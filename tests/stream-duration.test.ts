@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { resolveMaxDurationSeconds } from '../src/lib/stream-duration'
-import { videoCaps, clipTooLong } from '../src/lib/album-entitlements'
+import { videoCaps, videoBudgetExceeded } from '../src/lib/album-entitlements'
 
 describe('resolveMaxDurationSeconds — the reservation must never be smaller than the clip', () => {
   it('NEVER returns less than the duration it was given', () => {
@@ -13,16 +13,20 @@ describe('resolveMaxDurationSeconds — the reservation must never be smaller th
   })
 
   it('never hands Cloudflare a ceiling below a clip our own check just APPROVED', () => {
-    // The two halves have to agree, and this is where they meet. I once clamped this to the tier
-    // cap: a Pro clip of 120.5s passed clipTooLong (cap 120 + 1s slack) and then got a 120s
-    // ceiling — approved by us, killed at 100% by Cloudflare. Exactly the person who trimmed
-    // their video to the advertised limit.
+    // The two halves have to agree, and this is where they meet. I once clamped this to a tier
+    // cap: a clip that our own check approved then got a ceiling below its own length — approved
+    // by us, killed at 100% by Cloudflare, hitting exactly the person who trimmed their video to
+    // the advertised limit.
+    //
+    // Now that the only limit is the album's minute pool, the longest APPROVED clip is the whole
+    // budget — a twenty-minute video into an empty twenty-minute album. That is the value most
+    // likely to be clamped by a future 'optimisation', so it is the one pinned here.
     for (const tier of ['free', 'pro', 'studio'] as const) {
       const caps = videoCaps(tier)
-      for (const d of [caps.maxClipSeconds - 0.5, caps.maxClipSeconds, caps.maxClipSeconds + 0.5, caps.maxClipSeconds + 1]) {
-        if (clipTooLong(d, caps)) continue          // we refuse it ourselves; Cloudflare never sees it
-        expect(resolveMaxDurationSeconds(d), `${tier} @ ${d}s was approved`).toBeGreaterThan(d)
-      }
+      const longestApproved = caps.maxTotalSeconds
+      expect(videoBudgetExceeded(0, longestApproved, caps), tier).toBe(false)
+      expect(resolveMaxDurationSeconds(longestApproved), `${tier} @ ${longestApproved}s was approved`)
+        .toBeGreaterThan(longestApproved)
     }
   })
 

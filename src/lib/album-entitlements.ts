@@ -197,9 +197,18 @@ export function capNudge(input: AlbumCapInput): CapNudge {
 // it does not cost more, it makes every video upload fail for every album. So this budget is not
 // really about money; it is about how much of a shared, hard limit one album may take.
 
+// MINUTES PER ALBUM, AND NOTHING ELSE. There is deliberately no limit on how long ONE clip may be.
+//
+// The album's allowance is a pool of minutes and the owner spends it however they like: one
+// twenty-minute video, or twenty one-minute videos, or anything between. Decided by the user on
+// 2026-09-02, replacing a per-clip length cap that sat beside the pool and refused clips the album
+// had room for. A guest who filmed a two-minute speech in an album with eighteen minutes free was
+// told "videos can be up to 1 minute long" — a refusal the album's own budget did not require, and
+// one they could do nothing about at the event.
+//
+// One number is also the only kind a guest can act on. Two limits meant a video could be refused
+// for two different reasons with two different remedies, and the message had to guess which.
 export type VideoCaps = {
-  /** Longest single clip, in seconds. */
-  maxClipSeconds: number
   /** The album's whole video allowance, in seconds — spend it on many short clips or a few long. */
   maxTotalSeconds: number
 }
@@ -210,9 +219,9 @@ export type VideoCaps = {
 //   Free    3 albums x 10 min =    30 min
 //   Pro    15 albums x 20 min =   300 min
 //   Max    40 albums x 50 min = 2,000 min
-const FREE_VIDEO_CAPS: VideoCaps = { maxClipSeconds: 60, maxTotalSeconds: 10 * 60 }
-const PRO_VIDEO_CAPS: VideoCaps = { maxClipSeconds: 120, maxTotalSeconds: 20 * 60 }
-const STUDIO_VIDEO_CAPS: VideoCaps = { maxClipSeconds: 600, maxTotalSeconds: 50 * 60 }
+const FREE_VIDEO_CAPS: VideoCaps = { maxTotalSeconds: 10 * 60 }
+const PRO_VIDEO_CAPS: VideoCaps = { maxTotalSeconds: 20 * 60 }
+const STUDIO_VIDEO_CAPS: VideoCaps = { maxTotalSeconds: 50 * 60 }
 
 /**
  * Video limits for one album.
@@ -227,28 +236,23 @@ export function videoCaps(ownerTier: Tier | null | undefined): VideoCaps {
   return FREE_VIDEO_CAPS
 }
 
-/** Is this clip too long on its own, whatever budget is left? */
-export function clipTooLong(seconds: unknown, caps: VideoCaps): boolean {
-  // `unknown`, not `number`, because the only caller gets this straight off a request body. Typing
-  // it as a number would move the lie one layer up rather than removing it.
-  //
-  // An unmeasurable clip is NOT refused here. Measured on the live library, 25 of 155 videos have
-  // no duration because the browser could not decode them — one album is 15 for 15. Refusing what
-  // we could not measure would turn a failed metadata read on someone's phone into "your video is
-  // too long", which is wrong and unfixable by them.
-  if (typeof seconds !== 'number' || !Number.isFinite(seconds) || seconds <= 0) return false
-  // A whole second of slack: browsers report duration as a float and a 60.02s read of a 60s clip
-  // is a measurement artefact, not a rule being broken.
-  return seconds > caps.maxClipSeconds + 1
-}
-
 /**
  * Would adding this clip take the album past its budget?
  *
- * An unmeasured clip counts as zero, deliberately and in the album's favour — the same direction
- * clipTooLong errs, and for the same reason. It means the budget can be overrun by roughly the
- * length of the unmeasured clips, which is bounded by maxClipSeconds each and is a far smaller
- * harm than refusing an upload we cannot even size.
+ * THE ONLY VIDEO LIMIT THERE IS. A clip of any length is welcome while the album has room for it,
+ * so a twenty-minute video into an empty twenty-minute album is allowed and the same video into an
+ * album with five minutes left is not.
+ *
+ * An unmeasured clip counts as zero, deliberately and in the album's favour. Measured on the live
+ * library, 25 of 155 videos have no duration at all because the browser could not decode them —
+ * one album is 15 for 15. Refusing what we could not measure would turn a failed metadata read on
+ * someone's phone into a refusal they can do nothing about, at an event.
+ *
+ * What that costs, now that no per-clip cap bounds it: the overrun used to be at most one clip
+ * length, and is now bounded instead by FALLBACK_MAX_DURATION in lib/stream-duration (15 minutes)
+ * — Cloudflare refuses to process a pending upload longer than the duration it reserved, so an
+ * unmeasured clip cannot silently be an hour. The real duration is reconciled from Cloudflare after
+ * processing, so the album's used-total self-corrects and the NEXT upload is judged on the truth.
  */
 export function videoBudgetExceeded(usedSeconds: number, newClipSeconds: unknown, caps: VideoCaps): boolean {
   const used = Number.isFinite(usedSeconds) && usedSeconds > 0 ? usedSeconds : 0
@@ -276,10 +280,14 @@ export function formatClipLimit(seconds: number): string {
   return `${seconds} seconds`
 }
 
-// ── THE TWO VIDEO REFUSALS, WRITTEN ONCE ─────────────────────────────────────────────────────
+// ── THE VIDEO REFUSAL, WRITTEN ONCE ──────────────────────────────────────────────────────────
 //
-// These are DELIBERATE refusals, not failures: the guest is being told a rule, and nothing is
-// broken. lib/upload-policy has to recognise them by prefix for two separate reasons, and both
+// There is one now, not two: the per-clip length refusal is gone with the cap it enforced. Its
+// prefix is gone too rather than being left behind "just in case" — an unused constant that
+// upload-policy still matches on is how a message nobody can produce keeps being handled forever.
+//
+// This is a DELIBERATE refusal, not a failure: the guest is being told a rule, and nothing is
+// broken. lib/upload-policy has to recognise it by prefix for two separate reasons, and both
 // are unpleasant when it cannot:
 //
 //   1. An unrecognised refusal is filed at 'error' level, so it lands in the admin Errors tab.
@@ -291,13 +299,7 @@ export function formatClipLimit(seconds: number): string {
 //
 // So the prefix and the message must be the same fact. They are built here, and upload-policy
 // imports the prefixes rather than retyping them.
-export const VIDEO_TOO_LONG_PREFIX = 'Videos in this album can be up to'
 export const VIDEO_ALBUM_FULL_PREFIX = 'This album is out of video time'
-
-export function videoTooLongMessage(caps: VideoCaps): string {
-  return `${VIDEO_TOO_LONG_PREFIX} ${formatClipLimit(caps.maxClipSeconds)} long. `
-    + 'Trim it shorter in your phone, then try again.'
-}
 
 export function videoAlbumFullMessage(caps: VideoCaps, usedSeconds: number): string {
   const left = videoBudgetLeft(usedSeconds, caps)

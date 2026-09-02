@@ -121,6 +121,16 @@ create table if not exists public.error_events (
 );
 alter table public.error_events enable row level security;
 
+-- ─── package_order_grants ───
+create table if not exists public.package_order_grants (
+  order_id text not null,
+  album_id uuid not null,
+  source text not null,
+  granted_at timestamp with time zone default now() not null,
+  primary key (order_id)
+);
+alter table public.package_order_grants enable row level security;
+
 -- ─── pending_stream_uploads ───
 create table if not exists public.pending_stream_uploads (
   stream_uid text not null,
@@ -411,6 +421,12 @@ do $$ begin
   end if;
 end $$;
 do $$ begin
+  if not exists (select 1 from pg_constraint where conname = 'package_order_grants_album_id_fkey'
+    and conrelid = 'package_order_grants'::regclass) then
+    alter table package_order_grants add constraint package_order_grants_album_id_fkey FOREIGN KEY (album_id) REFERENCES albums(id) ON DELETE CASCADE;
+  end if;
+end $$;
+do $$ begin
   if not exists (select 1 from pg_constraint where conname = 'pending_stream_uploads_album_id_fkey'
     and conrelid = 'pending_stream_uploads'::regclass) then
     alter table pending_stream_uploads add constraint pending_stream_uploads_album_id_fkey FOREIGN KEY (album_id) REFERENCES albums(id) ON DELETE CASCADE;
@@ -522,6 +538,7 @@ create index if not exists collections_user_id_idx ON public.collections USING b
 create index if not exists error_events_created_idx ON public.error_events USING btree (created_at DESC);
 create index if not exists error_events_level_created_idx ON public.error_events USING btree (level, created_at DESC);
 create index if not exists error_events_unresolved_created_idx ON public.error_events USING btree (created_at DESC) WHERE (resolved_at IS NULL);
+create index if not exists package_order_grants_album_idx ON public.package_order_grants USING btree (album_id);
 create index if not exists pending_stream_uploads_album_consumed_idx ON public.pending_stream_uploads USING btree (album_id, consumed_at);
 create index if not exists pending_stream_uploads_album_id_idx ON public.pending_stream_uploads USING btree (album_id);
 create index if not exists pending_stream_uploads_created_at_idx ON public.pending_stream_uploads USING btree (created_at);

@@ -313,9 +313,15 @@ export async function sendExpiryWarningEmail(
 // way to teach someone to ignore the alert entirely.
 export async function sendErrorSpikeEmail(
   to: string,
-  info: { count: number; windowMinutes: number; deviceCount: number; top: [string, number][]; test?: boolean },
+  info: {
+    count: number; windowMinutes: number; deviceCount: number; top: [string, number][]
+    /** Which albums it is happening in, worst first, with a way to reach the owner. */
+    albums?: { slug: string; title: string; count: number; ownerEmail: string | null }[]
+    moreAlbums?: number
+    test?: boolean
+  },
 ) {
-  const { count, windowMinutes, deviceCount, top, test } = info
+  const { count, windowMinutes, deviceCount, top, albums = [], moreAlbums = 0, test } = info
   const subject = test
     ? 'Hushare: test alert (nothing is wrong)'
     : `Hushare: ${count} uploads or pages failed for guests in ${windowMinutes} min`
@@ -328,12 +334,32 @@ export async function sendErrorSpikeEmail(
   const rows = top
     .map(([msg, n]) => `<li style="margin:0 0 6px;"><strong>${n}×</strong> ${escapeHtml(msg.slice(0, 140))}</li>`)
     .join('')
+  // WHERE it is happening, with a link straight to the album and the owner's address.
+  //
+  // Every one of these alerts used to end at a number, so acting on it meant opening /admin and
+  // working out by hand which album was on fire and whether anyone could be told. The owner line is
+  // deliberately explicit when there is nobody to write to: two thirds of albums have no account,
+  // and that is the thing worth knowing while it is still happening.
+  const albumRows = albums.map((a) => {
+    const url = `${SITE_URL}/${a.slug}`
+    const owner = a.ownerEmail
+      ? `<a href="mailto:${escapeHtml(a.ownerEmail)}" style="color:#630826;">${escapeHtml(a.ownerEmail)}</a>`
+      : '<span style="color:#B0A090;">no account — cannot be contacted</span>'
+    return `<li style="margin:0 0 8px;"><strong>${a.count}×</strong> `
+      + `<a href="${escapeHtml(url)}" style="color:#630826;font-weight:600;">${escapeHtml(a.title.slice(0, 60))}</a>`
+      + `<br><span style="font-size:13px;color:#8B6F4E;">${escapeHtml(url)} · ${owner}</span></li>`
+  }).join('')
+  const albumBlock = albums.length === 0 ? '' : `
+  <p style="margin:0 0 6px;color:#5C4A3C;font-weight:600;font-size:14px;">Which albums:</p>
+  <ul style="margin:0 0 20px;padding-left:18px;color:#5C4A3C;font-size:14px;">${albumRows}</ul>
+  ${moreAlbums > 0 ? `<p style="margin:-12px 0 20px;color:#8B6F4E;font-size:13px;">and ${moreAlbums} more album${moreAlbums === 1 ? '' : 's'}</p>` : ''}`
   const html = `
 <div style="font-family:-apple-system,system-ui,sans-serif;color:#630826;max-width:560px;margin:0 auto;padding:24px;">
   <h2 style="margin:0 0 10px;font-size:18px;">${escapeHtml(heading)}</h2>
   <p style="margin:0 0 16px;color:#5C4A3C;line-height:1.5;">${escapeHtml(explain)}</p>
   <p style="margin:0 0 6px;color:#5C4A3C;font-weight:600;font-size:14px;">${test ? 'Sample' : 'What is failing'}:</p>
   <ul style="margin:0 0 20px;padding-left:18px;color:#5C4A3C;font-size:14px;">${rows}</ul>
+  ${albumBlock}
   <a href="${SITE_URL}/admin#errors"
      style="display:inline-block;background:#630826;color:#FDFAF5;text-decoration:none;border-radius:10px;padding:10px 20px;font-size:14px;font-weight:600;">
     Open the admin dashboard
@@ -350,6 +376,9 @@ export async function sendErrorSpikeEmail(
     explain,
     '',
     ...top.map(([m, n]) => `${n}x ${m}`),
+    ...(albums.length ? ['', 'Which albums:'] : []),
+    ...albums.map(a => `${a.count}x ${a.title} — ${SITE_URL}/${a.slug} — ${a.ownerEmail ?? 'no account, cannot be contacted'}`),
+    ...(moreAlbums > 0 ? [`and ${moreAlbums} more album${moreAlbums === 1 ? '' : 's'}`] : []),
     '',
     `${SITE_URL}/admin#errors`,
   ].join(`\n`)

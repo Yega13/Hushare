@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { timingSafeEqual } from '@/lib/timing-safe'
 import { sendErrorSpikeEmail } from '@/lib/email'
+import { tallyByAlbum, tallyByMessage, totalOccurrences } from '@/lib/error-alert-grouping'
 
 export const runtime = 'nodejs'
 
@@ -51,20 +52,20 @@ export async function POST(req: Request) {
 
   const { data: rows, error } = await admin
     .from('error_events')
-    .select('message, source, ua, context')
+    // album_id is what turns "23 things failed" into something anyone can act on. It was always in
+    // the table and simply never selected, so every alert sent the reader to /admin to work out by
+    // hand which album was on fire.
+    .select('album_id, message, source, ua, context')
     .eq('level', 'error')
     .gte('created_at', since)
     .limit(200)
-    .returns<{ message: string; source: string; ua: string | null; context: { repeats?: number } | null }[]>()
+    .returns<{ album_id: string | null; message: string; source: string; ua: string | null; context: { repeats?: number } | null }[]>()
   if (error) {
     console.error('[cron/error-alert] query failed:', error.message)
     return NextResponse.json({ error: 'query failed' }, { status: 500, headers: NO_STORE })
   }
 
-  // How many times something actually went wrong, not how many rows describe it.
-  const occurrences = (r: { context: { repeats?: number } | null }) =>
-    typeof r.context?.repeats === 'number' && r.context.repeats > 0 ? r.context.repeats : 1
-  const count = (rows ?? []).reduce((n, r) => n + occurrences(r), 0)
+  const count = totalOccurrences(rows ?? [])
   if (count < THRESHOLD) return NextResponse.json({ ok: true, count, alerted: false }, { headers: NO_STORE })
 
   // Cooldown is checked AFTER the threshold so a quiet period does not consume it, and read from
@@ -82,12 +83,43 @@ export async function POST(req: Request) {
   const nowIso = new Date().toISOString()
   await admin.from('system_state').upsert({ key: STATE_KEY, value: nowIso, updated_at: nowIso })
 
-  const tally = new Map<string, number>()
   // Weighted the same way, so the email names the message that is actually dominating rather than
   // whichever one happens to own the most rows.
-  for (const r of rows ?? []) tally.set(r.message, (tally.get(r.message) ?? 0) + occurrences(r))
-  const top = [...tally.entries()].sort((a, b) => b[1] - a[1]).slice(0, 5)
+  const top = tallyByMessage(rows ?? [], 5)
   const devices = new Set((rows ?? []).map(r => (r.ua ?? '').match(/\((.*?)\)/)?.[1] ?? 'unknown'))
+
+  // WHICH ALBUMS, AND WHOSE THEY ARE.
+  //
+  // Resolved here rather than in the email so the template stays a template. Anonymous albums are
+  // reported as anonymous on purpose: two thirds of albums have no account, and "we cannot contact
+  // this owner" is exactly the fact worth seeing at the moment something is failing for them —
+  // silently omitting the line would read as "no problem here".
+  const { albums: albumTallies, moreAlbums } = tallyByAlbum(rows ?? [], 5)
+  const albums: { slug: string; title: string; count: number; ownerEmail: string | null }[] = []
+  if (albumTallies.length > 0) {
+    const { data: albumRows } = await admin
+      .from('albums')
+      .select('id, slug, custom_slug, title, user_id')
+      .in('id', albumTallies.map(a => a.albumId))
+      .returns<{ id: string; slug: string; custom_slug: string | null; title: string | null; user_id: string | null }[]>()
+    const byId = new Map((albumRows ?? []).map(a => [a.id, a]))
+    for (const t of albumTallies) {
+      const a = byId.get(t.albumId)
+      if (!a) continue                       // deleted between the failure and this tick
+      let ownerEmail: string | null = null
+      if (a.user_id) {
+        // One lookup per named album, at most five, once an hour behind a cooldown.
+        const { data: au } = await admin.auth.admin.getUserById(a.user_id)
+        ownerEmail = au?.user?.email ?? null
+      }
+      albums.push({
+        slug: a.custom_slug ?? a.slug,
+        title: a.title ?? 'Untitled album',
+        count: t.count,
+        ownerEmail,
+      })
+    }
+  }
 
   try {
     await sendErrorSpikeEmail(to, {
@@ -95,6 +127,8 @@ export async function POST(req: Request) {
       windowMinutes: WINDOW_MINUTES,
       deviceCount: devices.size,
       top,
+      albums,
+      moreAlbums,
     })
   } catch (e) {
     console.error('[cron/error-alert] send failed:', e instanceof Error ? e.message : String(e))

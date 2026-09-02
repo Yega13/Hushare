@@ -12,7 +12,8 @@
 // I broke exactly this by clamping the result to the tier's clip cap, to make Cloudflare enforce
 // clip length. It would have fired on the 16% of real videos whose duration the browser cannot
 // measure, and on anyone who trimmed a clip to exactly the advertised limit. Clip length is
-// enforced by clipTooLong instead, before any bytes move, with a message someone can act on.
+// There is no clip-length cap at all now: the album's minute pool is the only video limit, and it
+// is checked before any bytes move, with a message someone can act on.
 
 const CF_MAX_DURATION_CEILING = 21600 // Cloudflare's absolute max (6h)
 // Used ONLY when the client could not measure the video (a failed poster decode). Cloudflare
@@ -45,7 +46,7 @@ const FALLBACK_MAX_DURATION = 900
 // 1,000 minutes and blocked video for everyone. The formula always exceeds the measured duration,
 // so it can never kill a real upload — which is the property that matters.
 //
-// Clip length is enforced by clipTooLong, before any bytes move, with a message someone can act on.
+// The album's minute pool is checked before any bytes move, with a message someone can act on.
 export function resolveMaxDurationSeconds(durationSeconds: unknown): number {
   if (typeof durationSeconds === 'number' && Number.isFinite(durationSeconds) && durationSeconds > 0) {
     const withMargin = Math.ceil(durationSeconds * 1.5) + 60

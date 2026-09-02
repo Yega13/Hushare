@@ -18,6 +18,7 @@ import type { DictKey } from '@/i18n/dictionaries/en'
 import type { PlanKey } from '@/lib/polar'
 import { PLAN_CATALOGUE, formatPrice, monthsSaved } from '@/lib/plan-catalogue'
 import { PACKAGE_CATALOGUE, RENEWAL_CATALOGUE } from '@/lib/package-catalogue'
+import { videoCaps } from '@/lib/album-entitlements'
 
 export const runtime = 'nodejs'
 
@@ -324,6 +325,12 @@ export default async function PricingPage() {
     proPhoto_n: String(Math.round(uploadCapsForTier('pro').image / (1024 * 1024))),
     proVideo_n: String(Math.round(uploadCapsForTier('pro').video / (1024 * 1024 * 1024))),
     maxVideo_n: String(Math.round(uploadCapsForTier('studio').video / (1024 * 1024 * 1024))),
+    // Minutes of video per album, read from the caps the upload route actually enforces. This was
+    // enforced and never advertised: a customer could buy Pro for a wedding video, upload twenty
+    // minutes, and hit a wall no page had ever mentioned — at the event.
+    freeVideoMin: String(Math.round(videoCaps('free').maxTotalSeconds / 60)),
+    proVideoMin: String(Math.round(videoCaps('pro').maxTotalSeconds / 60)),
+    maxVideoMin: String(Math.round(videoCaps('studio').maxTotalSeconds / 60)),
   }
   const tt = (k: string) => interpolate(dict[k as DictKey] ?? k, planNumbers)
   const localizedTiers = tiers.map((tier) => {

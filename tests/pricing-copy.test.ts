@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { PLAN_CATALOGUE, INTRO_FIRST_MONTH_CENTS, formatPrice } from '../src/lib/plan-catalogue'
+import { videoCaps } from '../src/lib/album-entitlements'
 
 // EVERY PRICE A CUSTOMER READS, HELD TO THE ONE THE SYSTEM CHARGES.
 //
@@ -106,5 +107,46 @@ describe('the intro prices are a real discount', () => {
   it('is not free — a 100% intro would hand out a month of Max for nothing', () => {
     expect(INTRO_FIRST_MONTH_CENTS.pro).toBeGreaterThan(0)
     expect(INTRO_FIRST_MONTH_CENTS.studio).toBeGreaterThan(0)
+  })
+})
+
+describe('the video limit is actually advertised', () => {
+  // IT WAS ENFORCED AND NEVER MENTIONED. The upload route refuses a video once the album's minute
+  // pool is spent, and no plan on /pricing said the pool existed. A customer could buy Pro for a
+  // wedding, upload twenty minutes of video, and meet a wall nothing had ever disclosed — at the
+  // event, which is the only time they would find out.
+  //
+  // The page interpolates these from videoCaps, so this test is about the SENTENCE still being
+  // there: an interpolated number cannot go stale, but a line can be deleted in a redesign and
+  // nobody would notice the limit had gone quiet again.
+  for (const locale of LOCALES) {
+    const source = dictSource(locale)
+
+    it(`${locale}: every plan states its per-album video minutes`, () => {
+      for (const [key, token] of [
+        ['pricing.free.f4', '{freeVideoMin}'],
+        ['pricing.pro.f5', '{proVideoMin}'],
+        ['pricing.max.f7', '{maxVideoMin}'],
+      ] as const) {
+        const value = dictValue(source, key)
+        expect(value, `${key} is missing from ${locale}.ts`).not.toBeNull()
+        expect(value, `${locale}.ts ${key} no longer states the album video allowance`).toContain(token)
+      }
+    })
+  }
+
+  it('the numbers on the page are the ones the upload route enforces', () => {
+    // Whole minutes, so the page never has to say "20.5 minutes" — and so a future cap in seconds
+    // that does not divide cleanly is caught here rather than rendering a fraction to a customer.
+    for (const tier of ['free', 'pro', 'studio'] as const) {
+      const seconds = videoCaps(tier).maxTotalSeconds
+      expect(seconds % 60, `${tier} video budget is not a whole number of minutes`).toBe(0)
+      expect(seconds, tier).toBeGreaterThan(0)
+    }
+  })
+
+  it('a higher plan never advertises less video than a lower one', () => {
+    expect(videoCaps('pro').maxTotalSeconds).toBeGreaterThanOrEqual(videoCaps('free').maxTotalSeconds)
+    expect(videoCaps('studio').maxTotalSeconds).toBeGreaterThanOrEqual(videoCaps('pro').maxTotalSeconds)
   })
 })

@@ -243,3 +243,41 @@ rather than to the owner) and had to undo it.
 
 **The rule:** fixing a bug you found is expected (rule 12). Changing entitlements, billing, or an
 owner's settings is not a bug fix — ask, even when the intent seems obvious from context.
+
+## 27. THE CHECK PROTOCOL. This is the loop. Do not shorten it.
+
+Given by the user on 2026-09-02, after a night in which I shipped four wrong statements and two
+wrong fixes by checking my own work and believing myself.
+
+```
+write the code
+  -> I test it
+  -> if it errors, I fix it
+  -> I check again
+  -> if new errors appear, repeat until there are ZERO
+  -> spawn 1-3 AGENTS whose only task is to BREAK the change, every way possible,
+     including ways I would not think of
+  -> read their answers   (assume there IS an error in there — there always is)
+  -> make a proper plan with ONE OTHER NEW agent, and implement it
+  -> run the whole circle again
+  -> write the mistakes I made this circle into MISTAKES.md
+```
+
+**Why each step is there, in the user's framing:**
+
+- **I test first, to zero.** An agent handed a change that does not even pass its own tests spends
+  its whole run on noise I could have removed in a minute.
+- **AGENTS do the breaking, not me.** This is the step I keep skipping. I am the worst possible
+  reviewer of my own reasoning: once I have a theory I keep finding evidence for it. Rule 16's
+  mutation testing is part of what the agent is asked to do — my own mutation run is not the
+  verification, it is the homework I do before asking for one.
+- **A DIFFERENT, NEW agent plans the fix.** The agent that found the problem is now attached to its
+  own diagnosis, and so am I. The fix gets planned by someone with neither.
+- **The circle repeats.** One pass proves nothing; the fix is a change too, and changes are what
+  break things.
+- **MISTAKES.md is written every circle.** Not a diary — a list I read before the next change, so
+  the same failure does not get made twice. If I am not getting smarter across circles, the loop is
+  decoration.
+
+**The rule:** no customer-touching change ships without a full circle. "The tests pass" is the
+input to this protocol, never the conclusion of it.
