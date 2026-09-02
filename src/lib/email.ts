@@ -311,10 +311,36 @@ export async function sendExpiryWarningEmail(
 // so the email announced "these are real failures — something is not working right now" and then
 // listed "this is a test, nothing is wrong". Contradicting itself in the first two lines is a good
 // way to teach someone to ignore the alert entirely.
+/**
+ * One line of somebody else's error text, safe to put in front of a human.
+ *
+ * TWO JOBS, AND BOTH PARTS OF THE EMAIL NEED BOTH — which is exactly why it is one function rather
+ * than a slice in the HTML and nothing in the text (rule 13).
+ *
+ * COLLAPSES NEWLINES, because `message` is stored with its interior line breaks intact and the
+ * plain-text part is assembled as LINES on purpose — it is what a lock-screen preview shows. That
+ * made it forgeable: one unauthenticated POST to /api/log/client-error with newlines in the message
+ * writes its own lines into the preview, and "Resolved automatically. No action needed." is
+ * indistinguishable from something we wrote.
+ *
+ * TRUNCATES, because the HTML sliced to 140 and the text did not, so a 500-character message
+ * rendered two different lengths in the two halves of the same email.
+ *
+ * Escaping stays at the call site: the HTML needs it, the text must not have it.
+ */
+function previewLine(message: string): string {
+  return message.replace(/[\r\n]+/g, ' ').slice(0, 140)
+}
+
 export async function sendErrorSpikeEmail(
   to: string,
   info: {
     count: number; windowMinutes: number; deviceCount: number; top: [string, number][]
+    /**
+     * True when `count` was summed from a truncated sample and is therefore a FLOOR, not a total.
+     * Saying "at least N" is the difference between a number and a lie (rule 20).
+     */
+    truncated?: boolean
     /**
      * Which albums it is happening in, worst first, with a way to reach the owner.
      *
@@ -331,18 +357,21 @@ export async function sendErrorSpikeEmail(
     test?: boolean
   },
 ) {
-  const { count, windowMinutes, deviceCount, top, albums = [], moreAlbums = 0, lookupFailed = false, test } = info
+  const { count, windowMinutes, deviceCount, top, albums = [], moreAlbums = 0, lookupFailed = false, truncated = false, test } = info
   const subject = test
     ? 'Hushare: test alert (nothing is wrong)'
-    : `Hushare: ${count} uploads or pages failed for guests in ${windowMinutes} min`
+    // AT LEAST, when the count came from a truncated sample. The alternative is printing a floor as
+    // if it were a total, and an operator who reads 200 for an incident of five thousand sizes
+    // their response to the wrong number.
+    : `Hushare: ${truncated ? 'at least ' : ''}${count} uploads or pages failed for guests in ${windowMinutes} min`
   const heading = test
     ? 'This is a test. Nothing is wrong.'
-    : `${count} things failed for guests in the last ${windowMinutes} minutes`
+    : `${truncated ? 'At least ' : ''}${count} things failed for guests in the last ${windowMinutes} minutes`
   const explain = test
     ? `You asked for this from the admin dashboard, to check the alert reaches you. A real alert looks like this one, but names what broke and how many people it hit. If this arrived, alerting works — nothing to do.`
     : `That means ${count} times, on ${deviceCount} device${deviceCount === 1 ? '' : 's'}, someone using Hushare had something fail: a photo that would not upload, or a page that crashed. It is not a warning about limits — those are excluded. Something is broken for real people right now.`
   const rows = top
-    .map(([msg, n]) => `<li style="margin:0 0 6px;"><strong>${n}×</strong> ${escapeHtml(msg.slice(0, 140))}</li>`)
+    .map(([msg, n]) => `<li style="margin:0 0 6px;"><strong>${n}×</strong> ${escapeHtml(previewLine(msg))}</li>`)
     .join('')
   // WHERE it is happening, with a link straight to the album and the owner's address.
   //
@@ -403,7 +432,12 @@ export async function sendErrorSpikeEmail(
     '',
     explain,
     '',
-    ...top.map(([m, n]) => `${n}x ${m}`),
+    // previewLine, NOT the raw message. The HTML sliced to 140 and this did not, so the two parts
+    // disagreed by up to 360 characters — and worse, the message keeps its interior newlines, while
+    // this part is deliberately assembled as LINES because it is what a lock-screen preview shows.
+    // One unauthenticated POST to /api/log/client-error could therefore write its own lines into
+    // that preview: "Resolved automatically. No action needed." reads exactly like ours.
+    ...top.map(([m, n]) => `${n}x ${previewLine(m)}`),
     // The plain-text part is what a lock-screen preview shows, so it must agree with the HTML
     // rather than diverging. It previously emitted "and N more albums" unconditionally, so when the
     // HTML omitted the whole block the text still carried that line, pointing at nothing.

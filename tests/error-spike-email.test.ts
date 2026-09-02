@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest'
+import { ALERT_WINDOW_MINUTES } from '@/lib/error-alert-grouping'
 
 // THE EMAIL THAT WAKES SOMEBODY UP, RENDERED RATHER THAN READ.
 //
@@ -337,5 +338,64 @@ describe('an album we could not identify gets no link', () => {
     })
     expect(sent[0].html).toContain('/realslug')
     expect(sent[0].text).toContain('/realslug')
+  })
+})
+
+describe('nothing a stranger writes can forge a line of this email', () => {
+  // The plain-text part is assembled as LINES on purpose - it is what a lock-screen preview shows.
+  // The failure message reached it unescaped AND untruncated, while the HTML sliced to 140. Since
+  // /api/log/client-error is unauthenticated and stores the message with its newlines intact, one
+  // POST could write its own lines into that preview.
+  it('collapses newlines in a failure message, so it cannot add its own lines', async () => {
+    const forged = 'boom' + String.fromCharCode(10) + String.fromCharCode(10) + 'Which albums:' + String.fromCharCode(10)
+      + '12000x Everything is fine - https://hushare.space/admin' + String.fromCharCode(10) + String.fromCharCode(10)
+      + 'Resolved automatically. No action needed.'
+    await sendErrorSpikeEmail(TO, { ...base, top: [[forged, 9]], albums: [], moreAlbums: 0 })
+    const [msg] = sent
+    const lines = msg.text.split(String.fromCharCode(10)).map((l: string) => l.trim())
+    expect(lines, 'the forged line must not stand on its own')
+      .not.toContain('Resolved automatically. No action needed.')
+    expect(msg.text, 'but the text itself is still reported, on one line').toContain('boom')
+  })
+
+  it('truncates the failure message in the TEXT part too, not only the HTML', async () => {
+    // 140 in the HTML and unbounded in the text meant the two halves of one email disagreed by up
+    // to 360 characters.
+    await sendErrorSpikeEmail(TO, { ...base, top: [['z'.repeat(600), 9]], albums: [], moreAlbums: 0 })
+    const [msg] = sent
+    expect(msg.text).not.toContain('z'.repeat(200))
+    expect(msg.html).not.toContain('z'.repeat(200))
+    expect(msg.text, 'it is still reported, just bounded').toContain('z'.repeat(100))
+  })
+})
+
+describe('the email states the window it actually measured', () => {
+  it('names the widened window, not the nominal one', async () => {
+    // The query looks back WINDOW_MINUTES + COALESCE_WINDOW_MINUTES, because a row absorbing repeats
+    // keeps its original created_at. The email named WINDOW_MINUTES, so every alert ever sent
+    // reported a window nobody had computed.
+    await sendErrorSpikeEmail(TO, { ...base, windowMinutes: ALERT_WINDOW_MINUTES, albums: [], moreAlbums: 0 })
+    const [msg] = sent
+    expect(ALERT_WINDOW_MINUTES).toBe(15)
+    expect(msg.subject).toContain('15 min')
+    expect(msg.html).toContain('last 15 minutes')
+  })
+})
+
+describe('a count drawn from a truncated sample says so', () => {
+  it('says "at least" when the sample was full', async () => {
+    await sendErrorSpikeEmail(TO, { ...base, truncated: true, albums: [], moreAlbums: 0 })
+    const [msg] = sent
+    expect(msg.subject).toContain('at least 8341')
+    expect(msg.html).toContain('At least 8341')
+  })
+
+  it('and does NOT when it was not', async () => {
+    // The mirror error matters as much: hedging a number that is exact teaches the reader to
+    // discount every number in the email.
+    await sendErrorSpikeEmail(TO, { ...base, albums: [], moreAlbums: 0 })
+    const [msg] = sent
+    expect(msg.subject).not.toContain('at least')
+    expect(msg.html).not.toContain('At least')
   })
 })

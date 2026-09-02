@@ -30,6 +30,12 @@ const cfg: {
   rows: Array<{ album_id: string | null; message: string; source: string; ua: string | null; context: { repeats?: number } | null }>
   queryError: string | null
   state: string | null
+  /** The created_at lower bound the query actually used. */
+  since: string | null
+  /** The row cap the query actually used. */
+  sampleLimit: number | null
+  /** Makes the state READ fail. Every bound this route has lives in that row. */
+  stateReadError: string | null
   sendThrows: boolean
   /** Index of the first upsert that should THROW (network-class failure). null = never. */
   failUpsertsAfter: number | null
@@ -41,7 +47,7 @@ const cfg: {
   sent: unknown[]
   logs: string[]
 } = {
-  rows: [], queryError: null, state: null, sendThrows: false, failUpsertsAfter: null, upsertErrorFrom: null,
+  rows: [], queryError: null, state: null, since: null, sampleLimit: null, stateReadError: null, sendThrows: false, failUpsertsAfter: null, upsertErrorFrom: null,
   enrichDelayMs: 0, enrichThrows: false, upserts: [], sent: [], logs: [],
 }
 
@@ -50,7 +56,11 @@ vi.mock('@/lib/supabase/admin', () => ({
     from: (table: string) => {
       if (table === 'error_events') {
         const chain: Record<string, unknown> = {}
-        for (const m of ['select', 'eq', 'gte', 'order', 'limit']) chain[m] = () => chain
+        for (const m of ['select', 'eq', 'order']) chain[m] = () => chain
+        // gte and limit RECORD. The window the query looks back over is the number the email is
+        // supposed to name, and the limit is what decides whether the count is a total or a floor.
+        chain.gte = (_col: string, value: string) => { cfg.since = value; return chain }
+        chain.limit = (n: number) => { cfg.sampleLimit = n; return chain }
         chain.returns = async () => (cfg.queryError
           ? { data: null, error: { message: cfg.queryError } }
           : { data: cfg.rows, error: null })
@@ -58,7 +68,9 @@ vi.mock('@/lib/supabase/admin', () => ({
       }
       // system_state — the cooldown claim and the rollback.
       return {
-        select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: cfg.state === null ? null : { value: cfg.state } }) }) }),
+        select: () => ({ eq: () => ({ maybeSingle: async () => (cfg.stateReadError
+          ? { data: null, error: { message: cfg.stateReadError } }
+          : { data: cfg.state === null ? null : { value: cfg.state }, error: null }) }) }),
         upsert: async (row: Upsert) => {
           const i = cfg.upserts.length
           cfg.upserts.push(row)
@@ -116,6 +128,9 @@ beforeEach(() => {
   cfg.rows = spike()
   cfg.queryError = null
   cfg.state = null
+  cfg.since = null
+  cfg.sampleLimit = null
+  cfg.stateReadError = null
   cfg.sendThrows = false
   cfg.failUpsertsAfter = null
   cfg.upsertErrorFrom = null
@@ -281,6 +296,23 @@ describe('a send that never left does not spend the hour', () => {
     expect(rolled.sentThisHour).toBe(claimed.sentThisHour - 1)
   })
 
+  it('says so when the ROLLBACK write is REJECTED rather than thrown', async () => {
+    // supabase-js RESOLVES with { error } for a PostgREST failure. This landed in an empty success
+    // handler, so the slot was silently not released and nothing was logged — the identical defect
+    // that had just been fixed on the claim eighty lines above it.
+    //
+    // With Resend down and writes being rejected, four ticks each claim a slot, each fail to send,
+    // each fail to release, and the fifth gets hourly-cap for the rest of the hour with zero emails
+    // delivered and an empty log.
+    cfg.sendThrows = true
+    cfg.upsertErrorFrom = 1           // the claim lands; the rollback is rejected
+    const res = await POST(post())
+    expect(res.status).toBe(200)
+    expect(cfg.upserts, 'it must still attempt the release').toHaveLength(2)
+    expect(cfg.logs.some((l) => l.includes('could not release the hourly slot')),
+      cfg.logs.join(' | ')).toBe(true)
+  })
+
   it('does not fail the run when the ROLLBACK write also fails', async () => {
     // Best effort by design: the worst case is the old behaviour, and throwing here would turn a
     // mail outage into a 500 that looks like a different problem.
@@ -325,5 +357,101 @@ describe('a cooldown that was not recorded must not be treated as recorded', () 
   it('the hourly ceiling is a real number, not something a rollback can defeat', () => {
     expect(MAX_ALERTS_PER_HOUR).toBeGreaterThan(0)
     expect(MAX_ALERTS_PER_HOUR).toBeLessThan(10)
+  })
+})
+
+describe('a state row that could not be READ is not an empty one', () => {
+  it('does not send, and does not claim, when the read fails', async () => {
+    // The cooldown, the signature and the hourly ceiling all live in this one row. Reading it as
+    // "no previous alert" means nothing bounds the alarm at all: every tick sends. That is the same
+    // unbounded mail loop the claim check guards, reached from the other side.
+    cfg.stateReadError = 'connection reset'
+    const res = await POST(post())
+    expect(res.status).toBe(200)
+    expect(await res.json()).toMatchObject({ alerted: false, reason: 'state unreadable' })
+    expect(cfg.sent, 'an unbounded alarm is worse than a missed alert').toHaveLength(0)
+    expect(cfg.upserts, 'it must not claim a cooldown it could not read').toHaveLength(0)
+    expect(cfg.logs.some((l) => l.includes('could not read the alert state'))).toBe(true)
+  })
+
+  it('an ABSENT row is still a perfectly good first alert', async () => {
+    // Absent and unreadable are different states and must stay different — a brand-new deployment
+    // has no row at all, and that must alert normally (rule 20).
+    cfg.state = null
+    const res = await POST(post())
+    expect(await res.json()).toMatchObject({ alerted: true })
+    expect(cfg.sent).toHaveLength(1)
+  })
+})
+
+describe('the signature the route claims is stable across ticks', () => {
+  // THE ENFORCEMENT HALF (rule 15). tallyByMessage's tiebreak is tested in the grouping module, but
+  // the SIGNATURE is chosen here — `top[0]?.[0]` — and a mutation picking a different element of
+  // that list would leave the module's tests green while every tick claimed a different signature,
+  // defeating the same-incident rule entirely.
+  const tiedRows = (order: string[]) => order.flatMap((message) => ([{
+    album_id: 'album-1', message, source: 's', ua: 'Mozilla/5.0 (device-0)', context: { repeats: 50 },
+  }]))
+
+  it('is the same whichever order the tied rows come back in', async () => {
+    cfg.rows = tiedRows(['Failed to fetch', 'Load failed'])
+    await POST(post())
+    const first = JSON.parse(cfg.upserts[0].value).signature
+
+    cfg.upserts = []
+    cfg.sent = []
+    cfg.rows = tiedRows(['Load failed', 'Failed to fetch'])
+    await POST(post())
+    const second = JSON.parse(cfg.upserts[0].value).signature
+
+    expect(second, 'a flipped tie must not read as a new incident').toBe(first)
+  })
+
+  it('is the DOMINATING message, not merely the alphabetically first one', async () => {
+    // The dominant message is deliberately alphabetically LAST. If it were first, this test would
+    // pass equally well against a signature picked by name alone, and the tiebreak added above
+    // would be the thing under test rather than the weighting — proving the wrong property.
+    cfg.rows = [
+      { album_id: 'album-1', message: 'aaa rare', source: 's1', ua: 'Mozilla/5.0 (d)', context: { repeats: 1 } },
+      { album_id: 'album-1', message: 'zzz dominant', source: 's2', ua: 'Mozilla/5.0 (d)', context: { repeats: 500 } },
+    ]
+    await POST(post())
+    expect(JSON.parse(cfg.upserts[0].value).signature).toBe('zzz dominant')
+  })
+})
+
+describe('the email reports the window that was actually queried', () => {
+  it('looks back the widened window, and names that same number', async () => {
+    // The query widens by the coalescing window because a row absorbing repeats keeps its ORIGINAL
+    // created_at. The email named the un-widened one, so every alert ever sent reported a window
+    // nobody had measured — 10 minutes for a query that looked at 15.
+    await POST(post())
+    const lookedBackMs = Date.now() - Date.parse(cfg.since as string)
+    expect(lookedBackMs).toBeGreaterThan(14.5 * 60_000)
+    expect(lookedBackMs).toBeLessThan(15.5 * 60_000)
+
+    const { payload } = cfg.sent[0] as { payload: { windowMinutes: number } }
+    expect(payload.windowMinutes, 'the number named must be the number measured').toBe(15)
+    expect(payload.windowMinutes).toBe(Math.round(lookedBackMs / 60_000))
+  })
+})
+
+describe('a count drawn from a full sample is reported as a floor', () => {
+  it('flags truncation when the sample came back full', async () => {
+    // totalOccurrences sums at most the sampled rows, so a bigger incident is UNDERSTATED. It
+    // cannot suppress the alarm — 200 rows is far past the threshold of 8 — it just makes the
+    // headline number false, and the operator sizes their response to it.
+    cfg.rows = spike(200)
+    await POST(post())
+    expect(cfg.sampleLimit, 'the route must bound the sample, and this is that bound').toBe(200)
+    const { payload } = cfg.sent[0] as { payload: { truncated: boolean } }
+    expect(payload.truncated).toBe(true)
+  })
+
+  it('does not flag it on an ordinary spike', async () => {
+    cfg.rows = spike(20)
+    await POST(post())
+    const { payload } = cfg.sent[0] as { payload: { truncated: boolean } }
+    expect(payload.truncated).toBe(false)
   })
 })

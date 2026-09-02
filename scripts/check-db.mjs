@@ -28,7 +28,25 @@ const REQUIRED_COLUMNS = {
   // ahead of its column.
   pending_stream_uploads: ['stream_uid', 'album_id', 'declared_duration_seconds'],
 }
-const REQUIRED_FUNCTIONS = ['album_is_open', 'set_updated_at', 'batch_set_sort_order', 'prune_rate_limit_events']
+// EVERY FUNCTION THE CODE CALLS, plus the two triggers/helpers it does not call directly.
+//
+// This list had been missed twice, one entry at a time, and the third miss was album_video_seconds —
+// the video budget's whole sum. If that function is absent from the live database, PostgREST answers
+// PGRST202, the route's videoSumErr branch fires, and the video budget FAILS OPEN for every album on
+// the platform, while this script prints "live schema has all required tables, columns, functions and
+// policies". A checker that reports all-clear about the thing it cannot see is worse than no checker
+// (rule 20).
+//
+// Kept honest mechanically now: tests/architecture.test.ts greps src/ for `.rpc('name')` and fails
+// if any of them is missing from this array, so the list cannot fall behind the code a fourth time.
+// album_is_open and set_updated_at are not RPCs — they back a policy and a trigger — so they are
+// listed here and simply never appear in that grep.
+const REQUIRED_FUNCTIONS = [
+  'album_is_open', 'set_updated_at', 'prune_rate_limit_events',
+  'admin_growth_series', 'admin_user_cohorts', 'admin_user_overview', 'admin_weekday_series',
+  'album_video_seconds', 'batch_set_sort_order', 'coalesce_error_event', 'find_user_id_by_email',
+  'prune_error_events', 'rate_limit_hit',
+]
 const REQUIRED_POLICIES = [
   // 'photos readable when album is open' was REMOVED on purpose, see
   // supabase/migrations/20260814_close_photo_enumeration.sql. It let anyone holding the public anon

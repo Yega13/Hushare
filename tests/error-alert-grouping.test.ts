@@ -329,3 +329,62 @@ describe('the hourly counter can never be sent backwards', () => {
     }
   })
 })
+
+describe('two failure modes at equal weight do not look like two incidents', () => {
+  // One network drop on Safari produces "Failed to fetch" and "Load failed" in roughly equal
+  // numbers. With no tiebreak the winner was decided by which row arrived first — and rows arrive
+  // newest-first, so it FLIPPED between ticks. Every flip reads as a new incident, so the alarm
+  // sends again and again until it hits the hourly ceiling, and is then silent for the rest of the
+  // hour: four emails about one problem, then nothing while it is still happening.
+  const tied = (order: string[]) => order.map((message) => ({
+    album_id: 'a', message, source: 's', ua: null, context: { repeats: 50 },
+  }))
+
+  it('ranks a tie the same way whatever order the rows arrive in', () => {
+    const forward = tallyByMessage(tied(['Failed to fetch', 'Load failed']))
+    const reversed = tallyByMessage(tied(['Load failed', 'Failed to fetch']))
+    // The reversed case is the one that does the killing: V8's sort is stable, so without a
+    // tiebreak these two disagree.
+    expect(forward[0][0]).toBe(reversed[0][0])
+    expect(forward.map((t) => t[0])).toEqual(reversed.map((t) => t[0]))
+  })
+
+  it('and the tie does not defeat the same-incident rule', () => {
+    // The consequence, asserted where it costs something rather than only in the sort.
+    const first = tallyByMessage(tied(['Failed to fetch', 'Load failed']))[0][0]
+    const second = tallyByMessage(tied(['Load failed', 'Failed to fetch']))[0][0]
+    const previous = { sentAt: new Date(Date.now() - 60_000).toISOString(), signature: first, sentThisHour: 1, hourStart: new Date().toISOString() }
+    const v = alertVerdict({ count: 999, signature: second, previous, nowMs: Date.now() })
+    expect(v.send, 'one incident must not re-alert a minute later because a tie flipped').toBe(false)
+  })
+})
+
+describe('THE POISONING RESIDUAL — open, and asserted so the comment cannot drift again', () => {
+  // The docstring on alertVerdict used to claim "a poisoner can only silence the incident they are
+  // themselves manufacturing". That was false, and this is the test that keeps the corrected version
+  // honest: it FAILS if the residual is ever actually closed, which forces whoever closes it to
+  // delete this test and update the comment in the same commit (MISTAKES entries 11 and 16).
+  const attackerRows = (n: number) => Array.from({ length: n }, (_, i) => ({
+    album_id: 'victim', message: 'ResizeObserver loop limit exceeded',
+    source: `s${i}`, ua: null, context: { repeats: 100000 },
+  }))
+
+  it('MAX_REPEATS_PER_ROW caps a ROW, and tallyByMessage sums ACROSS rows', () => {
+    // So the per-row cap is not a per-message cap: three rows of one attacker-chosen message
+    // out-weigh a genuine 900-occurrence incident.
+    const genuine = { album_id: 'victim', message: 'tus chunk failed', source: 'upload', ua: null, context: { repeats: 900 } }
+    const top = tallyByMessage([...attackerRows(3), genuine])
+    expect(top[0][0]).toBe('ResizeObserver loop limit exceeded')
+    expect(top[0][1]).toBe(MAX_REPEATS_PER_ROW * 3)
+    expect(top[0][1]).toBeGreaterThan(900)
+  })
+
+  it('and a pinned signature suppresses the whole tick, not just the attacker own incident', () => {
+    const signature = tallyByMessage(attackerRows(3))[0][0]
+    const previous = { sentAt: new Date(Date.now() - 60_000).toISOString(), signature, sentThisHour: 1, hourStart: new Date().toISOString() }
+    const v = alertVerdict({ count: 300000, signature, previous, nowMs: Date.now() })
+    expect(v.send).toBe(false)
+    if (v.send) return
+    expect(v.reason).toBe('same-incident')
+  })
+})

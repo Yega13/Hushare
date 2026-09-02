@@ -4,7 +4,7 @@ import { timingSafeEqual } from '@/lib/timing-safe'
 import { sendErrorSpikeEmail } from '@/lib/email'
 import {
   tallyByAlbum, tallyByMessage, totalOccurrences, alertVerdict, albumBlockFor, parseAlertState,
-  WINDOW_MINUTES, COALESCE_WINDOW_MINUTES,
+  ALERT_WINDOW_MINUTES,
 } from '@/lib/error-alert-grouping'
 import { attachAlbumOwners } from '@/lib/server/error-attribution'
 
@@ -22,6 +22,9 @@ const NO_STORE = { 'Cache-Control': 'no-store' }
 const STATE_KEY = 'error_alert_last_sent'
 // Matches the 4s bound api/admin/stats uses for a comparable admin lookup.
 const ENRICH_TIMEOUT_MS = 4000
+// How many rows the ranking and the count are drawn from. Named rather than inline, because the
+// email has to say when it hit this: a sample must not report itself as a total.
+const SAMPLE_LIMIT = 200
 
 export async function POST(req: Request) {
   const secret = process.env.ALBUM_RETIREMENT_SECRET ?? ''
@@ -47,7 +50,7 @@ export async function POST(req: Request) {
   // The window is widened by the same five minutes because a row that is actively absorbing
   // repeats keeps its ORIGINAL created_at, so it can sit just outside a ten-minute window while
   // still being the thing going wrong right now.
-  const since = new Date(Date.now() - (WINDOW_MINUTES + COALESCE_WINDOW_MINUTES) * 60_000).toISOString()
+  const since = new Date(Date.now() - ALERT_WINDOW_MINUTES * 60_000).toISOString()
 
   const { data: rows, error } = await admin
     .from('error_events')
@@ -63,7 +66,7 @@ export async function POST(req: Request) {
     // and-N-more count were both drawn from an arbitrary subset. Newest first, so a truncated
     // sample is at least the most recent part of what is happening right now.
     .order('created_at', { ascending: false })
-    .limit(200)
+    .limit(SAMPLE_LIMIT)
     .returns<{ album_id: string | null; message: string; source: string; ua: string | null; context: { repeats?: number } | null }[]>()
   if (error) {
     console.error('[cron/error-alert] query failed:', error.message)
@@ -71,6 +74,12 @@ export async function POST(req: Request) {
   }
 
   const count = totalOccurrences(rows ?? [])
+  // AND WHETHER THAT COUNT IS THE WHOLE TRUTH. totalOccurrences sums at most SAMPLE_LIMIT rows, so a
+  // genuine incident bigger than the sample was reported UNDERSTATED - the operator reads "200
+  // things failed" for something that was five thousand, and sizes their response to the smaller
+  // number. It cannot suppress the alarm (200 rows is far past the threshold of 8); it just makes
+  // the headline false, which is the one thing an alert may not be (rule 20).
+  const truncated = (rows?.length ?? 0) >= SAMPLE_LIMIT
   // Weighted the same way, so the email names the message that is actually dominating rather than
   // whichever one happens to own the most rows. The top message is also the incident's SIGNATURE.
   const top = tallyByMessage(rows ?? [], 5)
@@ -78,8 +87,24 @@ export async function POST(req: Request) {
   // WHETHER TO SEND AT ALL is one tested decision now. It was four comparisons in this handler, and
   // twelve mutations to them passed the whole suite — including setting the threshold to 100000,
   // after which the alarm can never fire again.
-  const { data: state } = await admin
+  //
+  // AND A STATE ROW WE COULD NOT READ IS NOT AN EMPTY ONE. This destructured `data` alone, so a
+  // failed read produced `parseAlertState(undefined)` → null → "no previous alert": no cooldown, no
+  // signature, no hourly counter. EVERY bound this route has lives in that one row, so if reads
+  // start failing while writes keep working, the alarm sends on every single tick with nothing left
+  // to stop it — the same unbounded mail loop the claim check one screen below already guards, from
+  // the other direction.
+  //
+  // Errs toward one missed alert, which the next successful tick sends, rather than toward a mailbox
+  // nobody can read (rule 19). A permanent read failure therefore means permanent silence, and this
+  // log line is the only signal of it.
+  const { data: state, error: stateErr } = await admin
     .from('system_state').select('value').eq('key', STATE_KEY).maybeSingle<{ value: string }>()
+  if (stateErr) {
+    console.error('[cron/error-alert] could not read the alert state — not sending, because every '
+      + 'cooldown and the hourly ceiling live in that row:', stateErr.message)
+    return NextResponse.json({ ok: false, count, alerted: false, reason: 'state unreadable' }, { headers: NO_STORE })
+  }
   const verdict = alertVerdict({
     count,
     signature: top[0]?.[0] ?? '',
@@ -162,7 +187,10 @@ export async function POST(req: Request) {
   try {
     await sendErrorSpikeEmail(to, {
       count,
-      windowMinutes: WINDOW_MINUTES,
+      truncated,
+      // THE WINDOW THAT WAS ACTUALLY QUERIED. This said WINDOW_MINUTES (10) while `since` above
+      // looked back fifteen, so every alert ever sent named a window nobody had measured.
+      windowMinutes: ALERT_WINDOW_MINUTES,
       deviceCount: devices.size,
       top,
       albums,
@@ -191,10 +219,20 @@ export async function POST(req: Request) {
       // requires `> 0` before believing the field, so a negative would read as zero, not as room.
       value: JSON.stringify({ ...verdict.nextState, sentThisHour: (verdict.nextState.sentThisHour ?? 1) - 1 }),
       updated_at: new Date().toISOString(),
+    // READ THE RESULT, for the same reason the claim above does. This was `.then(() => {}, …)`, so a
+    // PostgREST-class failure — which RESOLVES with { error } rather than throwing — landed in the
+    // empty success handler and the slot was silently not released, with no log line at all. That is
+    // the identical defect that was fixed on the claim eighty lines up, still live down here.
+    //
+    // With Resend down and writes being rejected, four ticks would each claim a slot, each fail to
+    // send, and each fail to release — and the fifth gets `hourly-cap` for the rest of the hour with
+    // zero emails delivered and nothing in the log. Exactly what this rollback exists to prevent.
     }).then(
-      () => {},
-      (err: unknown) => console.error('[cron/error-alert] could not release the hourly slot:', err),
-    )
+      (r: { error: { message: string } | null } | null) => r?.error?.message ?? null,
+      (e: unknown) => (e instanceof Error ? e.message : String(e)),
+    ).then((releaseErr: string | null) => {
+      if (releaseErr) console.error('[cron/error-alert] could not release the hourly slot:', releaseErr)
+    })
     return NextResponse.json({ ok: false, count, alerted: false, reason: 'send failed' }, { headers: NO_STORE })
   }
 

@@ -355,6 +355,45 @@ describe('a new decision module arrives with its tests', () => {
 // GET, or checks a differently-named secret, answers 405 or 503 to every scheduled run and never
 // executes — while looking perfectly correct in the file and in review. Both mistakes were made
 // in one afternoon writing a single new cron, and neither is visible without asking production.
+// THE PRE-DEPLOY SCHEMA CHECK MUST KNOW ABOUT EVERY FUNCTION THE CODE CALLS.
+//
+// scripts/check-db.mjs asks the live database whether the things the app depends on are there, and
+// fails the deploy when they are not. Its REQUIRED_FUNCTIONS list is hand-maintained, and it had
+// fallen behind the code three times — most recently missing album_video_seconds, which is the
+// entire video budget. A missing function does not throw at deploy time: PostgREST answers PGRST202
+// at runtime, the budget's fail-open branch fires, and video is unbounded for every album on the
+// platform while `npm run db:check` prints "all required ... functions ... present".
+//
+// So the list is derived from the code instead of remembered. This is the same shape as the cron
+// literal check below: a hand-kept list beside a mechanical one, held together by a test.
+describe('the pre-deploy schema check knows every function the code calls', () => {
+  it('lists every .rpc() name in REQUIRED_FUNCTIONS', () => {
+    const checkDb = readFileSync(join(process.cwd(), 'scripts', 'check-db.mjs'), 'utf8')
+    const listed = new Set(
+      (checkDb.match(/const REQUIRED_FUNCTIONS = \[([\s\S]*?)\]/) ?? ['', ''])[1]
+        .match(/'([a-z0-9_]+)'/g)?.map((q) => q.slice(1, -1)) ?? [],
+    )
+    expect(listed.size, 'could not parse REQUIRED_FUNCTIONS out of check-db.mjs').toBeGreaterThan(0)
+
+    // Comment-stripped, so a `.rpc('x')` written in an explanatory comment cannot invent a
+    // requirement — the same trap that has now bitten three separate guards in this repo.
+    const called = new Set<string>()
+    for (const f of walkTs(join(process.cwd(), 'src'), /\.(ts|tsx)$/)) {
+      const src = stripJsComments(readFileSync(f, 'utf8'))
+      for (const m of src.matchAll(/\.rpc\(\s*'([a-z0-9_]+)'/g)) called.add(m[1])
+    }
+    expect(called.size, 'no .rpc() calls found — the scan is broken, not the list').toBeGreaterThan(5)
+
+    const missing = [...called].filter((n) => !listed.has(n)).sort()
+    expect(
+      missing,
+      'these functions are called by src/ but are not checked before deploy. A database missing one '
+      + 'of them fails at RUNTIME, on a path that usually errs open — add them to REQUIRED_FUNCTIONS '
+      + 'in scripts/check-db.mjs.',
+    ).toEqual([])
+  })
+})
+
 describe('cron routes are reachable by the scheduler', () => {
   const dir = join(process.cwd(), 'src', 'app', 'api', 'cron')
   const routes = readdirSync(dir).filter((d) => !d.startsWith('.'))
