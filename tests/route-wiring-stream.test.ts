@@ -143,6 +143,33 @@ describe('the upload session is bound to the album that asked for it', () => {
     expect(inserts).toHaveLength(1)
     expect(inserts[0]).toMatchObject({ stream_uid: 'uid-from-cloudflare', album_id: ALBUM_ID })
   })
+
+  it('records the duration THIS request was approved on, so it can be charged later', async () => {
+    // The client used to declare a video's length twice — here, where it is checked against the
+    // album's minute pool, and again to photos/create, which is the number that actually got
+    // written and summed. Declaring one second bought a 62-second Cloudflare reservation, so a real
+    // 62-second video uploaded fine while the album's total rose by one.
+    //
+    // Storing it at the moment of approval is what makes the checked number and the charged number
+    // the same number. If this stops being written, photos/create silently falls back to believing
+    // the client again and the gap reopens with nothing else to notice.
+    await POST(post(VALID))
+    expect(inserts[0]).toMatchObject({ declared_duration_seconds: 42 })
+  })
+
+  it('stores null when the clip could not be measured, rather than a guess', async () => {
+    // ~16% of real videos have no duration the browser can read. Null means exactly that, and is
+    // counted as zero against the budget with Cloudflare's own ceiling as the server-side bound.
+    await POST(post({ ...VALID, durationSeconds: undefined }))
+    expect(inserts[0]).toMatchObject({ declared_duration_seconds: null })
+  })
+
+  it('never stores a negative duration, whatever the client claims', async () => {
+    // One negative row summed into an album's total read as zero through the old total-only clamp
+    // and disabled that album's video budget permanently.
+    await POST(post({ ...VALID, durationSeconds: -2_000_000_000 }))
+    expect(inserts[0]).toMatchObject({ declared_duration_seconds: null })
+  })
 })
 
 describe('malformed requests never reach the authorizer', () => {

@@ -332,17 +332,23 @@ export async function POST(req: Request) {
         stream_uid: uid,
         ...streamVideoUrls(uid),
         poster_url: typeof p.poster_url === 'string' ? p.poster_url : null,
-        // DB column is integer; duration from client is a float.
+        // THE SERVER'S NUMBER, NOT THE CLIENT'S SECOND CLAIM.
         //
-        // CLAMPED AT ZERO, because this number is summed to enforce the album's video budget and
-        // was accepted without a lower bound. The column has no CHECK either, so a single request
-        // with duration_seconds: -2000000000 stored fine, drove the album's total NEGATIVE, and
-        // videoBudgetExceeded — which clamped the TOTAL rather than each row — then read `used` as
-        // 0. Every subsequent video upload on that album was approved forever, whatever it held.
-        // One POST, and the only thing bounding Cloudflare Stream cost for that album was gone.
+        // The client declared this video's length once to /api/upload/stream — where it was checked
+        // against the album's minute pool and the upload was approved on the strength of it — and
+        // again here. This second claim was what got written and summed. Declaring one second
+        // bought a 62-second Cloudflare reservation, so a real 62-second video uploaded and
+        // processed fine while the album's total rose by one: a 62:1 ratio, repeatable to the item
+        // cap, against a PURCHASED Stream ceiling whose exhaustion kills video for every album.
         //
-        // Clamped on the read side too (sumVideoSeconds), because the rows already in the table are
-        // not covered by a change made here.
+        // This is the FALLBACK only. The value the server recorded when it approved the upload is
+        // applied further down, once the token has been consumed and that number is available —
+        // see `declaredByUid`. A row issued before that column existed has no stored value and
+        // keeps the client's claim, which is why this branch still exists.
+        //
+        // Clamped either way: unclamped, one request storing -2000000000 drove an album's total
+        // negative, and videoBudgetExceeded — which clamped the TOTAL rather than each row — read
+        // it as zero, disabling that album's video budget permanently.
         duration_seconds: typeof p.duration_seconds === 'number' && Number.isFinite(p.duration_seconds)
           ? Math.max(0, Math.round(p.duration_seconds))
           : null,
@@ -371,6 +377,10 @@ export async function POST(req: Request) {
   // Verify stream_uid → albumId binding: each UID must have been issued by
   // /api/upload/stream for THIS album. Prevents cross-album stream UID injection.
   // Deduplicate first so a batch with the same uid twice doesn't burn two pending tokens.
+  // What the SERVER recorded as this upload's duration when it approved it, keyed by uid.
+  // Declared outside the block below so it is still in scope where the rows are inserted.
+  const declaredByUid = new Map<string, number | null>()
+
   const streamUidsToVerify = [...new Set(
     (toInsert as PhotoInput[])
       .filter(p => p.storage_backend === 'stream')
@@ -394,13 +404,28 @@ export async function POST(req: Request) {
       .eq('album_id', albumId)
       .is('consumed_at', null)
       .gte('created_at', tokenTtlCutoff)
-      .select('stream_uid')
+      // The duration the SERVER decided when it approved this upload comes back with the claim.
+      // See below: it is what the album is charged, instead of the client's second claim.
+      .select('stream_uid, declared_duration_seconds')
     if (consumeErr) {
       console.error('[photos/create] pending_stream_uploads consume failed:', consumeErr.message)
       reportServerError('photos-create', 'Failed to process photos (500)')
       return NextResponse.json({ error: 'Failed to process photos' }, { status: 500, headers: NO_STORE })
     }
     const verified = new Set((consumed ?? []).map((r: { stream_uid: string }) => r.stream_uid))
+    // WHAT THE ALBUM IS ACTUALLY CHARGED, keyed by the uid it was approved under.
+    //
+    // The client declared this video's length once to /api/upload/stream, where it was checked
+    // against the album's minute pool, and again HERE — and this second claim was what got written
+    // and summed. Declaring one second bought a 62-second Cloudflare reservation, so a real
+    // 62-second video uploaded fine while the album's total rose by one. Repeatable to the item cap,
+    // against a purchased Stream ceiling shared by every album.
+    //
+    // Now the checked number IS the charged number. A row from before this shipped has no stored
+    // value; those fall back to the client's claim, clamped, exactly as before.
+    for (const r of (consumed ?? []) as { stream_uid: string; declared_duration_seconds: number | null }[]) {
+      declaredByUid.set(r.stream_uid, r.declared_duration_seconds)
+    }
 
     // A RETRIED SAVE IS NOT AN INJECTION ATTEMPT, and a deleted row could not tell them apart.
     //
@@ -456,9 +481,29 @@ export async function POST(req: Request) {
   // Split by backend. Both use upsert+ignoreDuplicates: R2 has unique(album_id,storage_path),
   // stream now has unique(album_id,stream_uid) — concurrent races never abort the whole batch.
   const r2Rows = rows.filter(r => r.storage_backend === 'r2')
-  const streamRows = rows.filter(
-    r => r.storage_backend === 'stream' && !rejectedStreamUids.has(r.stream_uid as string),
-  )
+  const streamRows = rows
+    .filter(r => r.storage_backend === 'stream' && !rejectedStreamUids.has(r.stream_uid as string))
+    // THE SERVER'S NUMBER WINS. The client declared this video's length once to /api/upload/stream,
+    // where it was checked against the album's minute pool and the upload approved on the strength
+    // of it — and again in this request, which is the number that used to be written and summed.
+    // Declaring one second bought a 62-second Cloudflare reservation, so a real 62-second video
+    // uploaded and processed fine while the album's total rose by one: a 62:1 ratio, repeatable to
+    // the item cap, against a PURCHASED Stream ceiling whose exhaustion kills video for every album.
+    //
+    // Applied here rather than where the row is built, because the stored value only becomes
+    // available when the upload token is consumed a few lines above.
+    //
+    // A disagreement is resolved SILENTLY in the server's favour, never by refusing: a guest at an
+    // event can do nothing about a refusal, and rule 19 says the uncertain branch must not destroy
+    // their upload. Ignoring their number already removes everything the refusal would have bought.
+    .map(r => {
+      // The filter above already guarantees these are stream rows; the cast restates that for the
+      // type system rather than widening the row shape everywhere else.
+      const stored = declaredByUid.get((r as { stream_uid: string }).stream_uid)
+      return typeof stored === 'number' && Number.isFinite(stored)
+        ? { ...r, duration_seconds: Math.max(0, Math.round(stored)) }
+        : r
+    })
 
   let insertedImages = 0
   let insertedVideos = 0

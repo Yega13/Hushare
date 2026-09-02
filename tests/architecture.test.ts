@@ -144,7 +144,13 @@ const SIZE_BUDGET: Record<string, number> = {
   // -2000000000 drove an album's video total negative — videoBudgetExceeded clamps the TOTAL, read
   // it as zero, and that album's video budget was disabled permanently. Comment, not code, is most
   // of the growth, and it is the kind that has to survive the next reader.
-  'src/app/api/album/photos/create/route.ts': 547,
+  // +45 (2026-09-02): the album is charged the duration the SERVER approved, not the client's
+  // second claim. The client declared a video's length twice — once to /api/upload/stream, where it
+  // was checked against the minute pool, and again here, which is the number that got written and
+  // summed. Declaring one second bought a 62-second Cloudflare reservation, so a real 62-second
+  // video uploaded fine while the album's total rose by one. Most of the growth is the comment
+  // explaining that, at the two places someone would otherwise "simplify" it back.
+  'src/app/api/album/photos/create/route.ts': 592,
   // +6 (2026-08-31, audit): progress comes from the server's outstanding count, not from the
   // length of a page that PostgREST had silently truncated.
   // +24 (2026-08-31, final audit): indexing pages until the server says it is finished, instead

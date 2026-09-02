@@ -107,9 +107,29 @@ export async function POST(req: Request) {
   // upload_url is the exact Cloudflare `Location` header from createStreamUpload — stored so the
   // stream-relay fallback (src/app/api/upload/stream-relay/[uid]/route.ts) can forward to the real
   // URL without ever reconstructing/guessing Cloudflare's URL format from just the uid.
+  // THE DURATION WE JUST CHECKED, WRITTEN DOWN.
+  //
+  // photos/create used to take the client's word a SECOND time, from a different request, and that
+  // second number is what the album was billed for. Declaring one second here bought a 62-second
+  // Cloudflare reservation, so a real 62-second video uploaded fine while the album's total rose by
+  // one — repeatable to the item cap, against a purchased Stream ceiling shared by every album.
+  //
+  // Recording it here makes the checked number and the charged number the same number. Clamped and
+  // rounded to match the column; null when the browser could not measure the clip, which is ~16% of
+  // real videos and must keep working.
+  const declaredDurationSeconds =
+    typeof durationSeconds === 'number' && Number.isFinite(durationSeconds) && durationSeconds > 0
+      ? Math.max(0, Math.round(durationSeconds))
+      : null
+
   const { error: pendingErr } = await admin
     .from('pending_stream_uploads')
-    .insert({ stream_uid: streamUid, album_id: albumId, upload_url: uploadUrl })
+    .insert({
+      stream_uid: streamUid,
+      album_id: albumId,
+      upload_url: uploadUrl,
+      declared_duration_seconds: declaredDurationSeconds,
+    })
   if (pendingErr) {
     console.error('[stream] pending_stream_uploads insert failed:', pendingErr.message)
     reportServerError('stream', 'Failed to initiate video upload (502)')
