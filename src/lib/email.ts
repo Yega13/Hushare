@@ -2,6 +2,14 @@ const VERIFIED_FROM = 'Hushare <noreply@hushare.space>'
 const FALLBACK_FROM = 'Hushare <onboarding@resend.dev>'
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/
 const SITE_URL = 'https://hushare.space'
+/**
+ * How long any one send may hang before it is abandoned.
+ *
+ * Exported so a test can pin it against a literal rather than against itself — asserting
+ * `toBe(EMAIL_TIMEOUT_MS)` says n === n, and raising it to ten minutes would then pass while
+ * restoring exactly the hang this bounds (MISTAKES entry 15).
+ */
+export const EMAIL_TIMEOUT_MS = 10_000
 
 function escapeHtml(str: string): string {
   return str
@@ -46,6 +54,23 @@ async function sendEmail(to: string, subject: string, html: string, text: string
       method: 'POST',
       headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ from, to: [to], subject, html, text }),
+      // BOUNDED, because a send that never returns is worse than one that fails.
+      //
+      // This had no timeout at all, and the error-alert cron is what made that expensive: it claims
+      // its cooldown BEFORE sending (deliberately — claiming after means a failed write re-sends
+      // forever). If this call black-holes, the catch below never runs, so the hourly slot is never
+      // released and no log line is written, and the next 59 ticks return 'same-incident'. An hour
+      // of total silence from the alarm, during the incident it exists to report.
+      //
+      // The route already bounds its own album lookup at 4s and explains at length why an unbounded
+      // wait costs the hour — and that bound was put on the small loss while the send, the thing
+      // that actually matters, had none.
+      //
+      // Ten seconds against an API that normally answers in well under one. Deliberately generous:
+      // six senders share this function, including customer-facing renewal and expiry warnings, and
+      // a tight bound would turn delivered-but-slow into "failed" for those. Every caller already
+      // wraps this in try/catch.
+      signal: AbortSignal.timeout(EMAIL_TIMEOUT_MS),
     })
     if (!res.ok) {
       const body = await res.text()

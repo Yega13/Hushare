@@ -20,14 +20,18 @@ import { ALERT_WINDOW_MINUTES } from '@/lib/error-alert-grouping'
 
 type Sent = { subject: string; html: string; text: string; to: string[] }
 let sent: Sent[] = []
+/** The raw init of each fetch, so the request itself can be asserted and not only its body. */
+let fetchInits: Array<Record<string, unknown>> = []
 
 const originalFetch = globalThis.fetch
 
 beforeEach(() => {
   sent = []
+  fetchInits = []
   process.env.RESEND_API_KEY = 'test-key-not-a-real-one'
   process.env.RESEND_DOMAIN_VERIFIED = 'false'
   globalThis.fetch = vi.fn(async (_url: unknown, init?: { body?: string }) => {
+    fetchInits.push((init ?? {}) as Record<string, unknown>)
     sent.push(JSON.parse(init?.body ?? '{}') as Sent)
     return { ok: true, text: async () => '', json: async () => ({}) } as unknown as Response
   }) as unknown as typeof fetch
@@ -35,7 +39,7 @@ beforeEach(() => {
 
 afterEach(() => { globalThis.fetch = originalFetch })
 
-const { sendErrorSpikeEmail } = await import('@/lib/email')
+const { sendErrorSpikeEmail, EMAIL_TIMEOUT_MS } = await import('@/lib/email')
 
 const TO = 'ops@example.com'
 // A COUNT NO OTHER FIXTURE CAN SPELL. It was 23, and the slug in most of these tests is
@@ -399,3 +403,32 @@ describe('a count drawn from a truncated sample says so', () => {
     expect(msg.html).not.toContain('At least')
   })
 })
+
+describe('a send that hangs is abandoned, not waited on forever', () => {
+  it('gives every request an abort signal', async () => {
+    // WHY THIS IS NOT COSMETIC. The error-alert cron claims its cooldown BEFORE sending, on purpose
+    // - claiming after means a failed write re-sends on every tick. So a send that never returns
+    // means the catch never runs, the hourly slot is never released, no log line is written, and
+    // the next 59 ticks answer 'same-incident'. A full hour of silence from the alarm, during the
+    // incident it exists to report. The route already bounds its album lookup at 4s and explains
+    // exactly this - the bound was on the small loss and not on the send.
+    await sendErrorSpikeEmail(TO, { ...base, albums: [], moreAlbums: 0 })
+    expect(fetchInits).toHaveLength(1)
+    expect(fetchInits[0].signal, 'an unbounded send costs the alarm a whole hour').toBeInstanceOf(AbortSignal)
+  })
+
+  it('bounds it at ten seconds, pinned against a literal', async () => {
+    // Against a LITERAL, because `toBe(EMAIL_TIMEOUT_MS)` says n === n and would pass at ten
+    // minutes - which restores the hang this exists to prevent (MISTAKES entry 15).
+    //
+    // Ten seconds is deliberately generous: six senders share sendEmail, including customer-facing
+    // renewal and expiry warnings, and a tight bound turns delivered-but-slow into "failed".
+    expect(EMAIL_TIMEOUT_MS).toBe(10_000)
+  })
+})
+
+// WHAT THIS FILE CANNOT ASSERT, said plainly rather than left as an implied guarantee: that the
+// abort actually FIRES. Node's AbortSignal.timeout does not route through vitest's patched
+// setTimeout, so fake timers cannot drive it, and a real-time test would take ten seconds of every
+// suite run. The two assertions above kill both realistic mutations - deleting the signal, and
+// raising the constant past usefulness - and that is the honest limit of it (rule 20).
