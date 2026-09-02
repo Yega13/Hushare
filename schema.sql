@@ -559,6 +559,7 @@ create index if not exists photos_album_id_idx ON public.photos USING btree (alb
 create index if not exists photos_album_sort_order_idx ON public.photos USING btree (album_id, sort_order, created_at);
 create unique index if not exists photos_album_storage_path_unique_idx ON public.photos USING btree (album_id, storage_path);
 create unique index if not exists photos_album_stream_uid_unique ON public.photos USING btree (album_id, stream_uid);
+create index if not exists photos_album_video_duration_idx ON public.photos USING btree (album_id) INCLUDE (duration_seconds) WHERE (media_type = 'video'::text);
 create index if not exists photos_album_visible_idx ON public.photos USING btree (album_id) WHERE (hidden = false);
 create index if not exists photos_bib_numbers_idx ON public.photos USING gin (bib_numbers);
 create index if not exists photos_face_ids_gin_idx ON public.photos USING gin (face_ids);
@@ -696,6 +697,17 @@ AS $function$
     select 1 from public.albums
     where id = p_album_id and retired_at is null and password_hash is null
   );
+$function$;
+
+CREATE OR REPLACE FUNCTION public.album_video_seconds(p_album_id uuid)
+ RETURNS bigint
+ LANGUAGE sql
+ STABLE
+AS $function$
+  select coalesce(sum(greatest(0, least(coalesce(duration_seconds, 0), 21600))), 0)::bigint
+  from public.photos
+  where album_id = p_album_id
+    and media_type = 'video'
 $function$;
 
 CREATE OR REPLACE FUNCTION public.batch_set_sort_order(p_album_id uuid, p_ids uuid[], p_orders integer[])
@@ -918,6 +930,7 @@ revoke execute on function public.admin_user_cohorts(p_months integer) from publ
 revoke execute on function public.admin_user_overview(p_limit integer) from public, anon, authenticated;
 revoke execute on function public.admin_weekday_series(p_days integer, p_tz text) from public, anon, authenticated;
 revoke execute on function public.album_is_open(p_album_id uuid) from public, anon, authenticated;
+revoke execute on function public.album_video_seconds(p_album_id uuid) from public, anon, authenticated;
 revoke execute on function public.batch_set_sort_order(p_album_id uuid, p_ids uuid[], p_orders integer[]) from public, anon, authenticated;
 revoke execute on function public.coalesce_error_event(p_level text, p_source text, p_message text, p_album_id uuid, p_context jsonb, p_ua text, p_window_seconds integer) from public, anon, authenticated;
 revoke execute on function public.ensure_album_slug_namespace_unique() from public, anon, authenticated;
