@@ -1,0 +1,41 @@
+{
+  "//": [
+    "Hides generated and vendored trees from the editor. This is not cosmetic: with node_modules",
+    "visible, the Python extension finds node_modules/flatted/python/flatted.py and announces a",
+    "Python project inside a TypeScript repo. Review agents used to leave git worktrees under",
+    ".claude/worktrees, each a FULL repo copy with its own node_modules, which multiplied that.",
+    "The worktrees are gone; these rules stop the rest of it coming back."
+  ],
+
+  "files.exclude": {
+    "**/node_modules": true,
+    "**/.next": true,
+    "**/.open-next": true,
+    "**/.wrangler": true,
+    "**/.claude/worktrees": true
+  },
+
+  "search.exclude": {
+    "**/node_modules": true,
+    "**/.next": true,
+    "**/.open-next": true,
+    "**/.wrangler": true,
+    "**/package-lock.json": true
+  },
+
+  "files.watcherExclude": {
+    "**/node_modules/**": true,
+    "**/.next/**": true,
+    "**/.open-next/**": true,
+    "**/.wrangler/**": true
+  },
+
+  "//python": "Belt and braces: even if a Python extension is installed, give it nothing to find here.",
+  "python.analysis.exclude": ["**/node_modules", "**/.next", "**/.open-next", "**/.wrangler"],
+  "python.analysis.autoSearchPaths": false,
+  "python.terminal.activateEnvironment": false,
+
+  "//ts": "This repo is TypeScript. Use the workspace's own version, not the editor's bundled one.",
+  "typescript.tsdk": "node_modules/typescript/lib",
+  "files.eol": "\r\n"
+}
