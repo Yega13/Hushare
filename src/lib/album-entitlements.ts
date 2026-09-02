@@ -186,9 +186,10 @@ export function capNudge(input: AlbumCapInput): CapNudge {
 // what they are costing. A budget lets the owner spend it however suits their event, and lets them
 // make room by deleting rather than by arguing with a rule.
 //
-// The clip limit stays alongside it, doing a different job: stopping a single three-hour upload
-// from consuming an album's entire allowance in one go, and giving a clear per-file answer at the
-// moment somebody picks a file.
+// There is no second limit beside it. A clip cap used to sit here doing a different job — stopping
+// one long upload from taking the album's whole allowance — and it was removed deliberately: an
+// album with eighteen minutes free refusing a two-minute speech is a rule the budget did not need.
+// One long video CAN now spend the entire budget, and that is the intended behaviour, not a gap.
 //
 // WHY VIDEO IS BUDGETED AT ALL, when photos share one allowance: Cloudflare Stream bills per
 // MINUTE STORED, every month, plus again per minute watched — while R2 bills per byte and charges
@@ -251,8 +252,16 @@ export function videoCaps(ownerTier: Tier | null | undefined): VideoCaps {
  * What that costs, now that no per-clip cap bounds it: the overrun used to be at most one clip
  * length, and is now bounded instead by FALLBACK_MAX_DURATION in lib/stream-duration (15 minutes)
  * — Cloudflare refuses to process a pending upload longer than the duration it reserved, so an
- * unmeasured clip cannot silently be an hour. The real duration is reconciled from Cloudflare after
- * processing, so the album's used-total self-corrects and the NEXT upload is judged on the truth.
+ * unmeasured clip cannot silently be an hour. That bound is server-side and holds without the
+ * client's cooperation, which is the half that matters.
+ *
+ * WHAT DOES NOT HAPPEN, stated because an earlier version of this comment claimed it did: the album
+ * total is NOT reconciled after upload. /api/album/video-status can correct a duration, but its
+ * only caller is the lightbox, firing when somebody OPENS a video — never on the upload path. At an
+ * event, with guests uploading in sequence and nobody opening anything, no correction ever runs and
+ * the next upload is judged on the client's claim. That route's own comment calls this "a known
+ * residual", and a comment here is not allowed to promise what the code it points at disclaims
+ * (rule 20). Do not treat this line as cover for removing another bound.
  */
 export function videoBudgetExceeded(usedSeconds: number, newClipSeconds: unknown, caps: VideoCaps): boolean {
   const used = Number.isFinite(usedSeconds) && usedSeconds > 0 ? usedSeconds : 0

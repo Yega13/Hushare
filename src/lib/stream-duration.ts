@@ -11,9 +11,13 @@
 //
 // I broke exactly this by clamping the result to the tier's clip cap, to make Cloudflare enforce
 // clip length. It would have fired on the 16% of real videos whose duration the browser cannot
-// measure, and on anyone who trimmed a clip to exactly the advertised limit. Clip length is
+// measure, and on anyone who trimmed a clip to exactly the advertised limit.
+//
 // There is no clip-length cap at all now: the album's minute pool is the only video limit, and it
-// is checked before any bytes move, with a message someone can act on.
+// is checked before any bytes move, with a message someone can act on. That makes the temptation
+// WORSE rather than better, because the largest clip we now approve is the album's whole budget —
+// so the reservation looks even more oversized, and clamping it looks even more sensible. It is
+// not. The margin is the only thing standing between a real upload and a death at 100%.
 
 const CF_MAX_DURATION_CEILING = 21600 // Cloudflare's absolute max (6h)
 // Used ONLY when the client could not measure the video (a failed poster decode). Cloudflare

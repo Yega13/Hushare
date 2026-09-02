@@ -4,6 +4,7 @@ import {
   videoAlbumFullMessage, type VideoCaps,
 } from '../src/lib/album-entitlements'
 import { FREE_ALBUM_LIMIT, PRO_ALBUM_LIMIT, STUDIO_ALBUM_LIMIT } from '../src/lib/media'
+import { isExpectedRefusal } from '../src/lib/upload-policy'
 
 describe('videoCaps — the agreed ladder', () => {
   it('gives each plan at least as much as the one below it', () => {
@@ -80,7 +81,7 @@ describe('videoCaps — the agreed ladder', () => {
 })
 
 describe('videoBudgetExceeded', () => {
-  const caps = videoCaps('free')   // 60s clips, 600s budget
+  const caps = videoCaps('free')   // 600s budget, no clip cap
 
   it('lets an album spend its allowance however it likes', () => {
     // THE POINT OF A BUDGET over a count: ten one-minute clips or forty fifteen-second ones cost
@@ -144,6 +145,26 @@ describe('the refusal message tells them what to do about it', () => {
     const msg = videoAlbumFullMessage(caps, 600)
     expect(msg).toContain('10 minutes')
     expect(msg).not.toContain('left')
+  })
+
+  it('is RECOGNISED as a deliberate refusal, in both of its branches', () => {
+    // THE LINK NOTHING WAS HOLDING. upload-policy matches this refusal by prefix, and the existing
+    // test feeds it the prefix constant — which proves the list matches itself and nothing about
+    // the message. Reword the start of videoAlbumFullMessage and the prefix stops matching, with
+    // two consequences the code comments spell out and no test could see:
+    //
+    //   1. the refusal is filed at 'error' level and lands in the admin Errors tab, so a guest
+    //      being told a rule looks like something broken;
+    //   2. worse, noteVideoOutcome(false) collapses that guest's video lane to serial FOR THE REST
+    //      OF THE SESSION — one refused clip slowing every video they upload afterwards.
+    //
+    // Both sides are imported, so neither can be retyped into agreement (rule 17).
+    for (const tier of ['free', 'pro', 'studio'] as const) {
+      const c = videoCaps(tier)
+      // Some budget left, and none left — the two branches word the sentence differently.
+      expect(isExpectedRefusal(videoAlbumFullMessage(c, c.maxTotalSeconds - 30)), `${tier} partial`).toBe(true)
+      expect(isExpectedRefusal(videoAlbumFullMessage(c, c.maxTotalSeconds)), `${tier} full`).toBe(true)
+    }
   })
 })
 
