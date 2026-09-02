@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState, useSyncExternalStore } from 'react'
 import { mergeLiveRows } from '@/lib/error-rows'
+import { occurrencesOf } from '@/lib/error-alert-grouping'
 
 // Errors and warnings used to share one list, which made the list useless: on a normal day most
 // rows say "You've reached this album's upload limit" — the free cap doing its job, logged at warn
@@ -315,9 +316,15 @@ export default function AdminErrorTabs(
                             {ctx?.parked ? <span style={{ color: MUTED }}> · retrying</span> : null}
                             {/* Repeats of the same incident are coalesced into this row rather than
                                 written as new ones (see api/log/client-error). Showing the count is
-                                what keeps that from hiding how often something happened. */}
-                            {typeof ctx?.repeats === 'number' && ctx.repeats > 1
-                              ? <strong style={{ color: BRAND }}> · ×{ctx.repeats}</strong>
+                                what keeps that from hiding how often something happened.
+
+                                Through occurrencesOf, the same function the alert email counts
+                                with. This rendered ctx.repeats raw, so a forged row claiming
+                                100000 showed ×100000 here while the email counted it as 1000 —
+                                two numbers for one row, in the two places an operator compares
+                                during an incident (rule 13). */}
+                            {occurrencesOf({ context: ctx }) > 1
+                              ? <strong style={{ color: BRAND }}> · ×{occurrencesOf({ context: ctx })}</strong>
                               : null}
                           </>
                         )

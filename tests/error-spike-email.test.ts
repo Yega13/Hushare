@@ -143,6 +143,81 @@ describe('nothing a customer wrote can break out of the markup', () => {
     expect(sent[0].html).not.toContain('"onmouseover="')
   })
 
+  it('escapes a hostile OWNER value — the field this file exists to protect', async () => {
+    // Three escapeHtml calls survived mutation here, and all three were on `owner`: the mailto
+    // href, the link text, and the label span. Every owner value in this file was
+    // metacharacter-free, so the field carrying a CUSTOMER EMAIL ADDRESS was the one thing the
+    // escaping tests did not exercise.
+    await sendErrorSpikeEmail(TO, {
+      ...base,
+      albums: [{ slug: 'abc123', title: 'T', count: 1, owner: 'a@b.com"><script>x</script>' }],
+      moreAlbums: 0,
+    })
+    const [msg] = sent
+    expect(msg.html).not.toContain('<script>')
+    expect(msg.html).toContain('&lt;script&gt;')
+    // And it must not have broken out of the href attribute either.
+    expect(msg.html).not.toContain('mailto:a@b.com"><')
+  })
+
+  it('escapes an owner LABEL too, which takes a different branch', async () => {
+    // The label branch is chosen when the value has no '@'. My first hostile-owner test used an
+    // address, so it went down the mailto branch and left this one untested — the mutation removing
+    // escapeHtml here survived. Only '(no account)' and '(unknown user)' reach it today, but the
+    // branch must not depend on that staying true.
+    await sendErrorSpikeEmail(TO, {
+      ...base,
+      albums: [{ slug: 'abc123', title: 'T', count: 1, owner: '(unknown <script>alert(1)</script>)' }],
+      moreAlbums: 0,
+    })
+    const [msg] = sent
+    expect(msg.html).not.toContain('<script>')
+    expect(msg.html).toContain('&lt;script&gt;')
+  })
+
+  it('states the per-album count, in BOTH parts', async () => {
+    // The test named "names each album, its count, and a way to reach the owner" never asserted the
+    // count. Zeroing it in the HTML and again in the plain text both survived.
+    //
+    // 4242 ON PURPOSE. The first version of this test used 20, which is also the count in `base`'s
+    // message tally — so both assertions passed on the tally line and the mutations STILL survived.
+    // A test that passes for the wrong reason is the thing rule 16 exists to find, and it found this
+    // one. The number here must appear nowhere else in the email.
+    await sendErrorSpikeEmail(TO, {
+      ...base,
+      albums: [{ slug: 'abc123', title: 'Anna', count: 4242, owner: 'a@b.com' }],
+      moreAlbums: 0,
+    })
+    const [msg] = sent
+    expect(msg.html).toContain('4242')
+    expect(msg.text).toContain('4242x')
+  })
+
+  it('keeps the heading that introduces the list', async () => {
+    await sendErrorSpikeEmail(TO, {
+      ...base,
+      albums: [{ slug: 'abc123', title: 'Anna', count: 20, owner: 'a@b.com' }],
+      moreAlbums: 0,
+    })
+    expect(sent[0].html).toContain('Which albums:')
+    expect(sent[0].text).toContain('Which albums:')
+  })
+
+  it('says "1 more album", not "1 more albums" — in both parts', async () => {
+    // The pluralisation is written TWICE, once for the HTML and once for the text, and neither copy
+    // was asserted. Inverting either survived. One fact, two places (rule 13).
+    await sendErrorSpikeEmail(TO, {
+      ...base,
+      albums: [{ slug: 'abc123', title: 'Anna', count: 20, owner: 'a@b.com' }],
+      moreAlbums: 1,
+    })
+    const [msg] = sent
+    expect(msg.html).toContain('1 more album')
+    expect(msg.html).not.toContain('1 more albums')
+    expect(msg.text).toContain('1 more album')
+    expect(msg.text).not.toContain('1 more albums')
+  })
+
   it('truncates a very long title, and truncates BEFORE escaping', async () => {
     // The reverse order would cut an entity in half and emit broken markup.
     await sendErrorSpikeEmail(TO, {

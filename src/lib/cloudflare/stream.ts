@@ -208,7 +208,7 @@ type StreamListVideo = {
 // finishes or is reclaimed. createStreamUpload sets a 2h `expiry` expecting Cloudflare to reclaim
 // abandoned uploads — but in production they've been observed lingering for many DAYS past expiry,
 // silently piling up reserved quota until it exhausted the account's storage and the "capacity
-// running low" warning fired (see the maxDurationSeconds note in createStreamUpload). This daily
+// running low" warning fired (see the maxDurationSeconds note in createStreamUpload). This three-hourly
 // sweep deletes any non-ready upload whose uploadExpiry is already PAST, so quota can't be held
 // hostage by uploads that can never complete. Because it only touches EXPIRED uploads, an upload a
 // guest is actively working on right now (expiry still in the future) is never at risk.

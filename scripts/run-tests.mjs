@@ -110,4 +110,7 @@ if (missing.length > 0) {
 
 if (result.status !== 0) process.exit(result.status ?? 1)
 
-console.log(`[run-tests] verified: all ${expected.length} test files ran.`)
+// ran.size, NOT expected.length. Printing the disk count states a number this line never
+// compared — and with the guard above disabled it cheerfully reported "verified: all 67 test
+// files ran" while one had. Rule 20, inside the file written to enforce rule 20.
+console.log(`[run-tests] verified: all ${ran.size} of ${expected.length} test files ran.`)

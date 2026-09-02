@@ -190,7 +190,7 @@ describe('the big files do not get bigger', () => {
 // 'email' came off on 2026-09-02, and the claim is deliberately partial: tests/error-spike-email
 // renders the error-spike template through the real sendEmail and reads back the exact JSON Resend
 // would receive, covering its escaping, its HTML/plain-text agreement and its three owner states.
-// The file's six other senders are still uncovered. It is off the register because the register is
+// The file's five other senders are still uncovered. It is off the register because the register is
 // about "nothing here is tested at all", and that is no longer true of this file — the one that
 // writes customer email addresses and customer-written titles into an operator's inbox.
 const UNTESTED_LEGACY = new Set([
@@ -198,6 +198,28 @@ const UNTESTED_LEGACY = new Set([
   'broadcast', 'cf-analytics', 'constants', 'country-names', 'engagement', 'exif',
   'heic-worker', 'my-albums', 'polls', 'provision-user',
   'rekognition', 'report-server-error', 'slideshow-motion', 'useIsNarrow', 'utils',
+
+  // ── Added 2026-09-02, when this rule learned to look one directory down ────────────────────
+  //
+  // These are not NEW debt. They are debt that was invisible: the walk only matched files ending
+  // in .ts at the top level, and directories do not, so three whole folders were exempt from the
+  // "a new module arrives with its tests" rule without anyone deciding that.
+  //
+  // TAKE server/image-upload-authorization OFF FIRST. It is the entire authorization chain for the
+  // IMAGE path — 98.5% of all media — carrying the same password/reveal gate, the same per-tier
+  // size cap and the same per-album ceiling as the video path, and it has no test at all. Its twin
+  // was tested this week only because a review happened to look at video; nothing would have
+  // flagged this one, through two full rounds of adversarial review, because this walk could not
+  // see it.
+  'server/image-upload-authorization',
+  // Decision-carrying, worth tests in roughly this order after the one above.
+  'server/polar-reconcile', 'server/count-albums-against-cap', 'server/bib-index',
+  'server/face-sweep', 'server/album-header',
+  // Thin I/O wrappers around Cloudflare and Supabase clients. Genuinely low-value to unit test —
+  // they are the boundary the other tests mock — but listed rather than exempted, so the choice is
+  // visible and arguable instead of silent.
+  'cloudflare/stream', 'cloudflare/stream-player',
+  'supabase/admin', 'supabase/client', 'supabase/server',
 ])
 
 describe('a new decision module arrives with its tests', () => {
@@ -214,9 +236,26 @@ describe('a new decision module arrives with its tests', () => {
     .filter((line) => !/vi\.mock\s*\(/.test(line))
     .join('\n')
 
-  const libs = readdirSync(join(process.cwd(), 'src', 'lib'))
-    .filter((f) => f.endsWith('.ts'))
-    .map((f) => f.replace(/\.ts$/, ''))
+  // ONE LEVEL DOWN AS WELL. `readdirSync(...).filter(f => f.endsWith('.ts'))` only ever saw
+  // top-level files, because directories do not end in .ts — so everything under src/lib/server,
+  // src/lib/cloudflare and src/lib/supabase was exempt from this rule entirely, silently.
+  //
+  // That is not a theoretical gap. src/lib/server/image-upload-authorization.ts — the whole
+  // authorization chain for the image path, which is 98.5% of all media, carrying the same gate,
+  // the same per-tier cap and the same per-album ceiling as the video path — has no test at all,
+  // and went unnoticed through two rounds of adversarial review because this walk could not see it.
+  // The rule the video module was just held to would not have applied to the video module either.
+  const libs = [
+    ...readdirSync(join(process.cwd(), 'src', 'lib'), { withFileTypes: true })
+      .filter((e) => e.isFile() && e.name.endsWith('.ts'))
+      .map((e) => e.name.replace(/\.ts$/, '')),
+    ...readdirSync(join(process.cwd(), 'src', 'lib'), { withFileTypes: true })
+      .filter((e) => e.isDirectory())
+      .flatMap((dir) =>
+        readdirSync(join(process.cwd(), 'src', 'lib', dir.name), { withFileTypes: true })
+          .filter((e) => e.isFile() && e.name.endsWith('.ts'))
+          .map((e) => `${dir.name}/${e.name.replace(/\.ts$/, '')}`)),
+  ]
 
   it('has no untested module that is not already on the debt register', () => {
     const isTested = (name: string) =>
