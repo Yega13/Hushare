@@ -53,14 +53,22 @@ const OFF_SWITCH_GUARDS: Record<string, RegExp> = {
 // why. Being one file apart was not enough to keep them in step, so the rule is asserted here.
 // Paths are relative to src/. Some routes gate through a shared helper rather than calling
 // gateAllowsContribution themselves — api/upload/presign delegates to
-// lib/server/image-upload-authorization, which is where its check lives — so the helper is listed
-// instead of the route. Listing the route would have failed against perfectly correct code.
+// lib/server/image-upload-authorization, and api/upload/stream to
+// lib/server/video-upload-authorization — so the helper is listed instead of the route. Listing the
+// route would have failed against perfectly correct code.
+//
+// MOVING AN ENTRY HERE IS A DECISION, NOT A REPAIR. When the video guard chain was lifted out of
+// api/upload/stream, this test went red — correctly: the route no longer contained the check. The
+// honest fix is to follow the gate to where it now lives, which is what this line does. Deleting
+// the entry, or loosening the assertion, would leave the suite green over a route that had genuinely
+// stopped gating. Before changing one of these, open the new file and confirm the call is really
+// there.
 const READ_PATHS_NEEDING_THE_GATE = [
   'app/api/album/face-search/route.ts',
   'app/api/album/face-index/route.ts',
   'app/api/album/photos/create/route.ts',
-  'app/api/upload/stream/route.ts',
   'lib/server/image-upload-authorization.ts',
+  'lib/server/video-upload-authorization.ts',
 ]
 
 describe('every album-reading route applies the password and reveal gate', () => {

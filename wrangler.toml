@@ -13,7 +13,9 @@ pattern = "www.hushare.space/*"
 zone_name = "hushare.space"
 
 [triggers]
-crons = ["0 2 * * *", "* * * * *"]
+# Daily housekeeping, the every-minute sweep, and — every three hours — reclaiming the Cloudflare
+# Stream quota held by abandoned uploads. See worker.ts for what runs on which.
+crons = ["0 2 * * *", "* * * * *", "0 */3 * * *"]
 
 [assets]
 directory = ".open-next/assets"

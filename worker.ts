@@ -20,8 +20,11 @@ type Env = {
   NEXT_PUBLIC_SITE_URL: string
 }
 
-// Must match the every-minute entry in wrangler.toml's crons list.
+// Must match the corresponding entries in wrangler.toml's crons list. A string that drifts from
+// wrangler.toml does not fail anything — the branch simply never matches and the work silently
+// stops running, which is why tests/architecture.test.ts asserts these two against that file.
 const EVERY_MINUTE = '* * * * *'
+const EVERY_3_HOURS = '0 */3 * * *'
 
 async function callCronRoute(baseUrl: string, path: string, secret: string): Promise<void> {
   try {
@@ -78,14 +81,31 @@ const worker = {
       return
     }
 
+    // RECLAIMING ABANDONED STREAM UPLOADS, EVERY THREE HOURS RATHER THAN ONCE A DAY.
+    //
+    // Cloudflare reserves maxDurationSeconds of account storage quota for every PENDING upload, and
+    // has been observed not reclaiming abandoned ones for days past their own expiry. The quota is a
+    // purchased ceiling and exhausting it does not cost more — it makes every video upload fail for
+    // every album at once.
+    //
+    // The window this has to cover got wider when the per-clip length cap was removed: the longest
+    // clip we now approve is the album's whole budget, so the largest single reservation went from
+    // ~2.5 minutes to 16 (Free) / 31 (Pro) / 76 (Max), and the number of concurrent abandoned Max
+    // uploads needed to exhaust 1,000 minutes fell from roughly 62 to roughly 13. A daily sweep
+    // meant a worst-case reservation could sit for 24 hours; three-hourly bounds it to three.
+    //
+    // Safe to run often: it only deletes uploads whose own uploadExpiry has already passed, and it
+    // skips anything queued, in progress or downloading — an upload in flight is never at risk.
+    if (event.cron === EVERY_3_HOURS) {
+      ctx.waitUntil(callCronRoute(baseUrl, '/api/cron/cleanup-stream', secret))
+      return
+    }
+
     ctx.waitUntil(Promise.all([
       callCronRoute(baseUrl, '/api/cron/retire-albums', secret),
       callCronRoute(baseUrl, '/api/cron/notify-expiry', secret),
       callCronRoute(baseUrl, '/api/cron/notify-renewal', secret),
       callCronRoute(baseUrl, '/api/cron/package-renewal', secret),
-      // Reclaims storage quota held by abandoned Stream uploads (Cloudflare doesn't reliably
-      // reclaim them itself — a pile-up triggered the "capacity running low" warning).
-      callCronRoute(baseUrl, '/api/cron/cleanup-stream', secret),
       // Enforces the retention periods the privacy policy publishes: abuse logs and error reports
       // aged out at 30 days, and face collections deleted 90 days after an album's last upload.
       // Without this the policy's retention numbers are aspirations.

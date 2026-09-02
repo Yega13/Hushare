@@ -190,9 +190,17 @@ const UNTESTED_LEGACY = new Set([
 ])
 
 describe('a new decision module arrives with its tests', () => {
+  // MOCKING A MODULE IS NOT TESTING IT. vi.mock('@/lib/x') replaces x with a stub so that something
+  // ELSE can be tested; it asserts nothing whatsoever about x. Counting those references marked
+  // lib/report-server-error as "tested now, take it off the register" the moment an unrelated test
+  // stubbed it — which would have swapped a truthful debt entry for a false claim of coverage, in
+  // the one file whose whole job is to keep that register honest.
   const testSource = readdirSync(join(process.cwd(), 'tests'))
     .filter((f) => /\.tsx?$/.test(f))
     .map((f) => readFileSync(join(process.cwd(), 'tests', f), 'utf8'))
+    .join('\n')
+    .split('\n')
+    .filter((line) => !/vi\.mock\s*\(/.test(line))
     .join('\n')
 
   const libs = readdirSync(join(process.cwd(), 'src', 'lib'))
@@ -245,6 +253,39 @@ describe('cron routes are reachable by the scheduler', () => {
       const src = readFileSync(join(dir, name, 'route.ts'), 'utf8')
       expect(src, `${name} must export POST — the scheduler only ever POSTs`).toMatch(/export async function POST\s*\(/)
       expect(src, `${name} must check the secret worker.ts actually sends`).toContain('ALBUM_RETIREMENT_SECRET')
+      // NAMING the secret is not CHECKING it. This assertion used to be the `toContain` above and
+      // nothing else, which the line `const secret = process.env.ALBUM_RETIREMENT_SECRET ?? ''`
+      // satisfies all by itself — so replacing a route's entire auth guard with `if (false)` passed
+      // all 901 tests, on every cron route at once. Found by mutation, not by reading.
+      //
+      // Still a source-text test and honest about it: it cannot prove the comparison runs before
+      // the work. What it does prove is that the comparison EXISTS, which is what the mutation
+      // removed. The three routes here word their guard differently but all reach timingSafeEqual.
+      expect(src, `${name} must COMPARE the secret, not merely mention it`).toMatch(/timingSafeEqual\s*\(/)
     })
   }
+
+  // A CRON STRING THAT DRIFTS FROM wrangler.toml SILENTLY STOPS THE WORK.
+  //
+  // worker.ts branches on `event.cron === '<literal>'` to decide which jobs a firing runs. If that
+  // literal is not in wrangler.toml's crons list, the branch never matches, nothing throws, nothing
+  // is logged, and the jobs simply never run again — which for cleanup-stream means the Cloudflare
+  // Stream quota fills until video fails for every album. One fact in two files (rule 13).
+  it('every cron literal worker.ts branches on is actually scheduled', () => {
+    const worker = readFileSync(join(process.cwd(), 'worker.ts'), 'utf8')
+    const wrangler = readFileSync(join(process.cwd(), 'wrangler.toml'), 'utf8')
+
+    const scheduled = (/^crons\s*=\s*\[(.*)\]/m.exec(wrangler)?.[1] ?? '')
+      .split(',').map((s) => s.trim().replace(/^["']|["']$/g, '')).filter(Boolean)
+    expect(scheduled.length, 'could not read the crons list out of wrangler.toml').toBeGreaterThan(0)
+
+    // The literals worker.ts compares event.cron against.
+    const branched = [...worker.matchAll(/const\s+EVERY_[A-Z0-9_]+\s*=\s*'([^']+)'/g)].map((m) => m[1])
+    expect(branched.length, 'no cron literals found in worker.ts').toBeGreaterThan(0)
+
+    for (const literal of branched) {
+      expect(scheduled, `worker.ts branches on "${literal}" but wrangler.toml does not schedule it`)
+        .toContain(literal)
+    }
+  })
 })

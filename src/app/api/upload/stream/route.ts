@@ -1,26 +1,16 @@
 import { NextResponse } from 'next/server'
 import { reportServerError } from '@/lib/report-server-error'
 import { createAdminClient } from '@/lib/supabase/admin'
-import { isAllowedVideo } from '@/lib/cloudflare/r2'
 import { createStreamUpload } from '@/lib/cloudflare/stream'
 import { checkRateLimit, clientIpKey } from '@/lib/rate-limit'
-import { uploadCapsForTier, tooLargeMessage, STUDIO_VIDEO_BYTES } from '@/lib/media'
-import { getUserTierById } from '@/lib/subscriptions'
-import { resolveMaxDurationSeconds } from '@/lib/stream-duration'
-import {
-  videoCaps, videoBudgetExceeded, videoAlbumFullMessage,
-  albumEffectiveTier,
-} from '@/lib/album-entitlements'
 import { forbidCrossSiteRequest } from '@/lib/request-security'
-import { gateAllowsContribution, signedInUserForGate, ALBUM_GATE_COLS } from '@/lib/server/album-access'
-import { cookies } from 'next/headers'
+import { authorizeVideoUpload } from '@/lib/server/video-upload-authorization'
 
 export const runtime = 'nodejs'
 
 const NO_STORE = { 'Cache-Control': 'no-store' }
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
-const MAX_VIDEO_HARD_CAP = STUDIO_VIDEO_BYTES // absolute ceiling = studio tier cap
 
 type Body = {
   albumId?: unknown
@@ -72,128 +62,16 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: 'Missing or invalid fields' }, { status: 400, headers: NO_STORE })
   }
 
-  const normalizedType = contentType.toLowerCase()
-  if (!isAllowedVideo(normalizedType)) {
-    return NextResponse.json({ error: 'File type not allowed' }, { status: 415, headers: NO_STORE })
-  }
-
-  if (fileSize > MAX_VIDEO_HARD_CAP) {
-    // The absolute ceiling, above every tier. It said only 'File too large' because it predates
-    // the shared helper -- the one refusal on the whole path that still left someone with nothing
-    // to do about it. Nobody has reached it yet; that is not a reason to leave it rude.
-    return NextResponse.json(
-      { error: tooLargeMessage('video', MAX_VIDEO_HARD_CAP) },
-      { status: 413, headers: NO_STORE },
-    )
-  }
+  // EVERY AUTHORIZATION DECISION LIVES IN ONE TESTED MODULE NOW.
+  //
+  // It was inline here, and five mutations to it survived all 901 tests — including replacing the
+  // whole budget check with `if (false)`, and hardcoding the Cloudflare reservation to 60 seconds.
+  // The pure functions scored 12/12 against the same mutations; the enforcement around them was
+  // covered by nothing (rule 15). See lib/server/video-upload-authorization.ts.
+  const auth = await authorizeVideoUpload({ albumId, contentType, fileSize, durationSeconds })
+  if (!auth.ok) return auth.response
 
   const admin = createAdminClient()
-  const { data: album, error: albumError } = await admin
-    .from('albums')
-    .select(`id, user_id, guest_uploads_enabled, package_tier, package_expires_at, ${ALBUM_GATE_COLS}`)
-    .eq('id', albumId)
-    .is('retired_at', null)
-    .maybeSingle<{
-      id: string; user_id: string | null; guest_uploads_enabled: boolean
-      package_tier: 'pro' | 'studio' | null; package_expires_at: string | null
-      owner_token: string; password_hash: string | null; reveal_at: string | null
-    }>()
-
-  if (albumError || !album) {
-    return NextResponse.json({ error: 'Album not found' }, { status: 404, headers: NO_STORE })
-  }
-  if (!album.guest_uploads_enabled) {
-    return NextResponse.json({ error: 'Uploads disabled for this album' }, { status: 403, headers: NO_STORE })
-  }
-
-  // A password or reveal gate applies to contributing, not just to viewing — same check the image
-  // path and the photo listing use, so all three can never disagree about who may add to an album.
-  const gate = await gateAllowsContribution(album, await cookies(), await signedInUserForGate(album))
-  if (!gate.ok) {
-    return NextResponse.json({ error: gate.error }, { status: 403, headers: NO_STORE })
-  }
-
-  // Rate-limit BEFORE subscription lookup — reject hammered albums without paying the tier cost
-  const albumRl = await checkRateLimit(`stream_album:${albumId}`, 3600, 4000, { failOpen: false })
-  if (!albumRl.ok) {
-    return NextResponse.json(
-      { error: 'Album video upload rate limit reached' },
-      { status: 429, headers: { 'Retry-After': String(albumRl.retryAfterSeconds), ...NO_STORE } },
-    )
-  }
-
-  let tier: Awaited<ReturnType<typeof getUserTierById>>
-  try {
-    tier = await getUserTierById(album.user_id)
-  } catch (e) {
-    console.error('[stream] getUserTierById failed:', e instanceof Error ? e.message : String(e))
-    reportServerError('stream', 'Service temporarily unavailable (503)')
-    return NextResponse.json({ error: 'Service temporarily unavailable' }, { status: 503, headers: NO_STORE })
-  }
-
-  // The ALBUM's tier, not just its owner's — a package raises both the file-size caps and the
-  // video budget below, or a Max Package album would refuse the 4 GB uploads it was sold with.
-  const effective = albumEffectiveTier(album.user_id ? tier : null, {
-    tier: album.package_tier, expiresAt: album.package_expires_at,
-  })
-  const caps = uploadCapsForTier(effective)
-  if (fileSize > caps.video) {
-    return NextResponse.json(
-      { error: tooLargeMessage('video', caps.video) },
-      { status: 413, headers: NO_STORE },
-    )
-  }
-
-  // ── HOW LONG, AND HOW MANY ──────────────────────────────────────────────────
-  //
-  // Neither was limited before this. A file SIZE cap does not bound video cost, because Cloudflare
-  // Stream bills per MINUTE stored every month (and again per minute watched) regardless of how
-  // many bytes those minutes take. A well-compressed 200 MB file can be half an hour.
-  const vcaps = videoCaps(effective)
-
-  // No per-clip length check. The album's minute pool below is the only video limit: a clip of any
-  // length is fine while the album has room for it. A length cap used to sit here and refuse clips
-  // the album had plenty of budget for.
-
-  // HOW MUCH VIDEO TIME THIS ALBUM HAS ALREADY SPENT.
-  //
-  // Summed, not counted: the budget is minutes, so minutes are what has to be measured. The rows
-  // are small (durations only) and video is 1.4% of everything uploaded, so this reads a handful
-  // of numbers even on the busiest album.
-  //
-  // The read happens once and the insert happens later, so simultaneous uploads can overshoot by
-  // roughly what is in flight — the same bounded overshoot the item cap accepts, and the reason
-  // the budget is not the last word on cost. Enforcing it exactly needs a database constraint,
-  // which costs an outage risk on the upload path; the overshoot costs pennies.
-  const { data: durations, error: videoSumErr } = await admin
-    .from('photos')
-    .select('duration_seconds')
-    .eq('album_id', albumId)
-    .eq('media_type', 'video')
-    .limit(1000)
-    .returns<{ duration_seconds: number | null }[]>()
-
-  if (videoSumErr) {
-    // Fails open, in the same direction as every other counted limit here: a total we could not
-    // read does not block the upload. Letting a few extra minutes through during a database blip
-    // is far cheaper than refusing every guest at a live event — but a budget that has silently
-    // stopped being enforced belongs in the panel, not only in a log nobody reads.
-    console.error('[stream] video budget NOT enforced — sum failed for album', albumId, ':', videoSumErr.message)
-    reportServerError('stream', 'Video budget NOT enforced — the duration query failed', {
-      albumId,
-      context: { reason: videoSumErr.message.slice(0, 200) },
-    })
-  } else {
-    const usedSeconds = (durations ?? []).reduce((total, row) => total + (row.duration_seconds ?? 0), 0)
-    if (videoBudgetExceeded(usedSeconds, durationSeconds, vcaps)) {
-      // 403, NOT 429. lib/upload-policy treats 429 as retryable and runs the whole route four more
-      // times behind a backoff — for a refusal that is permanent until somebody deletes something.
-      return NextResponse.json(
-        { code: 'album_video_full', error: videoAlbumFullMessage(vcaps, usedSeconds) },
-        { status: 403, headers: NO_STORE },
-      )
-    }
-  }
 
   let uploadUrl: string
   let streamUid: string
@@ -202,8 +80,9 @@ export async function POST(req: Request) {
   try {
     // Sanitize fileName to printable ASCII before passing to Cloudflare Stream's metadata API.
     const safeName = String(fileName).replace(/[^\w.\- ]/g, '_').slice(0, 255)
-    const maxDurationSeconds = resolveMaxDurationSeconds(durationSeconds)
-    ;({ uploadUrl, streamUid, iframeUrl, thumbnailUrl } = await createStreamUpload(fileSize, safeName, maxDurationSeconds))
+    // auth.maxDurationSeconds, never recomputed here: hardcoding this value was a mutation that
+    // survived every test, and it is the one that kills uploads at 100% during processing.
+    ;({ uploadUrl, streamUid, iframeUrl, thumbnailUrl } = await createStreamUpload(fileSize, safeName, auth.maxDurationSeconds))
   } catch (e) {
     console.error('[stream] createStreamUpload failed:', e instanceof Error ? e.message : String(e))
     reportServerError('stream', 'Failed to initiate video upload (502)')
