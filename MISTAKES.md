@@ -82,3 +82,42 @@ while it runs. Two writers in one working tree is a corruption waiting to happen
 should not have needed to.
 
 **Rule:** 14 — a new module in `src/lib` arrives WITH its test, in the same edit.
+
+### 8. I said an agent was running, twice, without checking — it had been killed
+
+Launched a breaking agent, the user interrupted that turn, and the interrupt killed it. I then
+reported "the breaking agent is still running" in two separate messages and planned around it. The
+user asked "you sure they're running?" — `ListAgents` returned an empty subagent list.
+
+**Cost:** a third false statement about current state in one session, and it was the user who
+caught it, not me.
+**Rule:** 20, and it is the SAME failure as entry 1 in this file — the discount. Both times I
+described a live state from memory of having started something, rather than from a check. Starting
+a thing is not evidence that it is still running.
+**Habit to build:** `ListAgents` before every sentence that claims an agent is working. An
+interrupt kills in-flight agents; a turn boundary is exactly where that happens.
+
+**Also fixed here:** agents now run with `isolation: "worktree"` so they get their own copy of the
+repo (entry 6). That requires the work to be COMMITTED first — a worktree is built from a commit,
+so uncommitted changes are invisible to it. Committing locally is safe: the deploy workflow runs on
+push, not on commit.
+
+### 9. `git worktree remove --force` wiped the main repo's node_modules
+
+Cleaned up three finished agent worktrees with `git worktree remove --force`. On Windows the
+worktrees' `node_modules` are junctions to the main checkout's, and the removal followed them:
+`node_modules` went to **zero entries**, and vitest could not even load its own config.
+
+No source was lost — HEAD was still `bd89e7b` and only MISTAKES.md was dirty — because
+`node_modules` is gitignored and regenerable. `npm ci` restored it and the suite went straight back
+to 901/901. But for a few minutes the toolchain was gone and I could not run a single test.
+
+**Rule:** the AGENTS.md advice that a worktree is "auto-cleaned if unchanged" does not mean cleaning
+one by hand is free. Two habits:
+1. Let finished worktrees be cleaned automatically, or remove them WITHOUT `--force` and stop if git
+   objects.
+2. Only isolate agents that WRITE. A read-only planning or review agent that runs no mutations can
+   share the tree safely, and then there is nothing to tear down.
+
+**What made it recoverable:** everything that mattered was committed. The cost of the whole incident
+was one `npm ci`, precisely because the work was in git rather than only in the working tree.
