@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { stripJsComments } from './helpers/source-text'
 import {
   MAX_IMG_DIM, SHRINK_LADDER, needsReEncode, outputMimeFor, nextShrinkDim,
   maxImageDimFor, shrinkLadderFor, OWNER_IMG_DIM, isMissingContentLengthFailure, tusFailureAction,
@@ -514,18 +515,55 @@ describe('a guest must not be shown a security-policy dump', () => {
     expect(isEvalBlockedByCsp('EvalError: blocked')).toBe(true)
   })
 
-  it('is called from exactly one place, and only inside the HEIC converter failure path', () => {
-    // THE HALF THAT MOVED TO THE CALL SITE, PINNED. Dropping the word from the classifier is only
-    // safe while its callers are all already inside a HEIC catch -- calling it on a general error
+  it('is called from exactly one place, with the signature, inside the HEIC converter catch', () => {
+    // THE HALF THAT MOVED TO THE CALL SITE, PINNED. Dropping the HEIC word from the classifier is
+    // only safe while every caller is already inside a HEIC catch — calling it from a general error
     // handler would start telling guests their browser cannot read iPhone photos whenever any CSP
-    // violation occurred anywhere. Read off the source, because there is nothing else that can
-    // notice a second caller appearing.
-    const src = readFileSync(join(process.cwd(), 'src', 'components', 'UploadZone.tsx'), 'utf8')
-    const callSites = src.split('isEvalBlockedByCsp(').length - 1
-    expect(callSites, 'one call, in convertHeicMainThread catch').toBe(1)
-    // And it must be given the NAME, not just the message -- the whole reason the name branch was
-    // dead for three commits.
+    // violation happened anywhere.
+    //
+    // THE FIRST VERSION OF THIS TEST DID NOT ASSERT WHAT ITS NAME SAID. It counted occurrences
+    // anywhere in a 2,800-line file, so moving the call to a global handler kept the count at 1 and
+    // passed. And its two assertions were independent, so this — which re-kills the evalerror
+    // branch, the exact bug the commit was written to fix — also passed:
+    //
+    //     isEvalBlockedByCsp(signature.slice(signature.indexOf(': ') + 2))
+    //
+    // Capturing the ARGUMENT binds them: the call must be made with `signature`, and `signature`
+    // must be built from the error's name.
+    const src = stripJsComments(
+      readFileSync(join(process.cwd(), 'src', 'components', 'UploadZone.tsx'), 'utf8'),
+    )
+
+    const args = [...src.matchAll(/isEvalBlockedByCsp\(([^)]*)\)/g)].map((m) => m[1].trim())
+    expect(args, 'exactly one call, and it is handed the signature unmodified').toEqual(['signature'])
+
+    // The signature carries the NAME, not just the message. EvalError is the browser-independent
+    // fact; the prose after it is Chrome's and Firefox writes a different one. Passing only
+    // `.message` is what left the name branch dead.
     expect(src).toContain('${mainErr.name}: ${mainErr.message}')
+
+    // AND IT IS IN THE HEIC BRANCH. Positional, because a count cannot tell you where something is.
+    //
+    // The anchors are checked for ambiguity first, which is not ceremony: the closing anchor occurs
+    // TWICE in this file — once before the isHeic branch and once after it — and indexOf found the
+    // earlier one, so the first version of this assertion compared the call against a point above
+    // itself and failed for the wrong reason. An anchor that can silently match the wrong copy is
+    // the same defect class as the rest of this round.
+    const MIME_ANCHOR = "const mimeType = (file.type || 'image/jpeg')"
+    const anchorCount = src.split(MIME_ANCHOR).length - 1
+    expect(anchorCount, 'the isHeic branch is bracketed by exactly two copies of this line — if that '
+      + 'changed, re-derive the anchors rather than loosening the assertion').toBe(2)
+
+    const callAt = src.indexOf('isEvalBlockedByCsp(')
+    const heicBranchAt = src.indexOf('if (isHeic) {')
+    const heicConverterAt = src.indexOf('convertHeicMainThread(file)')
+    const afterHeicBranchAt = src.lastIndexOf(MIME_ANCHOR)
+    expect(heicBranchAt, 'anchor moved — update this test').toBeGreaterThan(-1)
+    expect(heicConverterAt, 'anchor moved — update this test').toBeGreaterThan(-1)
+
+    expect(callAt).toBeGreaterThan(heicBranchAt)
+    expect(callAt, 'it belongs in the main-thread converter catch').toBeGreaterThan(heicConverterAt)
+    expect(callAt, 'the call must sit inside the isHeic branch').toBeLessThan(afterHeicBranchAt)
   })
 
   it('survives whatever it is handed', () => {

@@ -315,7 +315,7 @@ describe('the hourly counter can never be sent backwards', () => {
       { sentThisHour: -5 },
       { sentThisHour: 0.5 },
       { sentThisHour: Number.NaN },
-      { sentThisHour: 1, hourStartedAt: new Date().toISOString() },
+      { sentThisHour: 1, hourStart: new Date().toISOString() },
     ]
     for (const prev of previous) {
       const v = alertVerdict({

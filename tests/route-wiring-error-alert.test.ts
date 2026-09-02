@@ -209,6 +209,28 @@ describe('the enrichment race is cleaned up after itself', () => {
     expect(cfg.sent).toHaveLength(1)
   })
 
+  it('gives up on a SLOW owner lookup and sends anyway', async () => {
+    // THE TIMER'S JOB, which nothing tested. Only its cleanup was covered, so replacing the whole
+    // Promise.race with a bare `await attachAlbumOwners(...).catch(() => unresolved)` passed all
+    // thirteen tests here — and that is the failure the race exists to prevent: getUserById takes
+    // no AbortSignal, so a hung lookup means the tick claims the cooldown, waits forever, sends
+    // nothing, and the next 59 ticks are suppressed. An hour of silence during an incident.
+    //
+    // cfg.enrichDelayMs was declared, reset and read by the mock, and NEVER SET by any test.
+    vi.useFakeTimers()
+    cfg.enrichDelayMs = 30_000
+    const p = POST(post())
+    // Past the 4s bound but nowhere near the lookup's 30s.
+    await vi.advanceTimersByTimeAsync(5_000)
+    const res = await p
+
+    expect(await res.json(), 'the alarm must still fire').toMatchObject({ alerted: true })
+    expect(cfg.sent, 'losing the album block is the small loss; losing the alarm is the big one').toHaveLength(1)
+    const { payload } = cfg.sent[0] as { payload: { lookupFailed: boolean; albums: unknown[] } }
+    expect(payload.lookupFailed, 'the email must say the block is missing, not imply no albums').toBe(true)
+    expect(cfg.logs.some((l) => l.includes('timed out'))).toBe(true)
+  })
+
   it('still sends when the owner lookup fails outright', async () => {
     // Losing the album block is a small loss; losing the alarm is the one that matters (rule 19).
     cfg.enrichThrows = true
@@ -250,7 +272,7 @@ describe('a send that never left does not spend the hour', () => {
       sentAt: new Date(Date.now() - 90 * 60_000).toISOString(),
       signature: 'earlier incident',
       sentThisHour: 2,
-      hourStartedAt: new Date().toISOString(),
+      hourStart: new Date().toISOString(),
     })
     await POST(post())
     const claimed = JSON.parse(cfg.upserts[0].value) as { sentThisHour: number }

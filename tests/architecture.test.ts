@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { readFileSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
+import { stripJsComments, stripMockPaths } from './helpers/source-text'
 
 /**
  * Every matching file at ANY depth, absolute paths, deterministic order.
@@ -277,34 +278,11 @@ describe('a new decision module arrives with its tests', () => {
   // stubbed it — which would have swapped a truthful debt entry for a false claim of coverage, in
   // the one file whose whole job is to keep that register honest.
   //
-  // STRIPPED STRUCTURALLY, NOT BY LINE. Dropping every line matching `vi.mock(` misses the two
-  // shapes that are certain to appear eventually: a call whose path sits on the NEXT line
-  //
-  //     vi.mock(
-  //       '@/lib/report-server-error',
-  //       () => ({ reportServerError: () => {} }),
-  //     )
-  //
-  // and `vi.doMock`, which prettier and every conditional-mock refactor produce. Either one puts the
-  // module path back into the haystack and quietly re-marks a stubbed module as covered. Removing
-  // the first string ARGUMENT instead works whatever the formatting, because the thing being
-  // searched for is exactly that string.
-  const stripMockPaths = (src: string) =>
-    src.replace(/\bvi\s*\.\s*(?:do)?[Mm]ock(?:Require)?\s*\(\s*(['"`])(?:[^'"`\\]|\\.)*\1/g, "vi.mock('<stubbed>'")
-
-  // COMMENTS ARE NOT COVERAGE. Naming a module inside a comment marked it tested — and the first
-  // victim was this file: the paragraph above, explaining that mocking report-server-error must not
-  // count, mentions the path, and that mention alone took it off the register. A test file that
-  // documents what it does not test would disarm this rule by describing it.
-  //
-  // It can only ever REMOVE text, so the direction it errs in is a module wrongly reported as
-  // untested — which fails loudly and gets looked at (rule 19). URLs inside string literals get
-  // clipped as collateral; nothing here searches for one.
-  const stripComments = (src: string) =>
-    src.replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/(^|[^:])\/\/[^\n]*/g, '$1')
-
+  // Both strippers live in tests/helpers/source-text.ts now — the SQL guard needed the same idea and
+  // a second copy of "how do I stop a comment answering my grep" is exactly what rule 13 forbids.
+  // Their own tests moved there with them.
   const testSource = walkTs(join(process.cwd(), 'tests'), /\.tsx?$/)
-    .map((f) => stripMockPaths(stripComments(readFileSync(f, 'utf8'))))
+    .map((f) => stripMockPaths(stripJsComments(readFileSync(f, 'utf8'))))
     .join('\n')
 
   // ONE LEVEL DOWN AS WELL. `readdirSync(...).filter(f => f.endsWith('.ts'))` only ever saw
@@ -338,21 +316,10 @@ describe('a new decision module arrives with its tests', () => {
       expect(deep.length, 'src/app/api nests several levels deep').toBeGreaterThan(20)
     })
 
-    it('does not count a mocked path as a tested one, however it is written', () => {
-      expect(stripMockPaths("vi.mock('@/lib/x', () => ({}))")).not.toContain('@/lib/x')
-      // The two shapes the old line-based strip let through.
-      expect(stripMockPaths("vi.doMock('@/lib/x', () => ({}))")).not.toContain('@/lib/x')
-      expect(stripMockPaths("vi.mock(\n  '@/lib/x',\n  () => ({}),\n)")).not.toContain('@/lib/x')
-      expect(stripMockPaths('vi.mock("@/lib/x")')).not.toContain('@/lib/x')
-      // A real import must survive, or every module reads as untested and the rule inverts.
-      expect(stripMockPaths("import { x } from '@/lib/x'")).toContain('@/lib/x')
-    })
-
-    it('does not count a path named in a comment', () => {
-      expect(stripComments("// see @/lib/x for why")).not.toContain('@/lib/x')
-      expect(stripComments("/* @/lib/x is stubbed */")).not.toContain('@/lib/x')
-      expect(stripComments("import { x } from '@/lib/x' // fine")).toContain('@/lib/x')
-    })
+    // The strippers' own cases moved to tests/helpers/source-text.test.ts along with the strippers
+    // themselves — the SQL guard needed the same idea, and a second copy of "stop a comment
+    // answering my grep" is what rule 13 forbids. What stays here is the half specific to this
+    // file: how far the walk reaches.
   })
 
   it('has no untested module that is not already on the debt register', () => {

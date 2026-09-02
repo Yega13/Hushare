@@ -23,11 +23,15 @@ const realImageDecoder = (globalThis as Record<string, unknown>).ImageDecoder
 let log: string[] = []
 let cfg: {
   bitmapFrom: (source: unknown, opts?: { imageOrientation?: string }) => Fake | 'throw'
-  decoderDefined: boolean
   typeSupported: boolean
   isTypeSupportedThrows: boolean
   decodeThrows: boolean
   frames: Fake[]
+  /** What each ImageDecoder was actually BUILT from. The fake ignored its init entirely, so
+   *  building from an empty buffer or a hardcoded type survived every test. */
+  built: Array<{ byteLength: number | undefined; type: unknown }>
+  /** What decode() was asked for. `frameIndex: 1` survived every test for the same reason. */
+  decodeOptions: unknown[]
 }
 
 function blob(type: string): Blob {
@@ -38,11 +42,12 @@ beforeEach(() => {
   log = []
   cfg = {
     bitmapFrom: (source) => ({ closed: false, label: `bitmap-of-${(source as Fake)?.label ?? 'blob'}` }),
-    decoderDefined: true,
     typeSupported: true,
     isTypeSupportedThrows: false,
     decodeThrows: false,
     frames: [],
+    built: [],
+    decodeOptions: [],
   }
 
   globalThis.createImageBitmap = (async (source: unknown, opts?: { imageOrientation?: string }) => {
@@ -59,8 +64,14 @@ beforeEach(() => {
       return cfg.typeSupported
     }
     closed = false
-    constructor(_init: unknown) { log.push('new ImageDecoder') }
-    async decode(_o: unknown) {
+    constructor(init: { data?: ArrayBuffer; type?: unknown }) {
+      cfg.built.push({ byteLength: init?.data?.byteLength, type: init?.type })
+      // The log STRING stays exactly 'new ImageDecoder' — the end-to-end ordering assertion below
+      // compares the whole log with toEqual, and putting the arguments in here would break it.
+      log.push('new ImageDecoder')
+    }
+    async decode(o: unknown) {
+      cfg.decodeOptions.push(o)
       log.push('decode')
       if (cfg.decodeThrows) throw new Error('decode failed')
       const image: Fake = { closed: false, label: 'frame' }
@@ -69,9 +80,12 @@ beforeEach(() => {
     }
     close() { this.closed = true; log.push('decoder.close') }
   }
+  // Always defined here. The one test that needs it ABSENT redefines the global itself, which is
+  // the real mechanism — the old `cfg.decoderDefined` knob was set true in this same block eight
+  // lines above the ternary that read it, so no test could ever make it false and the branch was
+  // dead (MISTAKES entry 22).
   Object.defineProperty(globalThis, 'ImageDecoder', {
-    value: cfg.decoderDefined ? FakeImageDecoder : undefined,
-    configurable: true, writable: true,
+    value: FakeImageDecoder, configurable: true, writable: true,
   })
 })
 
@@ -142,6 +156,27 @@ describe('the platform is asked before the decoder is built', () => {
     // A blob with an empty type would ask isTypeSupported('') — which some engines throw on.
     expect(await decodeViaImageDecoder(blob(''))).toBeNull()
     expect(log).toEqual([])
+  })
+
+  it('builds the decoder from THIS file bytes and THIS file type', async () => {
+    // The fake used to name its init `_init` and never read it, so `data: new ArrayBuffer(0)` or a
+    // hardcoded type both survived the whole file. An empty buffer decodes nothing; a hardcoded type
+    // decodes the wrong thing or throws.
+    //
+    // heif, NOT heic, deliberately: 'image/heic' is the value a hardcoding mutation would most
+    // naturally use, and a fixture equal to the mutation cannot detect it — the same coincidence
+    // that let `toContain('23')` be answered by the slug abc123 (MISTAKES entry 21).
+    await decodeViaImageDecoder(blob('image/heif'))
+    expect(cfg.built).toHaveLength(1)
+    expect(cfg.built[0].type).toBe('image/heif')
+    expect(cfg.built[0].byteLength, 'the file own bytes, not an empty buffer').toBe(8)
+  })
+
+  it('decodes the FIRST frame', async () => {
+    // image/heic-sequence matches the caller's /heic|heif/i test, so a wrong frame index would
+    // upload the wrong picture out of a live photo.
+    await decodeViaImageDecoder(blob('image/heic'))
+    expect(cfg.decodeOptions).toEqual([{ frameIndex: 0 }])
   })
 
   it('answers null when isTypeSupported itself throws', async () => {
