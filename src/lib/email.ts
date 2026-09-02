@@ -315,13 +315,23 @@ export async function sendErrorSpikeEmail(
   to: string,
   info: {
     count: number; windowMinutes: number; deviceCount: number; top: [string, number][]
-    /** Which albums it is happening in, worst first, with a way to reach the owner. */
-    albums?: { slug: string; title: string; count: number; ownerEmail: string | null }[]
+    /**
+     * Which albums it is happening in, worst first, with a way to reach the owner.
+     *
+     * `owner` is a LABEL, not an address: a real email, '(no account)' for a guest-created album,
+     * or '(unknown user)' when the lookup did not resolve. Three states, produced by
+     * lib/server/error-attribution and rendered as-is — the field was `ownerEmail: string | null`
+     * and collapsed the last two into "cannot be contacted", which told the operator a paying
+     * customer was unreachable whenever a lookup merely blipped.
+     */
+    albums?: { slug: string; title: string; count: number; owner: string }[]
     moreAlbums?: number
+    /** True when NO album could be resolved at all — say so rather than implying none was involved. */
+    lookupFailed?: boolean
     test?: boolean
   },
 ) {
-  const { count, windowMinutes, deviceCount, top, albums = [], moreAlbums = 0, test } = info
+  const { count, windowMinutes, deviceCount, top, albums = [], moreAlbums = 0, lookupFailed = false, test } = info
   const subject = test
     ? 'Hushare: test alert (nothing is wrong)'
     : `Hushare: ${count} uploads or pages failed for guests in ${windowMinutes} min`
@@ -340,16 +350,23 @@ export async function sendErrorSpikeEmail(
   // working out by hand which album was on fire and whether anyone could be told. The owner line is
   // deliberately explicit when there is nobody to write to: two thirds of albums have no account,
   // and that is the thing worth knowing while it is still happening.
+  // An address gets a mailto; a label like '(no account)' or '(unknown user)' is printed as the
+  // plain fact it is. Deciding on '@' rather than on a separate flag keeps this template unable to
+  // turn a label into a broken mailto: link, whatever a future caller passes.
   const albumRows = albums.map((a) => {
     const url = `${SITE_URL}/${a.slug}`
-    const owner = a.ownerEmail
-      ? `<a href="mailto:${escapeHtml(a.ownerEmail)}" style="color:#630826;">${escapeHtml(a.ownerEmail)}</a>`
-      : '<span style="color:#B0A090;">no account — cannot be contacted</span>'
+    const owner = a.owner.includes('@')
+      ? `<a href="mailto:${escapeHtml(a.owner)}" style="color:#630826;">${escapeHtml(a.owner)}</a>`
+      : `<span style="color:#B0A090;">${escapeHtml(a.owner)}</span>`
     return `<li style="margin:0 0 8px;"><strong>${a.count}×</strong> `
       + `<a href="${escapeHtml(url)}" style="color:#630826;font-weight:600;">${escapeHtml(a.title.slice(0, 60))}</a>`
       + `<br><span style="font-size:13px;color:#8B6F4E;">${escapeHtml(url)} · ${owner}</span></li>`
   }).join('')
-  const albumBlock = albums.length === 0 ? '' : `
+  // "We could not look them up" and "none was involved" are different facts and must not render
+  // identically. An empty block used to mean both (rule 20).
+  const albumBlock = lookupFailed
+    ? `<p style="margin:0 0 20px;color:#8B6F4E;font-size:14px;">Which albums: could not be looked up — open the dashboard.</p>`
+    : albums.length === 0 ? '' : `
   <p style="margin:0 0 6px;color:#5C4A3C;font-weight:600;font-size:14px;">Which albums:</p>
   <ul style="margin:0 0 20px;padding-left:18px;color:#5C4A3C;font-size:14px;">${albumRows}</ul>
   ${moreAlbums > 0 ? `<p style="margin:-12px 0 20px;color:#8B6F4E;font-size:13px;">and ${moreAlbums} more album${moreAlbums === 1 ? '' : 's'}</p>` : ''}`
@@ -376,9 +393,14 @@ export async function sendErrorSpikeEmail(
     explain,
     '',
     ...top.map(([m, n]) => `${n}x ${m}`),
-    ...(albums.length ? ['', 'Which albums:'] : []),
-    ...albums.map(a => `${a.count}x ${a.title} — ${SITE_URL}/${a.slug} — ${a.ownerEmail ?? 'no account, cannot be contacted'}`),
-    ...(moreAlbums > 0 ? [`and ${moreAlbums} more album${moreAlbums === 1 ? '' : 's'}`] : []),
+    // The plain-text part is what a lock-screen preview shows, so it must agree with the HTML
+    // rather than diverging. It previously emitted "and N more albums" unconditionally, so when the
+    // HTML omitted the whole block the text still carried that line, pointing at nothing.
+    ...(lookupFailed ? ['', 'Which albums: could not be looked up — open the dashboard.'] : []),
+    ...(!lookupFailed && albums.length ? ['', 'Which albums:'] : []),
+    ...(lookupFailed ? [] : albums.map(a => `${a.count}x ${a.title} — ${SITE_URL}/${a.slug} — ${a.owner}`)),
+    ...(!lookupFailed && albums.length && moreAlbums > 0
+      ? [`and ${moreAlbums} more album${moreAlbums === 1 ? '' : 's'}`] : []),
     '',
     `${SITE_URL}/admin#errors`,
   ].join(`\n`)

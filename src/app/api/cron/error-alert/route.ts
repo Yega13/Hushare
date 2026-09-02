@@ -3,6 +3,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { timingSafeEqual } from '@/lib/timing-safe'
 import { sendErrorSpikeEmail } from '@/lib/email'
 import { tallyByAlbum, tallyByMessage, totalOccurrences } from '@/lib/error-alert-grouping'
+import { attachAlbumOwners } from '@/lib/server/error-attribution'
 
 export const runtime = 'nodejs'
 
@@ -58,6 +59,12 @@ export async function POST(req: Request) {
     .select('album_id, message, source, ua, context')
     .eq('level', 'error')
     .gte('created_at', since)
+    // ORDERED, because the 200 below is a sample and the email ranks "worst albums first" from it.
+    // Without an order Postgres may return any 200 of the matching rows, so in the incident this
+    // exists for — more than 200 coalesced rows in fifteen minutes — the ranking and the
+    // and-N-more count were both drawn from an arbitrary subset. Newest first, so a truncated
+    // sample is at least the most recent part of what is happening right now.
+    .order('created_at', { ascending: false })
     .limit(200)
     .returns<{ album_id: string | null; message: string; source: string; ua: string | null; context: { repeats?: number } | null }[]>()
   if (error) {
@@ -88,38 +95,54 @@ export async function POST(req: Request) {
   const top = tallyByMessage(rows ?? [], 5)
   const devices = new Set((rows ?? []).map(r => (r.ua ?? '').match(/\((.*?)\)/)?.[1] ?? 'unknown'))
 
-  // WHICH ALBUMS, AND WHOSE THEY ARE.
+  // WHICH ALBUMS, AND WHOSE THEY ARE — through attachAlbumOwners, which already answers exactly
+  // this question for the admin errors tab and the live-stats poll.
   //
-  // Resolved here rather than in the email so the template stays a template. Anonymous albums are
-  // reported as anonymous on purpose: two thirds of albums have no account, and "we cannot contact
-  // this owner" is exactly the fact worth seeing at the moment something is failing for them —
-  // silently omitting the line would read as "no problem here".
-  const { albums: albumTallies, moreAlbums } = tallyByAlbum(rows ?? [], 5)
-  const albums: { slug: string; title: string; count: number; ownerEmail: string | null }[] = []
-  if (albumTallies.length > 0) {
-    const { data: albumRows } = await admin
-      .from('albums')
-      .select('id, slug, custom_slug, title, user_id')
-      .in('id', albumTallies.map(a => a.albumId))
-      .returns<{ id: string; slug: string; custom_slug: string | null; title: string | null; user_id: string | null }[]>()
-    const byId = new Map((albumRows ?? []).map(a => [a.id, a]))
-    for (const t of albumTallies) {
-      const a = byId.get(t.albumId)
-      if (!a) continue                       // deleted between the failure and this tick
-      let ownerEmail: string | null = null
-      if (a.user_id) {
-        // One lookup per named album, at most five, once an hour behind a cooldown.
-        const { data: au } = await admin.auth.admin.getUserById(a.user_id)
-        ownerEmail = au?.user?.email ?? null
-      }
-      albums.push({
-        slug: a.custom_slug ?? a.slug,
-        title: a.title ?? 'Untitled album',
-        count: t.count,
-        ownerEmail,
-      })
-    }
+  // This was hand-rolled here: the same albums query, the same getUserById, forty lines from a
+  // tested module that does it better. Two things came free from deleting it. It keeps THREE states
+  // apart where the copy kept two — a lookup that merely failed now reads '(unknown user)' rather
+  // than '(no account)', so a transient GoTrue blip can no longer tell the operator that a paying
+  // customer is uncontactable. And the admin page and this email can no longer disagree about the
+  // same album in the same incident, which they would have (rule 13).
+  // WRAPPED, BECAUSE THE COOLDOWN IS ALREADY CLAIMED. Everything above this point is arithmetic;
+  // this is a database query plus up to five GoTrue round trips, none of them with a timeout, and
+  // they run AFTER the hour has been spent at the upsert above. If any of them hangs or the isolate
+  // dies, the incident is silenced for a full hour and no email is sent at all.
+  //
+  // So the enrichment is allowed to fail and the alert still goes out — with the count, the
+  // messages, and no album block. A number-only alert is the one this replaced and is far better
+  // than silence (rule 19: the uncertain branch must not be the one that loses the alarm).
+  const { albums: albumTallies, moreAlbums: unlistedByCap } = tallyByAlbum(rows ?? [], 5)
+  let enriched: Array<{ album_id: string | null; count: number; album?: { title: string; slug: string; email: string } | null }> = []
+  try {
+    enriched = albumTallies.length > 0
+      ? await attachAlbumOwners(admin, albumTallies.map(t => ({ album_id: t.albumId, count: t.count })))
+      : []
+  } catch (e) {
+    console.error('[cron/error-alert] album enrichment failed:', e instanceof Error ? e.message : String(e))
+    enriched = albumTallies.map(t => ({ album_id: t.albumId, count: t.count, album: undefined }))
   }
+
+  // `album: undefined` means the lookup itself failed; `null` means that album is gone. Only the
+  // second is a reason to drop a row. Reporting an album we could not name still tells the operator
+  // where to look, and silently dropping it would shrink the list for a reason that has nothing to
+  // do with the incident (rule 20).
+  const lookupFailed = enriched.length > 0 && enriched.every(r => r.album === undefined)
+  const albums = enriched
+    .filter(r => r.album !== null)
+    .map(r => ({
+      slug: r.album?.slug ?? '',
+      title: r.album?.title ?? '(could not read this album)',
+      count: r.count,
+      owner: r.album?.email ?? '(unknown user)',
+    }))
+
+  // RECOMPUTED AFTER RESOLUTION, not before. tallyByAlbum only knows how many albums the cap left
+  // out; albums deleted between the failure and this tick are dropped above, and counting only the
+  // first number told the reader "and 3 more" while 5 were unlisted. In the degenerate case — every
+  // album dropped — the HTML omitted the block entirely while the plain text still printed a bare
+  // "and 2 more albums" pointing at nothing, in the lock-screen preview.
+  const moreAlbums = unlistedByCap + (albumTallies.length - albums.length)
 
   try {
     await sendErrorSpikeEmail(to, {
@@ -129,6 +152,7 @@ export async function POST(req: Request) {
       top,
       albums,
       moreAlbums,
+      lookupFailed,
     })
   } catch (e) {
     console.error('[cron/error-alert] send failed:', e instanceof Error ? e.message : String(e))

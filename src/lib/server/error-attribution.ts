@@ -51,6 +51,17 @@ export async function attachAlbumOwners<T extends Rowish>(
   )]
   const fetched = new Map<string, string>()
   for (const id of needed) { const hit = EMAIL_CACHE.get(id); if (hit) fetched.set(id, hit) }
+  // auth-js RETURNS its failures rather than throwing them: a network drop or a 5xx comes back as
+  // `{ data: { user: null }, error }` and never reaches the catch. That is handled correctly here
+  // only by accident of shape — no email means nothing is set, and the label below falls through to
+  // '(unknown user)', which is the honest answer for a lookup that did not happen.
+  //
+  // What it does NOT do is separate "this user row is gone" from "GoTrue was unreachable". Both
+  // print '(unknown user)'. That conflation is deliberate and written down rather than fixed: both
+  // mean "we could not name the owner", both are safe, and a third label would add a state to every
+  // caller's UI to distinguish two things an operator would act on identically. The direction that
+  // would matter is the opposite one — claiming '(no account)' about a contactable customer — and
+  // that cannot happen from here, because '(no account)' is reachable only when user_id is null.
   await Promise.all(needed.filter((id) => !fetched.has(id)).map(async (id) => {
     try {
       const { data: u } = await admin.auth.admin.getUserById(id)

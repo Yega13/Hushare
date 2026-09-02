@@ -182,9 +182,15 @@ describe('the big files do not get bigger', () => {
 // The list below is what was already untested when this rule was written. It is a debt register,
 // not permission: names may be REMOVED as tests arrive, never added. A new file in src/lib with no
 // test fails this immediately.
+// 'email' came off on 2026-09-02, and the claim is deliberately partial: tests/error-spike-email
+// renders the error-spike template through the real sendEmail and reads back the exact JSON Resend
+// would receive, covering its escaping, its HTML/plain-text agreement and its three owner states.
+// The file's six other senders are still uncovered. It is off the register because the register is
+// about "nothing here is tested at all", and that is no longer true of this file — the one that
+// writes customer email addresses and customer-written titles into an operator's inbox.
 const UNTESTED_LEGACY = new Set([
   'access', 'album-backgrounds', 'analytics', 'auth',
-  'broadcast', 'cf-analytics', 'constants', 'country-names', 'email', 'engagement', 'exif',
+  'broadcast', 'cf-analytics', 'constants', 'country-names', 'engagement', 'exif',
   'heic-worker', 'my-albums', 'polls', 'provision-user',
   'rekognition', 'report-server-error', 'slideshow-motion', 'useIsNarrow', 'utils',
 ])

@@ -20,6 +20,28 @@ export type ErrorAlertRow = {
 }
 
 /**
+ * The most one row may claim to represent.
+ *
+ * context.repeats IS ATTACKER-WRITTEN. api/log/client-error accepts any small object as `context`
+ * and the canonical insert stores it verbatim, and its only protection is an Origin header, which
+ * a browser cannot forge and curl sets for free. So one unauthenticated request —
+ *
+ *     POST /api/log/client-error
+ *     Origin: https://hushare.space
+ *     {"source":"x","message":"y","level":"error","context":{"repeats":100000}}
+ *
+ * — used to clear the threshold of 8 on its own, fire the alert, and CLAIM THE 60-MINUTE COOLDOWN,
+ * so every real incident in the following hour returned "cooldown" and was never sent. Repeat
+ * hourly and the alarm is permanently occupied. Not a regression — the inline counting this
+ * replaced read the same field — but making it the one load-bearing input is the moment to bound it.
+ *
+ * 1,000 is far above any honest row (the coalescing window is five minutes) and far below a number
+ * that can drown the tally. A capped row still counts as a big row, so a genuine storm is not
+ * hidden by the cap; it just cannot be manufactured from one request.
+ */
+export const MAX_REPEATS_PER_ROW = 1000
+
+/**
  * How many real failures one row represents.
  *
  * api/log/client-error merges a repeat of the same (level, source, message, album) into the
@@ -29,7 +51,8 @@ export type ErrorAlertRow = {
  */
 export function occurrencesOf(row: ErrorAlertRow): number {
   const n = row.context?.repeats
-  return typeof n === 'number' && Number.isFinite(n) && n > 0 ? Math.floor(n) : 1
+  if (typeof n !== 'number' || !Number.isFinite(n) || n <= 0) return 1
+  return Math.min(Math.floor(n), MAX_REPEATS_PER_ROW)
 }
 
 /** Total failures across every row. */

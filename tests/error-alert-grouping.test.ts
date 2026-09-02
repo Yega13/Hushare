@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { occurrencesOf, totalOccurrences, tallyByAlbum, tallyByMessage } from '@/lib/error-alert-grouping'
+import { occurrencesOf, totalOccurrences, tallyByAlbum, tallyByMessage, MAX_REPEATS_PER_ROW } from '@/lib/error-alert-grouping'
 
 // WHAT THE 3AM EMAIL HAS TO SAY.
 //
@@ -106,5 +106,38 @@ describe('which messages the email names', () => {
   it('bounds the list', () => {
     const many = Array.from({ length: 8 }, (_, i) => ({ message: `m${i}`, context: { repeats: 8 - i } }))
     expect(tallyByMessage(many, 5)).toHaveLength(5)
+  })
+})
+
+describe('one request must not be able to silence the alarm', () => {
+  // context.repeats is ATTACKER-WRITTEN. api/log/client-error accepts any small object as context
+  // and stores it verbatim; its only protection is an Origin header, which curl sets for free. So
+  //
+  //     POST /api/log/client-error
+  //     Origin: https://hushare.space
+  //     {"source":"x","message":"y","level":"error","context":{"repeats":100000}}
+  //
+  // cleared the threshold of 8 on its own, fired the alert, and CLAIMED THE 60-MINUTE COOLDOWN —
+  // so every real incident in the next hour was never sent. Hourly repetition keeps the alarm
+  // permanently occupied.
+  it('caps what a single row may claim', () => {
+    expect(occurrencesOf({ context: { repeats: 100000 } })).toBe(MAX_REPEATS_PER_ROW)
+    expect(occurrencesOf({ context: { repeats: Number.MAX_SAFE_INTEGER } })).toBe(MAX_REPEATS_PER_ROW)
+  })
+
+  it('leaves every honest row untouched', () => {
+    // The coalescing window is five minutes, so a real row never approaches the cap. A bound that
+    // clipped ordinary rows would understate real incidents, which is the opposite failure.
+    expect(occurrencesOf({ context: { repeats: 1 } })).toBe(1)
+    expect(occurrencesOf({ context: { repeats: 40 } })).toBe(40)
+    expect(occurrencesOf({ context: { repeats: 999 } })).toBe(999)
+  })
+
+  it('a capped row still reads as a big row, so a real storm is not hidden', () => {
+    // The cap must not make a genuine flood look small — it only stops one request manufacturing
+    // one. Two capped rows still dwarf the threshold.
+    const flood = [{ context: { repeats: 5000 } }, { context: { repeats: 5000 } }]
+    expect(totalOccurrences(flood)).toBe(2 * MAX_REPEATS_PER_ROW)
+    expect(totalOccurrences(flood)).toBeGreaterThan(8)
   })
 })
