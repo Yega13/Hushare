@@ -116,11 +116,20 @@ export const DEFAULT_UPLOAD_CAPS: UploadCaps = uploadCapsForTier('free')
 // Max total media (photos + videos) in ONE album.
 // A guest album (no account) gets less than a registered free account — a nudge to sign up.
 export const ANON_ALBUM_MEDIA = 250   // album owned by a guest (no account)
-// 1000, not 250. The free cap sat 100 above the anonymous one, so creating an account
-// bought a hundred more photos -- no reason to sign up, and a second wall the same afternoon.
-// A real holiday or small event now finishes inside the free tier, and registering is a 4x jump
-// rather than a rounding error. Photos are cheap in R2 (no egress); video is the cost driver and
-// shares this cap deliberately, so a video-heavy album still stops early.
+// COMFORTABLY ABOVE ANON_ALBUM_MEDIA, and the ratio is the point. The free cap once sat 100 above
+// the anonymous one, so creating an account bought a hundred more photos — no reason to sign up,
+// and a second wall the same afternoon. A real holiday or small event now finishes inside the free
+// tier, and registering is a real step up rather than a rounding error.
+//
+// NO NUMBERS IN THIS PARAGRAPH. It used to open "1000, not 250" and call it "a 4x jump", above a
+// constant of 500 — the numbers were written when the cap was 1000 and were never revised when it
+// came down, so the explanation of the value contradicted the value, one line apart. The cap is
+// published on /pricing and pinned by tests/limits-and-classifiers.test.ts against a literal; prose
+// that restates it can only ever go stale (MISTAKES entry 3, where a free video cap typed into three
+// translations left two of them a quarter of the truth).
+//
+// Photos are cheap in R2 (no egress); video is the cost driver and shares this cap deliberately, so
+// a video-heavy album still stops early.
 export const FREE_ALBUM_MEDIA = 500   // registered free account
 
 // What free albums used to get, kept for the ones that already have it.

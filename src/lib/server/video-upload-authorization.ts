@@ -153,15 +153,18 @@ export async function authorizeVideoUpload(
 
   // SUMMED IN THE DATABASE, which is the permanent fix for a limit that truncated.
   //
-  // This read up to 1,000 duration rows and added them up here. A free album caps at 1,000 items so
-  // it could never overflow that, but Pro caps at 3,000 and Max at 10,000 — and past a thousand
-  // video rows the sum came from an arbitrary subset (there was no ORDER BY either) and read LOW,
+  // This read up to 1,000 duration rows and added them up here. A free album's item cap is below
+  // that so it could never overflow, but the Pro and Max caps are well above it — and past a
+  // thousand video rows the sum came from an arbitrary subset (there was no ORDER BY either) and
+  // read LOW,
   // so the budget quietly stopped binding on precisely the paid albums. It also shipped a thousand
   // rows over the network on the hot path of every video upload to produce one number.
   //
-  // album_video_seconds does the clamp INSIDE the sum, matching sumVideoSeconds row for row — see
-  // the migration, which explains why that repetition is the one rule 13 permits and which test
-  // holds the two numbers together.
+  // album_video_seconds clamps EVERY ROW inside the sum — greatest(0, least(d, 21600)) — which is
+  // what stops a single stored -2000000000 disabling an album's budget permanently.
+  // tests/album-video-seconds.test.ts reads the migration and holds that 21600 to
+  // MAX_STORED_DURATION_SECONDS, which is the one repetition rule 13 permits: SQL cannot import a
+  // TypeScript constant.
   //
   // The read happens once and the insert happens later, so simultaneous uploads can overshoot by
   // roughly what is in flight — the same bounded overshoot the item cap accepts.
@@ -190,8 +193,9 @@ export async function authorizeVideoUpload(
     })
   } else {
     // Used directly, because `unusable` above has ALREADY rejected null, non-finite and negative —
-    // every case the old sumVideoSeconds([{ duration_seconds: … }]) wrapper would have caught. That
-    // wrapper was here for one commit and a mutation deleting it changed no test, which is the
+    // every case the old sumVideoSeconds([{ duration_seconds: … }]) wrapper would have caught (that
+    // function has since been deleted; it had no callers left). It was here for one commit and a
+    // mutation deleting it changed no test, which is the
     // definition of decoration: a second guard that cannot fire is not defence in depth, it is a
     // line that makes the real guard look optional (rule 15). The validation is above, and it is
     // tested for each bad shape.

@@ -6,8 +6,9 @@
 --
 -- Three problems, all silent.
 --
--- 1. THE LIMIT TRUNCATES ON EXACTLY THE ALBUMS THAT MATTER. Free albums cap at 1,000 items so they
---    can never exceed it, but Pro caps at 3,000 and Max at 10,000. Past a thousand video rows the
+-- 1. THE LIMIT TRUNCATES ON EXACTLY THE ALBUMS THAT MATTER. A free album's item cap (see
+--    FREE_ALBUM_MEDIA in src/lib/media.ts) sits below a thousand so it can never exceed it, but the
+--    Pro and Max caps are well above it. Past a thousand video rows the
 --    sum is drawn from a subset and reads LOW — so the budget stops binding on the largest albums,
 --    which are the paid ones, and nothing anywhere reports it. (Measured 2026-09-02: the biggest
 --    album alive has 26 video rows, so this has never yet bitten anyone. It is closed because the

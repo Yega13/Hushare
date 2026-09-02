@@ -1,6 +1,13 @@
 /// <reference lib="webworker" />
-// Runs heic2any in a Web Worker so its WASM decode doesn't block the main thread (a single slow
-// HEIC file used to freeze the page for minutes).
+// Runs heic2any in a Web Worker so its decode doesn't block the main thread (a single slow HEIC
+// file used to freeze the page for minutes).
+//
+// NOT WASM, despite what this line said for months. heic2any's bundle contains zero occurrences of
+// `WebAssembly`, `wasm` or `use asm`, and three of `new Function` — it is plain JavaScript that
+// builds functions from strings. That is precisely why our Content-Security-Policy refuses it, in
+// here and on the main thread alike, since a worker inherits the document's policy. Calling it a
+// WASM decode sends the next reader hunting a `wasm-unsafe-eval` problem that does not exist, and
+// past the one that does.
 //
 // heic2any normally needs DOM (document.createElement('canvas')) and the legacy callback-based
 // canvas.toBlob API. Neither exists in Workers, so we install a minimal shim BEFORE importing

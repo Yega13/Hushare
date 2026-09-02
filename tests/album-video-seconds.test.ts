@@ -2,15 +2,20 @@ import { describe, it, expect } from 'vitest'
 import { readFileSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { stripSqlComments } from './helpers/source-text'
-import { MAX_STORED_DURATION_SECONDS, sumVideoSeconds } from '@/lib/album-entitlements'
+import { MAX_STORED_DURATION_SECONDS } from '@/lib/album-entitlements'
 
-// THE ONE PLACE THE VIDEO CLAMP IS WRITTEN TWICE, HELD TOGETHER.
+// THE ONE NUMBER THE VIDEO CLAMP NEEDS IN TWO LANGUAGES, HELD TOGETHER.
 //
 // The album's used video seconds are summed by a Postgres function, because reading up to 1,000
 // duration rows into the Worker truncated on Pro and Max albums and read LOW - the budget quietly
-// not binding on the paid ones. That move is right, and it creates the exact situation rule 13
-// exists to prevent: the clamp that makes a poisoned row harmless is now written in SQL *and* in
-// TypeScript, and SQL cannot import a TypeScript constant.
+// not binding on the paid ones. That move is right, and it leaves exactly one thing written twice:
+// the six-hour ceiling. It is MAX_STORED_DURATION_SECONDS in TypeScript and the literal 21600 in
+// SQL, and SQL cannot import a TypeScript constant.
+//
+// The clamp ITSELF is written once, in the SQL. sumVideoSeconds used to be the TypeScript half and
+// was deleted once the RPC replaced its last caller - a dead second implementation of the same sum,
+// still being described in three comments as the thing that bounds Stream cost, is how the next
+// person fixes a bug in the copy that does not run.
 //
 // Rule 13's escape hatch is what this file is: when a value genuinely cannot be shared, write a test
 // that asserts the copies agree AND make it read the real source rather than a copy of it.
@@ -112,24 +117,5 @@ describe('the SQL sum and the TypeScript one agree about the bounds', () => {
     // re-run into a failed deploy — and a failed migration now fails the whole deploy by design.
     expect(SQL).toContain('create or replace function')
     expect(SQL).toContain('create index if not exists')
-  })
-})
-
-describe('the TypeScript guard the answer still passes through', () => {
-  it('drops a total that is negative or not a number', () => {
-    // Whatever comes back from the database goes through this before it is believed.
-    expect(sumVideoSeconds([{ duration_seconds: -1 }])).toBe(0)
-    expect(sumVideoSeconds([{ duration_seconds: Number.NaN }])).toBe(0)
-    expect(sumVideoSeconds([{ duration_seconds: null }])).toBe(0)
-    expect(sumVideoSeconds([{ duration_seconds: Number.POSITIVE_INFINITY }])).toBe(0)
-  })
-
-  it('passes an ordinary total through untouched', () => {
-    // It must NOT apply the per-row ceiling to a total — an album may legitimately hold more
-    // seconds than any single clip is allowed to be, and clamping there would under-report usage
-    // and let more video through than the album paid for.
-    expect(sumVideoSeconds([{ duration_seconds: 595 }])).toBe(595)
-    expect(sumVideoSeconds([{ duration_seconds: MAX_STORED_DURATION_SECONDS * 2 }]))
-      .toBe(MAX_STORED_DURATION_SECONDS * 2)
   })
 })

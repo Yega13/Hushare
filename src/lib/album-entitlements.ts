@@ -274,31 +274,18 @@ export function videoBudgetExceeded(usedSeconds: number, newClipSeconds: unknown
   return used + add > caps.maxTotalSeconds
 }
 
-/**
- * How much video an album is holding, summed from its rows.
- *
- * EVERY ROW IS CLAMPED, NOT JUST THE TOTAL, and that distinction is the whole reason this function
- * exists. videoBudgetExceeded clamps the total (`used > 0 ? used : 0`), which sounds equivalent and
- * is not: one row of -2000000000 — accepted by photos/create, and storable because the column has
- * no CHECK — dragged the sum negative, the total-clamp read it as 0, and the album's video budget
- * was disabled permanently. Every upload after that was approved no matter how much it held.
- *
- * A negative duration is not a small error to be tolerated; it is not a duration. Same for NaN and
- * Infinity, which would poison the sum in their own ways. All of them count as zero, so a bad row
- * can cost the album a little unbilled video and can never buy an unlimited album.
- *
- * Exported and imported by the caller rather than re-typed there (rule 17): this is the arithmetic
- * that decides whether Cloudflare Stream cost is bounded at all.
- */
-export function sumVideoSeconds(rows: { duration_seconds: number | null }[]): number {
-  let total = 0
-  for (const row of rows) {
-    const d = row.duration_seconds
-    if (typeof d !== 'number' || !Number.isFinite(d) || d <= 0) continue
-    total += d
-  }
-  return total
-}
+// sumVideoSeconds LIVED HERE and was deleted on 2026-09-02, when the album's used-video total
+// moved into the Postgres function album_video_seconds (see the migration, and
+// tests/album-video-seconds.test.ts which holds its clamp to MAX_STORED_DURATION_SECONDS).
+//
+// It is recorded rather than silently removed because three separate comments went on calling
+// it "the arithmetic that decides whether Cloudflare Stream cost is bounded at all" after it had
+// stopped having a single caller. Two implementations of one sum, one of them dead and the other
+// undocumented, is how the next person fixes a bug in the wrong copy (rule 13).
+//
+// The row-level clamp it enforced is not lost: the SQL applies greatest(0, least(d, 21600)) to
+// EVERY row inside the sum, which is what stopped one -2000000000 row disabling an album's
+// video budget permanently.
 
 /**
  * Cloudflare Stream's absolute maximum for one video. Nothing longer can exist there, so nothing
