@@ -121,3 +121,67 @@ one by hand is free. Two habits:
 
 **What made it recoverable:** everything that mattered was committed. The cost of the whole incident
 was one `npm ci`, precisely because the work was in git rather than only in the working tree.
+
+## 2026-09-02 — Circle 2
+
+### 10. THE SAME RULE-15 MISTAKE, A THIRD AND FOURTH TIME
+
+This is the entry that matters. Three separate times now I have fixed a DECISION, put it in a
+tested module, written a commit message about rule 15 — and left the ENFORCEMENT one layer away
+where nothing can see it.
+
+1. **The tus ordering.** `isMissingContentLengthFailure` was correct and tested; the loop asked
+   "is this fatal?" first, so it never ran. Dead for three commits.
+2. **The video budget.** The pure functions scored 12/12; five mutations to the route survived all
+   901 tests, including deleting the budget entirely.
+3. **The reservation, at the CALL SITE.** I moved `resolveMaxDurationSeconds` into the module and
+   returned it so a test could pin it — and then `createStreamUpload(fileSize, safeName, 60)` in
+   the route passed all 937 tests. I fixed the exact defect inside the module and recreated it one
+   line further down, in the same commit, while writing about having fixed it.
+4. **The whole authorization call.** `const auth = { ok: true }` in the route — gate, rate limit,
+   size cap, budget all gone — passes everything. And moving the `gate-direction` entry to the
+   module is what left the route uncovered.
+
+**The pattern, stated so I stop rediscovering it:** extracting logic into `src/lib` moves the thing
+I can test and leaves behind the thing that decides whether it runs. A test of the module proves
+the module. It proves nothing about the two lines that call it, and those two lines are where the
+customer's video actually lives or dies.
+
+**Habit to build:** after extracting anything, mutate the CALL SITE, not the module. If stubbing
+the call passes the suite, the extraction made the code more testable and no better tested.
+
+### 11. I put a security claim in a commit title without testing it as an attacker
+
+Titled a commit "one request can no longer silence it" after capping `context.repeats` at 1000. The
+alert threshold is 8. The cap sits 125x above the bar it was meant to enforce, so `{"repeats":8}`
+still fires the alert and burns the 60-minute cooldown — and 8 posts with 8 distinct messages do it
+with nothing the cap touches at all.
+
+**Cost:** a false security claim in the permanent record, which is worse than no claim: the next
+person greps the log, sees it handled, and moves on.
+**Rule:** 20. A cap is not a defence until the number has been compared against the threshold it is
+defending. Before writing "X can no longer happen", do X.
+
+### 12. A comment that says try/catch fixes a hang
+
+Wrote that wrapping the enrichment in try/catch fixes the hour-long silence caused by an unbounded
+wait. `try/catch` catches a throw; it does nothing about a hang. There are no timeouts on those
+calls, and the repo already uses `AbortSignal.timeout` in eight places.
+
+**This is the third comment in one session asserting something the code does not do** — after the
+"self-corrects" reconcile claim and the "a test holds these cron strings" claim. Two of the three I
+caught myself; this one an agent caught. By the user's own standard for this file, a repeated entry
+means the loop is not working on that pattern yet.
+
+**Habit to build:** a comment claiming a failure is handled must name the mechanism, and the
+mechanism must be re-read at the moment of writing. "Wrapped in try/catch" answers "what if it
+throws", never "what if it never returns".
+
+### 13. Two process hazards, from the agents rather than from me
+
+- **CRLF broke a mutation harness.** These files are CRLF on disk; every multi-line pattern written
+  with bare `\n` matched zero times. One agent's runner asserted its match count and refused a
+  verdict — which is the only reason it did not report nine fake survivors. Any harness here must
+  normalise line endings AND assert the hit count (rule 16's "assert the mutation applied").
+- **Two agents collided in a shared scratchpad**, each writing `scratchpad/mutate.mjs`; one briefly
+  ran the other's script. Agents need a namespaced scratch directory, not a shared one.
