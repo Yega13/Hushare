@@ -35,9 +35,12 @@ const cfg: {
   albumRlOk: boolean
   tier: string
   tierThrows: boolean
+  rateLimitCalls: unknown[][]
+  reports: unknown[][]
 } = {
   album: null, albumError: false, durations: [], durationError: null, durationFilters: {},
   gateOk: true, albumRlOk: true, tier: 'free', tierThrows: false,
+  rateLimitCalls: [], reports: [],
 }
 
 vi.mock('@/lib/supabase/admin', () => ({
@@ -72,7 +75,12 @@ vi.mock('@/lib/supabase/admin', () => ({
 }))
 vi.mock('next/headers', () => ({ cookies: async () => ({ get: () => undefined }) }))
 vi.mock('@/lib/rate-limit', () => ({
-  checkRateLimit: async () => (cfg.albumRlOk ? { ok: true } : { ok: false, retryAfterSeconds: 60 }),
+  // RECORDS ITS ARGUMENTS. Ignoring them meant the key, the window, the ceiling and the fail
+  // direction could all be changed at once and every test still passed.
+  checkRateLimit: async (...args: unknown[]) => {
+    cfg.rateLimitCalls.push(args)
+    return cfg.albumRlOk ? { ok: true } : { ok: false, retryAfterSeconds: 60 }
+  },
   clientIpKey: () => 'test-key',
 }))
 vi.mock('@/lib/subscriptions', () => ({
@@ -89,7 +97,11 @@ vi.mock('@/lib/server/album-access', async (orig) => {
     signedInUserForGate: async () => null,
   }
 })
-vi.mock('@/lib/report-server-error', () => ({ reportServerError: () => {} }))
+// RECORDS ITS CALLS. The fail-open branch's report is the ONLY signal that the video budget has
+// stopped being enforced, and a no-op mock meant deleting it changed nothing anywhere.
+vi.mock('@/lib/report-server-error', () => ({
+  reportServerError: (...args: unknown[]) => { cfg.reports.push(args) },
+}))
 
 import { authorizeVideoUpload } from '@/lib/server/video-upload-authorization'
 import { videoCaps, videoAlbumFullMessage } from '@/lib/album-entitlements'
@@ -124,6 +136,8 @@ beforeEach(() => {
   cfg.albumRlOk = true
   cfg.tier = 'free'
   cfg.tierThrows = false
+  cfg.rateLimitCalls = []
+  cfg.reports = []
 })
 
 describe('the album minute pool is actually enforced', () => {
@@ -208,6 +222,11 @@ describe('the album minute pool is actually enforced', () => {
     cfg.durationError = 'connection reset'
     const res = await authorizeVideoUpload(req({ durationSeconds: 99999 }))
     expect(res.ok).toBe(true)
+    // AND IT SAYS SO. This report is the only signal that the budget stopped being enforced; the
+    // module's own comment promises it "belongs in the panel, not only in a log nobody reads".
+    // Deleting it used to change nothing observable.
+    expect(cfg.reports, 'a silently unenforced budget is the worst version of this').toHaveLength(1)
+    expect(String(cfg.reports[0][1])).toContain('Video budget NOT enforced')
   })
 })
 
@@ -289,6 +308,20 @@ describe('the guards in front of the budget, in order', () => {
     if (!res.ok) expect(res.response.status).toBe(403)
   })
 
+  it('refuses for the FIRST reason, not the last — the order is the contract', async () => {
+    // The docstring says "ORDER IS PART OF THE CONTRACT" and nothing held it: moving the gate check
+    // to the end left every check running and every test passing. But a guest with a wrong password
+    // on a full album would then be told "This album is out of video time" — a true statement about
+    // a rule they are not breaking, and one they cannot act on. They would go and delete videos.
+    cfg.gateOk = false
+    cfg.durations = [{ duration_seconds: 600 }]      // also full, so both refusals are available
+    const res = await authorizeVideoUpload(req())
+    expect(res.ok).toBe(false)
+    if (res.ok) return
+    const body = await res.response.json() as { error: string }
+    expect(body.error).toBe('Enter the album password before adding photos')
+  })
+
   it('429s a hammered album, WITH a Retry-After', async () => {
     cfg.albumRlOk = false
     const res = await authorizeVideoUpload(req())
@@ -296,6 +329,20 @@ describe('the guards in front of the budget, in order', () => {
     if (res.ok) return
     expect(res.response.status).toBe(429)
     expect(res.response.headers.get('Retry-After')).toBe('60')
+  })
+
+  it('limits the RIGHT thing, by the right amount, in the right direction', async () => {
+    // All four of these were changed at once in a mutation and every test still passed, because the
+    // mock ignored its arguments. Each one is a different live failure:
+    //   key     — a shared key would let one busy album exhaust the budget for every album
+    //   window  — a shorter window turns an abuse backstop into a participation cap at an event
+    //   ceiling — same
+    //   failOpen: false — the deliberate choice that a limiter we cannot consult REFUSES, matching
+    //             presign_album on the image path. Flipping it open makes a database blip a free
+    //             pass on the only path that bounds Stream cost.
+    await authorizeVideoUpload(req())
+    expect(cfg.rateLimitCalls).toHaveLength(1)
+    expect(cfg.rateLimitCalls[0]).toEqual([`stream_album:${ALBUM_ID}`, 3600, 4000, { failOpen: false }])
   })
 
   it('503s rather than guessing when the tier lookup is down', async () => {
