@@ -176,11 +176,38 @@ describe('whether to send at all', () => {
     expect(alertVerdict({ count: 50, signature: 'boom', previous, nowMs: NOW }).send).toBe(true)
   })
 
+  it('the hourly ceiling is FOUR, pinned to a literal', () => {
+    // A LITERAL, because asserting against the imported constant only says `n === n`. Raising it to
+    // 99999 — which removes the ceiling the whole flood argument rests on — passed the entire file
+    // (rule 17). Lowering it to 3 passed too. Every value >= 3 did.
+    expect(MAX_ALERTS_PER_HOUR).toBe(4)
+  })
+
   it('never exceeds the hourly ceiling, whatever the signature', () => {
-    // The floor under the signature rule: a poisoner can make the alarm noisier, never silent, and
-    // never a flood. Worst case is MAX_ALERTS_PER_HOUR emails.
-    const previous = { sentAt: ago(5), signature: 'x', hourStart: ago(50), sentThisHour: MAX_ALERTS_PER_HOUR }
+    // The floor under the signature rule, and the reason a poisoner cannot turn the alarm into a
+    // flood. It is NOT a guarantee of "never silence" — see the test below, which is the honest
+    // version of a claim this file used to make and the code could not keep.
+    const previous = { sentAt: ago(5), signature: 'x', hourStart: ago(50), sentThisHour: 4 }
     expect(alertVerdict({ count: 50, signature: 'brand new', previous, nowMs: NOW }))
+      .toEqual({ send: false, reason: 'hourly-cap' })
+  })
+
+  it('AND THAT CEILING CAN BE SPENT BY AN ATTACKER, which is the residual', () => {
+    // THE CLAIM THIS REPLACES WAS FALSE. The module said "a poisoner can make the alarm noisier,
+    // never silent" and the commit message repeated it. Four unauthenticated POSTs to
+    // /api/log/client-error, each with a different message so each becomes the dominating
+    // signature, send four alerts and spend the hour — after which a GENUINE incident with a brand
+    // new signature is refused with 'hourly-cap' for the rest of that hour.
+    //
+    // The hole is narrowed, not closed: one request bought 60 minutes of silence before, four buy
+    // about 56 now, and the operator gets four emails telling them something is happening. It
+    // cannot be closed at this layer at all — the endpoint has to accept anonymous reports from
+    // guests' browsers or it stops being telemetry, so the real fix is authentication or corroborating
+    // signal, not a bigger number here.
+    //
+    // Asserted rather than commented, so nobody can believe the old claim again.
+    const spent = { sentAt: ago(1), signature: 'attacker-4', hourStart: ago(3), sentThisHour: 4 }
+    expect(alertVerdict({ count: 500, signature: 'a real incident nobody has seen', previous: spent, nowMs: NOW }))
       .toEqual({ send: false, reason: 'hourly-cap' })
   })
 

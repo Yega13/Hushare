@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   videoCaps, videoBudgetExceeded, videoBudgetLeft, formatClipLimit, sumVideoSeconds,
+  chargeableDurationSeconds, MAX_STORED_DURATION_SECONDS,
   videoAlbumFullMessage, type VideoCaps,
 } from '../src/lib/album-entitlements'
 import { FREE_ALBUM_LIMIT, PRO_ALBUM_LIMIT, STUDIO_ALBUM_LIMIT } from '../src/lib/media'
@@ -228,5 +229,67 @@ describe('sumVideoSeconds — one bad row must not buy an unlimited album', () =
     const caps = videoCaps('free')
     const used = sumVideoSeconds([{ duration_seconds: 600 }, { duration_seconds: -999_999 }])
     expect(videoBudgetExceeded(used, 30, caps)).toBe(true)
+  })
+})
+
+describe('what a video row may be charged', () => {
+  // THE EXPLOIT THIS CLOSES, found in round 3. Two requests, no video uploaded at all:
+  //
+  //   POST /api/upload/stream        durationSeconds omitted   -> approved, stores nothing
+  //   POST /api/album/photos/create  duration_seconds: 2147483647
+  //
+  // validatePhoto bounds duration_seconds below but not above, and int4 holds 2147483647 exactly,
+  // so the row stored. The album's video total then exceeded every budget forever: every later
+  // video upload refused with "delete a video to make room" — and with require_approval on, the
+  // poison row is inserted HIDDEN, so the owner could not even see the video they were told to
+  // delete. Permanent, silent, and free.
+  //
+  // The previous fix clamped the DOWNWARD direction only (a negative row read as zero and disabled
+  // the budget). Same branch, opposite sign, untouched.
+
+  it('ignores the client entirely — only the server-approved number is chargeable', () => {
+    // The signature takes what the SERVER stored. There is no parameter for the client's claim,
+    // which is the point: it cannot be passed in, so it cannot be believed.
+    expect(chargeableDurationSeconds(42)).toBe(42)
+    expect(chargeableDurationSeconds(null)).toBeNull()
+    expect(chargeableDurationSeconds(undefined)).toBeNull()
+  })
+
+  it('the ceiling is SIX HOURS, pinned to a literal', () => {
+    // A LITERAL ON PURPOSE. Asserting against the imported constant only ever says `n === n`, so
+    // raising it to 2147483647 — which re-opens the exploit completely — passed this whole file
+    // (rule 17). 21600 is Cloudflare Stream's own maximum for a single video, mirrored in
+    // lib/stream-duration's CF_MAX_DURATION_CEILING and in the CHECK on photos.duration_seconds.
+    // If it ever legitimately changes, all three move together and this line is the reason someone
+    // notices.
+    expect(MAX_STORED_DURATION_SECONDS).toBe(21600)
+  })
+
+  it('refuses a value larger than any video can be', () => {
+    // 6 hours is Cloudflare Stream's own maximum for a single video, so nothing longer can exist
+    // there and nothing longer can be a real duration.
+    expect(chargeableDurationSeconds(2_147_483_647)).toBe(21600)
+    expect(chargeableDurationSeconds(21601)).toBe(21600)
+    expect(chargeableDurationSeconds(21600)).toBe(21600)
+  })
+
+  it('refuses the downward direction too, which disabled budgets the other way', () => {
+    expect(chargeableDurationSeconds(-2_000_000_000)).toBeNull()
+    expect(chargeableDurationSeconds(-1)).toBeNull()
+    expect(chargeableDurationSeconds(0)).toBeNull()
+  })
+
+  it('refuses anything that is not a finite number', () => {
+    for (const bad of [Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY]) {
+      expect(chargeableDurationSeconds(bad), String(bad)).toBeNull()
+    }
+  })
+
+  it('a poisoned album is still refused, and still not permanently broken', () => {
+    // The end-to-end property: even the largest chargeable value cannot exceed what a real video
+    // could be, so an album can be filled but never given a total no budget can ever satisfy.
+    const worst = chargeableDurationSeconds(2_147_483_647)
+    expect(worst).not.toBeNull()
+    expect(worst as number).toBeLessThanOrEqual(MAX_STORED_DURATION_SECONDS)
   })
 })

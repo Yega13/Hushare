@@ -168,7 +168,21 @@ export function parseAlertState(raw: string | null | undefined): AlertState | nu
  * themselves manufacturing.
  *
  * MAX_ALERTS_PER_HOUR is the floor under that, so the same trick cannot turn the alarm into a
- * flood instead. Worst case for a determined poisoner is four emails an hour, never silence.
+ * flood instead.
+ *
+ * WHAT THIS DOES NOT DO, stated because the previous version of this comment claimed otherwise and
+ * the commit message repeated it: it does NOT guarantee "never silence". The hourly ceiling applies
+ * to every signature, and it is checked before the signature rule — so four unauthenticated POSTs
+ * with four different messages send four alerts, spend the hour, and a genuine incident behind them
+ * is refused with 'hourly-cap' until the hour turns. One request used to buy sixty minutes of
+ * silence; four now buy about fifty-six, and the operator gets four emails saying something is
+ * happening. That is narrower, and it is not closed.
+ *
+ * It cannot be closed here. /api/log/client-error must accept anonymous reports from guests'
+ * browsers or it stops being telemetry, and this repository is public, so every field an attacker
+ * needs is known. The real fix is authentication or corroborating signal — several distinct
+ * sources, albums or addresses behind one incident — not a different number in this file.
+ * tests/error-alert-grouping.test.ts asserts the residual so nobody can believe the old claim.
  *
  * WALL CLOCK, CLAMPED (rule 22). Both elapsed times are differences of two stored readings; a clock
  * correction can make either negative or enormous. Negative or absurd is treated as "the window has

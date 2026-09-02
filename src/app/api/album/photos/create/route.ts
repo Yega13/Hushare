@@ -13,7 +13,7 @@ import { timingSafeEqual } from '@/lib/timing-safe'
 import { getUserTierById } from '@/lib/subscriptions'
 import type { Tier } from '@/types'
 import { ANON_ALBUM_MEDIA } from '@/lib/media'
-import { albumCap, capNudge, registeringWouldHelp } from '@/lib/album-entitlements'
+import { albumCap, capNudge, registeringWouldHelp, chargeableDurationSeconds } from '@/lib/album-entitlements'
 import { gateAllowsContribution } from '@/lib/server/album-access'
 import { queueBibIndex } from '@/lib/server/bib-index'
 import { cookies } from 'next/headers'
@@ -341,17 +341,27 @@ export async function POST(req: Request) {
         // processed fine while the album's total rose by one: a 62:1 ratio, repeatable to the item
         // cap, against a PURCHASED Stream ceiling whose exhaustion kills video for every album.
         //
-        // This is the FALLBACK only. The value the server recorded when it approved the upload is
-        // applied further down, once the token has been consumed and that number is available —
-        // see `declaredByUid`. A row issued before that column existed has no stored value and
-        // keeps the client's claim, which is why this branch still exists.
+        // ALWAYS NULL HERE. The real value is the one the server recorded when it APPROVED this
+        // upload, and it is applied further down once the token is consumed — see `declaredByUid`.
         //
-        // Clamped either way: unclamped, one request storing -2000000000 drove an album's total
-        // negative, and videoBudgetExceeded — which clamped the TOTAL rather than each row — read
-        // it as zero, disabling that album's video budget permanently.
-        duration_seconds: typeof p.duration_seconds === 'number' && Number.isFinite(p.duration_seconds)
-          ? Math.max(0, Math.round(p.duration_seconds))
-          : null,
+        // The client's own number is not a fallback, it is not trusted at all, and the previous
+        // version of this line — which took it whenever the server had none — was exploitable with
+        // two requests and zero bytes uploaded:
+        //
+        //   POST /api/upload/stream       durationSeconds omitted  -> approved, stores NULL
+        //   POST /api/album/photos/create duration_seconds: 2147483647
+        //
+        // validatePhoto bounds duration_seconds below but not above, and int4 holds 2147483647
+        // exactly, so the row stored and the album's video total became permanently larger than any
+        // budget. Every later video upload was refused with "delete a video to make room" — and on
+        // an album with require_approval the poison row is inserted HIDDEN, so the owner could not
+        // even see the video they were being told to delete. No video ever reached Cloudflare.
+        //
+        // Which way this errs, deliberately (rule 19): NULL counts as zero against the budget and
+        // /api/album/video-status corrects it from Cloudflare's own reading when someone opens the
+        // video. So the cost of being wrong here is some unaccounted minutes, bounded by the
+        // reservation Cloudflare already enforces — never an album that can no longer take video.
+        duration_seconds: null,
         width: dims?.width ?? null,
         height: dims?.height ?? null,
         caption: typeof p.caption === 'string' ? p.caption.trim() : null,
@@ -446,7 +456,12 @@ export async function POST(req: Request) {
     if (unclaimed.length > 0) {
       const { data: retried, error: retryErr } = await admin
         .from('pending_stream_uploads')
-        .select('stream_uid')
+        // The stored duration comes back here too. Without it a re-saved video was charged the
+        // client's claim: the token was already consumed by the first attempt, so declaredByUid had
+        // no entry, and the row fell through to whatever the client said. Reachable with two
+        // concurrent saves of the same uid — which is precisely the venue-wifi retry this block was
+        // written for.
+        .select('stream_uid, declared_duration_seconds')
         .in('stream_uid', unclaimed)
         .eq('album_id', albumId)
         .not('consumed_at', 'is', null)
@@ -457,7 +472,10 @@ export async function POST(req: Request) {
         // would have before.
         console.error('[photos/create] retry-token lookup failed:', retryErr.message)
       } else {
-        for (const row of retried ?? []) verified.add((row as { stream_uid: string }).stream_uid)
+        for (const row of (retried ?? []) as { stream_uid: string; declared_duration_seconds: number | null }[]) {
+          verified.add(row.stream_uid)
+          declaredByUid.set(row.stream_uid, row.declared_duration_seconds)
+        }
       }
     }
     // An unverified uid drops ITS OWN row. It used to 403 the entire batch, which meant one bad
@@ -496,14 +514,14 @@ export async function POST(req: Request) {
     // A disagreement is resolved SILENTLY in the server's favour, never by refusing: a guest at an
     // event can do nothing about a refusal, and rule 19 says the uncertain branch must not destroy
     // their upload. Ignoring their number already removes everything the refusal would have bought.
-    .map(r => {
-      // The filter above already guarantees these are stream rows; the cast restates that for the
-      // type system rather than widening the row shape everywhere else.
-      const stored = declaredByUid.get((r as { stream_uid: string }).stream_uid)
-      return typeof stored === 'number' && Number.isFinite(stored)
-        ? { ...r, duration_seconds: Math.max(0, Math.round(stored)) }
-        : r
-    })
+    .map(r => ({
+      ...r,
+      // chargeableDurationSeconds, not an inline expression: deleting this whole override passed
+      // all 999 tests, because the tests written for it covered the PRODUCER (that /upload/stream
+      // stores the number) and nothing covered the CONSUMER that spends it. Fifth occurrence of
+      // MISTAKES entry 10, so the decision moves to lib where a test can reach it.
+      duration_seconds: chargeableDurationSeconds(declaredByUid.get((r as { stream_uid: string }).stream_uid)),
+    }))
 
   let insertedImages = 0
   let insertedVideos = 0

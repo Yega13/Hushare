@@ -300,6 +300,39 @@ export function sumVideoSeconds(rows: { duration_seconds: number | null }[]): nu
   return total
 }
 
+/**
+ * Cloudflare Stream's absolute maximum for one video. Nothing longer can exist there, so nothing
+ * longer can be a real duration — which makes it the only honest upper bound for a stored value.
+ * Mirrors CF_MAX_DURATION_CEILING in lib/stream-duration and the CHECK on photos.duration_seconds.
+ */
+export const MAX_STORED_DURATION_SECONDS = 21600
+
+/**
+ * What duration a video row may be charged, given what the SERVER approved for that upload.
+ *
+ * The client used to be believed here, and it was exploitable with two requests and no video at
+ * all: /api/upload/stream with no durationSeconds is approved and stores nothing, then
+ * photos/create with `duration_seconds: 2147483647` — which validatePhoto bounds below but not
+ * above, and int4 holds exactly — put a number larger than any budget into the album's total. Every
+ * later video upload was refused with "delete a video to make room", permanently; and with
+ * require_approval on, the poison row is HIDDEN, so the owner could not see the video they were
+ * being told to delete.
+ *
+ * So the client's number is not a fallback and is not an input. Only two things can come out of
+ * here: what the server approved, or null.
+ *
+ * WHICH WAY THIS ERRS, and what each direction costs (rule 19). Null counts as zero against the
+ * budget and /api/album/video-status corrects it from Cloudflare's own reading when someone opens
+ * the video — so being wrong here costs some unaccounted minutes, bounded by the reservation
+ * Cloudflare independently enforces. The other direction costs an album that can never take video
+ * again, which no guest can fix and no owner can see.
+ */
+export function chargeableDurationSeconds(approvedByServer: number | null | undefined): number | null {
+  if (typeof approvedByServer !== 'number' || !Number.isFinite(approvedByServer)) return null
+  if (approvedByServer <= 0) return null
+  return Math.min(Math.round(approvedByServer), MAX_STORED_DURATION_SECONDS)
+}
+
 /** Seconds of allowance left, never negative — for telling somebody what they have room for. */
 export function videoBudgetLeft(usedSeconds: number, caps: VideoCaps): number {
   const used = Number.isFinite(usedSeconds) && usedSeconds > 0 ? usedSeconds : 0

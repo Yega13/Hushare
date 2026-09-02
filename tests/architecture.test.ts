@@ -160,7 +160,11 @@ const SIZE_BUDGET: Record<string, number> = {
   // summed. Declaring one second bought a 62-second Cloudflare reservation, so a real 62-second
   // video uploaded fine while the album's total rose by one. Most of the growth is the comment
   // explaining that, at the two places someone would otherwise "simplify" it back.
-  'src/app/api/album/photos/create/route.ts': 592,
+  // +18 (2026-09-02, round 3): the client's duration_seconds is no longer written at all — the
+  // previous version took it whenever the server had none, which two requests and zero bytes could
+  // force, storing 2147483647 and making the album permanently refuse video. Plus the retry-token
+  // lookup carrying the stored duration, so a re-saved video is not charged the client's claim.
+  'src/app/api/album/photos/create/route.ts': 610,
   // +6 (2026-08-31, audit): progress comes from the server's outstanding count, not from the
   // length of a page that PostgREST had silently truncated.
   // +24 (2026-08-31, final audit): indexing pages until the server says it is finished, instead

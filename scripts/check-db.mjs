@@ -21,7 +21,12 @@ const REQUIRED_COLUMNS = {
   collections: ['user_id', 'slug', 'name'],
   collection_albums: ['collection_id', 'album_id'],
   rate_limit_events: ['key', 'created_at'],
-  pending_stream_uploads: ['stream_uid', 'album_id'],
+  // declared_duration_seconds is a HARD dependency, not a nicety: photos/create selects it when
+  // consuming an upload token, and against a database missing it PostgREST answers 400 — which the
+  // route turns into a 500 for the WHOLE batch, photos included. A guest loses the pictures they
+  // just uploaded because a video column is absent. This list is what stops the code deploying
+  // ahead of its column.
+  pending_stream_uploads: ['stream_uid', 'album_id', 'declared_duration_seconds'],
 }
 const REQUIRED_FUNCTIONS = ['album_is_open', 'set_updated_at', 'batch_set_sort_order', 'prune_rate_limit_events']
 const REQUIRED_POLICIES = [
