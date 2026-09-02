@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import {
-  videoCaps, videoBudgetExceeded, videoBudgetLeft, formatClipLimit,
+  videoCaps, videoBudgetExceeded, videoBudgetLeft, formatClipLimit, sumVideoSeconds,
   videoAlbumFullMessage, type VideoCaps,
 } from '../src/lib/album-entitlements'
 import { FREE_ALBUM_LIMIT, PRO_ALBUM_LIMIT, STUDIO_ALBUM_LIMIT } from '../src/lib/media'
@@ -185,5 +185,48 @@ describe('formatClipLimit', () => {
     expect(formatClipLimit(videoCaps('free').maxTotalSeconds)).toBe('10 minutes')
     expect(formatClipLimit(videoCaps('pro').maxTotalSeconds)).toBe('20 minutes')
     expect(formatClipLimit(videoCaps('studio').maxTotalSeconds)).toBe('50 minutes')
+  })
+})
+
+describe('sumVideoSeconds — one bad row must not buy an unlimited album', () => {
+  // THE DEFECT THIS EXISTS FOR, found by a planning agent that neither breaker caught.
+  //
+  // photos/create accepted the client's duration_seconds with no lower bound, and the column has no
+  // CHECK, so a single request could store -2000000000. The budget then summed it and
+  // videoBudgetExceeded clamped the TOTAL — `used > 0 ? used : 0` — which reads a negative sum as
+  // zero. The album's video budget was disabled permanently: every upload afterwards approved, no
+  // matter how much video it already held, against a PURCHASED Stream ceiling shared by every album
+  // on the platform.
+  //
+  // Clamping the total and clamping each row sound equivalent. They are not, and the difference is
+  // the whole finding.
+
+  it('a single negative row cannot cancel out real video', () => {
+    expect(sumVideoSeconds([{ duration_seconds: 600 }, { duration_seconds: -2_000_000_000 }])).toBe(600)
+  })
+
+  it('a negative row counts as nothing, not as a credit', () => {
+    expect(sumVideoSeconds([{ duration_seconds: -100 }])).toBe(0)
+    expect(sumVideoSeconds([{ duration_seconds: -1 }, { duration_seconds: -1 }])).toBe(0)
+  })
+
+  it('ignores nulls and values that are not durations at all', () => {
+    // NaN would make the total NaN, and Infinity would make it Infinity — each poisons the sum in
+    // its own direction. Both count as zero.
+    expect(sumVideoSeconds([{ duration_seconds: null }, { duration_seconds: 300 }])).toBe(300)
+    expect(sumVideoSeconds([{ duration_seconds: Number.NaN }, { duration_seconds: 300 }])).toBe(300)
+    expect(sumVideoSeconds([{ duration_seconds: Number.POSITIVE_INFINITY }, { duration_seconds: 300 }])).toBe(300)
+  })
+
+  it('adds up ordinary rows', () => {
+    expect(sumVideoSeconds([])).toBe(0)
+    expect(sumVideoSeconds([{ duration_seconds: 60 }, { duration_seconds: 90 }, { duration_seconds: 30 }])).toBe(180)
+  })
+
+  it('a poisoned album is still refused once it is genuinely full', () => {
+    // The end-to-end property, stated on the pure functions: the poison row must not create room.
+    const caps = videoCaps('free')
+    const used = sumVideoSeconds([{ duration_seconds: 600 }, { duration_seconds: -999_999 }])
+    expect(videoBudgetExceeded(used, 30, caps)).toBe(true)
   })
 })

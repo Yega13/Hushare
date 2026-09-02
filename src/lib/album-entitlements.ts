@@ -274,6 +274,32 @@ export function videoBudgetExceeded(usedSeconds: number, newClipSeconds: unknown
   return used + add > caps.maxTotalSeconds
 }
 
+/**
+ * How much video an album is holding, summed from its rows.
+ *
+ * EVERY ROW IS CLAMPED, NOT JUST THE TOTAL, and that distinction is the whole reason this function
+ * exists. videoBudgetExceeded clamps the total (`used > 0 ? used : 0`), which sounds equivalent and
+ * is not: one row of -2000000000 — accepted by photos/create, and storable because the column has
+ * no CHECK — dragged the sum negative, the total-clamp read it as 0, and the album's video budget
+ * was disabled permanently. Every upload after that was approved no matter how much it held.
+ *
+ * A negative duration is not a small error to be tolerated; it is not a duration. Same for NaN and
+ * Infinity, which would poison the sum in their own ways. All of them count as zero, so a bad row
+ * can cost the album a little unbilled video and can never buy an unlimited album.
+ *
+ * Exported and imported by the caller rather than re-typed there (rule 17): this is the arithmetic
+ * that decides whether Cloudflare Stream cost is bounded at all.
+ */
+export function sumVideoSeconds(rows: { duration_seconds: number | null }[]): number {
+  let total = 0
+  for (const row of rows) {
+    const d = row.duration_seconds
+    if (typeof d !== 'number' || !Number.isFinite(d) || d <= 0) continue
+    total += d
+  }
+  return total
+}
+
 /** Seconds of allowance left, never negative — for telling somebody what they have room for. */
 export function videoBudgetLeft(usedSeconds: number, caps: VideoCaps): number {
   const used = Number.isFinite(usedSeconds) && usedSeconds > 0 ? usedSeconds : 0

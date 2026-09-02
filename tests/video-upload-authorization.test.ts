@@ -165,6 +165,25 @@ describe('the album minute pool is actually enforced', () => {
     await authorizeVideoUpload(req())
     expect(cfg.durationFilters.media_type).toBe('video')
     expect(cfg.durationFilters.album_id).toBe(ALBUM_ID)
+    // The limit is load-bearing for the SAME reason, and this mock recorded it without anything
+    // ever reading it. Dropping it to 1 makes the sum see one row, so any album with more than one
+    // video reads as nearly empty and the pool stops binding. No behavioural assertion can catch
+    // that — the mock returns what it is given regardless of the limit — so it is asserted directly.
+    expect(cfg.durationFilters.__limit).toBe(1000)
+  })
+
+  it('a NEGATIVE stored duration cannot disable the budget', async () => {
+    // THE REAL ENFORCEMENT PATH, not just the arithmetic. photos/create accepted the client's
+    // duration_seconds with no lower bound and the column has no CHECK, so one request could store
+    // -2000000000. The inline reduce summed it, videoBudgetExceeded clamped the TOTAL and read the
+    // negative as zero, and this album's video budget was gone permanently — every upload after
+    // that approved, whatever the album held, against a purchased Stream ceiling shared by every
+    // album on the platform. Found by a planning agent; neither adversarial review caught it.
+    cfg.durations = [{ duration_seconds: 595 }, { duration_seconds: -100000 }]
+    const res = await authorizeVideoUpload(req({ durationSeconds: 30 }))
+    expect(res.ok, 'a poisoned row must not create room in a full album').toBe(false)
+    if (res.ok) return
+    expect(res.response.status).toBe(403)
   })
 
   it('the refusal is recognised as deliberate, and is NOT retried', async () => {

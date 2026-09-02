@@ -139,7 +139,12 @@ const SIZE_BUDGET: Record<string, number> = {
   // 518, down from 645: validatePhoto, hasTraversal and r2UrlPrefix moved to lib/photo-input,
   // where 22 tests now cover the boundary between a guest and this album's storage — including the
   // poisoned-thumbnail attack, which the mutation run confirmed they catch.
-  'src/app/api/album/photos/create/route.ts': 536,
+  // +11 (2026-09-02): duration_seconds is clamped at zero on write, and the comment explaining
+  // why. It was accepted unbounded and the column has no CHECK, so one request storing
+  // -2000000000 drove an album's video total negative — videoBudgetExceeded clamps the TOTAL, read
+  // it as zero, and that album's video budget was disabled permanently. Comment, not code, is most
+  // of the growth, and it is the kind that has to survive the next reader.
+  'src/app/api/album/photos/create/route.ts': 547,
   // +6 (2026-08-31, audit): progress comes from the server's outstanding count, not from the
   // length of a page that PostgREST had silently truncated.
   // +24 (2026-08-31, final audit): indexing pages until the server says it is finished, instead
@@ -289,8 +294,21 @@ describe('cron routes are reachable by the scheduler', () => {
     const branched = [...worker.matchAll(/const\s+EVERY_[A-Z0-9_]+\s*=\s*'([^']+)'/g)].map((m) => m[1])
     expect(branched.length, 'no cron literals found in worker.ts').toBeGreaterThan(0)
 
+    // BOTH DIRECTIONS. The first version checked only that every literal worker.ts names is
+    // scheduled, and that is the half that could not see the real hole: the daily batch had NO
+    // literal — it was the unnamed else-branch — so deleting "0 2 * * *" from wrangler.toml passed
+    // the entire suite while seven jobs stopped forever, including the reconcile that stops a
+    // paying customer silently dropping to free while Polar keeps charging them.
     for (const literal of branched) {
       expect(scheduled, `worker.ts branches on "${literal}" but wrangler.toml does not schedule it`)
+        .toContain(literal)
+    }
+    // And the other way: a cron in wrangler.toml that worker.ts does not branch on now does
+    // NOTHING (it used to fall through into the daily batch and email customers on whatever
+    // cadence had been typed). Either way it is a mistake, and it is caught here rather than in
+    // production.
+    for (const literal of scheduled) {
+      expect(branched, `wrangler.toml schedules "${literal}" but worker.ts has no branch for it, so it would run nothing`)
         .toContain(literal)
     }
   })

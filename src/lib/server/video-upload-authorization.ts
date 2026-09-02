@@ -7,7 +7,7 @@ import { uploadCapsForTier, tooLargeMessage, STUDIO_VIDEO_BYTES } from '@/lib/me
 import { getUserTierById } from '@/lib/subscriptions'
 import { resolveMaxDurationSeconds } from '@/lib/stream-duration'
 import { reportServerError } from '@/lib/report-server-error'
-import { videoCaps, videoBudgetExceeded, videoAlbumFullMessage, albumEffectiveTier } from '@/lib/album-entitlements'
+import { videoCaps, videoBudgetExceeded, videoAlbumFullMessage, albumEffectiveTier, sumVideoSeconds } from '@/lib/album-entitlements'
 import { gateAllowsContribution, signedInUserForGate, ALBUM_GATE_COLS } from '@/lib/server/album-access'
 import type { Tier } from '@/types'
 
@@ -181,7 +181,10 @@ export async function authorizeVideoUpload(
       context: { reason: videoSumErr.message.slice(0, 200) },
     })
   } else {
-    const usedSeconds = (durations ?? []).reduce((total, row) => total + (row.duration_seconds ?? 0), 0)
+    // sumVideoSeconds, not an inline reduce: it clamps EVERY ROW rather than the total. The inline
+    // version summed whatever was stored, and one negative row disabled this album's budget for
+    // good. Imported so the arithmetic that bounds Stream cost exists once (rule 17).
+    const usedSeconds = sumVideoSeconds(durations ?? [])
     if (videoBudgetExceeded(usedSeconds, params.durationSeconds, vcaps)) {
       // 403, NOT 429. lib/upload-policy treats 429 as retryable and runs the whole route four more
       // times behind a backoff — for a refusal that is permanent until somebody deletes something.

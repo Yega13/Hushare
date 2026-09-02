@@ -25,6 +25,7 @@ type Env = {
 // stops running, which is why tests/architecture.test.ts asserts these two against that file.
 const EVERY_MINUTE = '* * * * *'
 const EVERY_3_HOURS = '0 */3 * * *'
+const EVERY_DAY_AT_2 = '0 2 * * *'
 
 async function callCronRoute(baseUrl: string, path: string, secret: string): Promise<void> {
   try {
@@ -101,7 +102,19 @@ const worker = {
       return
     }
 
-    ctx.waitUntil(Promise.all([
+    // THE DAILY BATCH IS NAMED NOW, AND THE FALL-THROUGH IS CLOSED. It used to be the else-branch,
+    // which cost twice over:
+    //
+    //   Deleting "0 2 * * *" from wrangler.toml passed the whole suite. Seven jobs stop forever and
+    //   silently — including reconcile-subscriptions, whose absence drops a PAYING customer to free
+    //   after the 7-day grace while Polar keeps charging them, and notify-expiry, which is the only
+    //   warning before an album is retired. The cron test could not see it, because it compares the
+    //   literals worker.ts NAMES and this batch had no literal to name.
+    //
+    //   And any schedule added to wrangler.toml without a branch here landed in this batch. A
+    //   */5 * * * * entry would have sent renewal and expiry EMAILS TO CUSTOMERS 288 times a day.
+    if (event.cron === EVERY_DAY_AT_2) {
+      ctx.waitUntil(Promise.all([
       callCronRoute(baseUrl, '/api/cron/retire-albums', secret),
       callCronRoute(baseUrl, '/api/cron/notify-expiry', secret),
       callCronRoute(baseUrl, '/api/cron/notify-renewal', secret),
@@ -117,7 +130,16 @@ const worker = {
       callCronRoute(baseUrl, '/api/cron/reconcile-subscriptions', secret),
       // Same repair, for one-time package orders — see the route's own note.
       callCronRoute(baseUrl, '/api/cron/reconcile-packages', secret),
-    ]))
+      ]))
+      return
+    }
+
+    // AN UNRECOGNISED SCHEDULE DOES NOTHING, LOUDLY. Which way this errs is deliberate: a schedule
+    // that runs nothing is caught by tests/architecture.test.ts before it can deploy, because that
+    // test now requires every cron in wrangler.toml to have a branch here. A schedule that falls
+    // through into the daily batch, by contrast, emails real customers on whatever cadence somebody
+    // typed — and nothing would have caught it (rule 19).
+    console.error('[cron] unrecognised schedule, nothing run:', event.cron)
   },
 }
 

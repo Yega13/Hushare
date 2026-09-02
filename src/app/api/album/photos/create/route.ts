@@ -332,8 +332,20 @@ export async function POST(req: Request) {
         stream_uid: uid,
         ...streamVideoUrls(uid),
         poster_url: typeof p.poster_url === 'string' ? p.poster_url : null,
-        // DB column is integer; duration from client is a float
-        duration_seconds: typeof p.duration_seconds === 'number' ? Math.round(p.duration_seconds) : null,
+        // DB column is integer; duration from client is a float.
+        //
+        // CLAMPED AT ZERO, because this number is summed to enforce the album's video budget and
+        // was accepted without a lower bound. The column has no CHECK either, so a single request
+        // with duration_seconds: -2000000000 stored fine, drove the album's total NEGATIVE, and
+        // videoBudgetExceeded — which clamped the TOTAL rather than each row — then read `used` as
+        // 0. Every subsequent video upload on that album was approved forever, whatever it held.
+        // One POST, and the only thing bounding Cloudflare Stream cost for that album was gone.
+        //
+        // Clamped on the read side too (sumVideoSeconds), because the rows already in the table are
+        // not covered by a change made here.
+        duration_seconds: typeof p.duration_seconds === 'number' && Number.isFinite(p.duration_seconds)
+          ? Math.max(0, Math.round(p.duration_seconds))
+          : null,
         width: dims?.width ?? null,
         height: dims?.height ?? null,
         caption: typeof p.caption === 'string' ? p.caption.trim() : null,
