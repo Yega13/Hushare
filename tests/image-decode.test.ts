@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { decodeBitmapSafe, decodeViaImageDecoder, decodeImageSource } from '@/lib/image-decode'
 
 // THE DECODE CHAIN A GUEST'S PHOTO ACTUALLY TAKES.
@@ -248,5 +248,50 @@ describe('the ordinary decoder is tried first, and the WebCodecs one only after 
     // bitmap of nothing — breaks the fallback the Android path depends on.
     cfg.bitmapFrom = () => 'throw'
     expect(await decodeImageSource(blob('image/heic'))).toBeNull()
+  })
+})
+
+describe('an Android read that blips does not cost the guest their photo', () => {
+  // THE FIX THIS FILE EXISTS TO PROTECT. Android hands back a File backed by a content:// reference
+  // whose bytes throw NotReadableError for a few hundred ms - 165 of them are logged in production
+  // against 556 Android user agents. This path is reached ONLY by Android Chrome with a HEIC, so the
+  // one population that takes it is exactly the population whose reads blip.
+  //
+  // With a bare arrayBuffer() the blip returned null even though isTypeSupported had ALREADY said
+  // yes, and the guest was told "This browser cannot convert iPhone photo files (HEIC). Ask for the
+  // photo as a JPEG, or add it from an iPhone" - for a photo the decoder had agreed to handle.
+  //
+  // In node, FileReader and URL.createObjectURL are absent, so readFileRobust's other two strategies
+  // fail on their own and the retry loop is what has to save it.
+  function flakyBlob(failures: number, type = 'image/heic'): Blob {
+    let seen = 0
+    return {
+      type,
+      arrayBuffer: async () => {
+        if (seen++ < failures) {
+          const e = new Error('The requested file could not be read')
+          e.name = 'NotReadableError'
+          throw e
+        }
+        return new ArrayBuffer(8)
+      },
+    } as unknown as Blob
+  }
+
+  it('retries the read and decodes the photo anyway', async () => {
+    const r = await decodeViaImageDecoder(flakyBlob(1))
+    expect(r, 'a 400ms blip must not end in "get an iPhone"').not.toBeNull()
+    expect(cfg.built).toHaveLength(1)
+    expect(cfg.built[0].byteLength, 'and it decodes the bytes that finally arrived').toBe(8)
+  }, 15_000)
+
+  it('still answers null, never throws, when the bytes never arrive', async () => {
+    // The direction that must not change: a permanently dead reference falls through to the
+    // caller's own fallback rather than escaping as an exception.
+    vi.useFakeTimers()
+    const p = decodeViaImageDecoder(flakyBlob(Number.POSITIVE_INFINITY))
+    await vi.advanceTimersByTimeAsync(30_000)
+    expect(await p).toBeNull()
+    vi.useRealTimers()
   })
 })

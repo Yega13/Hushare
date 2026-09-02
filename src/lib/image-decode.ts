@@ -32,6 +32,8 @@
  * attempt, or the caller's own fallback". Nothing here can make a working path worse (rule 19).
  */
 
+import { readFileRobust } from '@/lib/file-read'
+
 /**
  * createImageBitmap, with EXIF rotation baked into the pixels and a fallback for old engines.
  *
@@ -78,7 +80,29 @@ export async function decodeViaImageDecoder(source: Blob): Promise<ImageBitmap |
     // failed upload rather than falling through to the converter that can still do the job.
     if (!(await ImageDecoder.isTypeSupported(type))) return null
 
-    const decoder = new ImageDecoder({ data: await source.arrayBuffer(), type })
+    // readFileRobust, NEVER a bare arrayBuffer(). Android hands back a File backed by a content://
+    // reference whose bytes throw NotReadableError for a few hundred milliseconds — and
+    // intermittently again under memory pressure. That is not a hypothesis: this product has logged
+    // 165 of them, against 556 Android user agents.
+    //
+    // This path is reached ONLY by Android Chrome with a HEIC — createImageBitmap has already
+    // failed, which on every other platform it does not. So the one population that takes it is
+    // exactly the population whose reads blip. With a bare read, that blip returned null even though
+    // isTypeSupported had ALREADY said yes, and the guest fell through to the WASM converter, which
+    // our CSP refuses, and was told:
+    //
+    //     "This browser cannot convert iPhone photo files (HEIC). Ask for the photo as a JPEG, or
+    //      add it from an iPhone."
+    //
+    // — pointed at a device they do not have, for a photo the platform decoder had already agreed to
+    // handle, when a retry 400ms later would have decoded it (rule 20).
+    //
+    // THE FULL RETRY BUDGET, not a reduced one. A readable file returns on the first attempt and
+    // sleeps not at all, so the healthy path costs nothing. The file that pays the extra seconds is
+    // one whose bytes are permanently unavailable — and that upload already fails today, because
+    // convertHeicViaWorker calls readFileRobust too and spends the same time before dying. A second,
+    // shorter definition of "how patient are we with a flaky file" is exactly what rule 13 forbids.
+    const decoder = new ImageDecoder({ data: await readFileRobust(source), type })
     try {
       const { image } = await decoder.decode({ frameIndex: 0 })
       try {
