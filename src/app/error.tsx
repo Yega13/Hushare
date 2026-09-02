@@ -2,7 +2,7 @@
 
 import { useEffect } from 'react'
 import Link from 'next/link'
-import { reportClientError } from '@/lib/report-error'
+import { reportClientError, stackFrames } from '@/lib/report-error'
 
 export default function AppError({
   error,
@@ -23,7 +23,7 @@ export default function AppError({
       // so a recovery reload can cost nothing further. See report-error.ts.
       fatal: true,
       message: error.message || 'unknown render error',
-      context: { digest: error.digest, stack: error.stack?.slice(0, 400) },
+      context: { digest: error.digest, stack: stackFrames(error.stack) },
     })
   }, [error])
 

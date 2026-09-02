@@ -7,6 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint src",
+    "check:hooks": "node scripts/check-hooks.mjs",
     "clean:build": "node -e \"const fs=require('fs');for(const d of ['.next','.open-next','.turbo']) fs.rmSync(d,{recursive:true,force:true})\"",
     "cf:build": "node scripts/check-build-env.mjs && npm run clean:build && node scripts/patch-opennext.mjs && opennextjs-cloudflare build && node scripts/patch-worker.mjs",
     "deploy": "npm run cf:build && wrangler deploy",

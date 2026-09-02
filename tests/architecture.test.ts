@@ -144,7 +144,14 @@ const SIZE_BUDGET: Record<string, number> = {
   // one forged message into a ~228-424 KB fetch on every connected phone, billed to the shared
   // database transfer allowance. The DECISION lives in lib/album-freshness (forcedRefreshAllowed,
   // tested including the clock-jump cases); what stayed here is the call and the stamp.
-  'src/app/[slug]/AlbumPageClient.tsx': 1743,
+  // +20 (2026-09-02, live crash): five useMemo calls moved ABOVE the early returns, with the
+  // reason written down. They sat below them, so a password-gated album -- server-rendered as the
+  // guest prompt, hence initialAlbum null -- took an early return and called five FEWER hooks, and
+  // React threw #310 the moment the guest's password was accepted and the album arrived. Two
+  // reports from a real wedding album; 8 of 105 live albums are gated. Almost all the growth is
+  // the comment, and it is worth the lines: this passed types, 1,100 tests and two adversarial
+  // rounds, and only react-hooks/rules-of-hooks could see it. npm run check:hooks now gates it.
+  'src/app/[slug]/AlbumPageClient.tsx': 1763,
   'src/app/card-editor/CardEditorClient.tsx': 873,
   // +1 (2026-08-31): pass collectionTotal to the lightbox counter.
   // +2 (2026-08-31): morphAllowed gate on open and close.

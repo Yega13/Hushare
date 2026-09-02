@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect } from 'react'
-import { reportClientError } from '@/lib/report-error'
+import { reportClientError, stackFrames } from '@/lib/report-error'
 
 export default function GlobalError({
   error,
@@ -22,7 +22,7 @@ export default function GlobalError({
       // so a recovery reload can cost nothing further. See report-error.ts.
       fatal: true,
       message: error.message || 'unknown root error',
-      context: { digest: error.digest, stack: error.stack?.slice(0, 400) },
+      context: { digest: error.digest, stack: stackFrames(error.stack) },
     })
   }, [error])
 

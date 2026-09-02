@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { checkRateLimit, clientIpKey } from '@/lib/rate-limit'
 import { forbidCrossSiteRequest } from '@/lib/request-security'
+import { boundedContext } from '@/lib/error-context'
 
 export const runtime = 'nodejs'
 
@@ -60,12 +61,11 @@ export async function POST(req: Request) {
 
   const level = body.level === 'warn' ? 'warn' : 'error'
   const albumId = typeof body.albumId === 'string' && UUID_RE.test(body.albumId) ? body.albumId : null
-  // Keep context tiny — cap the serialized size so a hostile client can't bloat the row.
-  let context: unknown = null
-  if (body.context && typeof body.context === 'object') {
-    const s = JSON.stringify(body.context)
-    if (s.length <= 800) context = body.context
-  }
+  // Keep context small, but CLAMP rather than discard. The old rule dropped the whole object when
+  // the serialized size passed 800 — and the field that gets long is the stack, so the reports that
+  // lost all their context were exactly the ones worth reading: a crash deep enough to have a big
+  // stack arrived with no digest, no build id and no path at all. See lib/error-context.
+  const context: unknown = boundedContext(body.context)
   const ua = (req.headers.get('user-agent') ?? '').slice(0, 300) || null
 
   const admin = createAdminClient()

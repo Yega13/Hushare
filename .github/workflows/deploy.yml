@@ -34,6 +34,20 @@ jobs:
       # than something that quietly never ran.
       - run: npm test
 
+      # A HOOK AFTER AN EARLY RETURN CRASHES A PAGE, and nothing above catches it.
+      #
+      # On 2026-09-02 a guest unlocking a password-protected album got "Something went wrong"
+      # instead of the album: five useMemo calls sat below an early return in AlbumPageClient, so
+      # the gated first render called five fewer hooks and React threw #310 the moment the album
+      # arrived. Types passed, 1,100 tests passed, two adversarial rounds missed it — and
+      # react-hooks/rules-of-hooks named all five in one run. The rule was installed the whole
+      # time and nothing ever ran it, because this workflow lints nothing.
+      #
+      # Deliberately narrow: `npm run lint` still reports ~80 other react-hooks findings, and a
+      # gate that fails on all of them is a gate somebody disables. This one fails only on the
+      # class that takes a page down for a customer.
+      - run: npm run check:hooks
+
       - name: Build for Cloudflare
         run: npm run cf:build
         env:

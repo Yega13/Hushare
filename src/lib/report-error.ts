@@ -208,6 +208,47 @@ const GLOBAL_PROP_RE =
 const EXTENSION_ORIGIN_RE =
   /^(?:chrome|moz|safari-web|safari|ms-browser)-extension:\/\/|^webkit-masked-url:|^iabjs:/
 
+/**
+ * How much of a stack we keep.
+ *
+ * Sized to fit INSIDE the server's per-value clamp (lib/error-context's MAX_VALUE_CHARS), so the
+ * stack arrives whole rather than being trimmed twice. Raising this without raising that one just
+ * moves where the cut happens.
+ *
+ * 600 characters of FRAMES — the message is stripped first — is roughly six production frames,
+ * which is what it takes to get past React's internals to ours.
+ */
+export const STACK_CHARS = 600
+
+/**
+ * The part of a stack worth storing — FRAMES, not the message again.
+ *
+ * `error.stack` begins with the message, and both boundaries stored `error.stack.slice(0, 400)`
+ * beside the same message in its own column. That is not a small waste. React's own minified error
+ * text is about 180 characters —
+ *
+ *     "Minified React error #310; visit https://react.dev/errors/310 for the full message or use
+ *      the non-minified dev environment for full errors and additional helpful warnings."
+ *
+ * — and each production frame is a long hashed chunk URL, so 400 characters bought roughly three
+ * frames, all of them inside React. A real #310 arrived from a customer on 2026-09-02 and the
+ * capture stopped at `at r.useMemo (https://hushare.space/_ne` — one character before anything that
+ * could name the component. An error report that cannot identify what threw is not a report.
+ *
+ * So: drop the leading message lines, keep the frames, and keep enough of them to get past the
+ * framework. The message is already stored, in full, in its own column.
+ */
+export function stackFrames(stack: string | undefined): string | undefined {
+  if (!stack) return undefined
+  const lines = stack.split('\n')
+  // V8 puts the message first (possibly over several lines); frames are the ones starting with
+  // "at ". Firefox and Safari have no message line at all and no "at " prefix, so when nothing
+  // looks like a V8 frame the whole stack is kept rather than silently emptied (rule 19).
+  const firstFrame = lines.findIndex((l) => /^\s*at\s/.test(l))
+  const frames = firstFrame === -1 ? lines : lines.slice(firstFrame)
+  return frames.join('\n').slice(0, STACK_CHARS) || undefined
+}
+
 export function isForeignError(message: string, file?: string): boolean {
   if (file && EXTENSION_ORIGIN_RE.test(file)) return true
   // "Script error." is all a browser will say about an exception inside a cross-origin script it

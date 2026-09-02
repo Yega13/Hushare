@@ -1367,6 +1367,79 @@ export default function AlbumPageClient({ initialAlbum = null, initialPhotos, in
   //
   // Holding the skeleton over that window is safe now only because the wait is bounded above; the
   // unbounded version of this is what took gated albums offline once already.
+  // ─── EVERY HOOK BELOW RUNS ON EVERY RENDER, INCLUDING THE GATED ONES ────────────
+  //
+  // These five useMemo calls used to sit AFTER the early returns below, and that was React error
+  // #310 — "Rendered more hooks than during the previous render" — on the flagship page.
+  //
+  // It hid because `album` is seeded from initialAlbum: on an ordinary server-rendered album all
+  // five run from the first render and the count never changes. But a PASSWORD-GATED album is
+  // rendered by the server as the guest gate, so initialAlbum is null — the render takes an early
+  // return and calls five FEWER hooks. The moment the guest enters the password and the album
+  // arrives, all five run, React counts more hooks than last time, and throws. The guest gets
+  // "Something went wrong" on the album they just unlocked.
+  //
+  // Two reached the panel on 2026-09-02 from a real wedding album; 8 of 105 live albums are gated,
+  // and a reload masks it (the password cookie is set by then, so the server seeds initialAlbum
+  // and the hook counts agree), which is why it was never reported as broken.
+  //
+  // They are null-safe on `album` now and computed unconditionally. Nothing below may add a hook
+  // after an early return again: `npm run lint` fails on it (react-hooks/rules-of-hooks), which is
+  // what found this — after a hand-rolled scan produced 119 false positives and missed it.
+  // Bib search narrows the SAME grid rather than opening a separate results view. Filtering is
+  // client-side over photos already loaded, so typing is instant and costs no requests. When the
+  // album isn't a race album (or the box is empty) this is the untouched photo list.
+  // Memoised for IDENTITY: this object sits in visiblePhotos' deps, and a fresh {} every render
+  // rebuilt the filtered array during an active bib search — which re-rendered every tile and
+  // re-packed the masonry on the product's flagship flow, on race albums, mid-search.
+  const bibRange = useMemo(
+    () => ({ min: album?.bib_min ?? null, max: album?.bib_max ?? null }),
+    [album?.bib_min, album?.bib_max])
+  // The server's answer for THIS query wins; the local filter covers the moment before it lands
+  // and the case where the request failed. bibResult is tagged with the query it answers, so a
+  // stale response for an earlier number can never be shown against a newer one.
+  // PENDING PHOTOS COME OUT OF THE ALBUM ENTIRELY, and go to their own strip above it.
+  //
+  // Only an owner ever receives hidden rows (fetchAuthorizedPhotos filters them for everyone
+  // else), and mixing them into the grid behind a small badge is what let a real queue build up
+  // unnoticed on a live event album — with every photo in it invisible to bib and face search,
+  // so a runner searching for one was told there was nothing.
+  //
+  // Gated on require_approval, because `hidden` carries TWO meanings: "a guest added this and
+  // nobody has approved it" and "the owner deliberately hid this one". Without the gate, hiding a
+  // photo on purpose would drop it into a review queue that nags to approve it forever. When
+  // approval is off there is no queue, and a hidden photo stays where it always was — in the grid
+  // with its badge, owner-only. Distinguishing them properly needs a column of its own; until
+  // there is one, the album's own setting is the honest signal for which meaning applies.
+  // These three feed the grid's identity, so they are memoised together — see visiblePhotos below.
+  // Without it an owner with photos awaiting review rebuilt the whole list on every parent render.
+  const pendingPhotos = useMemo(
+    () => (effectiveIsOwner && album?.require_approval ? photos.filter((p) => p.hidden) : EMPTY_PHOTOS),
+    [effectiveIsOwner, album?.require_approval, photos])
+  const publishedPhotos = useMemo(
+    () => (pendingPhotos.length > 0 ? photos.filter((p) => !p.hidden) : photos),
+    [pendingPhotos, photos])
+  const pendingIds = useMemo(
+    () => (pendingPhotos.length > 0 ? new Set(pendingPhotos.map((p) => p.id)) : null),
+    [pendingPhotos])
+  // MEMOISED because this array's IDENTITY is what decides whether the grid re-renders.
+  //
+  // In the plain case it is `photos` itself and identity holds for free. But with a bib search
+  // running, or for an owner whose review queue is non-empty, the .filter() built a fresh array on
+  // every parent render — which invalidates both the masonry pack and the tile list's memo, on
+  // exactly the two albums where that costs most (a race album mid-search, an event album mid-upload).
+  const visiblePhotos = useMemo(() => (
+    album?.bib_search_enabled && bibDigits
+      // The SERVER returns hidden rows to an owner, so a bib search re-admitted the very photos the
+      // review strip just took out of the grid — the same photo in both places, the one below
+      // reading as already published.
+      ? (bibServerAnswered
+          ? (pendingIds ? bibServerPhotos.filter((p) => !pendingIds.has(p.id)) : bibServerPhotos)
+          : publishedPhotos.filter((p) => bibMatches(p, bibQuery, bibRange)))
+      : publishedPhotos
+  ), [album?.bib_search_enabled, bibDigits, bibServerAnswered, bibServerPhotos, pendingIds,
+      publishedPhotos, bibQuery, bibRange])
+
   const holdingForOwnerCheck = shouldHoldForOwnerCheck({
     ownerHashPresent, ownerTokenReady, ownerCheckTimedOut,
     hasGate: passwordGate !== null || revealGate !== null,
@@ -1472,59 +1545,6 @@ export default function AlbumPageClient({ initialAlbum = null, initialPhotos, in
   // hero banner. Falls back to the accent band when neither is set.
   const coverUrl = resolveHeaderImageUrl(album, photos)
 
-  // Bib search narrows the SAME grid rather than opening a separate results view. Filtering is
-  // client-side over photos already loaded, so typing is instant and costs no requests. When the
-  // album isn't a race album (or the box is empty) this is the untouched photo list.
-  // Memoised for IDENTITY: this object sits in visiblePhotos' deps, and a fresh {} every render
-  // rebuilt the filtered array during an active bib search — which re-rendered every tile and
-  // re-packed the masonry on the product's flagship flow, on race albums, mid-search.
-  const bibRange = useMemo(
-    () => ({ min: album.bib_min ?? null, max: album.bib_max ?? null }),
-    [album.bib_min, album.bib_max])
-  // The server's answer for THIS query wins; the local filter covers the moment before it lands
-  // and the case where the request failed. bibResult is tagged with the query it answers, so a
-  // stale response for an earlier number can never be shown against a newer one.
-  // PENDING PHOTOS COME OUT OF THE ALBUM ENTIRELY, and go to their own strip above it.
-  //
-  // Only an owner ever receives hidden rows (fetchAuthorizedPhotos filters them for everyone
-  // else), and mixing them into the grid behind a small badge is what let a real queue build up
-  // unnoticed on a live event album — with every photo in it invisible to bib and face search,
-  // so a runner searching for one was told there was nothing.
-  //
-  // Gated on require_approval, because `hidden` carries TWO meanings: "a guest added this and
-  // nobody has approved it" and "the owner deliberately hid this one". Without the gate, hiding a
-  // photo on purpose would drop it into a review queue that nags to approve it forever. When
-  // approval is off there is no queue, and a hidden photo stays where it always was — in the grid
-  // with its badge, owner-only. Distinguishing them properly needs a column of its own; until
-  // there is one, the album's own setting is the honest signal for which meaning applies.
-  // These three feed the grid's identity, so they are memoised together — see visiblePhotos below.
-  // Without it an owner with photos awaiting review rebuilt the whole list on every parent render.
-  const pendingPhotos = useMemo(
-    () => (effectiveIsOwner && album.require_approval ? photos.filter((p) => p.hidden) : EMPTY_PHOTOS),
-    [effectiveIsOwner, album.require_approval, photos])
-  const publishedPhotos = useMemo(
-    () => (pendingPhotos.length > 0 ? photos.filter((p) => !p.hidden) : photos),
-    [pendingPhotos, photos])
-  const pendingIds = useMemo(
-    () => (pendingPhotos.length > 0 ? new Set(pendingPhotos.map((p) => p.id)) : null),
-    [pendingPhotos])
-  // MEMOISED because this array's IDENTITY is what decides whether the grid re-renders.
-  //
-  // In the plain case it is `photos` itself and identity holds for free. But with a bib search
-  // running, or for an owner whose review queue is non-empty, the .filter() built a fresh array on
-  // every parent render — which invalidates both the masonry pack and the tile list's memo, on
-  // exactly the two albums where that costs most (a race album mid-search, an event album mid-upload).
-  const visiblePhotos = useMemo(() => (
-    album.bib_search_enabled && bibDigits
-      // The SERVER returns hidden rows to an owner, so a bib search re-admitted the very photos the
-      // review strip just took out of the grid — the same photo in both places, the one below
-      // reading as already published.
-      ? (bibServerAnswered
-          ? (pendingIds ? bibServerPhotos.filter((p) => !pendingIds.has(p.id)) : bibServerPhotos)
-          : publishedPhotos.filter((p) => bibMatches(p, bibQuery, bibRange)))
-      : publishedPhotos
-  ), [album.bib_search_enabled, bibDigits, bibServerAnswered, bibServerPhotos, pendingIds,
-      publishedPhotos, bibQuery, bibRange])
   // `total` counts hidden rows for an owner (the server does not filter them from the count), and
   // since pending photos left the grid it no longer describes what is on screen: the lightbox
   // read "1 / 10" over seven photos and wrapped at seven.
