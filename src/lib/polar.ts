@@ -232,6 +232,21 @@ export async function getOrder(orderId: string): Promise<PolarOrderItem | null> 
  * walk the whole ledger every night. Anything older than the window has already been noticed by a
  * human, and the webhook itself remains the primary path.
  */
+// REQUIRES THE orders:read SCOPE, and that is a trap worth writing down.
+//
+// This endpoint 403s with `insufficient_scope` unless the Organization Access Token carries
+// orders:read. 403, not 401 — the token is perfectly valid, it simply may not do this — so the
+// failure reads like a bug in our code rather than a permission that was never granted.
+//
+// SCOPES ARE STAMPED INTO A TOKEN WHEN IT IS CREATED. Ticking orders:read on an existing token does
+// not change the token already issued: a NEW one has to be created and POLAR_API_KEY replaced. The
+// owner did the first and not the second on 2026-09-02, and this cron kept dying nightly.
+//
+// It lives in the Polar dashboard under Settings -> DEVELOPERS -> New Token
+// (https://polar.sh/to/dashboard/settings). It is not called "API Keys" any more.
+//
+// While it is failing there is NO repair path for a one-time package payment whose webhook was
+// lost: Polar collects the $49 or $99, exhausts its retries, and the album never becomes a package.
 export async function listRecentOrders(maxPages = 3): Promise<PolarOrderItem[]> {
   const out: PolarOrderItem[] = []
   for (let page = 1; page <= maxPages; page++) {
