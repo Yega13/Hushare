@@ -123,7 +123,12 @@ const SIZE_BUDGET: Record<string, number> = {
   // finally, so cancelling the timer stranded it at true for the rest of the session and every
   // later close skipped the settings resync — which is how the phone/desktop grid "merge" came
   // back through a side door. Comment, not code, is most of the growth.
-  'src/components/OwnerToolbar.tsx': 1949,
+  // +60 (2026-09-03): the delete panel offers an UNDO. Deleting no longer destroys
+  // anything for seven days (lib/album-bin), and an undo the owner cannot reach is not an undo —
+  // telling them the album is restorable while offering no way to restore it would be a promise
+  // the screen does not keep (rule 20). The redirect now waits behind a Restore/Done choice, and
+  // the old "This cannot be undone" line is gone because it is no longer true.
+  'src/components/OwnerToolbar.tsx': 2009,
   // +23 (2026-08-31): fallback-poll wiring for realtime REFUSAL — the cadence decision is in
   // lib/realtime-fallback.ts; the timer must live beside the channel it covers (rule 15).
   // +17 (2026-08-31, review finding): channel-identity guard + timer hygiene in the reconnect

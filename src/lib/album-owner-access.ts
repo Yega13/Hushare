@@ -58,7 +58,7 @@ type AccessFail = {
 // PostgREST's filter syntax treats as special; (2) a value that fails this check cannot possibly
 // match either column, so we skip the DB round trip entirely instead of querying and getting an
 // empty result.
-const SLUG_CHARSET_RE = /^[a-z0-9-]+$/
+export const SLUG_CHARSET_RE = /^[a-z0-9-]+$/
 
 // Shared slug/custom_slug lookup used by both verifyAlbumOwnerAccess (bearer token) and
 // verifyOwnerViaCookie (owner cookie) — previously duplicated verbatim in each. Kept as one
@@ -298,4 +298,37 @@ export async function verifyOwnerViaCookieWithRateLimit<T extends AlbumOwnerBase
     return { ok: false as const, status: 429, error: 'Too many requests. Please slow down.', reason: 'rate_limited' as const }
   }
   return verifyOwnerViaCookie<T>(slug, extraColumns)
+}
+
+/**
+ * The same ownable-album lookup, but WITHOUT the retired_at filter — for /api/album/restore only.
+ *
+ * An album in the bin has retired_at set, which every lookup above deliberately excludes so that no
+ * owner mutation can touch a hidden album. Restore is the one exception, and it has to reuse THIS
+ * function rather than writing its own query, for two reasons that are both security-critical:
+ *
+ *   * the charset check is what makes the `.or()` safe. `slug` and `custom_slug` are constrained to
+ *     `^[a-z0-9-]+$`, and validating before interpolating is what keeps the comma, parenthesis and
+ *     dot that PostgREST's filter syntax treats as special out of the filter string. A second copy
+ *     of this query written without it is a filter-injection hole (rule 13);
+ *   * at most two rows can match, because a random slug and someone else's custom_slug can collide.
+ *     The random slug wins. A `.limit(1)` picks whichever the planner returns first, which is a
+ *     coin toss over WHICH ALBUM gets restored.
+ *
+ * It proves nothing about ownership. The caller checks the owner token.
+ */
+export async function lookupAlbumIncludingBinned(
+  slug: string,
+): Promise<{ id: string; slug: string; owner_token: string; deleted_at: string | null } | null> {
+  const clean = slug.trim()
+  if (!SLUG_CHARSET_RE.test(clean)) return null
+  const admin = createAdminClient()
+  const { data: rows, error } = await admin
+    .from('albums')
+    .select('id, slug, owner_token, deleted_at')
+    .or(`slug.eq.${clean},custom_slug.eq.${clean}`)
+    .limit(2)
+    .returns<{ id: string; slug: string; owner_token: string; deleted_at: string | null }[]>()
+  if (error || !rows || rows.length === 0) return null
+  return rows.find((r) => r.slug === clean) ?? rows[0]
 }

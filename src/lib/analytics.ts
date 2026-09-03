@@ -28,6 +28,8 @@ export type AnalyticsEvent =
   | { name: 'subscription_active';  userId?: string | null; tier: Tier }
   | { name: 'subscription_canceled'; userId?: string | null; tier: Tier }
   | { name: 'album_retired';        albumId: string }
+  /** The bin emptied: an album the OWNER deleted, destroyed after its recovery window. */
+  | { name: 'album_bin_purged';     albumId: string }
   // One-off package purchases — album-scoped money, unlike the user-scoped subscription events.
   | { name: 'package_purchased';    albumId: string; product: string }
   | { name: 'package_renewed';      albumId: string; product: string }
@@ -105,6 +107,7 @@ function shape(e: AnalyticsEvent): { blobs: string[]; doubles: number[] } {
       // Same column plan as the subscription events: blob2 the album, blob6 the product key.
       return { blobs: [e.name, s(e.albumId), '', '', '', e.product], doubles: [1, 0] }
     case 'album_retired':
+    case 'album_bin_purged':
       return { blobs: [e.name, s(e.albumId), '', '', '', ''], doubles: [1, 0] }
     case 'support_submitted':
     case 'report_submitted':

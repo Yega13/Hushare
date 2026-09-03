@@ -49,8 +49,14 @@ export async function POST(req: Request) {
   // ── Reset an album's retention clock (and un-retire a soft-retired one) ──
   if (body?.action === 'extend_retention') {
     if (!body.albumId) return NextResponse.json({ error: 'Missing albumId' }, { status: 400, headers: NO_STORE })
+    // deleted_at IS CLEARED TOO. This clears retired_at, which is also what hides an album the
+    // owner deleted — so on a binned album, clearing only retired_at would make it public again
+    // while it was still queued for destruction, and the next nightly pass would then delete an
+    // album that was visibly live. Clearing both is "restore from the bin", which is what an
+    // admin reaching for this on a deleted album actually wants.
     const { error } = await admin.from('albums')
-      .update({ last_activity_at: new Date().toISOString(), retired_at: null }).eq('id', body.albumId)
+      .update({ last_activity_at: new Date().toISOString(), retired_at: null, deleted_at: null })
+      .eq('id', body.albumId)
     if (error) return NextResponse.json({ error: error.message }, { status: 500, headers: NO_STORE })
     return NextResponse.json({ ok: true, message: 'Retention reset — one more year from today.' }, { headers: NO_STORE })
   }

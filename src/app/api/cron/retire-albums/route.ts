@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { RETIRE_AFTER_DAYS, WARN_BEFORE_DAYS } from '@/lib/retention'
+import { BIN_DAYS, isPurgeable } from '@/lib/album-bin'
 import { deleteAlbumAssetsAndRows } from '@/lib/album-delete'
 import { getUserTierResolved, getPaidRetentionUntil } from '@/lib/subscriptions'
 import { timingSafeEqual } from '@/lib/timing-safe'
@@ -64,6 +65,60 @@ export async function POST(req: Request) {
 
   // Piggyback the daily run to prune the admin error log (keeps 30 days). Best-effort.
   void admin.rpc('prune_error_events')
+
+  // ── EMPTY THE BIN ────────────────────────────────────────────────────────────────────────────
+  //
+  // Deleting an album marks it instead of destroying it (lib/album-bin). This is where the real
+  // deletion finally happens, seven days later, and it is the only automatic destruction of an
+  // album an owner asked to delete.
+  //
+  // A SEPARATE PASS, not folded into the inactivity query below, because the two have nothing in
+  // common except the function that does the deleting. Inactivity retirement is gated on a warning
+  // having been sent 30 days earlier and skips albums with a live package; the bin is gated on one
+  // thing only — the owner deleted it and the window has passed. Sharing a query would mean one set
+  // of filters silently applying to the other, which is how an album nobody asked to delete gets
+  // deleted.
+  //
+  // THE ELIGIBILITY DECISION IS NOT MADE HERE. The SQL cutoff narrows the candidates; isPurgeable
+  // makes the call, per album, and refuses anything whose timestamp is unparseable, in the future,
+  // or absurdly old. Those are hidden and KEPT — a bin that fails to empty costs cents a month, and
+  // a bin that empties early destroys a wedding with no backup to restore from (rule 19).
+  let purged = 0
+  let purgeFailed = 0
+  const binCutoff = new Date(Date.now() - BIN_DAYS * 24 * 60 * 60 * 1000).toISOString()
+  const { data: binned, error: binErr } = await admin
+    .from('albums')
+    .select('id, slug, user_id, background_theme, logo_url, header_image, sponsor_logos, last_activity_at, deleted_at')
+    .not('deleted_at', 'is', null)
+    .lt('deleted_at', binCutoff)
+    .order('deleted_at', { ascending: true })
+    .limit(BATCH_SIZE)
+    .returns<(RetirementCandidate & { deleted_at: string | null })[]>()
+
+  if (binErr) {
+    // Reported, not fatal: the inactivity pass below is independent and must still run.
+    console.error('[retire-albums] bin scan failed:', binErr.message)
+  }
+
+  for (const album of binned ?? []) {
+    // The SQL already filtered by date. This asks the tested decision anyway, because the SQL
+    // cannot express "and not if the timestamp is nonsense" and this is a one-way door.
+    if (!isPurgeable(album.deleted_at, Date.now())) {
+      console.error('[retire-albums] refusing to purge album', album.slug,
+        '— deleted_at is not a sane past date:', String(album.deleted_at))
+      continue
+    }
+    const result = await deleteAlbumAssetsAndRows(admin, album)
+    if (result.ok) {
+      purged += 1
+      track({ name: 'album_bin_purged', albumId: album.id })
+    } else {
+      // Left in the bin. The next run tries again, and until then the data is still there — which
+      // is the whole point of failing this way round.
+      console.error('[retire-albums] bin purge failed for album', album.slug, '— leaving it in the bin')
+      purgeFailed += 1
+    }
+  }
 
   // A WARNING MUST HAVE BEEN SENT, and it must have had time to be acted on.
   //
@@ -170,7 +225,7 @@ export async function POST(req: Request) {
   }
 
   return NextResponse.json(
-    { ok: true, scanned: candidates?.length ?? 0, retired, skippedPaid, failed, cutoff },
+    { ok: true, scanned: candidates?.length ?? 0, retired, skippedPaid, failed, cutoff, purged, purgeFailed },
     { headers: NO_STORE },
   )
 }

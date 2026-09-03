@@ -508,16 +508,34 @@ export async function savePhotoHiddenRequest(
   return { ok: true, hidden: body.hidden ?? hidden }
 }
 
+// Deleting no longer destroys anything: the album is hidden immediately and its files are kept for
+// a recovery window (lib/album-bin). The window comes back from the server rather than being
+// repeated here, so the number the owner is shown is the number actually enforced (rule 13).
 export async function deleteAlbumRequest(
   slug: string,
-): Promise<{ ok: true } | { ok: false; error: string }> {
+): Promise<{ ok: true; restorableForDays: number } | { ok: false; error: string }> {
   const res = await fetch('/api/album/delete', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ slug }),
   })
-  const body = await jsonBody<{ error?: string }>(res)
+  const body = await jsonBody<{ error?: string; restorableForDays?: number }>(res)
   if (!res.ok) return { ok: false, error: body.error ?? `Delete failed (${res.status})` }
+  return { ok: true, restorableForDays: body.restorableForDays ?? 0 }
+}
+
+// Put a deleted album back. Proof is the owner cookie the browser still holds — the delete path
+// deliberately keeps it, because it is the only thing that can authorise this.
+export async function restoreAlbumRequest(
+  slug: string,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const res = await fetch('/api/album/restore', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ slug }),
+  })
+  const body = await jsonBody<{ error?: string }>(res)
+  if (!res.ok) return { ok: false, error: body.error ?? `Restore failed (${res.status})` }
   return { ok: true }
 }
 

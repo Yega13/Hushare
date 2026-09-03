@@ -79,6 +79,7 @@ create table if not exists public.albums (
   package_expires_at timestamp with time zone,
   package_last_order_id text,
   package_reminder_at timestamp with time zone,
+  deleted_at timestamp with time zone,
   primary key (id)
 );
 alter table public.albums enable row level security;
@@ -540,6 +541,7 @@ end $$;
 create index if not exists active_sessions_last_seen_idx ON public.active_sessions USING btree (last_seen);
 create index if not exists albums_branding_locked_idx ON public.albums USING btree (branding_locked) WHERE branding_locked;
 create unique index if not exists albums_custom_slug_unique_idx ON public.albums USING btree (custom_slug) WHERE (custom_slug IS NOT NULL);
+create index if not exists albums_deleted_at_idx ON public.albums USING btree (deleted_at) WHERE (deleted_at IS NOT NULL);
 create index if not exists albums_package_expiry_idx ON public.albums USING btree (package_expires_at) WHERE (package_tier IS NOT NULL);
 create index if not exists albums_retirement_scan_idx ON public.albums USING btree (last_activity_at) WHERE (retired_at IS NULL);
 create index if not exists albums_slug_idx ON public.albums USING btree (slug);

@@ -33,11 +33,13 @@ import {
 } from '@/lib/slideshow-motion'
 import type { SlideshowMotion } from '@/types'
 import { showAppToast, storeAppToast } from '@/components/AppToast'
+import { BIN_DAYS } from '@/lib/album-bin'
 import RevealDatePicker from '@/components/RevealDatePicker'
 import ShareMenu from '@/components/owner-toolbar/ShareMenu'
 import {
   addAlbumToCollectionRequest,
   deleteAlbumRequest,
+  restoreAlbumRequest,
   fetchCollections,
   saveCustomUrlRequest,
   saveGuestDownloadsRequest,
@@ -129,6 +131,12 @@ export default function OwnerToolbar({ album, photos, albumPhotoCount, ownerToke
 
   const [deleteConfirm, setDeleteConfirm] = useState(false)
   const [deletingAlbum, setDeletingAlbum] = useState(false)
+  // AFTER A DELETE, BEFORE LEAVING. Deleting no longer destroys anything for a week, and an undo
+  // the owner cannot reach is not an undo — telling them it is restorable while offering no way to
+  // restore it would be a promise the screen does not keep (rule 20). So the redirect waits behind
+  // this, and the owner cookie is still in the browser to authorise it.
+  const [deletedFor, setDeletedFor] = useState<number | null>(null)
+  const [restoring, setRestoring] = useState(false)
   const [deleteError, setDeleteError] = useState('')
 
   const [customUrlInput, setCustomUrlInput] = useState(album.custom_slug ?? '')
@@ -685,14 +693,32 @@ export default function OwnerToolbar({ album, photos, albumPhotoCount, ownerToke
         showAppToast(result.error, 'error')
         return
       }
-      storeAppToast(t('ot.albumDeleted'))
-      window.location.href = '/'
+      // NOT redirected yet. The owner gets the chance to undo first; leaving is their choice.
+      setDeletedFor(result.restorableForDays)
+      setDeleteConfirm(false)
     } catch (e) {
       const message = e instanceof Error ? e.message : t('common.networkError')
       setDeleteError(message)
       showAppToast(message, 'error')
     } finally {
       setDeletingAlbum(false)
+    }
+  }
+
+  async function restoreAlbum() {
+    setRestoring(true)
+    try {
+      const result = await restoreAlbumRequest(album.slug)
+      if (!result.ok) {
+        showAppToast(result.error, 'error')
+        return
+      }
+      storeAppToast(t('ot.albumRestored'))
+      window.location.reload()
+    } catch (e) {
+      showAppToast(e instanceof Error ? e.message : t('common.networkError'), 'error')
+    } finally {
+      setRestoring(false)
     }
   }
 
@@ -1837,6 +1863,35 @@ export default function OwnerToolbar({ album, photos, albumPhotoCount, ownerToke
                 {openSection === 'danger' && (
                   <div className="px-4 pb-4">
                     <div className={`hush-delete-dialog hush-delete-panel rounded-xl p-3 ${deleteConfirm ? 'hush-delete-dialog-open' : ''}`} style={{ background: '#FFF7F4', border: '1px solid rgba(192,57,43,0.25)' }}>
+                      {deletedFor !== null ? (
+                        // DELETED, AND STILL RECOVERABLE. The redirect waits here on purpose: an undo
+                        // the owner cannot reach is not an undo.
+                        <div>
+                          <p className="text-xs leading-relaxed mb-3" style={{ color: '#7A2A1F' }}>
+                            {t('ot.albumDeleted')} {t('ot.restorableFor').replace('{days}', String(deletedFor))}
+                          </p>
+                          <div className="flex flex-col gap-2 sm:flex-row">
+                            <button
+                              type="button"
+                              onClick={() => void restoreAlbum()}
+                              disabled={restoring}
+                              className="hush-press flex flex-1 items-center justify-center gap-2 rounded-lg py-2 text-sm font-semibold transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
+                              style={{ background: '#FFFFFF', border: '1px solid #630826', color: '#630826' }}
+                            >
+                              {restoring ? t('ot.restoring') : t('ot.undoDelete')}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => { storeAppToast(t('ot.albumDeleted')); window.location.href = '/' }}
+                              className="hush-press rounded-lg px-3 py-2 text-sm font-semibold transition hover:opacity-90"
+                              style={{ background: '#FFFFFF', border: '1px solid #DDD5C5', color: '#7C5C3E' }}
+                            >
+                              {t('ot.done')}
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                      <>
                       <p className="text-xs leading-relaxed mb-3" style={{ color: '#7A2A1F' }}>
                         {t('ot.deleteSub')}
                       </p>
@@ -1867,10 +1922,15 @@ export default function OwnerToolbar({ album, photos, albumPhotoCount, ownerToke
                       </div>
                       {deleteConfirm && !deleteError && (
                         <p className="mt-2 text-xs" style={{ color: '#7A2A1F' }}>
-                          Click again to confirm. This cannot be undone.
+                          {/* It CAN be undone now, for a week. Saying otherwise was true when deleting
+                              was final and is not any more — and the scarier sentence is the one that
+                              stops somebody deleting a duplicate album they meant to tidy up. */}
+                          {t('ot.deleteConfirmHint').replace('{days}', String(BIN_DAYS))}
                         </p>
                       )}
                       {deleteError && <p className="mt-2 text-xs" style={{ color: '#C0392B' }}>{deleteError}</p>}
+                      </>
+                      )}
                     </div>
                   </div>
                 )}
