@@ -28,6 +28,9 @@ export default function MyDeviceAlbums() {
   // Slugs the server says have no account behind them. null = not asked yet, so a signed-in
   // visitor is shown nothing rather than a list we cannot describe honestly (rule 20).
   const [unclaimed, setUnclaimed] = useState<Set<string> | null>(null)
+  // Deleted, still recoverable. These are NOT pruned: the token this device holds is the only key
+  // to an anonymous album, and 71 of the 105 live albums are anonymous.
+  const [binned, setBinned] = useState<Set<string>>(new Set())
 
   useEffect(() => {
     const local = getMyAlbums()
@@ -46,12 +49,17 @@ export default function MyDeviceAlbums() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ slugs: local.map((a) => a.slug) }),
     })
-      .then((r) => (r.ok ? r.json() as Promise<{ alive?: string[]; unclaimed?: string[] }> : null))
+      .then((r) => (r.ok ? r.json() as Promise<{ alive?: string[]; unclaimed?: string[]; binned?: string[] }> : null))
       .then((res) => {
         if (cancelled || !res || !Array.isArray(res.alive)) return
         if (Array.isArray(res.unclaimed)) setUnclaimed(new Set(res.unclaimed))
+        // A BINNED ALBUM IS NOT DEAD. It is hidden and recoverable, so it must survive the prune —
+        // forgetting it here would throw away the owner token within seconds of the owner deleting
+        // the album, and that token is the only thing the restore route can authenticate with.
+        const inBin = new Set(Array.isArray(res.binned) ? res.binned : [])
+        setBinned(inBin)
         const alive = new Set(res.alive)
-        const dead = local.filter((a) => !alive.has(a.slug))
+        const dead = local.filter((a) => !alive.has(a.slug) && !inBin.has(a.slug))
         if (dead.length === 0) return
         for (const a of dead) forgetAlbum(a.slug)
         setAlbums(getMyAlbums())
@@ -110,6 +118,41 @@ export default function MyDeviceAlbums() {
   // means losing its management token anyway, so we delete the album — which also frees a slot in the
   // per-device album cap. We authenticate with the remembered owner_token first (sets the owner
   // cookie the delete route checks), then delete, then drop it from the local list.
+  // Put a deleted album back. Same two steps as deleting: prove ownership with the remembered
+  // token (which sets the owner cookie), then act.
+  async function restoreAlbum(a: MyAlbum) {
+    if (busy) return
+    setBusy(a.slug)
+    try {
+      const login = await fetch('/api/album/owner-login', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ slug: a.slug, owner_token: a.token }),
+      })
+      if (!login.ok) {
+        showAppToast(t('common.errorGeneric'), 'error')
+        return
+      }
+      const res = await fetch('/api/album/restore', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ slug: a.slug }),
+      })
+      if (!res.ok) {
+        showAppToast(t('common.errorGeneric'), 'error')
+        return
+      }
+      showAppToast(t('ot.albumRestored'))
+      setBinned((prev) => {
+        const next = new Set(prev)
+        next.delete(a.slug)
+        return next
+      })
+    } catch {
+      showAppToast(t('common.networkError'), 'error')
+    } finally {
+      setBusy(null)
+    }
+  }
+
   async function deleteAlbum(a: MyAlbum) {
     if (busy) return
     if (!window.confirm(t('myAlbums.removeConfirm'))) return
@@ -155,8 +198,12 @@ export default function MyDeviceAlbums() {
   // Signed out: every remembered album, unchanged. Signed in: only the ones with no account
   // behind them — the rest are already on their account page, and repeating them here would be
   // two lists of the same thing that can disagree.
-  const rows = loggedIn ? albums.filter((a) => unclaimed?.has(a.slug)) : albums
-  if (rows.length === 0) return null
+  const liveAlbums = albums.filter((a) => !binned.has(a.slug))
+  const rows = loggedIn ? liveAlbums.filter((a) => unclaimed?.has(a.slug)) : liveAlbums
+  // Deleted albums are listed for EVERYONE here, signed in or not: an album made while signed out
+  // never reaches the account page, so for those owners this is the only door back.
+  const binnedRows = albums.filter((a) => binned.has(a.slug))
+  if (rows.length === 0 && binnedRows.length === 0) return null
 
   return (
     <section className="hush-container pb-10" aria-label="Your albums on this device">
@@ -213,6 +260,33 @@ export default function MyDeviceAlbums() {
             </li>
           ))}
         </ul>
+
+        {binnedRows.length > 0 && (
+          <div className="mt-4 pt-4" style={{ borderTop: '1px solid #EFE7D8' }}>
+            <h3 className="text-xs mb-1" style={{ fontWeight: 700, color: '#630826' }}>
+              {t('acct.recentlyDeleted')}
+            </h3>
+            <p className="text-xs mb-2" style={{ color: '#8A7A66' }}>{t('acct.recentlyDeletedDesc')}</p>
+            <ul className="flex flex-col divide-y" style={{ borderColor: '#EFE7D8' }}>
+              {binnedRows.map((a) => (
+                <li key={a.slug} className="flex items-center justify-between gap-3 py-2">
+                  <span className="flex-1 min-w-0 truncate text-sm" style={{ color: '#8A7A66', fontWeight: 600 }}>
+                    {a.title}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => void restoreAlbum(a)}
+                    disabled={!!busy}
+                    className="text-xs shrink-0 disabled:opacity-50"
+                    style={{ color: '#630826', fontWeight: 700 }}
+                  >
+                    {busy === a.slug ? t('ot.restoring') : t('ot.undoDelete')}
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
       </div>
     </section>
   )

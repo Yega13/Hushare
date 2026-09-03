@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { checkRateLimit, clientIpKey } from '@/lib/rate-limit'
+import { canRestore } from '@/lib/album-bin'
 import { forbidCrossSiteRequest } from '@/lib/request-security'
 
 export const runtime = 'nodejs'
@@ -45,10 +46,16 @@ export async function POST(req: Request) {
   const admin = createAdminClient()
   const { data, error } = await admin
     .from('albums')
-    .select('slug, custom_slug, user_id')
+    // NO retired_at FILTER ANY MORE, and that matters more than it looks.
+    //
+    // An album the owner deleted is hidden by retired_at, so it stopped being "alive" — and this
+    // list PRUNES anything not alive, which calls forgetAlbum() and throws away the owner token.
+    // That token is the only key to an anonymous album, and 71 of the 105 live albums are
+    // anonymous. So deleting one used to discard, within seconds, the only thing that could ever
+    // bring it back. The rows are classified below instead of being filtered away here.
+    .select('slug, custom_slug, user_id, retired_at, deleted_at')
     .or(`slug.in.(${slugs.join(',')}),custom_slug.in.(${slugs.join(',')})`)
-    .is('retired_at', null)
-    .returns<{ slug: string; custom_slug: string | null; user_id: string | null }[]>()
+    .returns<{ slug: string; custom_slug: string | null; user_id: string | null; retired_at: string | null; deleted_at: string | null }[]>()
 
   if (error) {
     // On failure report everything as alive. Pruning on an error would delete the owner's only
@@ -56,21 +63,32 @@ export async function POST(req: Request) {
     console.error('[album/exists] lookup failed:', error.message)
     // Report everything alive AND nothing unclaimed: the first keeps a live album's token, the
     // second offers no action we could not verify. Both err toward doing nothing (rule 19).
-    return NextResponse.json({ alive: slugs, unclaimed: [] }, { headers: NO_STORE })
+    return NextResponse.json({ alive: slugs, unclaimed: [], binned: [] }, { headers: NO_STORE })
   }
 
   const found = new Set<string>()
   const unowned = new Set<string>()
+  const inBin = new Set<string>()
+  const both = (row: { slug: string; custom_slug: string | null }, set: Set<string>) => {
+    if (row.slug) set.add(row.slug)
+    if (row.custom_slug) set.add(row.custom_slug)
+  }
   for (const row of data ?? []) {
-    if (row.slug) found.add(row.slug)
-    if (row.custom_slug) found.add(row.custom_slug)
-    if (row.user_id === null) {
-      if (row.slug) unowned.add(row.slug)
-      if (row.custom_slug) unowned.add(row.custom_slug)
+    // DELETED BUT RECOVERABLE is its own answer. Not alive — the album really is hidden from
+    // everyone — but the device must keep its token, because that token is what the restore route
+    // authenticates with. An album retired for INACTIVITY is neither: it is genuinely gone, and
+    // pruning it is right.
+    if (row.deleted_at && canRestore(row.deleted_at, Date.now())) {
+      both(row, inBin)
+      continue
     }
+    if (row.retired_at) continue
+    both(row, found)
+    if (row.user_id === null) both(row, unowned)
   }
   return NextResponse.json({
     alive: slugs.filter((s) => found.has(s)),
     unclaimed: slugs.filter((s) => unowned.has(s)),
+    binned: slugs.filter((s) => inBin.has(s)),
   }, { headers: NO_STORE })
 }
