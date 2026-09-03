@@ -4,6 +4,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { isAccountAdmin } from '@/lib/auth'
 import { forbidCrossSiteRequest } from '@/lib/request-security'
 import { reconcilePolarSubscriptions } from '@/lib/server/polar-reconcile'
+import { reconcilePackageOrders, type PackageReconcileResult } from '@/lib/server/package-reconcile'
 
 export const runtime = 'nodejs'
 
@@ -42,8 +43,41 @@ export async function POST(req: Request) {
     )
   }
 
+  // PACKAGES TOO, and this button is the only way to run it on demand.
+  //
+  // One-time package orders ($49 / $99) are repaired by a NIGHTLY cron and by nothing else, so when
+  // a customer says "I paid and nothing happened" the honest answer used to be "wait until
+  // tomorrow". Running it here makes the repair immediate — and it is the same shared function the
+  // cron calls, never a second implementation of what somebody has paid for.
+  //
+  // It also exercises a DIFFERENT Polar permission from the subscription sync above: packages read
+  // /v1/orders/, which needs orders:read, and subscriptions do not. That scope was missing for a
+  // day and the nightly cron died on it every night — with only the subscription sync wired to this
+  // button, pressing it reported a cheerful success while the package repair path was dead.
+  //
+  // Reported SEPARATELY rather than merged into the numbers above: two different things ran, and a
+  // single combined count would hide one of them failing.
+  let packages: PackageReconcileResult | null = null
+  let packagesError: string | null = null
+  try {
+    packages = await reconcilePackageOrders(admin)
+  } catch (err) {
+    // NOT a 502. The subscription half already succeeded, and throwing that away because the
+    // package half failed would lose work that was actually done. The error is reported instead,
+    // which is what tells you a scope is missing (rule 20).
+    packagesError = err instanceof Error ? err.message : String(err)
+    console.error('[admin/sync-polar] package reconcile failed:', packagesError)
+  }
+
   return NextResponse.json(
-    { ok: true, ...result, notes: result.notes.slice(0, 20) },
+    {
+      ok: true,
+      ...result,
+      notes: result.notes.slice(0, 20),
+      packages: packages
+        ? { ...packages, notes: packages.notes.slice(0, 20) }
+        : { error: packagesError },
+    },
     { headers: NO_STORE },
   )
 }
