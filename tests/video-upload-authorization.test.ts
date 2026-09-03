@@ -483,3 +483,28 @@ describe('the signed-in owner is recognized on a device with no owner cookie', (
     expect(cfg.gateCalls[0].albumId).toBe(ALBUM_ID)
   })
 })
+
+describe('the budget the caller books against is the album own ceiling', () => {
+  // The route books the hold atomically through reserve_album_video, and compares against THIS
+  // number. Nothing asserted it, so returning 999999 — every album effectively unlimited — passed
+  // the whole suite. It is enforcement travelling with the decision that produced it (rule 15), and
+  // the same shape as the Cloudflare reservation, which was hardcoded at the call site once.
+  it('reports the free ceiling for a free album', async () => {
+    const res = await authorizeVideoUpload(req({ durationSeconds: 30 }))
+    expect(res.ok).toBe(true)
+    if (!res.ok) return
+    expect(res.budgetSeconds).toBe(videoCaps('free').maxTotalSeconds)
+    expect(res.budgetSeconds, 'pinned against a literal so it cannot say n === n').toBe(600)
+  })
+
+  it('reports the PAID ceiling for a paid album, not the free one', async () => {
+    cfg.album = { ...OK_ALBUM, user_id: 'user-1' }
+    cfg.tier = 'studio'
+    const res = await authorizeVideoUpload(req({ durationSeconds: 30 }))
+    expect(res.ok).toBe(true)
+    if (!res.ok) return
+    expect(res.budgetSeconds).toBe(videoCaps('studio').maxTotalSeconds)
+    expect(res.budgetSeconds).toBe(3000)
+    expect(res.budgetSeconds).toBeGreaterThan(videoCaps('free').maxTotalSeconds)
+  })
+})

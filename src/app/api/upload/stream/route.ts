@@ -1,7 +1,8 @@
 import { NextResponse } from 'next/server'
 import { reportServerError } from '@/lib/report-server-error'
 import { createAdminClient } from '@/lib/supabase/admin'
-import { createStreamUpload } from '@/lib/cloudflare/stream'
+import { createStreamUpload, deleteStreamVideo } from '@/lib/cloudflare/stream'
+import { videoAlbumFullMessage, videoCaps } from '@/lib/album-entitlements'
 import { checkRateLimit, clientIpKey } from '@/lib/rate-limit'
 import { forbidCrossSiteRequest } from '@/lib/request-security'
 import { authorizeVideoUpload } from '@/lib/server/video-upload-authorization'
@@ -122,18 +123,49 @@ export async function POST(req: Request) {
       ? Math.max(0, Math.round(durationSeconds))
       : null
 
-  const { error: pendingErr } = await admin
-    .from('pending_stream_uploads')
-    .insert({
-      stream_uid: streamUid,
-      album_id: albumId,
-      upload_url: uploadUrl,
-      declared_duration_seconds: declaredDurationSeconds,
+  // BOOKED ATOMICALLY, not inserted.
+  //
+  // The budget was checked by authorizeVideoUpload BEFORE the Cloudflare call above, and this row is
+  // written after it — so a plain insert leaves a window of a few hundred milliseconds in which two
+  // requests both read an empty album and both pass. Minutes became milliseconds when the hold was
+  // introduced; this closes the milliseconds. A QR code on a table gets scanned by a whole group at
+  // once, which is exactly the shape that hits it.
+  //
+  // reserve_album_video takes an advisory lock on the album, writes the hold, and re-asks
+  // album_video_seconds inside that lock — so the second request sees the first one's hold and is
+  // refused. It errs OPEN if the total cannot be read, matching the pre-check above.
+  const { data: booked, error: pendingErr } = await admin
+    .rpc('reserve_album_video', {
+      p_stream_uid: streamUid,
+      p_album_id: albumId,
+      p_declared: declaredDurationSeconds,
+      p_budget_seconds: auth.budgetSeconds,
+      p_upload_url: uploadUrl,
     })
+    .returns<boolean>()
   if (pendingErr) {
-    console.error('[stream] pending_stream_uploads insert failed:', pendingErr.message)
+    console.error('[stream] reserve_album_video failed:', pendingErr.message)
     reportServerError('stream', 'Failed to initiate video upload (502)')
     return NextResponse.json({ error: 'Failed to initiate video upload' }, { status: 502, headers: NO_STORE })
+  }
+
+  if (booked === false) {
+    // Somebody else took the last of the album's minutes between the pre-check and here. The
+    // Cloudflare upload we just created is handed straight back rather than left to expire: an
+    // unreleased reservation is quota nobody can use, against a ceiling shared by every album.
+    //
+    // Best effort — if the delete fails, cleanupStaleStreamUploads reclaims it on its own pass, so
+    // this is worth attempting and not worth failing the request over.
+    await deleteStreamVideo(streamUid).catch((e: unknown) => {
+      console.error('[stream] could not release the Cloudflare upload for a refused booking:',
+        e instanceof Error ? e.message : String(e))
+    })
+    // 403, not 429, for the same reason the pre-check uses it: lib/upload-policy retries a 429 four
+    // more times behind a backoff, and this refusal stands until somebody deletes something.
+    return NextResponse.json(
+      { code: 'album_video_full', error: videoAlbumFullMessage(videoCaps(auth.effectiveTier), auth.budgetSeconds) },
+      { status: 403, headers: NO_STORE },
+    )
   }
 
   // Stale rows (video uploaded but photos/create never called, e.g. tab closed) are pruned by

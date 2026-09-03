@@ -860,6 +860,35 @@ begin
 end;
 $function$;
 
+CREATE OR REPLACE FUNCTION public.reserve_album_video(p_stream_uid text, p_album_id uuid, p_declared integer, p_budget_seconds bigint, p_upload_url text DEFAULT NULL::text)
+ RETURNS boolean
+ LANGUAGE plpgsql
+AS $function$
+declare
+  v_total bigint;
+begin
+  perform pg_advisory_xact_lock(hashtextextended(p_album_id::text, 0));
+
+  insert into public.pending_stream_uploads
+    (stream_uid, album_id, declared_duration_seconds, upload_url)
+  values (p_stream_uid, p_album_id, p_declared, p_upload_url);
+
+  v_total := public.album_video_seconds(p_album_id);
+
+  if v_total is null then
+    -- Cannot tell. Keep the hold and allow it: silence beats refusing a real guest.
+    return true;
+  end if;
+
+  if v_total > p_budget_seconds then
+    delete from public.pending_stream_uploads where stream_uid = p_stream_uid;
+    return false;
+  end if;
+
+  return true;
+end;
+$function$;
+
 CREATE OR REPLACE FUNCTION public.set_updated_at()
  RETURNS trigger
  LANGUAGE plpgsql
@@ -948,6 +977,7 @@ revoke execute on function public.find_user_id_by_email(p_email text) from publi
 revoke execute on function public.prune_error_events() from public, anon, authenticated;
 revoke execute on function public.prune_rate_limit_events() from public, anon, authenticated;
 revoke execute on function public.rate_limit_hit(p_key text, p_window_seconds integer, p_max integer) from public, anon, authenticated;
+revoke execute on function public.reserve_album_video(p_stream_uid text, p_album_id uuid, p_declared integer, p_budget_seconds bigint, p_upload_url text) from public, anon, authenticated;
 revoke execute on function public.set_updated_at() from public, anon, authenticated;
 revoke execute on function public.studio_add_credits(p_user uuid, p_amount integer, p_reason text, p_meta jsonb) from public, anon, authenticated;
 revoke execute on function public.studio_grant_monthly(p_user uuid, p_amount integer, p_month text) from public, anon, authenticated;

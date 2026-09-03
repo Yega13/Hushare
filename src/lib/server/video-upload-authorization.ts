@@ -40,6 +40,8 @@ const MAX_VIDEO_HARD_CAP = STUDIO_VIDEO_BYTES // absolute ceiling = studio tier 
 export type VideoUploadAuthResult =
   | {
       ok: true
+      /** The album's video ceiling, so the caller can book atomically against it. */
+      budgetSeconds: number
       /** The ALBUM's effective tier — the owner's plan or its package, whichever is better. */
       effectiveTier: Tier
       /**
@@ -216,6 +218,16 @@ export async function authorizeVideoUpload(
   return {
     ok: true,
     effectiveTier,
+    // THE CEILING THE ATOMIC BOOKING IS MEASURED AGAINST.
+    //
+    // Everything above is a PRE-check: it reads the total, then the caller calls Cloudflare, then
+    // the hold is written — so two requests a few hundred milliseconds apart can both read an empty
+    // album. Returning the budget lets the caller book through reserve_album_video, which takes the
+    // hold and re-asks inside one lock, so the second request sees the first.
+    //
+    // Handed over rather than re-derived at the call site: videoCaps(effectiveTier) is the same
+    // decision, and a second copy of "what is this album allowed" is what rule 13 forbids.
+    budgetSeconds: vcaps.maxTotalSeconds,
     // NEVER clamped to the budget or to any cap. Cloudflare does not refuse an upload longer than
     // this — it accepts the bytes and fails during PROCESSING, so a value even slightly too small
     // means a guest uploads their whole video and watches it die at 100%. See lib/stream-duration.

@@ -30,21 +30,31 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 // the thing being executed is the wiring — which is the thing that was broken.
 
 const authCalls: unknown[] = []
+/** Every reserve_album_video call: the name and its parameters. */
+const bookings: Array<{ name: string; params: Record<string, unknown> }> = []
+/** Cloudflare uploads handed back because the album filled up. */
+const releases: string[] = []
 const streamCalls: unknown[][] = []
 const inserts: unknown[] = []
 
 // An unusual value on purpose: a hardcoded 60, 900 or 21600 at the call site cannot coincide with
 // it, so assertion (2) below cannot pass by accident.
 const RESERVATION = 4321
+// Also unusual on purpose: a hardcoded 600/1200/3000 at the call site cannot coincide with it.
+const BUDGET = 7777
 
-const cfg: { authOk: boolean; refusal: Response | null; ipRlOk: boolean; rateLimitCalls: unknown[][] } =
-  { authOk: true, refusal: null, ipRlOk: true, rateLimitCalls: [] }
+const cfg: {
+  authOk: boolean; refusal: Response | null; ipRlOk: boolean; rateLimitCalls: unknown[][]
+  /** What the atomic booking answers. false = somebody else took the last minutes. */
+  bookingOk: boolean
+  bookingError: string | null
+} = { authOk: true, refusal: null, ipRlOk: true, rateLimitCalls: [], bookingOk: true, bookingError: null }
 
 vi.mock('@/lib/server/video-upload-authorization', () => ({
   authorizeVideoUpload: async (params: unknown) => {
     authCalls.push(params)
     return cfg.authOk
-      ? { ok: true, effectiveTier: 'free', maxDurationSeconds: RESERVATION }
+      ? { ok: true, effectiveTier: 'free', maxDurationSeconds: RESERVATION, budgetSeconds: BUDGET }
       : { ok: false, response: cfg.refusal }
   },
 }))
@@ -58,10 +68,20 @@ vi.mock('@/lib/cloudflare/stream', () => ({
       thumbnailUrl: 'https://videodelivery.net/abc/thumb.jpg',
     }
   },
+  deleteStreamVideo: async (uid: string) => { releases.push(uid) },
 }))
 vi.mock('@/lib/supabase/admin', () => ({
   createAdminClient: () => ({
     from: () => ({ insert: async (row: unknown) => { inserts.push(row); return { error: null } } }),
+    // THE BOOKING. The hold used to be a plain insert, which cannot be atomic: the budget is read
+    // before the Cloudflare call and the row is written after it. This records what was booked and
+    // can refuse, so both halves are observable.
+    rpc: (name: string, params: Record<string, unknown>) => {
+      bookings.push({ name, params })
+      return { returns: async () => (cfg.bookingError
+        ? { data: null, error: { message: cfg.bookingError } }
+        : { data: cfg.bookingOk, error: null }) }
+    },
   }),
 }))
 vi.mock('@/lib/rate-limit', () => ({
@@ -100,6 +120,10 @@ beforeEach(() => {
   cfg.refusal = null
   cfg.ipRlOk = true
   cfg.rateLimitCalls = []
+  cfg.bookingOk = true
+  cfg.bookingError = null
+  bookings.length = 0
+  releases.length = 0
 })
 
 describe('the route cannot skip authorization', () => {
@@ -124,7 +148,7 @@ describe('the route cannot skip authorization', () => {
     expect(res.status).toBe(403)
     expect(await res.json()).toEqual({ error: 'nope' })
     expect(streamCalls, 'a refused upload must never reserve Cloudflare quota').toHaveLength(0)
-    expect(inserts).toHaveLength(0)
+    expect(bookings).toHaveLength(0)
   })
 })
 
@@ -149,8 +173,10 @@ describe('the upload session is bound to the album that asked for it', () => {
     // Without this row, photos/create cannot verify a uid belongs to the album redeeming it — the
     // guard that stops a uid issued for album A being injected into album B.
     await POST(post(VALID))
-    expect(inserts).toHaveLength(1)
-    expect(inserts[0]).toMatchObject({ stream_uid: 'uid-from-cloudflare', album_id: ALBUM_ID })
+    expect(bookings).toHaveLength(1)
+    expect(bookings[0].name, 'the hold must be BOOKED, not inserted — an insert cannot be atomic')
+      .toBe('reserve_album_video')
+    expect(bookings[0].params).toMatchObject({ p_stream_uid: 'uid-from-cloudflare', p_album_id: ALBUM_ID })
   })
 
   it('records the duration THIS request was approved on, so it can be charged later', async () => {
@@ -163,21 +189,21 @@ describe('the upload session is bound to the album that asked for it', () => {
     // the same number. If this stops being written, photos/create silently falls back to believing
     // the client again and the gap reopens with nothing else to notice.
     await POST(post(VALID))
-    expect(inserts[0]).toMatchObject({ declared_duration_seconds: 42 })
+    expect(bookings[0].params).toMatchObject({ p_declared: 42 })
   })
 
   it('stores null when the clip could not be measured, rather than a guess', async () => {
     // ~16% of real videos have no duration the browser can read. Null means exactly that, and is
     // counted as zero against the budget with Cloudflare's own ceiling as the server-side bound.
     await POST(post({ ...VALID, durationSeconds: undefined }))
-    expect(inserts[0]).toMatchObject({ declared_duration_seconds: null })
+    expect(bookings[0].params).toMatchObject({ p_declared: null })
   })
 
   it('never stores a negative duration, whatever the client claims', async () => {
     // One negative row summed into an album's total read as zero through the old total-only clamp
     // and disabled that album's video budget permanently.
     await POST(post({ ...VALID, durationSeconds: -2_000_000_000 }))
-    expect(inserts[0]).toMatchObject({ declared_duration_seconds: null })
+    expect(bookings[0].params).toMatchObject({ p_declared: null })
   })
 })
 
@@ -224,5 +250,43 @@ describe('the limit the route still owns for itself', () => {
     expect(res.headers.get('Retry-After')).toBe('60')
     expect(authCalls, 'a rate-limited request must not reach authorization').toHaveLength(0)
     expect(streamCalls).toHaveLength(0)
+  })
+})
+
+describe('the last of an album minutes can only be sold once', () => {
+  // The budget is read BEFORE the Cloudflare call and the hold is written AFTER it, so two requests
+  // a few hundred milliseconds apart both read an empty album. The hold made that window minutes
+  // instead of the whole upload; booking through reserve_album_video closes what is left, because it
+  // takes an advisory lock, writes the hold and re-asks inside that lock.
+  it('books against the budget the authorizer decided', async () => {
+    // Hardcoding a tier cap here would be the same defect as hardcoding the Cloudflare reservation,
+    // which survived every test until it was pinned.
+    await POST(post(VALID))
+    expect(bookings[0].params.p_budget_seconds).toBe(BUDGET)
+  })
+
+  it('refuses with 403 when somebody else took the last minutes', async () => {
+    cfg.bookingOk = false
+    const res = await POST(post(VALID))
+    expect(res.status, '403 not 429 — upload-policy retries a 429 four more times').toBe(403)
+    expect(await res.json()).toMatchObject({ code: 'album_video_full' })
+  })
+
+  it('hands the Cloudflare upload back when it refuses', async () => {
+    // An unreleased reservation is quota nobody can use, against a ceiling shared by every album.
+    cfg.bookingOk = false
+    await POST(post(VALID))
+    expect(releases, 'the seat we just took must not be left to expire').toEqual(['uid-from-cloudflare'])
+  })
+
+  it('does NOT release anything on a successful booking', async () => {
+    await POST(post(VALID))
+    expect(releases).toEqual([])
+  })
+
+  it('502s rather than guessing when the booking itself errors', async () => {
+    cfg.bookingError = 'deadlock detected'
+    const res = await POST(post(VALID))
+    expect(res.status).toBe(502)
   })
 })
