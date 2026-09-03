@@ -9,9 +9,45 @@ function apiBase(): string {
   return process.env.POLAR_SANDBOX === 'true' ? SANDBOX_BASE : PROD_BASE
 }
 
+let warnedAboutKeyShape = false
+
+/**
+ * The Polar token, TRIMMED — and loud about a value that looks wrong.
+ *
+ * This returned the raw environment value, and a raw value is exactly what breaks. A secret set
+ * with `wrangler secret put` (or piped from `echo`) commonly carries a trailing newline, which goes
+ * straight into `Authorization: Bearer <token>
+` and makes the header malformed. Polar answers 401
+ * `invalid_token`, whose body offers four possible causes — "expired, revoked, malformed, or invalid
+ * for other reasons" — and none of them says "you have a newline in your secret". So a perfect token
+ * reads as a revoked one, and the next hour goes into the Polar dashboard rather than into the
+ * whitespace.
+ *
+ * lib/email.ts already learned this exact lesson on a recipient address ("a value set with
+ * `echo x | wrangler secret put` carries a trailing newline"). Same mistake, different secret.
+ *
+ * The warnings below never print the token — only its length and its prefix shape — and they exist
+ * so that the NEXT time this fails, the log says which of Polar's four causes it actually is.
+ */
 function apiKey(): string {
-  const key = process.env.POLAR_API_KEY
-  if (!key) throw new Error('POLAR_API_KEY not set')
+  const raw = process.env.POLAR_API_KEY
+  if (!raw) throw new Error('POLAR_API_KEY not set')
+  const key = raw.trim()
+  if (!key) throw new Error('POLAR_API_KEY is only whitespace')
+
+  if (!warnedAboutKeyShape) {
+    if (key !== raw) {
+      console.warn('[polar] POLAR_API_KEY had surrounding whitespace and was trimmed —',
+        raw.length - key.length, 'character(s). Re-set the secret without a trailing newline.')
+    }
+    // Polar organization access tokens are prefixed. A value that is not one is usually the webhook
+    // secret or a truncated paste, both of which answer 401 and look identical to a revoked token.
+    if (!key.startsWith('polar_')) {
+      console.warn('[polar] POLAR_API_KEY does not start with "polar_" — length', key.length,
+        'starts with', JSON.stringify(key.slice(0, 6)) + '. Wrong secret pasted?')
+    }
+    warnedAboutKeyShape = true
+  }
   return key
 }
 
