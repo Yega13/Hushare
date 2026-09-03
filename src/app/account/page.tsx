@@ -15,6 +15,8 @@ import { formatDate } from '@/lib/utils'
 import CollectionActions from './CollectionActions'
 import CreateCollectionButton from './CreateCollectionButton'
 import DeleteAlbumButton from './DeleteAlbumButton'
+import RestoreAlbumButton from './RestoreAlbumButton'
+import { binState } from '@/lib/album-bin'
 import RenameAlbumButton from './RenameAlbumButton'
 import SignOutButton from './SignOutButton'
 import SubscriptionPolling from './SubscriptionPolling'
@@ -84,6 +86,8 @@ type AccountAlbum = {
   title: string
   cover_photo_id: string | null
   created_at: string
+  /** Set when the owner deleted it. Still recoverable until cron/retire-albums empties the bin. */
+  deleted_at: string | null
   // The owner_token is used to build the management link. Safe to include here: this is
   // the signed-in user's OWN album, on their own authenticated dashboard page.
   owner_token: string
@@ -224,7 +228,7 @@ export default async function AccountPage({ searchParams }: Props) {
       .returns<AccountCollection[]>(),
     admin
       .from('albums')
-      .select('id, slug, custom_slug, title, cover_photo_id, created_at, owner_token, package_tier, package_expires_at')
+      .select('id, slug, custom_slug, title, cover_photo_id, created_at, owner_token, package_tier, package_expires_at, deleted_at')
       .eq('user_id', user.id)
       .order('created_at', { ascending: false })
       .returns<AccountAlbum[]>(),
@@ -269,7 +273,24 @@ export default async function AccountPage({ searchParams }: Props) {
   }
 
   const collections = collectionsResult.data ?? []
-  const accountAlbums = albumsResult.data ?? []
+  const allAccountAlbums = albumsResult.data ?? []
+
+  // DELETED ALBUMS ARE SPLIT OUT, NOT FILTERED OUT.
+  //
+  // This query is scoped by user_id only — it never filtered retired_at — so when deleting became a
+  // soft delete, a binned album kept appearing here as though it were live: openable, countable,
+  // and 404 when clicked. Removing it entirely would be worse than that, because this page is the
+  // ONLY place an owner can still find a deleted album. Hiding it everywhere hides it here too, and
+  // then the seven-day window is a promise nobody can collect on.
+  //
+  // So they are listed separately, with the days left and a way to put them back.
+  const accountAlbums = allAccountAlbums.filter((a) => !a.deleted_at)
+  const binnedAlbums = allAccountAlbums
+    .filter((a) => binState(a.deleted_at, Date.now()).state !== 'live')
+    .map((a) => {
+      const s = binState(a.deleted_at, Date.now())
+      return { ...a, daysLeft: s.state === 'in-bin' ? s.daysLeft : null }
+    })
 
   const collectionIds = collections.map((c) => c.id)
   const accountAlbumIds = accountAlbums.map((a) => a.id)
@@ -622,6 +643,32 @@ export default async function AccountPage({ searchParams }: Props) {
                   </div>
                 )}
               </div>
+
+              {/* RECENTLY DELETED. The only surface an owner can still reach a binned album from:
+                  deleting hides it from the album page, the wall, search and every link, so without
+                  this the seven-day window is a promise with no way to collect on it. */}
+              {binnedAlbums.length > 0 && (
+                <div className="mt-8">
+                  <h3 className="text-sm font-semibold mb-1" style={{ color: '#630826' }}>
+                    {dict['acct.recentlyDeleted']}
+                  </h3>
+                  <p className="text-xs mb-3" style={{ color: '#7C5C3E' }}>
+                    {dict['acct.recentlyDeletedDesc']}
+                  </p>
+                  <div className="flex flex-col gap-3">
+                    {binnedAlbums.map((album) => (
+                      <div
+                        key={album.id}
+                        className="rounded-xl px-4 py-3"
+                        style={{ background: '#FFF7F4', border: '1px solid rgba(192,57,43,0.25)' }}
+                      >
+                        <p className="font-semibold text-sm" style={{ color: '#630826' }}>{album.title}</p>
+                        <RestoreAlbumButton albumId={album.id} daysLeft={album.daysLeft} />
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           </section>
 

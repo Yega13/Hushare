@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { createClient } from '@/lib/supabase/server'
-import { deleteAlbumAssetsAndRows } from '@/lib/album-delete'
+import { BIN_DAYS, binMessage } from '@/lib/album-bin'
 import { forbidCrossSiteRequest } from '@/lib/request-security'
 import { checkRateLimit, clientIpKey } from '@/lib/rate-limit'
 
@@ -58,10 +58,29 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: 'Album not found' }, { status: 404, headers: NO_STORE })
   }
 
-  const result = await deleteAlbumAssetsAndRows(admin, album)
-  if (!result.ok) {
-    return NextResponse.json({ error: result.error }, { status: 500, headers: NO_STORE })
+  // THE SAME BIN AS THE OWNER TOOLBAR. This is the SECOND way an owner can delete an album, and it
+  // kept destroying everything immediately after the first one learned not to — so which button you
+  // pressed decided whether your photos still existed. Both mark now, and lib/album-bin owns the
+  // window for both (rule 13).
+  //
+  // retired_at is set alongside deleted_at because that is the column every guest and owner path
+  // already filters at SQL level; deleted_at records when, and cron/retire-albums destroys it after
+  // the window. `.is('deleted_at', null)` stops a second press restarting the clock.
+  const nowIso = new Date().toISOString()
+  const { error: binErr } = await admin
+    .from('albums')
+    .update({ deleted_at: nowIso, retired_at: nowIso })
+    .eq('id', album.id)
+    .eq('user_id', user.id)
+    .is('deleted_at', null)
+
+  if (binErr) {
+    console.error('[account/albums/delete] could not bin album', album.id, ':', binErr.message)
+    return NextResponse.json({ error: 'Could not delete the album' }, { status: 500, headers: NO_STORE })
   }
 
-  return NextResponse.json({ ok: true }, { headers: NO_STORE })
+  return NextResponse.json(
+    { ok: true, restorableForDays: BIN_DAYS, message: binMessage(BIN_DAYS) },
+    { headers: NO_STORE },
+  )
 }

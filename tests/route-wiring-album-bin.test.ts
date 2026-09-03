@@ -22,27 +22,52 @@ const state: {
   updateError: string | null
   restoredRows: Array<{ id: string }>
   destroyed: string[]
+  signedInUser: { id: string } | null
+  /** Filters applied AFTER .update() — the ones that scope the write. */
+  updateFilters: Array<Record<string, unknown>>
 } = {
   album: null, ownerCookie: null, updates: [], filters: [], updateError: null,
-  restoredRows: [{ id: ALBUM_ID }], destroyed: [],
+  restoredRows: [{ id: ALBUM_ID }], destroyed: [], signedInUser: { id: 'user-1' },
+  updateFilters: [],
 }
 
 vi.mock('@/lib/supabase/admin', () => ({
   createAdminClient: () => ({
     from: () => {
       const chain: Record<string, unknown> = {}
-      chain.update = (row: Record<string, unknown>) => { state.updates.push(row); return chain }
-      chain.eq = (col: string, val: unknown) => { state.filters.push({ [`eq:${col}`]: val }); return chain }
-      chain.is = (col: string, val: unknown) => { state.filters.push({ [`is:${col}`]: val }); return chain }
-      chain.not = (col: string, op: string, val: unknown) => {
-        state.filters.push({ [`not:${col}`]: `${op} ${String(val)}` })
+      // `select` is chainable on a READ and terminal after an UPDATE (`.update(...).select('id')`),
+      // so which one it is depends on whether update has been called on this builder.
+      let updating = false
+      chain.update = (row: Record<string, unknown>) => {
+        updating = true
+        state.updates.push(row)
         return chain
       }
-      chain.select = () => Promise.resolve({
-        data: state.restoredRows,
-        error: state.updateError ? { message: state.updateError } : null,
+      const record = (f: Record<string, unknown>) => {
+        state.filters.push(f)
+        // SEPARATELY, because the read and the write in these routes filter on the SAME columns.
+        // A single list let an assertion about the UPDATE's scoping be satisfied by the SELECT's,
+        // so dropping `.eq('user_id', …)` from the update — any signed-in user restoring anybody's
+        // album — passed the test written to prevent exactly that.
+        if (updating) state.updateFilters.push(f)
+      }
+      chain.eq = (col: string, val: unknown) => { record({ [`eq:${col}`]: val }); return chain }
+      chain.is = (col: string, val: unknown) => { record({ [`is:${col}`]: val }); return chain }
+      chain.not = (col: string, op: string, val: unknown) => {
+        record({ [`not:${col}`]: `${op} ${String(val)}` })
+        return chain
+      }
+      chain.select = () => (updating
+        ? Promise.resolve({
+            data: state.restoredRows,
+            error: state.updateError ? { message: state.updateError } : null,
+          })
+        : chain)
+      chain.maybeSingle = async () => ({
+        data: state.album ? { ...state.album, user_id: 'user-1' } : null,
+        error: null,
       })
-      // The delete path awaits the builder itself rather than calling .select().
+      // The delete paths await the builder itself rather than calling .select().
       chain.then = (res: (v: unknown) => unknown) =>
         res({ error: state.updateError ? { message: state.updateError } : null })
       return chain
@@ -79,6 +104,10 @@ vi.mock('next/headers', () => ({
   }),
 }))
 
+vi.mock('@/lib/supabase/server', () => ({
+  createClient: async () => ({ auth: { getUser: async () => ({ data: { user: state.signedInUser } }) } }),
+}))
+
 vi.mock('@/lib/rate-limit', () => ({
   checkRateLimit: async () => ({ ok: true }),
   clientIpKey: (_r: unknown, p: string) => `${p}:test`,
@@ -86,6 +115,8 @@ vi.mock('@/lib/rate-limit', () => ({
 
 const { POST: DELETE_ALBUM } = await import('@/app/api/album/delete/route')
 const { POST: RESTORE, GET: BIN_STATUS } = await import('@/app/api/album/restore/route')
+const { POST: ACCOUNT_DELETE } = await import('@/app/api/account/albums/delete/route')
+const { POST: ACCOUNT_RESTORE } = await import('@/app/api/account/albums/restore/route')
 
 const post = (url: string, body: unknown) => new Request(url, {
   method: 'POST',
@@ -111,6 +142,8 @@ beforeEach(() => {
   state.updateError = null
   state.restoredRows = [{ id: ALBUM_ID }]
   state.destroyed = []
+  state.signedInUser = { id: 'user-1' }
+  state.updateFilters = []
 })
 
 describe('deleting marks the album, it does not destroy it', () => {
@@ -214,5 +247,92 @@ describe('the owner can ask whether their album is recoverable', () => {
     state.ownerCookie = null
     const res = await BIN_STATUS(new Request('https://hushare.space/api/album/restore?slug=abc12345'))
     expect(await res.json()).toMatchObject({ inBin: false })
+  })
+})
+
+describe('the SECOND delete button uses the same bin', () => {
+  // There are two ways an owner can delete an album — the toolbar on the album, and the account
+  // page — and only the first one learned about the bin. For a while, WHICH BUTTON YOU PRESSED
+  // decided whether your photos still existed. That is the shape rule 13 exists to prevent.
+  const UUID = '11111111-2222-3333-4444-555555555555'
+  const accountDel = () => ACCOUNT_DELETE(post('https://hushare.space/api/account/albums/delete', { album_id: UUID }))
+
+  it('destroys NOTHING', async () => {
+    await accountDel()
+    expect(state.destroyed).toEqual([])
+  })
+
+  it('marks it exactly as the toolbar does', async () => {
+    await accountDel()
+    expect(state.updates).toHaveLength(1)
+    const u = state.updates[0]
+    expect(u.deleted_at).toBeTruthy()
+    expect(u.retired_at, 'without this the album is still public').toBe(u.deleted_at)
+  })
+
+  it('will not restart the clock, and stays scoped to the signed-in account', async () => {
+    await accountDel()
+    expect(state.filters).toContainEqual({ 'is:deleted_at': null })
+    expect(state.filters).toContainEqual({ 'eq:user_id': 'user-1' })
+  })
+
+  it('refuses when nobody is signed in', async () => {
+    state.signedInUser = null
+    expect((await accountDel()).status).toBe(401)
+    expect(state.updates).toEqual([])
+  })
+
+  it('reports a failed write instead of claiming success', async () => {
+    // The owner believes the album is gone; it is still public. Worse than failing loudly.
+    state.updateError = 'connection reset'
+    expect((await accountDel()).status).toBe(500)
+  })
+
+  it('scopes the WRITE to the signed-in account', async () => {
+    await accountDel()
+    expect(state.updateFilters).toContainEqual({ 'eq:user_id': 'user-1' })
+  })
+})
+
+describe('restoring from the account page', () => {
+  const UUID = '11111111-2222-3333-4444-555555555555'
+  const accountRestore = () => ACCOUNT_RESTORE(post('https://hushare.space/api/account/albums/restore', { album_id: UUID }))
+  const binnedDays = (d: number) => {
+    state.album = { id: ALBUM_ID, owner_token: TOKEN, deleted_at: new Date(Date.now() - d * 86400_000).toISOString() }
+  }
+
+  it('puts it back and clears both columns', async () => {
+    binnedDays(3)
+    expect((await accountRestore()).status).toBe(200)
+    expect(state.updates[0]).toMatchObject({ deleted_at: null, retired_at: null })
+  })
+
+  it('is scoped to the account that owns it, on the WRITE', async () => {
+    // A signed-in stranger guessing a UUID must not restore somebody else's album. Asserted against
+    // the UPDATE's own filters: the lookup above scopes by user_id too, so a single list of filters
+    // let this pass with the scoping removed from the write.
+    binnedDays(3)
+    await accountRestore()
+    expect(state.updateFilters).toContainEqual({ 'eq:user_id': 'user-1' })
+  })
+
+  it('says plainly that the window has closed rather than pretending', async () => {
+    binnedDays(9)
+    const res = await accountRestore()
+    expect(res.status).toBe(410)
+    expect(state.updates).toEqual([])
+  })
+
+  it('refuses when nobody is signed in', async () => {
+    binnedDays(3)
+    state.signedInUser = null
+    expect((await accountRestore()).status).toBe(401)
+    expect(state.updates).toEqual([])
+  })
+
+  it('only writes to a row still in the bin', async () => {
+    binnedDays(3)
+    await accountRestore()
+    expect(state.filters).toContainEqual({ 'not:deleted_at': 'is null' })
   })
 })
