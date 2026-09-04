@@ -1,6 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, useMemo } from 'react'
+import { searchPhase } from '@/lib/search-answer'
 import { createPortal } from 'react-dom'
 import { useParams, notFound } from 'next/navigation'
 import dynamic from 'next/dynamic'
@@ -531,8 +532,17 @@ export default function AlbumPageClient({ initialAlbum = null, initialPhotos, in
   // Because this is false whenever a result for THIS number is held, a background refresh cannot
   // push the bar back through "Searching…" or, worse, through the "no photos with that number"
   // panel — presented as final, then withdrawn — which is what a plain in-flight flag did.
-  const bibFailed = bibEnabled && !!bibDigits && bibFailedQuery === bibDigits
-  const bibAwaitingServer = bibEnabled && !!bibDigits && bibResult?.query !== bibDigits && !bibFailed
+  // ONE VALUE, READ BY BOTH SURFACES. The bar and the grid each need to know whether an answer is
+  // actually in hand, and until now only the bar could: it received `awaitingServer` and `failed`
+  // and combined them privately, while the grid got `bibFilterActive` — true on keystroke one. So
+  // a runner whose number was outside the loaded window saw "Searching…" and "No photos with that
+  // number" at the same moment, the second one telling them to try a different number.
+  const bibPhase = searchPhase({
+    enabled: bibEnabled,
+    query: bibDigits,
+    answeredQuery: bibResult?.query ?? null,
+    failedQuery: bibFailedQuery,
+  })
 
   useEffect(() => {
     if (!bibEnabled || !albumId) return
@@ -566,6 +576,16 @@ export default function AlbumPageClient({ initialAlbum = null, initialPhotos, in
           // "showing the first 300 of 1,847" instead of presenting 300 as the whole answer.
           const rows = json.photos ?? []
           setBibResult({ query: bibDigits, photos: rows, total: json.total ?? rows.length })
+          // A SUCCESS RETIRES THE FAILURE FOR THE SAME NUMBER. Without this the tag set below
+          // outlives the problem: only the Try again button and album navigation ever cleared it,
+          // so a runner who hit one 429 on "3400", edited to "340", then typed the 0 back was shown
+          // "Could not search just now" with a Try again button — above a grid holding the twelve
+          // photos the retry had already fetched — for the rest of the session. The count and the
+          // Face Finder escape hatch stayed hidden with it.
+          //
+          // It also makes searchPhase's failed-before-answered order honest. That order is only
+          // correct while a failure tag describes the LATEST attempt; this is what keeps that true.
+          setBibFailedQuery((q) => (q === bibDigits ? null : q))
         })
         .catch((err: unknown) => {
           if (cancelled || (err as { name?: string })?.name === 'AbortError') return
@@ -1651,8 +1671,7 @@ export default function AlbumPageClient({ initialAlbum = null, initialPhotos, in
             indexedCount={bibIndexedCount}
             totalImages={totalImageCount}
             totalMatches={bibServerAnswered ? bibResult.total : null}
-            awaitingServer={bibAwaitingServer}
-            failed={bibFailed}
+            phase={bibPhase}
             onRetry={() => { setBibFailedQuery(null); setBibRetry((n) => n + 1) }}
             // Only offered when the owner has Face Finder on — otherwise there's nothing to send
             // a runner to and the button would be a lie.
@@ -1701,7 +1720,7 @@ export default function AlbumPageClient({ initialAlbum = null, initialPhotos, in
             albumPhotoCount={publishedTotal}
             album={album}
             photos={visiblePhotos}
-            filtered={bibFilterActive}
+            searchPhase={bibPhase}
             isOwner={effectiveIsOwner}
             slug={album.slug}
             forceGlobalRadius={forceGlobalRadius}

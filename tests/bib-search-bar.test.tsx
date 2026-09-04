@@ -30,8 +30,7 @@ function renderBar(props: Partial<React.ComponentProps<typeof BibSearchBar>> = {
         totalMatches={null}
         indexedCount={5000}
         totalImages={5000}
-        awaitingServer={false}
-        failed={false}
+        phase="answered"
         onRetry={() => {}}
         {...props}
       />
@@ -43,7 +42,7 @@ afterEach(cleanup)
 
 describe('the bib bar never states a negative it cannot back up', () => {
   it('does NOT say "no photos" while the server is still answering', () => {
-    renderBar({ awaitingServer: true, matchCount: 0 })
+    renderBar({ phase: 'searching', matchCount: 0 })
     expect(screen.queryByText(/no photos/i), 'this is the bug that shipped').toBeNull()
     expect(screen.getByText(/searching/i)).toBeTruthy()
   })
@@ -51,7 +50,7 @@ describe('the bib bar never states a negative it cannot back up', () => {
   it('does NOT say "no photos" when the search failed', () => {
     // A 429 on the shared venue IP, or one dropped packet. The old code fell back to the local
     // filter, found nothing, and stated it as fact.
-    renderBar({ failed: true, matchCount: 0 })
+    renderBar({ phase: 'failed', matchCount: 0 })
     expect(screen.queryByText(/no photos/i)).toBeNull()
     expect(screen.getByText(/could not search/i)).toBeTruthy()
     expect(screen.getByRole('button', { name: /try again/i })).toBeTruthy()
@@ -60,7 +59,7 @@ describe('the bib bar never states a negative it cannot back up', () => {
   it('says it plainly once the answer really is in', () => {
     // The other half: having made "no matches" hard to say, it must still be sayable. A bar that
     // never reaches a conclusion is its own failure.
-    renderBar({ awaitingServer: false, failed: false, matchCount: 0 })
+    renderBar({ phase: 'answered', matchCount: 0 })
     expect(screen.getByText(/no photos/i)).toBeTruthy()
   })
 
@@ -69,7 +68,7 @@ describe('the bib bar never states a negative it cannot back up', () => {
     // runner shot from behind. "No photos" usually means "we could not READ your number", so this
     // escape hatch is the difference between a dead end and a found runner. It was hidden for the
     // entire event by a condition that is almost never true during one.
-    renderBar({ matchCount: 0, awaitingServer: false, onTryFaceFinder: () => {} })
+    renderBar({ matchCount: 0, phase: 'answered', onTryFaceFinder: () => {} })
     // "Find me by face" — the real button text. The first draft of this test asserted "Face
     // Finder", the internal name for the feature, and failed against perfectly correct code. Worth
     // keeping the note: a component test asserts what a guest reads, so it has to be written from

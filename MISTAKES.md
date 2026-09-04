@@ -449,3 +449,53 @@ believed.
 **Habit to build:** measure the numbers in the brief at the moment of writing the brief, not from
 memory of an earlier session. And read what comes back for corrections to my own premises first -
 those are worth more than the findings, because they say where I am currently wrong.
+
+### 33. THE FIX FOR RULE 20 WENT TO THE COMPONENT THAT REPORTED IT, NOT THE ONE THAT PRINTED IT
+
+`BibSearchBar` computes `answerIsFinal = !awaitingServer && !failed` and correctly refuses to say
+"No photos with that number" until it holds a real answer. That fix was made, tested, and believed.
+One component lower, `PhotoGrid` received `filtered` -- `bibEnabled && !!bibDigits`, true on the
+first keystroke -- and printed the negative anyway. So the bar said "Searching…" while the card
+directly beneath it said "No photos with that number. Try a different number, or clear the box to
+see the whole album."
+
+On a 5,000-photo race album the loaded window is ~500 rows, so this was the DEFAULT experience for
+any runner numbered outside it. The subtitle is the worst part: it tells someone to abandon a
+correct search that was about to succeed.
+
+Both components were "covered". `tests/bib-search-bar.test.ts` rendered the bar alone and passed.
+Nothing rendered the grid at all, and nothing rendered them together -- so the screen was wrong
+while every test of its parts was green. vitest.config.ts's own comment names this exact scenario as
+the reason jsdom was added, and the grid still had no test.
+
+**Habit to build:** when a fix is "make sure X is not said before Y is known", grep for every place
+that says X. The concept lived in one component as a private const; the fix is to move it to
+`src/lib` so the other surface can read the same value rather than re-derive it from a weaker one.
+
+### 34. I SHIPPED A GUARD WHOSE FAILURE BRANCH DELETED THE THING IT WAS PROTECTING
+
+To prove the new backup destination was private I uploaded the dump, fetched the dump's own public
+URL, and deleted the object on a 200. But that URL resolves to the MEDIA bucket, not the
+destination -- so any unrelated object at the same key reads as "exposed" and the night's only
+backup gets deleted. I wrote the check and the comment praising its care in one pass, and it only
+surfaced because I ran it instead of re-reading it.
+
+**Habit to build:** for any check whose failure branch destroys data, ask what ELSE could produce
+this signal. If the answer is "something I do not control", the branch may not delete. Make the
+check unambiguous rather than cautious -- here, a random-named canary written BEFORE the dump, which
+cannot collide with anything.
+
+### 35. MY OWN NEW MODULE DOCUMENTED A PRECONDITION IT NEVER ESTABLISHED
+
+`searchPhase` checks failure before a held answer, and I wrote a comment justifying it: "any result
+still in hand is older than that failure". A review proved that false. The caller tagged failures
+and never retired them on success, so a number that failed once read as failed for the whole
+session -- including while its own successful results were on screen, with the count and the Face
+Finder escape hatch hidden.
+
+The ordering was right. The sentence defending it was an assumption about the caller that I never
+checked, written confidently enough to stop the next reader checking either.
+
+**Habit to build:** when a comment justifies a branch with a claim about a CALLER, go read that
+caller in the same sitting. And when the precondition turns out not to hold, fix it upstream and say
+in the comment that the branch depends on it -- rather than reordering the branch to paper over it.

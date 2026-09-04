@@ -4,6 +4,7 @@ import React, { useState, useEffect, useLayoutEffect, useCallback, useMemo, useR
 import { morphPhoto, morphPhotoClosed, supportsViewTransitions } from '@/components/photo-grid/viewTransition'
 import { morphAllowed } from '@/lib/lightbox-plan'
 import { resolveGridColumns } from '@/lib/grid-columns'
+import { mayStateAbsence, type SearchPhase } from '@/lib/search-answer'
 import type { Album, Photo } from '@/types'
 import { DEFAULT_SLIDESHOW_INTERVAL_MS } from '@/lib/media-display'
 import { MEDIA_AUTHOR_MAX, MEDIA_CAPTION_MAX, SUPPRESS_CLICK_AFTER_REORDER_MS, BTT_UPDATE_EVENT } from '@/lib/constants'
@@ -47,15 +48,32 @@ type Props = {
   onPhotoUpdated: (id: string, patch: Partial<Photo>) => void
   onPhotosReordered: (photos: Photo[]) => void
   slideshowRequestId?: number
-  /** A search is narrowing this grid, so an empty result means "no matches", not "no photos". */
-  filtered?: boolean
+  /**
+   * Where the album's search has got to, which decides what an EMPTY grid means.
+   *
+   * REQUIRED, with no default, and that is the whole enforcement. This started as an optional prop
+   * defaulting to 'answered' so that "other callers keep today's behaviour" -- but there are no
+   * other callers; PhotoGrid is rendered in exactly one place. All the default bought was that
+   * deleting `searchPhase={bibPhase}` at that call site would compile, pass all 1,200 tests, and
+   * silently restore the shipped defect: "No photos with that number" printed mid-search. Required,
+   * the same deletion is a type error.
+   *
+   * It replaced a `filtered` boolean that was true from the first keystroke and so could not tell
+   * "still looking" from "looked, found nothing" -- AGENTS.md rule 20. `filtered` is now DERIVED
+   * from this below rather than passed alongside it, because two props for one fact can disagree,
+   * and `{filtered: true, searchPhase: 'off'}` was a representable state that means nothing.
+   */
+  searchPhase: SearchPhase
   arrangeMode?: boolean
   coverPhotoId?: string | null
   onCoverSet?: (photoId: string | null) => void
 }
 
-export default function PhotoGrid({ album, photos, albumPhotoCount, isOwner, slug, forceGlobalRadius, onRadiusMaxChange, onPhotoDeleted, onPhotoUpdated, onPhotosReordered, slideshowRequestId = 0, filtered = false, arrangeMode = false, coverPhotoId, onCoverSet }: Props) {
+export default function PhotoGrid({ album, photos, albumPhotoCount, isOwner, slug, forceGlobalRadius, onRadiusMaxChange, onPhotoDeleted, onPhotoUpdated, onPhotosReordered, slideshowRequestId = 0, searchPhase, arrangeMode = false, coverPhotoId, onCoverSet }: Props) {
   const { t } = useT()
+  // A search is narrowing this grid. Derived, not received: it is exactly `searchPhase !== 'off'`,
+  // and passing both invited them to disagree.
+  const filtered = searchPhase !== 'off'
   const gridRef = useRef<HTMLDivElement>(null)
   const lightboxHistoryRef = useRef(false)
   const [openedWithMorph, setOpenedWithMorph] = useState(false)
@@ -541,6 +559,12 @@ export default function PhotoGrid({ album, photos, albumPhotoCount, isOwner, slu
       <div className="flex justify-center py-14 px-4">
         <div
           className="text-center rounded-2xl px-8 py-10 w-full"
+          // ANNOUNCED, because this card is now the answer to a question the guest asked. It moves
+          // through "Searching…" -> a result without the page navigating, so a screen-reader user
+          // who typed a bib number otherwise hears nothing at all and has no way to know the search
+          // finished. polite, not assertive: it must not interrupt them mid-word while they type.
+          role="status"
+          aria-live="polite"
           style={{
             maxWidth: 420,
             background: 'rgba(253, 250, 245, 0.92)',
@@ -555,13 +579,28 @@ export default function PhotoGrid({ album, photos, albumPhotoCount, isOwner, slu
               nothing was shown "Nothing here yet — be the first to upload a photo!" underneath a
               bar simultaneously saying the album held 5,000 photos and was still being read. On a
               race album the search IS the primary path, so this is the screen most guests see when
-              it goes wrong, and it was telling them the album was empty. */}
+              it goes wrong, and it was telling them the album was empty.
+
+              AND AN UNFINISHED SEARCH IS NOT AN EMPTY FILTER, which is the half that was still
+              wrong afterwards. `filtered` goes true on the first keystroke, so between the local
+              window missing the number and the server replying, this printed "No photos with that
+              number" — with a subtitle telling the runner to try a different one — while the bar
+              above it said "Searching…". Three states, one boolean. searchPhase is the fact; it
+              cannot say 'answered' until an answer for THIS number is actually in hand. */}
           <p className="text-lg" style={{ color: '#630826', fontFamily: 'var(--font-serif)', fontWeight: 700 }}>
-            {filtered ? t('pg.noMatches') : t('pg.empty')}
+            {!filtered ? t('pg.empty')
+              : searchPhase === 'searching' ? t('bib.searching')
+              : searchPhase === 'failed' ? t('bib.failed')
+              : t('pg.noMatches')}
           </p>
-          <p className="text-sm mt-2" style={{ color: '#5C4A3C' }}>
-            {filtered ? t('pg.noMatchesSub') : t('pg.emptySub')}
-          </p>
+          {/* Only a FINAL answer earns an instruction. "Try a different number" under a search that
+              is still running sends someone away from a query about to succeed, and under a failed
+              one it blames them for our error. */}
+          {(!filtered || mayStateAbsence(searchPhase)) && (
+            <p className="text-sm mt-2" style={{ color: '#5C4A3C' }}>
+              {filtered ? t('pg.noMatchesSub') : t('pg.emptySub')}
+            </p>
+          )}
         </div>
       </div>
     )

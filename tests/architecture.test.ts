@@ -166,7 +166,15 @@ const SIZE_BUDGET: Record<string, number> = {
   // reports from a real wedding album; 8 of 105 live albums are gated. Almost all the growth is
   // the comment, and it is worth the lines: this passed types, 1,100 tests and two adversarial
   // rounds, and only react-hooks/rules-of-hooks could see it. npm run check:hooks now gates it.
-  'src/app/[slug]/AlbumPageClient.tsx': 1763,
+  // +10 (2026-09-04): one searchPhase() call plus the comment saying why. It REPLACED two derived
+  // booleans (bibFailed, bibAwaitingServer) that only this file could combine — the grid could not,
+  // so it printed "No photos with that number" while the bar said "Searching…". The decision now
+  // lives in lib/search-answer with 11 tests; these lines are the wiring and the reason.
+  // +9 (2026-09-04, review finding): a bib number that failed once stayed "Could not search just
+  // now" for the whole session, above a grid already holding its results — the failure tag was set
+  // but never retired on success. Clearing it is one line; the rest is why, because that ordering
+  // in lib/search-answer depends on the tag describing the LATEST attempt.
+  'src/app/[slug]/AlbumPageClient.tsx': 1782,
   'src/app/card-editor/CardEditorClient.tsx': 873,
   // +1 (2026-08-31): pass collectionTotal to the lightbox counter.
   // +2 (2026-08-31): morphAllowed gate on open and close.
@@ -182,7 +190,16 @@ const SIZE_BUDGET: Record<string, number> = {
   // +4 (2026-09-01, incident): the morph gate asks about the ALBUM, not the loaded window —
   // the comment carrying why is most of the growth. A fresh 499-tile load of a 4,566-photo
   // album ran the paint-suppressing view transition on every tap: the ten-second freeze.
-  'src/components/PhotoGrid.tsx': 825,
+  // +29 (2026-09-04): the empty state stopped being one boolean. `filtered` is true from the first
+  // keystroke, so on a 5,000-photo album a runner outside the loaded window was told "No photos
+  // with that number — try a different number" while the search was still in flight. Most of the
+  // addition is the comment; the logic is a three-way read of lib/search-answer's phase, and the
+  // subtitle is now withheld unless the answer is final (rule 20).
+  // +10 (2026-09-04, review finding): role="status"/aria-live on the empty card, which is now the
+  // answer to a question the guest asked and changes without a navigation — a screen-reader user
+  // who typed a bib number heard nothing at all. `filtered` also stopped being a prop and is
+  // derived from searchPhase, since two props for one fact could disagree.
+  'src/components/PhotoGrid.tsx': 864,
   'src/components/AlbumDesigner.tsx': 774,
   // +3 net (2026-08-31): deleted the duplicate ±1 prefetch loop, added strip windowing wired
   // to lib/lightbox-plan.ts.

@@ -3,6 +3,7 @@
 import { Search, X } from 'lucide-react'
 import { useT } from '@/i18n/LocaleProvider'
 import { bibMatches, type BibRange } from '@/lib/bib-match'
+import { mayStateAbsence, type SearchPhase } from '@/lib/search-answer'
 
 // Re-exported so the album page keeps importing the matcher from the search bar it belongs to.
 // The rule itself lives in lib/bib-match.ts because the server needs the same one.
@@ -25,16 +26,22 @@ type Props = {
   /** The TRUE number of matches, which can exceed the rows returned — the search is capped so a
    *  junk OCR reading off a banner cannot pull thousands of rows. Null until the server answers. */
   totalMatches: number | null
-  /** True while the authoritative answer for the current query is still in flight. */
-  awaitingServer: boolean
-  /** The search request failed. The bar must say so rather than show an empty result as fact. */
-  failed: boolean
+  /**
+   * Whether the authoritative answer for the query in the box is actually in hand.
+   *
+   * This replaced a pair of booleans (`awaitingServer`, `failed`) that this component combined into
+   * `answerIsFinal` privately. PhotoGrid needed the same conclusion and had no way to receive it,
+   * so it used `filtered` -- true on keystroke one -- and printed "No photos with that number"
+   * while this bar was saying "Searching…". One fact, computed in one component, unavailable to
+   * the other: AGENTS.md rule 13, with rule 20's forbidden negative as the symptom.
+   */
+  phase: SearchPhase
   onRetry: () => void
   // Face Finder is the escape hatch when a number can't be read. Absent when the owner has it off.
   onTryFaceFinder?: () => void
 }
 
-export default function BibSearchBar({ query, onQueryChange, matchCount, totalMatches, indexedCount, totalImages, awaitingServer, failed, onRetry, onTryFaceFinder }: Props) {
+export default function BibSearchBar({ query, onQueryChange, matchCount, totalMatches, indexedCount, totalImages, phase, onRetry, onTryFaceFinder }: Props) {
   const { t } = useT()
   const searching = query.replace(/\D/g, '').length > 0
   // Indexing runs in the background after upload, so an album can be mid-way through. Saying so
@@ -50,7 +57,11 @@ export default function BibSearchBar({ query, onQueryChange, matchCount, totalMa
   // NOTHING NEGATIVE MAY BE STATED UNTIL THE REAL ANSWER IS IN. While the request is in flight the
   // grid is showing a local filter over the photos this phone happens to hold, which on a big album
   // is not the answer — and if the request failed, there is no answer at all.
-  const answerIsFinal = !awaitingServer && !failed
+  //
+  // Read from lib/search-answer rather than recomputed here, so this bar and the grid beneath it
+  // cannot reach different conclusions about the same request. They did, and the grid's was wrong.
+  const answerIsFinal = mayStateAbsence(phase)
+  const failed = phase === 'failed'
   // Saying "300 photos" when the answer was cut off at 300 states a cap as a total. It only happens
   // on a number OCR read off something that is not a bib, but the fix for that is the album's
   // number range, not a bar that rounds the truth off.
