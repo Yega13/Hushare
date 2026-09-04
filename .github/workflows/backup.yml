@@ -56,15 +56,26 @@ jobs:
       #
       # Failing on the FIRST step names the actual problem in the first ten seconds of the log
       # instead of at the last line, and it does not waste a database dump to tell you.
+      #
+      # R2_BACKUP_BUCKET IS CHECKED HERE FOR A SECOND INCIDENT, not the one above.
+      #
+      # It was passed to the upload step but never actually set as a repository secret, and the
+      # script used to fall back to the PUBLIC media bucket when it was missing. Ten nightly dumps
+      # -- every owner token and album password hash -- were served at an unauthenticated,
+      # date-stamped URL until 2026-09-04. The job was green every one of those nights.
+      #
+      # A missing secret that changes WHERE customer data is written has to be as fatal as a
+      # missing credential, because the failure it causes is silent and the success looks identical.
       - name: Check the secrets exist before doing any work
         env:
           SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
           R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          R2_BACKUP_BUCKET: ${{ secrets.R2_BACKUP_BUCKET }}
         run: |
           missing=""
-          for name in SUPABASE_DB_URL CLOUDFLARE_ACCOUNT_ID R2_ACCESS_KEY_ID R2_SECRET_ACCESS_KEY; do
+          for name in SUPABASE_DB_URL CLOUDFLARE_ACCOUNT_ID R2_ACCESS_KEY_ID R2_SECRET_ACCESS_KEY R2_BACKUP_BUCKET; do
             if [ -z "${!name}" ]; then missing="$missing $name"; fi
           done
           if [ -n "$missing" ]; then
@@ -73,7 +84,14 @@ jobs:
             echo "Until they are set there is NO off-machine copy of the database."
             exit 1
           fi
-          echo "All four secrets are present."
+          # A dump must never land in the bucket published at R2_PUBLIC_HOST. The upload script
+          # checks this too, and proves it with a real unauthenticated request after uploading;
+          # this copy just fails ten seconds earlier and before a dump is made.
+          if [ "$R2_BACKUP_BUCKET" = "hushare-media" ]; then
+            echo "::error::R2_BACKUP_BUCKET is the PUBLIC media bucket. A dump holds every owner token and password hash."
+            exit 1
+          fi
+          echo "All five secrets are present, and the backup bucket is not the public one."
 
       - name: Upload to R2 and prune old copies
         env:

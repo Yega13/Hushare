@@ -40,6 +40,12 @@ yarn-error.log*
 
 # env files (can opt-in for committing if needed)
 .env*
+# ...except the template, which is the only written record of what this app needs to boot.
+# It was caught by `.env*` and so had never been committed: a fresh clone got no list of the ~30
+# variables the app reads, and any note written into it was invisible to everyone but the machine
+# it was written on. Every value here is a blank or a safe default — verified line by line before
+# adding this, because this repository is PUBLIC.
+!.env.local.example
 
 # secret dumps / credential files — never commit credentials
 # (scoped to credential file extensions so source files like album-password.ts
