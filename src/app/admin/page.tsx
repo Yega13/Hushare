@@ -1,3 +1,4 @@
+import { r2BucketName } from '@/lib/server/environment'
 import { notFound } from 'next/navigation'
 import AdminLiveStats from '@/components/AdminLiveStats'
 import Link from 'next/link'
@@ -102,7 +103,7 @@ async function getStreamUsage(): Promise<{ minutes: number; limit: number; video
 async function getR2Usage(): Promise<{ gb: number; objects: number; usd: number } | null> {
   const acc = process.env.CLOUDFLARE_ACCOUNT_ID
   const tok = process.env.CLOUDFLARE_R2_TOKEN
-  const bucket = process.env.R2_BUCKET_NAME ?? 'hushare-media'
+  const bucket = r2BucketName()
   if (!acc || !tok) return null
   try {
     const r = await fetch(`https://api.cloudflare.com/client/v4/accounts/${acc}/r2/buckets/${bucket}/usage`, {

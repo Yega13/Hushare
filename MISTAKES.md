@@ -405,3 +405,47 @@ beside them was long.
 **Habit to build:** a truncation rule that discards the whole record is not a size limit, it is a
 data-loss bug that fires hardest on the most serious events. Clamp the field, keep the keys.
 
+
+### 30. TEN NIGHTS OF DATABASE DUMPS WERE SERVED TO THE INTERNET, AND EVERY RUN WAS GREEN
+
+`backup-upload.mjs` read `R2_BACKUP_BUCKET || R2_BUCKET_NAME || 'hushare-media'`. The first was never
+set as a repository secret, the second is unset in that job, and the third is the bucket published at
+`videos.hushare.space`. So every nightly dump - every owner token and every album password hash -
+was uploaded to a public, unauthenticated, date-stamped URL. Ten of them, from 24 August.
+
+Nothing was ever wrong from the script's point of view. The upload succeeded, the log said
+"uploaded", the admin heartbeat went green, and the workflow had a preflight step written after an
+EARLIER backup incident that checked four secrets and not this one.
+
+**Habit to build:** a fallback chain is a decision made silently at 3am by whatever config is
+missing. For anything that decides WHERE customer data is written, the missing-config branch must
+refuse. `||` with a literal at the end of it is the shape to grep for.
+
+### 31. MY FIRST FIX FOR THAT LEAK WOULD HAVE DELETED THE ONLY BACKUP
+
+To prove the destination was private I uploaded the dump, then fetched the dump's own public URL,
+and deleted the object on a 200. That URL resolves to the MEDIA bucket, not the destination - so an
+unrelated object sitting at the same key would have read as "exposed" and deleted the night's only
+backup. I wrote it, and the comment above it explaining how careful it was, in one pass.
+
+It surfaced only because I ran the guard instead of reading it. The replacement writes a
+random-named canary BEFORE the dump, probes that, and deletes only the canary.
+
+**Habit to build:** when a check's failure branch destroys data, the check has to be unambiguous, not
+merely cautious. Ask what ELSE could produce this signal - and if the answer is "something I do not
+control", the branch is not allowed to delete. Prose about care is not care; running it is.
+
+### 32. I HANDED THREE WRONG FACTS TO AN AGENT AND ONE OF THEM WOULD HAVE WASTED THE WHOLE RUN
+
+Briefing a design agent I stated PhotoWall.tsx was on the SIZE_BUDGET list (it is not, and it is 172
+lines), that UploadZone held ~1,981 lines of tangled component logic (lines 1-1961 are already at
+module scope - a library missing the word `export`), and that there were ~40 react-hooks findings
+(there are 82). The agent measured all three itself and corrected me.
+
+A briefing is not context, it is INPUT. Every wrong number in it either sends the agent to rewrite
+code that does not need rewriting, or gets quoted back to me as confirmation of what I already
+believed.
+
+**Habit to build:** measure the numbers in the brief at the moment of writing the brief, not from
+memory of an earlier session. And read what comes back for corrections to my own premises first -
+those are worth more than the findings, because they say where I am currently wrong.

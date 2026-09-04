@@ -70,7 +70,10 @@ const SIZE_BUDGET: Record<string, number> = {
   // +26 (2026-08-31): the card that says an advertised intro price cannot be charged.
   // +25 (2026-08-31): the card that says a Polar plan charges something other than the
   // advertised price or interval (lib/plan-catalogue + checkPlanProducts).
-  'src/app/admin/page.tsx': 893,
+  // +1 (2026-09-04): one import line. The bucket name moved to r2BucketName() in lib/server, so
+  // this page stops carrying its own copy of `R2_BUCKET_NAME ?? 'hushare-media'`. A line of import
+  // bought the deletion of a duplicated fact, which is the trade this budget is meant to permit.
+  'src/app/admin/page.tsx': 894,
   // +4 on 2026-08-30: FILE_ACCEPT stopped being a fourth hand-written copy of the accepted
   // MIME types and now builds from lib/media. An import and a comment cost four lines here
   // and removed a list that had already fallen two formats behind. Deliberate.

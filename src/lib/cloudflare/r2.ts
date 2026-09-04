@@ -1,6 +1,9 @@
 import { S3Client, PutObjectCommand, GetObjectCommand } from '@aws-sdk/client-s3'
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner'
 import { getCloudflareContext } from '@opennextjs/cloudflare'
+// The bucket name is decided in ONE place. It used to be a literal here, which meant no environment
+// variable could redirect what these presigned URLs address -- see r2BucketName's comment.
+import { r2BucketName } from '@/lib/server/environment'
 
 // Re-exported from lib/media so the browser and the server cannot disagree about what we accept.
 // This file imports the AWS SDK and the Cloudflare context, so it can never be imported client-side
@@ -78,7 +81,7 @@ export async function createPresignedPut(
   cacheControl: string = IMMUTABLE_CACHE_CONTROL,
 ): Promise<string> {
   const command = new PutObjectCommand({
-    Bucket: 'hushare-media',
+    Bucket: r2BucketName(),
     Key: key,
     ContentType: contentType,
     ContentLength: contentLength,
@@ -109,7 +112,7 @@ export async function createPresignedGet(
   expiresInSeconds = 300,
 ): Promise<string> {
   const command = new GetObjectCommand({
-    Bucket: 'hushare-media',
+    Bucket: r2BucketName(),
     Key: key,
     ResponseContentDisposition: contentDisposition,
   })

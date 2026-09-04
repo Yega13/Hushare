@@ -27,6 +27,30 @@ export function currentEnv(): HushareEnv {
 }
 
 /**
+ * The R2 bucket this build actually writes to. THE ONLY PLACE THIS IS DECIDED.
+ *
+ * It was decided in four: `R2_BUCKET_NAME ?? 'hushare-media'` on the admin storage page, the
+ * literal `'hushare-media'` twice inside cloudflare/r2.ts, and PRODUCTION.r2Bucket below. The two
+ * literals are the dangerous pair, because they are what `createPresignedPut` and
+ * `createPresignedGet` sign -- so seven routes (photo upload, avatars, backgrounds, header images,
+ * album logos, sponsor logos, downloads) addressed a bucket NAME that no environment variable could
+ * change.
+ *
+ * That made environmentMisconfiguration() below actively misleading rather than merely incomplete:
+ * it reads R2_BUCKET_NAME, so a staging build setting R2_BUCKET_NAME=hushare-media-staging passed
+ * the coherence check and reported itself correctly isolated, while every upload URL it handed a
+ * browser pointed at production. The check said the wiring was safe; the wiring was not.
+ * tests/environment-isolation.test.ts was green throughout, because it also only ever asserted the
+ * variable -- a test of a re-implementation, not of the subject (AGENTS.md rule 17).
+ *
+ * Production does not set R2_BUCKET_NAME, so the default here is the literal that was there before
+ * and behaviour is unchanged (verified against wrangler.toml's [vars] block, which has no such key).
+ */
+export function r2BucketName(env: Record<string, string | undefined> = process.env): string {
+  return env.R2_BUCKET_NAME || PRODUCTION.r2Bucket
+}
+
+/**
  * What, if anything, is wrong with this environment's wiring.
  *
  * Exported separately from the throwing version so it can be tested without a process that dies,
