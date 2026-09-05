@@ -655,3 +655,28 @@ them; the number is cheap and the sentence is not.
 
 The corrected version is enforced: dropping either package column from the select is now a compile
 error, proven by mutation.
+
+### 44. I SHIPPED DEAD CODE TWICE IN THE COMMIT WHOSE MESSAGE CRITICISED DEAD CODE
+
+The clock commit's message made a point of two unreachable guards I had removed: "defensive code
+that cannot run is worse than none, it reads as the thing holding the invariant." Then a review of
+that same commit found two more pieces of code with no caller in it:
+
+- `stalled()` -- an exported predicate used only by its own test. The `fired` flag existed solely to
+  serve it. A mutation making it always return true survived.
+- `createDeadline` -- exported production code with five tests behind it and ZERO call sites, while
+  the message described it as "for the four retry loops that compute Date.now() + wait >= deadline
+  by hand", which a reader takes as done. The four loops were untouched and still on the wall clock,
+  including the one where a forward step over 120s fails a photo with the budget unspent.
+
+Both are now fixed: `stalled()` deleted, `createDeadline` wired into both byte-transfer budgets.
+
+Also in that review: no test sat strictly BETWEEN zero elapsed and the stall threshold, so a mutant
+firing the watchdog after 200ms instead of 20s passed the whole suite -- the exact "aborts a healthy
+upload" failure the commit claimed to eliminate. And AGENTS.md rule 22's claim that Date.now() moves
+when a phone crosses a timezone is false (it is UTC epoch ms); I had repeated it in two files.
+
+**Habit to build:** before the commit message names a function as the fix for something, grep for
+its callers. Zero is a finding. And when a test suite is built from edge cases -- exactly zero,
+exactly the threshold, well past it -- write the boring middle case too, because that is where
+"wrong constant" mutants live.

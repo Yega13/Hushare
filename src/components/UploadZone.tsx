@@ -1,6 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { createStallWatch, createDeadline } from '@/lib/clock'
 import * as tus from 'tus-js-client'
 import type { Album } from '@/types'
 import { stripExifFromJpeg, jpegOrientation, stripMetadataFromPng, stripMetadataFromWebp } from '@/lib/exif'
@@ -693,21 +694,32 @@ async function xhrPut(
     if (signal?.aborted) { reject(new DOMException('Upload aborted', 'AbortError')); return }
     const xhr = new XMLHttpRequest()
     let settled = false
-    let lastActivity = Date.now()
 
     // Stall watchdog: mobile connections sometimes open the socket then stop sending bytes.
     // Abort after STALL_TIMEOUT_MS of zero progress so the retry loop can reconnect quickly.
     // Reset on every upload-progress event and once the body is fully sent (see below).
-    const stallTimer = setInterval(() => {
-      if (Date.now() - lastActivity > STALL_TIMEOUT_MS) {
+    //
+    // ON A MONOTONIC CLOCK, because this comparison used to be `Date.now() - lastActivity`, and a
+    // wall clock breaks it in BOTH directions (rule 22). A phone taking an NTP correction mid-upload
+    // — which is exactly when a device that just joined venue wifi syncs its time — steps the clock
+    // BACKWARDS, the difference goes negative, the comparison never becomes true, and the watchdog
+    // silently stops existing: the guest watches a spinner until they give up. A forward step fires
+    // it instantly and aborts an upload that was perfectly healthy.
+    //
+    // The timer lives inside createStallWatch with the decision it enforces (rule 15) — as a bare
+    // setInterval here, neither the comparison nor the cleanup could be tested at all.
+    const stall = createStallWatch({
+      stallMs: STALL_TIMEOUT_MS,
+      checkEveryMs: 4000,
+      onStall: () => {
         finish(() => { try { xhr.abort() } catch { /* ignore */ }; reject(new Error('Upload stalled — retrying')) })
-      }
-    }, 4000)
+      },
+    })
 
     const finish = (fn: () => void) => {
       if (settled) return
       settled = true
-      clearInterval(stallTimer)
+      stall.stop()
       signal?.removeEventListener('abort', onAbort)
       fn()
     }
@@ -720,12 +732,12 @@ async function xhrPut(
     // in src/lib/cloudflare/r2.ts exactly); the relay route doesn't read/require this header at all.
     if (method === 'PUT') xhr.setRequestHeader('Cache-Control', IMMUTABLE_CACHE_CONTROL)
     xhr.upload.onprogress = (e) => {
-      lastActivity = Date.now()
+      stall.poke()
       if (e.lengthComputable) onProgress(Math.round((e.loaded / e.total) * 100))
     }
     // Body fully sent — restart the stall clock so a slow server response during the
     // request→response gap (when upload progress no longer fires) isn't mistaken for a stall.
-    xhr.upload.onload = () => { lastActivity = Date.now() }
+    xhr.upload.onload = () => { stall.poke() }
     xhr.onload = () => finish(() => {
       if (xhr.status >= 200 && xhr.status < 300) { resolve(xhr.responseText); return }
       // The relay returns a JSON {error} body with the real reason (rate limited, too large, etc).
@@ -1037,14 +1049,25 @@ async function putWithRetry(
   signal?: AbortSignal,
   deadlineMs = PUT_DEADLINE_MS,
 ): Promise<void> {
-  const deadline = Date.now() + deadlineMs
+  // MONOTONIC, because a wall-clock deadline can expire before it is ever consulted.
+  //
+  // This was `const deadline = Date.now() + deadlineMs`, compared against Date.now() at four points
+  // below. A phone whose clock is WRONG — off for a while, flat battery, hand-set — corrects when it
+  // joins the venue wifi, and if that correction steps FORWARD by more than PUT_DEADLINE_MS (120s)
+  // while a PUT is in flight, the very first retry check reads the deadline as already passed. The
+  // loop breaks immediately and the guest is told their photo failed, having spent none of its two
+  // minutes. Nothing retries; this is the byte-transfer budget itself.
+  //
+  // createDeadline owns the arithmetic rather than exposing a timestamp, so `wouldOverrun(wait)`
+  // replaces four hand-written `Date.now() + wait >= deadline` comparisons (rule 15).
+  const deadline = createDeadline(deadlineMs)
   let lastErr: Error | null = null
   let attempt = 0
   for (;;) {
     if (signal?.aborted) throw new DOMException('Upload aborted', 'AbortError')
     if (attempt > 0) {
       const wait = backoffDelay(attempt)
-      if (Date.now() + wait >= deadline) break
+      if (deadline.wouldOverrun(wait)) break
       await new Promise(r => setTimeout(r, wait))
     }
     attempt++
@@ -1056,14 +1079,14 @@ async function putWithRetry(
       // R2 answered and refused — a signature or size problem no amount of waiting fixes.
       if (e instanceof HttpError && e.status < 500) throw e
       lastErr = e instanceof Error ? e : new Error(String(e))
-      if (Date.now() >= deadline) break
+      if (deadline.expired()) break
       // No response at all: wait for the connection rather than spending attempts on a dead one.
       if (!(e instanceof HttpError)) {
         let probe = 0
-        while (Date.now() < deadline && !signal?.aborted && !(await originReachable())) {
+        while (!deadline.expired() && !signal?.aborted && !(await originReachable())) {
           probe++
           const wait = Math.min(5000, 1000 * probe) * (0.5 + Math.random() * 0.5)
-          if (Date.now() + wait >= deadline) break
+          if (deadline.wouldOverrun(wait)) break
           await new Promise(r => setTimeout(r, wait))
         }
       }
@@ -1113,14 +1136,17 @@ async function relayUploadImage(
   // Deadline-driven for the same reason as the direct path: this is the LAST route the bytes have,
   // so two quick attempts meant a connection blip discarded a photo that was already in memory and
   // already authorized. Same key derivation server-side on every attempt, so retrying is safe.
-  const deadline = Date.now() + PUT_DEADLINE_MS
+  // Monotonic, same reason as putWithRetry — and it matters MORE here, because this is the last
+  // route the bytes have. A forward clock step larger than PUT_DEADLINE_MS made this loop break on
+  // its first check with the full budget unspent, and there is no further fallback behind it.
+  const deadline = createDeadline(PUT_DEADLINE_MS)
   let lastErr: Error | null = null
   let attempt = 0
   for (;;) {
     if (signal?.aborted) throw new DOMException('Upload aborted', 'AbortError')
     if (attempt > 0) {
       const wait = backoffDelay(attempt)
-      if (Date.now() + wait >= deadline) break
+      if (deadline.wouldOverrun(wait)) break
       await new Promise(r => setTimeout(r, wait))
     }
     attempt++
@@ -1133,13 +1159,13 @@ async function relayUploadImage(
       // mirroring putWithRetry's policy for the direct path.
       if (e instanceof HttpError && e.status < 500) throw e
       lastErr = e instanceof Error ? e : new Error(String(e))
-      if (Date.now() >= deadline) break
+      if (deadline.expired()) break
       if (!(e instanceof HttpError)) {
         let probe = 0
-        while (Date.now() < deadline && !signal?.aborted && !(await originReachable())) {
+        while (!deadline.expired() && !signal?.aborted && !(await originReachable())) {
           probe++
           const wait = Math.min(5000, 1000 * probe) * (0.5 + Math.random() * 0.5)
-          if (Date.now() + wait >= deadline) break
+          if (deadline.wouldOverrun(wait)) break
           await new Promise(r => setTimeout(r, wait))
         }
       }
@@ -1523,14 +1549,26 @@ function runTusOnce(
   return new Promise<void>((resolve, reject) => {
     if (signal?.aborted) { reject(new DOMException('Upload aborted', 'AbortError')); return }
     let settled = false
-    let lastActivity = Date.now()
     const settle = (fn: () => void) => {
       if (settled) return
       settled = true
-      clearInterval(watchdog)
+      stall.stop()
       signal?.removeEventListener('abort', onAbort)
       fn()
     }
+    // The video half of the same wall-clock defect as putWithRetry's watchdog above: a backward
+    // clock step made the difference negative and the watchdog stopped existing, leaving a video
+    // upload spinning forever. Monotonic, and the timer lives with the decision (rule 15).
+    const stall = createStallWatch({
+      stallMs: TUS_STALL_MS,
+      checkEveryMs: 5000,
+      onStall: () => {
+        settle(() => {
+          try { upload.abort() } catch { /* ignore */ }
+          reject(new Error('Video upload stalled'))
+        })
+      },
+    })
     const upload = new tus.Upload(file, {
       // uploadUrl (not endpoint): tus HEADs it for the current offset and RESUMES — both
       // across our recovery-loop attempts and across user-initiated retries.
@@ -1550,20 +1588,12 @@ function runTusOnce(
       onShouldRetry: (err: unknown) =>
         !isDeterministicTusError(err) || isMissingContentLengthFailure(errText(err)),
       onProgress: (bytesUploaded, bytesTotal) => {
-        lastActivity = Date.now()
+        stall.poke()
         onFraction(bytesTotal > 0 ? bytesUploaded / bytesTotal : 0)
       },
       onSuccess: () => settle(resolve),
       onError: (err) => settle(() => reject(err instanceof Error ? err : new Error(String(err)))),
     })
-    const watchdog = setInterval(() => {
-      if (Date.now() - lastActivity > TUS_STALL_MS) {
-        settle(() => {
-          try { upload.abort() } catch { /* ignore */ }
-          reject(new Error('Video upload stalled'))
-        })
-      }
-    }, 5000)
     const onAbort = () => settle(() => {
       try { upload.abort() } catch { /* ignore */ }
       reject(new DOMException('Upload aborted', 'AbortError'))

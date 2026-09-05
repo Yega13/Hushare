@@ -109,7 +109,21 @@ const SIZE_BUDGET: Record<string, number> = {
   // nothing on screen and nothing in the panel. Narrowing the retry would turn a transient
   // failure into a failed upload, which is worse, so the invisible case is made visible instead.
   // Almost all of it is the comment saying why.
-  'src/components/UploadZone.tsx': 2891,
+  // +14 (2026-09-05, review): both byte-transfer deadlines (putWithRetry and relayPut, the LAST
+  // route the bytes have) moved onto the monotonic clock too. A forward clock step larger than the
+  // 120s budget made either loop break on its FIRST check with the budget unspent — the guest told
+  // their photo failed having spent none of its two minutes. Four `Date.now() + wait >= deadline`
+  // comparisons per loop became one createDeadline each. createDeadline had shipped with zero
+  // callers; a review pointed out that unused production code is the exact thing the previous
+  // entry criticised.
+  // +16 (2026-09-05): both stall watchdogs moved onto the monotonic clock. They compared two
+  // Date.now() readings, so a backward clock step — an NTP correction on a phone that just joined
+  // venue wifi, which is exactly when it syncs — made the difference NEGATIVE, the comparison never
+  // became true, and the watchdog silently stopped existing. A guest watched a spinner forever. A
+  // forward step aborted a healthy upload. The timers now live inside createStallWatch with the
+  // decision they enforce (rule 15), where nine mutations are proven to kill them; here they were
+  // bare setIntervals that nothing could test. Most of the addition is the two comments.
+  'src/components/UploadZone.tsx': 2921,
   // +3 on 2026-08-30: the branding toggle gained a real plan check (it was dimmed but still
   // clickable), and Face Finder and bib search stopped riding on the collections flag. Three
   // lines of reasoning for three gates that were wrong. Deliberate.

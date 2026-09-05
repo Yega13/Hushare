@@ -199,7 +199,11 @@ one day produced measurable chunk-404s in the error panel.
 
 ## 22. Wall-clock time goes backwards.
 
-`Date.now()` moves when a phone takes an NTP correction or crosses a timezone. A debounce computed
+`Date.now()` moves when a phone takes an NTP/NITZ correction, when the time is set by hand, or when
+a device whose clock was wrong (flat battery, long power-off) corrects on boot. It does NOT move
+when a phone crosses a timezone -- this rule said it did, and that is wrong: `Date.now()` is UTC
+epoch milliseconds. The failure is real; only that one mechanism was misdescribed, and it matters
+because it changes how often you expect it. A debounce computed
 from it deferred a refresh by (quiet window + the size of the jump): an hour-long jump deferred an
 hour, and every later event re-deferred it, so changes made on another device never arrived again
 for the rest of that session.

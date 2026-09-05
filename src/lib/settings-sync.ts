@@ -41,7 +41,8 @@ export function onSettingsBroadcast(state: {
     // once the owner stops picks it up.
     //
     // CLAMPED, because Date.now() is a wall clock and can go backwards — a phone waking to an NTP
-    // correction, a timezone change. sinceLocalEdit then goes negative and the raw arithmetic
+    // correction, or a device with a wrong RTC correcting on boot. (NOT a timezone change —
+    // Date.now() is UTC epoch ms.) sinceLocalEdit then goes negative and the raw arithmetic
     // schedules the refresh (quietMs + the size of the jump) into the future: an hour-long jump
     // defers it an hour, and every later broadcast re-defers it by another hour, so settings
     // changed on another device never arrive again for the rest of the session.
