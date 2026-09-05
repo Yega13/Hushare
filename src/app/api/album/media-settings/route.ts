@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { isOneOf, DISPLAY_FILTERS } from '@/lib/db-unions'
 import type { Database } from '@/types/database'
 import { refuseAccess } from '@/lib/server/respond'
 import { createAdminClient } from '@/lib/supabase/admin'
@@ -15,7 +16,6 @@ import { isPhotoOrder, PHOTO_ORDER_CHOICES } from '@/lib/photo-order'
 
 const NO_STORE = { 'Cache-Control': 'no-store' }
 
-const VALID_FILTERS = new Set(['none', 'warm', 'cool', 'mono', 'vintage', 'soft'])
 
 const VALID_SLIDESHOW_ANIMS = new Set(['none', 'fade', 'rise', 'zoom'])
 
@@ -57,8 +57,10 @@ export async function POST(req: Request) {
     updates.media_radius = r
   }
   if (body.media_filter !== undefined) {
-    if (typeof body.media_filter !== 'string' || !VALID_FILTERS.has(body.media_filter)) {
-      return NextResponse.json({ error: `media_filter must be one of: ${[...VALID_FILTERS].join(', ')}` }, { status: 400, headers: NO_STORE })
+    // isOneOf owns the typeof check and narrows; DISPLAY_FILTERS is the ONE list, held to the database
+    // CHECK by tests/schema-unions.test.ts. This route used to carry its own Set of the same six values.
+    if (!isOneOf(DISPLAY_FILTERS, body.media_filter)) {
+      return NextResponse.json({ error: `media_filter must be one of: ${DISPLAY_FILTERS.join(', ')}` }, { status: 400, headers: NO_STORE })
     }
     updates.media_filter = body.media_filter
   }

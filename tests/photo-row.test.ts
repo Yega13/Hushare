@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest'
-import { narrowPhotoRows } from '@/lib/photo-row'
+import { narrowPhotoRows, summarizeDrops } from '@/lib/photo-row'
 
 // THE THREE COLUMNS A CAST USED TO HIDE, each with its own failure direction.
 //
@@ -34,7 +34,7 @@ describe('a row the database can hold that the union denies', () => {
     const drop = vi.fn()
     const out = narrowPhotoRows([{ ...good, media_type: 'audio' }], drop)
     expect(out).toEqual([])
-    expect(drop).toHaveBeenCalledWith({ id: 'p1', column: 'media_type', value: 'audio' })
+    expect(drop).toHaveBeenCalledWith({ id: 'p1', albumId: 'a1', column: 'media_type', value: 'audio' })
   })
 
   it("DROPS and reports the pre-R2 'supabase' backend the CHECK still permits", () => {
@@ -44,7 +44,7 @@ describe('a row the database can hold that the union denies', () => {
     const drop = vi.fn()
     const out = narrowPhotoRows([{ ...good, storage_backend: 'supabase' }], drop)
     expect(out).toEqual([])
-    expect(drop).toHaveBeenCalledWith({ id: 'p1', column: 'storage_backend', value: 'supabase' })
+    expect(drop).toHaveBeenCalledWith({ id: 'p1', albumId: 'a1', column: 'storage_backend', value: 'supabase' })
   })
 
   it('keeps the good rows from a mixed batch', () => {
@@ -85,5 +85,40 @@ describe('a row the database can hold that the union denies', () => {
     const drop = vi.fn()
     expect(narrowPhotoRows([], drop)).toEqual([])
     expect(drop).not.toHaveBeenCalled()
+  })
+})
+
+describe('summarizeDrops collapses a request into one report', () => {
+  const d = (id: string, column: 'media_type' | 'storage_backend', value: string) =>
+    ({ id, albumId: 'a1', column, value })
+
+  it('is null when nothing was dropped -- no report, no RPC', () => {
+    expect(summarizeDrops([])).toBeNull()
+  })
+
+  it('has a STABLE message across requests, so coalesce_error_event can collapse repeats', () => {
+    // Per-row messages with the photo id in them defeated coalescing: N rows meant N panel rows
+    // every window. The message must not vary with WHICH rows were dropped -- only how many, and on
+    // what.
+    const a = summarizeDrops([d('p1', 'storage_backend', 'supabase')])!
+    const b = summarizeDrops([d('p9', 'storage_backend', 'supabase')])!
+    expect(a.message).toBe(b.message)
+    expect(a.message).not.toContain('p1')
+  })
+
+  it('names the album and caps the sample at five while keeping the true count', () => {
+    const many = Array.from({ length: 12 }, (_, i) => d(`p${i}`, 'media_type', 'audio'))
+    const s = summarizeDrops(many)!
+    expect(s.albumId).toBe('a1')
+    expect(s.context.dropped).toBe(12)
+    expect(s.context.sample).toHaveLength(5)
+    expect(s.message).toContain('12 photo row(s)')
+  })
+
+  it('lists each offending column once', () => {
+    const s = summarizeDrops([
+      d('p1', 'media_type', 'x'), d('p2', 'storage_backend', 'y'), d('p3', 'media_type', 'z'),
+    ])!
+    expect(s.context.columns).toEqual(['media_type', 'storage_backend'])
   })
 })

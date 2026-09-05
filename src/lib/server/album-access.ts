@@ -2,7 +2,7 @@ import { getCloudflareContext } from '@opennextjs/cloudflare'
 import type { Json } from '@/types/database'
 import { parseSponsorLogos } from '@/lib/sponsor-logos'
 import { asPackageTier } from '@/lib/db-unions'
-import { narrowPhotoRows, type DroppedPhoto } from '@/lib/photo-row'
+import { narrowPhotoRows, summarizeDrops, type DroppedPhoto, type PhotoRowIn, type NarrowedPhotoRow } from '@/lib/photo-row'
 import { reportServerError } from '@/lib/report-server-error'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { createClient } from '@/lib/supabase/server'
@@ -368,14 +368,18 @@ export async function resolveAlbum(
   }
 }
 
-// A photos row the product cannot represent -- an unknown media_type or storage_backend -- is left
-// out of the grid and lands in the admin panel, rather than rendering as a broken tile nobody can
-// explain. See lib/photo-row for which way each field errs and why. Zero such rows exist today; if
+// Photos rows the product cannot represent -- an unknown media_type or storage_backend -- are left
+// out of the grid and land in the admin panel as ONE row per request, rather than rendering as broken
+// tiles nobody can explain. See lib/photo-row for which way each field errs and why. Zero such rows exist today; if
 // one ever does, this is how the owner finds out.
-function reportDroppedPhoto(d: DroppedPhoto): void {
-  reportServerError('album-access', `photo ${d.id} dropped: ${d.column} = ${JSON.stringify(d.value)} is not a value the product knows`, {
-    context: { photoId: d.id, column: d.column, value: d.value },
-  })
+function narrowAndReport<R extends PhotoRowIn>(rows: readonly R[]): NarrowedPhotoRow<R>[] {
+  const dropped: DroppedPhoto[] = []
+  const out = narrowPhotoRows(rows, (d) => dropped.push(d))
+  // One report per request, shaped by lib/photo-row's summarizeDrops, which is where the "stable
+  // message, named album, sample of five" rules live with their tests.
+  const summary = summarizeDrops(dropped)
+  if (summary) reportServerError('album-access', summary.message, { albumId: summary.albumId, context: summary.context })
+  return out
 }
 
 // The gate applied to CONTRIBUTING to an album, as opposed to reading it.
@@ -682,7 +686,7 @@ export async function fetchAuthorizedPhotos(
     // can tell that its own arithmetic agreed with the database.
     const countQ = admin.from('photos').select('id', { count: 'exact', head: true }).eq('album_id', albumId)
     const { count } = await (isOwner ? countQ : countQ.eq('hidden', false))
-    return { kind: 'ok', photos: narrowPhotoRows(rows.data ?? [], reportDroppedPhoto), total: count ?? 0 }
+    return { kind: 'ok', photos: narrowAndReport(rows.data ?? []), total: count ?? 0 }
   }
   if (!isOwner) query = query.eq('hidden', false)
   if (bibCandidates) query = query.overlaps('bib_numbers', bibCandidates)
@@ -729,7 +733,7 @@ export async function fetchAuthorizedPhotos(
 
   return {
     kind: 'ok',
-    photos: narrowPhotoRows(photos ?? [], reportDroppedPhoto),
+    photos: narrowAndReport(photos ?? []),
     total,
     bibStats: opts.bibStats ? await countBibStats(albumId, isOwner) : undefined,
   }

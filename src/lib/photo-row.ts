@@ -32,33 +32,36 @@ import { DISPLAY_FILTERS, MEDIA_TYPES, STORAGE_BACKENDS, isOneOf } from '@/lib/d
 // The report goes through a callback so this module stays a pure function with no admin-client
 // import: it is tested with fixture rows and no mocks.
 
-type ConstrainedIn = {
+export type PhotoRowIn = {
   id: string
+  // Carried so a dropped-row report can name the album. The admin panel answers "whose album broke"
+  // from album_id; a review found the first version of the report left it null.
+  album_id: string
   media_type: string
   storage_backend: string
   display_filter: string | null
 }
 
-type Narrowed<R extends ConstrainedIn> = Omit<R, 'media_type' | 'storage_backend' | 'display_filter'> & {
+export type NarrowedPhotoRow<R extends PhotoRowIn> = Omit<R, 'media_type' | 'storage_backend' | 'display_filter'> & {
   media_type: MediaType
   storage_backend: StorageBackend
   display_filter: MediaDisplayFilter | null
 }
 
-export type DroppedPhoto = { id: string; column: 'media_type' | 'storage_backend'; value: string }
+export type DroppedPhoto = { id: string; albumId: string; column: 'media_type' | 'storage_backend'; value: string }
 
-export function narrowPhotoRows<R extends ConstrainedIn>(
+export function narrowPhotoRows<R extends PhotoRowIn>(
   rows: readonly R[],
   onDropped: (dropped: DroppedPhoto) => void,
-): Narrowed<R>[] {
-  const out: Narrowed<R>[] = []
+): NarrowedPhotoRow<R>[] {
+  const out: NarrowedPhotoRow<R>[] = []
   for (const row of rows) {
     if (!isOneOf(MEDIA_TYPES, row.media_type)) {
-      onDropped({ id: row.id, column: 'media_type', value: row.media_type })
+      onDropped({ id: row.id, albumId: row.album_id, column: 'media_type', value: row.media_type })
       continue
     }
     if (!isOneOf(STORAGE_BACKENDS, row.storage_backend)) {
-      onDropped({ id: row.id, column: 'storage_backend', value: row.storage_backend })
+      onDropped({ id: row.id, albumId: row.album_id, column: 'storage_backend', value: row.storage_backend })
       continue
     }
     const display_filter = isOneOf(DISPLAY_FILTERS, row.display_filter) ? row.display_filter : null
@@ -67,4 +70,41 @@ export function narrowPhotoRows<R extends ConstrainedIn>(
     out.push({ ...row, media_type: row.media_type, storage_backend: row.storage_backend, display_filter })
   }
   return out
+}
+
+/** What one request says about the rows it dropped -- ONE report, however many rows. */
+export type DropSummary = {
+  message: string
+  albumId: string
+  context: {
+    dropped: number
+    columns: DroppedPhoto['column'][]
+    sample: Array<{ id: string; column: string; value: string }>
+  }
+}
+
+/**
+ * Collapse a request's dropped rows into one report.
+ *
+ * A review found the first version reported per ROW with the photo id in the message -- which
+ * defeated coalesce_error_event (it keys on the message), so N bad rows on a page meant N RPCs per
+ * view and N distinct panel rows every window. The message here is STABLE across requests so
+ * repeated views coalesce; the ids ride in context; the album is named so the panel can say whose.
+ * The sample is capped at five: the count is the signal, the ids are for the first look.
+ *
+ * In lib rather than inline in album-access because "one report, stable message, sample of five" is a
+ * rule with several ways to get it wrong, and a rule nothing can test is a rule that drifts (rule 14).
+ */
+export function summarizeDrops(dropped: readonly DroppedPhoto[]): DropSummary | null {
+  if (dropped.length === 0) return null
+  const columns = [...new Set(dropped.map((d) => d.column))]
+  return {
+    message: `${dropped.length} photo row(s) dropped: ${columns.join(', ')} held a value the product does not know`,
+    albumId: dropped[0].albumId,
+    context: {
+      dropped: dropped.length,
+      columns,
+      sample: dropped.slice(0, 5).map((d) => ({ id: d.id, column: d.column, value: d.value })),
+    },
+  }
 }

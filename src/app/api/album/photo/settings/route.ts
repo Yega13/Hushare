@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { isOneOf, DISPLAY_FILTERS } from '@/lib/db-unions'
 import type { Database } from '@/types/database'
 import { refuseAccess } from '@/lib/server/respond'
 import { createAdminClient } from '@/lib/supabase/admin'
@@ -16,7 +17,6 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 // server-side change cannot leave the client accepting text the save then refuses.
 const MAX_CAPTION_LEN = MEDIA_CAPTION_MAX
 const MAX_AUTHOR_LEN = MEDIA_AUTHOR_MAX
-const VALID_FILTERS = new Set(['none', 'warm', 'cool', 'mono', 'vintage', 'soft'])
 
 export async function POST(req: Request) {
   const csrfError = forbidCrossSiteRequest(req)
@@ -82,8 +82,10 @@ export async function POST(req: Request) {
   }
 
   if (body.display_filter !== undefined) {
-    if (body.display_filter !== null && (typeof body.display_filter !== 'string' || !VALID_FILTERS.has(body.display_filter))) {
-      return NextResponse.json({ error: `display_filter must be one of: ${[...VALID_FILTERS].join(', ')} or null` }, { status: 400, headers: NO_STORE })
+    // isOneOf owns the typeof check and narrows; DISPLAY_FILTERS is the ONE list, held to the database
+    // CHECK by tests/schema-unions.test.ts. This route used to carry its own Set of the same six values.
+    if (body.display_filter !== null && !isOneOf(DISPLAY_FILTERS, body.display_filter)) {
+      return NextResponse.json({ error: `display_filter must be one of: ${DISPLAY_FILTERS.join(', ')} or null` }, { status: 400, headers: NO_STORE })
     }
     updates.display_filter = body.display_filter
   }
