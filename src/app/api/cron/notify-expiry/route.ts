@@ -16,16 +16,6 @@ const NO_STORE = { 'Cache-Control': 'no-store' }
 const BATCH_SIZE = 200
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL ?? 'https://hushare.space'
 
-type ExpiryCandidate = {
-  id: string
-  user_id: string | null
-  title: string
-  slug: string
-  custom_slug: string | null
-  last_activity_at: string
-  last_notification_at: string | null
-}
-
 export async function POST(req: Request) {
   const secret = process.env.ALBUM_RETIREMENT_SECRET
   if (!secret) {
@@ -80,7 +70,6 @@ export async function POST(req: Request) {
     // of skipping the warning.
     .order('last_activity_at', { ascending: true })
     .limit(BATCH_SIZE)
-    .returns<ExpiryCandidate[]>()
 
   if (error) {
     console.error('[notify-expiry] candidate lookup failed:', error.message)

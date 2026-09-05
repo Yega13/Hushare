@@ -680,3 +680,23 @@ when a phone crosses a timezone is false (it is UTC epoch ms); I had repeated it
 its callers. Zero is a finding. And when a test suite is built from edge cases -- exactly zero,
 exactly the threshold, well past it -- write the boring middle case too, because that is where
 "wrong constant" mutants live.
+
+### 45. I CALLED IT "A PREDICATE, NOT A CAST", AND THE MUTATION SHOWED IT WAS A CAST WITH BETTER MANNERS
+
+Removing `.returns<>()` from two crons exposed that the casts had declared nullable columns non-null
+because a runtime PostgREST filter guaranteed it. I replaced each with an inline type predicate --
+`.filter((a): a is typeof a & { x: string } => a.x !== null)` -- and wrote a comment saying this
+"establishes" the guarantee in code, unlike the cast.
+
+Then the rule-16 run: I changed the predicate's BODY to `true`. tsc stayed green. A type predicate
+narrows by its SIGNATURE; the compiler never checks that the body earns the claim. So the runtime
+check and the type claim were held together by nothing, exactly like the cast -- the only real gain
+was that the intent was now written down next to the query.
+
+The fix that actually closes it is rule 14: the body moves into `lib/non-null.ts` where a test holds
+it, and the signature is checked by tsc at every call site. Now a mutation to either half is caught
+by something.
+
+**Habit to build:** an `is` annotation is an assertion the compiler trusts, not one it verifies. When
+I write one, the body needs a test of its own -- and the rule-16 mutation to run is on the BODY, not
+the signature, because that is the half that can quietly stop matching.

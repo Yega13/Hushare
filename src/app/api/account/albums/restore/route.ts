@@ -52,7 +52,7 @@ export async function POST(req: Request) {
     .select('id, deleted_at')
     .eq('id', albumId)
     .eq('user_id', user.id)
-    .maybeSingle<{ id: string; deleted_at: string | null }>()
+    .maybeSingle()
 
   if (!album) {
     return NextResponse.json({ error: 'Album not found' }, { status: 404, headers: NO_STORE })

@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { withNonNull } from '@/lib/non-null'
 import { serverError } from '@/lib/server/respond'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { timingSafeEqual } from '@/lib/timing-safe'
@@ -52,16 +53,6 @@ export async function POST(req: Request) {
     .lte('package_expires_at', horizon)
     .order('package_expires_at', { ascending: true })
     .limit(BATCH_SIZE)
-    .returns<Array<{
-      id: string
-      user_id: string | null
-      title: string
-      slug: string
-      custom_slug: string | null
-      package_tier: 'pro' | 'studio'
-      package_expires_at: string
-      package_reminder_at: string | null
-    }>>()
 
   if (error) {
     // The renewal scan stopping means renewals silently stop. Nothing said so.
@@ -72,7 +63,13 @@ export async function POST(req: Request) {
   let quiet = 0
   let failed = 0
 
-  for (const album of candidates ?? []) {
+  // The query above filters `package_tier is not null` and `package_expires_at > now`, so every row
+  // has both at runtime -- but those are PostgREST filters the compiler cannot see, and the row type
+  // stays `string | null`. The `.returns<>()` that used to sit on the query declared them non-null by
+  // fiat. withNonNull establishes it, with its body tested in lib and its signature checked here; the
+  // two column names are written beside the query they mirror so a reader can check they agree.
+  const due = withNonNull(candidates ?? [], 'package_expires_at', 'package_tier')
+  for (const album of due) {
     const due = renewalReminderDue(
       new Date(album.package_expires_at),
       album.package_reminder_at ? new Date(album.package_reminder_at) : null,

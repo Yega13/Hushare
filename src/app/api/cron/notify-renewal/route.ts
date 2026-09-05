@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { withNonNull } from '@/lib/non-null'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { sendBillingReminderEmail } from '@/lib/email'
 import { timingSafeEqual } from '@/lib/timing-safe'
@@ -11,14 +12,6 @@ const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL ?? 'https://hushare.space'
 // reminder rather than drop an arbitrary customer's -- but with billing notices the right number is
 // "all of them", and 200 covers the foreseeable book.
 const BATCH_SIZE = 200
-
-type UpcomingRenewal = {
-  id: string
-  last_reminder_at: string | null
-  user_id: string
-  tier: string
-  current_period_end: string
-}
 
 export async function POST(req: Request) {
   const secret = process.env.ALBUM_RETIREMENT_SECRET
@@ -61,7 +54,6 @@ export async function POST(req: Request) {
     // and, in some places, a compliance problem. Ordered, the ones billing soonest always win.
     .order('current_period_end', { ascending: true })
     .limit(BATCH_SIZE)
-    .returns<UpcomingRenewal[]>()
 
   if (error) {
     console.error('[notify-renewal] subscription lookup failed:', error.message)
@@ -71,7 +63,12 @@ export async function POST(req: Request) {
   let notified = 0
   let failed = 0
 
-  for (const sub of upcoming ?? []) {
+  // The query filters `current_period_end` between windowStart and windowEnd, so it is never null
+  // at runtime -- a PostgREST filter the compiler cannot see over a nullable column. The `.returns<>()`
+  // that sat on the query declared it non-null by fiat; withNonNull establishes it (see lib/non-null
+  // for why a tested helper and not an inline predicate).
+  const due = withNonNull(upcoming ?? [], 'current_period_end')
+  for (const sub of due) {
     try {
       const { data: { user } } = await admin.auth.admin.getUserById(sub.user_id)
       const email = user?.email

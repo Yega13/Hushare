@@ -53,7 +53,7 @@ export async function POST(req: Request) {
   // the write, deleted after — an image left behind costs a few KB, whereas deleting first and then
   // failing to save would leave the account pointing at nothing.
   const { data: existing } = await admin
-    .from('profiles').select('avatar_url').eq('user_id', user.id).maybeSingle<{ avatar_url: string | null }>()
+    .from('profiles').select('avatar_url').eq('user_id', user.id).maybeSingle()
 
   const { error } = await admin
     .from('profiles')

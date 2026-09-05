@@ -25,7 +25,7 @@ export async function GET() {
   const admin = createAdminClient()
   const [subscription, profile] = await Promise.all([
     getActiveSubscription(user.id),
-    admin.from('profiles').select('avatar_url').eq('user_id', user.id).maybeSingle<{ avatar_url: string | null }>(),
+    admin.from('profiles').select('avatar_url').eq('user_id', user.id).maybeSingle(),
   ])
   const canAccessAccount = isAccountAdmin(user) || subscription !== null
   return NextResponse.json(

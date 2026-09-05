@@ -43,7 +43,6 @@ export async function POST(req: Request) {
     .or('bib_search_enabled.eq.true,face_finder_enabled.eq.true')
     .is('retired_at', null)
     .order('id', { ascending: true })
-    .returns<{ id: string; bib_search_enabled: boolean; face_finder_enabled: boolean }[]>()
 
   // WHOEVER IS FIRST GETS THE BUDGET, so nobody may be first every time.
   //

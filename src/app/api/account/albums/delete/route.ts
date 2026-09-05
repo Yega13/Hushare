@@ -10,15 +10,6 @@ export const runtime = 'nodejs'
 const NO_STORE = { 'Cache-Control': 'no-store' }
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
-type AlbumForDelete = {
-  id: string
-  background_theme: string | null
-  logo_url: string | null
-  header_image: string | null
-  sponsor_logos: unknown
-  user_id: string | null
-}
-
 export async function POST(req: Request) {
   const csrfError = forbidCrossSiteRequest(req)
   if (csrfError) return csrfError
@@ -52,7 +43,7 @@ export async function POST(req: Request) {
     .select('id, background_theme, logo_url, header_image, sponsor_logos, user_id')
     .eq('id', album_id)
     .eq('user_id', user.id)
-    .maybeSingle<AlbumForDelete>()
+    .maybeSingle()
 
   if (!album) {
     return NextResponse.json({ error: 'Album not found' }, { status: 404, headers: NO_STORE })
