@@ -123,7 +123,12 @@ const SIZE_BUDGET: Record<string, number> = {
   // forward step aborted a healthy upload. The timers now live inside createStallWatch with the
   // decision they enforce (rule 15), where nine mutations are proven to kill them; here they were
   // bare setIntervals that nothing could test. Most of the addition is the two comments.
-  'src/components/UploadZone.tsx': 2921,
+  // +6 (2026-09-05, review): fetchWithRetry -- presign, stream-init and the SAVE that writes the
+  // row after the bytes are already in R2 -- onto the monotonic deadline. A forward clock step
+  // larger than the budget made a transient SAVE failure give up on its first check, leaving bytes
+  // in R2 with no row referencing them. Seven wall-clock sites became one createDeadline; its
+  // extendTo IS the Math.max recovery grace that was hand-written here.
+  'src/components/UploadZone.tsx': 2927,
   // +3 on 2026-08-30: the branding toggle gained a real plan check (it was dimmed but still
   // clickable), and Face Finder and bib search stopped riding on the collections flag. Three
   // lines of reasoning for three gates that were wrong. Deliberate.
@@ -188,7 +193,12 @@ const SIZE_BUDGET: Record<string, number> = {
   // now" for the whole session, above a grid already holding its results — the failure tag was set
   // but never retired on success. Clearing it is one line; the rest is why, because that ordering
   // in lib/search-answer depends on the tag describing the LATEST attempt.
-  'src/app/[slug]/AlbumPageClient.tsx': 1782,
+  // +7 (2026-09-05): the two stamps settings-sync compares, and the deleted-photo tombstone, onto
+  // the monotonic clock. shouldCommitSettings compared two Date.now() readings; a backward step
+  // between the request going out and the owner's next edit read as "safe to commit" and the
+  // response overwrote the newer edit -- the phone/desktop clobber, in the module built to stop it.
+  // A forward step expired a tombstone early and a racing refetch re-admitted a deleted photo.
+  'src/app/[slug]/AlbumPageClient.tsx': 1789,
   'src/app/card-editor/CardEditorClient.tsx': 873,
   // +1 (2026-08-31): pass collectionTotal to the lightbox counter.
   // +2 (2026-08-31): morphAllowed gate on open and close.

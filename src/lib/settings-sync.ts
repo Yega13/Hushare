@@ -15,6 +15,7 @@
 // now somewhere they can be asked.
 
 /** What to do with a broadcast that just arrived. */
+import type { Millis } from '@/lib/clock'
 export type BroadcastAction =
   /** Fetch now — this is real news from somewhere else. */
   | { kind: 'refetch' }
@@ -26,9 +27,9 @@ export type BroadcastAction =
 export function onSettingsBroadcast(state: {
   /** The Album Designer is open, showing an optimistic preview a refetch would clobber. */
   designerOpen: boolean
-  now: number
+  now: Millis
   /** When this tab last made its own edit. 0 if it never has. */
-  lastLocalEditAt: number
+  lastLocalEditAt: Millis
   /** How long after a local edit a broadcast is assumed to be that edit echoing back. */
   quietMs: number
 }): BroadcastAction {
@@ -66,9 +67,9 @@ export function shouldCommitSettings<T extends { id?: unknown }>(
     /** The component went away while the request was in flight. */
     disposed: boolean
     /** When the request was issued. */
-    requestStartedAt: number
+    requestStartedAt: Millis
     /** When this tab last made its own edit. */
-    lastLocalEditAt: number
+    lastLocalEditAt: Millis
   },
 ): data is T {
   if (state.disposed) return false
@@ -80,6 +81,14 @@ export function shouldCommitSettings<T extends { id?: unknown }>(
   // Strictly greater: an edit at the same millisecond as the request going out was made BEFORE it,
   // so the response already contains it and there is nothing to protect. Using >= here would throw
   // away a good response on every fast edit.
+  //
+  // BOTH STAMPS ARE Millis, i.e. MONOTONIC, and that is load-bearing here specifically. These were two
+  // Date.now() readings, and onSettingsBroadcast two functions up already clamps ITS subtraction for
+  // rule 22 -- but a comparison is just as exposed as a subtraction. If the wall clock stepped
+  // backwards between the request going out and the owner's next edit, the edit's stamp came out
+  // SMALLER, this read "safe to commit", and the response overwrote the owner's newer edit: the
+  // phone/desktop clobber, in the module written to prevent it. The brand makes a wall-clock stamp
+  // a compile error at the call site rather than a bug here.
   return !(state.lastLocalEditAt > state.requestStartedAt)
 }
 
@@ -124,7 +133,7 @@ export function createSettingsSync(config: {
   }
 
   return {
-    onBroadcast(state: { designerOpen: boolean; now: number; lastLocalEditAt: number }): void {
+    onBroadcast(state: { designerOpen: boolean; now: Millis; lastLocalEditAt: Millis }): void {
       const action = onSettingsBroadcast({ ...state, quietMs: config.quietMs })
       if (action.kind === 'owe') { config.markOwed(); return }
       if (action.kind === 'schedule') {

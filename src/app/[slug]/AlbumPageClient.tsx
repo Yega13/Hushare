@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, useMemo } from 'react'
 import { searchPhase } from '@/lib/search-answer'
+import { monotonicNow, elapsedSince, type Millis } from '@/lib/clock'
 import { createPortal } from 'react-dom'
 import { useParams, notFound } from 'next/navigation'
 import dynamic from 'next/dynamic'
@@ -150,7 +151,11 @@ export default function AlbumPageClient({ initialAlbum = null, initialPhotos, in
   useEffect(() => { designerOpenRef.current = designerOpen }, [designerOpen])
   // When this tab last applied an album edit of its own (see handleAlbumUpdated). Effect 4 uses it
   // to tell its own echo apart from a real external change — see SELF_EDIT_QUIET_MS.
-  const lastLocalAlbumPatchRef = useRef(0)
+  // Millis (monotonic), not a Date.now() stamp: shouldCommitSettings compares this against the
+  // request's own stamp, and two wall-clock readings can cross when the clock steps -- see
+  // lib/settings-sync. 0 is "before page load", which for a guest means "never edited", exactly as
+  // before.
+  const lastLocalAlbumPatchRef = useRef<Millis>(0 as Millis)
   // A settings refetch that fell due while the Album Designer was open. Running it then would
   // overwrite the Designer's live optimistic preview; simply dropping it would leave the album
   // stale indefinitely, because the timer that scheduled it is one-shot and nothing re-arms it —
@@ -285,11 +290,13 @@ export default function AlbumPageClient({ initialAlbum = null, initialPhotos, in
 
   // Tombstone recently-deleted photo IDs so a realtime reconnect/refetch (common on mobile)
   // cannot reinstate a photo the user just deleted. Auto-expires after 60s.
-  const deletedIdsRef = useRef<Map<string, number>>(new Map())
+  // Monotonic: a FORWARD wall-clock step used to expire a tombstone early, and a racing refetch then
+  // re-admitted a photo the owner had just deleted (rule 22).
+  const deletedIdsRef = useRef<Map<string, Millis>>(new Map())
   const isRecentlyDeleted = useCallback((id: string) => {
     const t = deletedIdsRef.current.get(id)
     if (t == null) return false
-    if (Date.now() - t > 60_000) { deletedIdsRef.current.delete(id); return false }
+    if (elapsedSince(t) > 60_000) { deletedIdsRef.current.delete(id); return false }
     return true
   }, [])
 
@@ -1100,7 +1107,7 @@ export default function AlbumPageClient({ initialAlbum = null, initialPhotos, in
       // Re-checked here, not only at broadcast time: this runs from the trailing timer up to
       // SELF_EDIT_QUIET_MS later, and the Designer may have been opened in between.
       if (designerOpenRef.current) { settingsRefetchOwedRef.current = true; return }
-      const startedAt = Date.now()
+      const startedAt = monotonicNow()
       void fetch(`/api/album/resolve?slug=${encodeURIComponent(albumSlug)}&owner=${ownerTokenFromUrlRef.current ? '1' : '0'}`, { cache: 'no-store' })
         .then(r => r.ok ? r.json() : null)
         .then((data: Album | null) => {
@@ -1137,7 +1144,7 @@ export default function AlbumPageClient({ initialAlbum = null, initialPhotos, in
         // keeping them apart meant neither could be tested.
         sync.onBroadcast({
           designerOpen: designerOpenRef.current,
-          now: Date.now(),
+          now: monotonicNow(),
           lastLocalEditAt: lastLocalAlbumPatchRef.current,
         })
       })
@@ -1326,7 +1333,7 @@ export default function AlbumPageClient({ initialAlbum = null, initialPhotos, in
   }, [album?.id, fetchPhotos])
 
   const handlePhotoDeleted = useCallback((photoId: string) => {
-    deletedIdsRef.current.set(photoId, Date.now())  // tombstone against racing refetch
+    deletedIdsRef.current.set(photoId, monotonicNow())  // tombstone against racing refetch
     setPhotos(prev => prev.filter(p => p.id !== photoId))
   }, [])
 
@@ -1340,7 +1347,7 @@ export default function AlbumPageClient({ initialAlbum = null, initialPhotos, in
   ) => {
     // Every call here is an edit made in THIS tab (owner toolbar, designer, header, cover picker),
     // so it is always newer than anything a settings refetch can be carrying. Effect 4 reads this.
-    lastLocalAlbumPatchRef.current = Date.now()
+    lastLocalAlbumPatchRef.current = monotonicNow()
     setAlbum(prev => prev ? { ...prev, ...patch } : prev)
     if ('media_radius' in patch) {
       setForceGlobalRadius(!!options?.forceGlobalRadius)

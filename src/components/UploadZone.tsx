@@ -1,7 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { createStallWatch, createDeadline } from '@/lib/clock'
+import { createStallWatch, createDeadline, monotonicNow, elapsedSince } from '@/lib/clock'
 import * as tus from 'tus-js-client'
 import type { Album } from '@/types'
 import { stripExifFromJpeg, jpegOrientation, stripMetadataFromPng, stripMetadataFromWebp } from '@/lib/exif'
@@ -909,8 +909,14 @@ async function fetchWithRetry(
   // so it cannot be shadowed by a spread again.
   opts: { deadlineMs?: number; signal?: AbortSignal } = {},
 ): Promise<Response> {
-  const startedAt = Date.now()
-  let deadline = startedAt + (opts.deadlineMs ?? FETCH_DEADLINE_DEFAULT_MS)
+  // MONOTONIC. This deadline guards presign, stream-init and the SAVE that writes the database row
+  // after the bytes are already in R2. On the wall clock a forward step larger than the budget made
+  // the first retry check read the deadline as passed -- so a transient failure on the SAVE gave up
+  // at once, leaving bytes in R2 with no row that references them (rule 22). createDeadline owns the
+  // arithmetic; `extendTo` is exactly the `Math.max(deadline, ...)` the recovery grace used to do
+  // by hand here, now in one tested place (rules 13, 15).
+  const startedAt = monotonicNow()
+  const deadline = createDeadline(opts.deadlineMs ?? FETCH_DEADLINE_DEFAULT_MS)
   let graces = 0
   // Set when the probe confirms the origin is back: the next attempt skips the backoff, because
   // waiting out a delay we already spent probing is exactly the wasted patience described above.
@@ -931,7 +937,7 @@ async function fetchWithRetry(
       // half its nominal value is what breaks the lockstep.
       const wait = backoffDelay(attempt)
       // Never sleep past the deadline just to fail on the far side of it.
-      if (Date.now() + wait >= deadline) break
+      if (deadline.wouldOverrun(wait)) break
       await new Promise(r => setTimeout(r, wait))
     }
     skipBackoff = false
@@ -946,7 +952,7 @@ async function fetchWithRetry(
         status: res.status,
         serverErrorsSoFar: serverErrors,
         maxServerErrors: MAX_SERVER_ERROR_ATTEMPTS,
-        withinDeadline: Date.now() < deadline,
+        withinDeadline: !deadline.expired(),
       })
       if (verdict === 'retry') {
         serverErrors++
@@ -965,7 +971,7 @@ async function fetchWithRetry(
       // backs off and tries again — retrying the exact request the caller just cancelled.
       const throwVerdict = verdictForThrow({
         aborted: opts.signal?.aborted === true,
-        withinDeadline: Date.now() < deadline,
+        withinDeadline: !deadline.expired(),
       })
       if (throwVerdict === 'give-up' && opts.signal?.aborted) {
         // Drain a retained 5xx on the way out, same as every other exit from this loop — otherwise
@@ -982,7 +988,7 @@ async function fetchWithRetry(
       // originRecovered) and raced against THIS call's deadline, so every file waiting on the same
       // outage waits on one loop and they all resume together the instant it clears.
       if (isNetworkClass(e)) {
-        const remaining = deadline - Date.now()
+        const remaining = deadline.remaining()
         if (remaining <= 0) break
         const recovered = await settleWithin(originRecovered(), remaining, false)
         // Confirmed up. Give the request a real chance to run now rather than expiring on the
@@ -996,7 +1002,7 @@ async function fetchWithRetry(
         // the deadline already bounds.
         if (recovered && graces < MAX_RECOVERY_GRACES) {
           graces++
-          deadline = Math.max(deadline, Date.now() + POST_RECOVERY_GRACE_MS)
+          deadline.extendTo(POST_RECOVERY_GRACE_MS)
           skipBackoff = true
         }
       }
@@ -1024,7 +1030,7 @@ async function fetchWithRetry(
   // affecting how rows are grouped.
   const path = (() => { try { return new URL(url, window.location.origin).pathname } catch { return url } })()
   const err = new Error(`${lastErr?.message ?? 'Network request failed'} (${path})`)
-  throw Object.assign(err, { waitedMs: Date.now() - startedAt })
+  throw Object.assign(err, { waitedMs: elapsedSince(startedAt) })
 }
 
 // The old policy threw on ANY HTTP error — including R2's transient 500/502/503s, which are
