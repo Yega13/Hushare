@@ -232,7 +232,11 @@ const SIZE_BUDGET: Record<string, number> = {
   // previous version took it whenever the server had none, which two requests and zero bytes could
   // force, storing 2147483647 and making the album permanently refuse video. Plus the retry-token
   // lookup carrying the stored duration, so a re-saved video is not charged the client's claim.
-  'src/app/api/album/photos/create/route.ts': 610,
+  // +3 (2026-09-05): a narrowing the typed Supabase client requires, because stream_uid is nullable
+  // in the schema. NOT a bug fix — a review proved SQL IN never matches NULL, so the null this
+  // guards against could not reach that loop. The raise is bought with a guard and an honest note,
+  // which is a weaker justification than the one first written here, and the entry says so.
+  'src/app/api/album/photos/create/route.ts': 616,
   // +6 (2026-08-31, audit): progress comes from the server's outstanding count, not from the
   // length of a page that PostgREST had silently truncated.
   // +24 (2026-08-31, final audit): indexing pages until the server says it is finished, instead

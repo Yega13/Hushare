@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import type { Json } from '@/types/database'
 import { reportServerError } from '@/lib/report-server-error'
 
 // EVERY JSON ANSWER THIS API GIVES, BUILT IN ONE PLACE.
@@ -143,7 +144,7 @@ export function serverError(
   opts: {
     albumId?: string | null
     account?: string | null
-    context?: Record<string, unknown>
+    context?: Record<string, Json>
     /**
      * A better sentence for THIS failure, when one exists.
      *
@@ -183,7 +184,7 @@ export function serverError(
 export function askCallerToRetry(
   source: string,
   reason: string,
-  opts: { albumId?: string | null; account?: string | null; context?: Record<string, unknown> } = {},
+  opts: { albumId?: string | null; account?: string | null; context?: Record<string, Json> } = {},
 ): NextResponse {
   reportServerError(source, `retry requested: ${reason}`, opts)
   // The body is EXACTLY what these branches always returned: `{ error: <token> }`, nothing added.

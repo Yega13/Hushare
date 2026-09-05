@@ -17,6 +17,8 @@
     "test": "node scripts/run-tests.mjs",
     "test:watch": "vitest",
     "backup": "node scripts/backup-db.mjs",
+    "db:types": "node scripts/gen-db-types.mjs",
+    "db:types:check": "node scripts/gen-db-types.mjs --check",
     "restore": "node scripts/restore-db.mjs",
     "test:raw": "vitest run"
   },

@@ -78,6 +78,27 @@ jobs:
             # everyone learns to scroll past. It still does not fail the JOB — a stale recovery
             # file must never block shipping a fix during an incident — but it is now red.
             node scripts/dump-schema.mjs --check || echo '::error::schema.sql has drifted from the live database — run node scripts/dump-schema.mjs and commit it. The recovery file is stale.'
+            # THIS ONE FAILS THE JOB, unlike the line above, and the difference is what each file is
+            # for. schema.sql is a RECOVERY artifact: stale, it costs a bad afternoon after a
+            # disaster, and blocking a deploy on it would block shipping a fix during an incident.
+            # src/types/database.ts is LOAD-BEARING AT RUNTIME: if it claims a column that was
+            # dropped, the code compiles, the query returns nothing, and a guest sees an empty album
+            # at an event. That is the same class as db:check, which already exits 1.
+            #
+            # Note the ordering — db:migrate ran above, so this compares the committed types against
+            # a database that already has this push's migrations. A developer cannot write code
+            # against a column their types do not have, so regenerating is already the workflow.
+            # Exit 2 means it could not CONNECT; exit 1 means it compared and found drift. Telling
+            # them apart matters because the message is read by somebody shipping a fix, and
+            # "regenerate the types" is the wrong instruction when the file is already correct and
+            # the pooler simply blinked. Either way the job stops — db:migrate above hits the same
+            # pooler and already exits 1 — but it stops saying something true.
+            node scripts/gen-db-types.mjs --check
+            case $? in
+              0) ;;
+              2) echo '::error::Could not reach the database to verify src/types/database.ts. This is NOT a drift failure — the file may be correct. Re-run the deploy.'; exit 1 ;;
+              *) echo '::error::src/types/database.ts has drifted from the live database. Run npm run db:types and commit it — every type guarantee in this build is void until you do.'; exit 1 ;;
+            esac
           else
             echo "::warning::SUPABASE_DB_URL secret not set — skipping DB migration + drift check"
           fi

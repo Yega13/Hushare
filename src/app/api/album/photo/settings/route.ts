@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import type { Database } from '@/types/database'
 import { refuseAccess } from '@/lib/server/respond'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { MEDIA_CAPTION_MAX, MEDIA_AUTHOR_MAX } from '@/lib/constants'
@@ -38,7 +39,12 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: 'Invalid photo_id' }, { status: 400, headers: NO_STORE })
   }
 
-  const updates: Record<string, unknown> = {}
+  // TYPED FROM THE SCHEMA, where this was `Record<string, unknown>`.
+  //
+  // An untyped patch is a patch nobody checks: `updates.acccent_color = x` compiled, PostgREST
+  // answered 400, and the owner's save failed with no clue why. The generated Update type makes a
+  // misspelled column a compile error and a wrong value type too.
+  const updates: Database['public']['Tables']['photos']['Update'] = {}
 
   if (body.caption !== undefined) {
     if (body.caption !== null && typeof body.caption !== 'string') {
@@ -63,13 +69,16 @@ export async function POST(req: Request) {
   }
 
   if (body.display_radius !== undefined) {
-    if (body.display_radius !== null) {
-      const r = body.display_radius
-      if (typeof r !== 'number' || !Number.isInteger(r) || r < 0 || r > 500) {
-        return NextResponse.json({ error: 'display_radius must be an integer 0–500 or null' }, { status: 400, headers: NO_STORE })
-      }
+    // VALIDATE AND ASSIGN THE SAME VALUE. This checked a local `r` and then assigned
+    // `body.display_radius`, so the narrowing the guard established was thrown away — correct at
+    // runtime, but the compiler could not see it, and once the client was typed it showed up as
+    // `{} | null` being written to a number column. Narrowing that has to be re-established by a
+    // reader is narrowing that will eventually be wrong.
+    const r = body.display_radius
+    if (r !== null && (typeof r !== 'number' || !Number.isInteger(r) || r < 0 || r > 500)) {
+      return NextResponse.json({ error: 'display_radius must be an integer 0–500 or null' }, { status: 400, headers: NO_STORE })
     }
-    updates.display_radius = body.display_radius
+    updates.display_radius = r
   }
 
   if (body.display_filter !== undefined) {

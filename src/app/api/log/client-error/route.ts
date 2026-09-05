@@ -65,7 +65,7 @@ export async function POST(req: Request) {
   // the serialized size passed 800 — and the field that gets long is the stack, so the reports that
   // lost all their context were exactly the ones worth reading: a crash deep enough to have a big
   // stack arrived with no digest, no build id and no path at all. See lib/error-context.
-  const context: unknown = boundedContext(body.context)
+  const context = boundedContext(body.context)
   const ua = (req.headers.get('user-agent') ?? '').slice(0, 300) || null
 
   const admin = createAdminClient()

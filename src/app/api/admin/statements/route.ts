@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import type { Database } from '@/types/database'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { isAccountAdmin } from '@/lib/auth'
@@ -53,7 +54,7 @@ export async function POST(req: Request) {
     slug = `${base}-${n}`
   }
 
-  const row: Record<string, unknown> = { slug, title, summary, body_html: bodyHtml }
+  const row: Database['public']['Tables']['statements']['Insert'] = { slug, title, summary, body_html: bodyHtml }
   if (body.published_at) {
     const ts = new Date(body.published_at)
     if (!Number.isNaN(ts.getTime())) row.published_at = ts.toISOString()

@@ -1,4 +1,5 @@
 import { createAdminClient } from '@/lib/supabase/admin'
+import type { Json } from '@/types/database'
 import { getCloudflareContext } from '@opennextjs/cloudflare'
 
 // Server-side failures, recorded where someone will actually see them.
@@ -25,7 +26,7 @@ export function reportServerError(
   // checkout, a billing portal or an account action has no album and DOES have a signed-in
   // person, and those rows rendered a bare dash: the one class of error where someone is
   // definitely waiting to be helped was the one that named nobody.
-  opts: { albumId?: string | null; account?: string | null; context?: Record<string, unknown> } = {},
+  opts: { albumId?: string | null; account?: string | null; context?: Record<string, Json> } = {},
 ): void {
   try {
     const admin = createAdminClient()
@@ -79,7 +80,7 @@ export function reportServerError(
 }
 
 // Convenience for the common shape: something threw, and we want the reason without the stack.
-export function reportServerThrow(source: string, e: unknown, opts?: { albumId?: string | null; context?: Record<string, unknown> }): void {
+export function reportServerThrow(source: string, e: unknown, opts?: { albumId?: string | null; context?: Record<string, Json> }): void {
   const message = e instanceof Error ? `${e.name}: ${e.message}` : String(e)
   reportServerError(source, message, opts)
 }

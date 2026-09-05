@@ -307,7 +307,13 @@ export async function POST(req: Request) {
       reportServerError('photos-create', 'Failed to process photos (500)')
       return NextResponse.json({ error: 'Failed to process photos' }, { status: 500, headers: NO_STORE })
     }
-    for (const r of data) existingUids.add(r.stream_uid)
+    // stream_uid is NULLABLE in the schema, so the typed client requires this narrowing. It is a
+    // guard, NOT a bug fix, and the difference is worth stating because the first version of this
+    // comment claimed otherwise: the query above filters `.in('stream_uid', incomingUids)`, and SQL
+    // IN never matches NULL, so a null could not reach this loop. Verified against the live
+    // database rather than reasoned about. Keeping the guard costs nothing and stops the narrowing
+    // from being re-litigated; claiming it fixed something would have been a lie that outlived me.
+    for (const r of data) if (r.stream_uid) existingUids.add(r.stream_uid)
   }
 
   const toInsert = (photos as PhotoInput[]).filter(p => {

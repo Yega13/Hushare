@@ -1,12 +1,14 @@
 import 'server-only'
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
+import type { Database } from '@/types/database'
 import { assertEnvironmentIsCoherent } from '@/lib/server/environment'
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-let _client: SupabaseClient<any> | null = null
+// TYPED, where this was `SupabaseClient<any>` behind an eslint-disable — the only two `any` in
+// src/. With `any` the client's whole surface was unchecked: a misspelled column in a .select()
+// produced an empty result rather than an error, and `.eq('hiden', false)` compiled.
+let _client: SupabaseClient<Database> | null = null
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export function createAdminClient(): SupabaseClient<any> {
+export function createAdminClient(): SupabaseClient<Database> {
   if (_client) return _client
 
   // THE SERVICE-ROLE CLIENT BYPASSES EVERY ROW-LEVEL SECURITY POLICY, so this is the last place

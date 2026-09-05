@@ -36,10 +36,15 @@ export const MAX_CONTEXT_KEYS = 24
  * Errs toward keeping a trimmed object rather than dropping a whole one: a truncated stack is still
  * a stack, and the digest beside it is what ties a browser report to the server log line (rule 19).
  */
-export function boundedContext(input: unknown): Record<string, unknown> | null {
+// The return type states what the body below already guarantees: every value stored is a clamped
+// string, a FINITE number, or a boolean. Nulls and undefined are skipped, objects and arrays are
+// serialized to a string, and anything unserializable is dropped. It was declared
+// `Record<string, unknown>`, which understated that — and `unknown` is not assignable to the Json
+// type the jsonb column actually holds, so the honest signature is also the one that compiles.
+export function boundedContext(input: unknown): Record<string, string | number | boolean> | null {
   if (!input || typeof input !== 'object' || Array.isArray(input)) return null
 
-  const out: Record<string, unknown> = {}
+  const out: Record<string, string | number | boolean> = {}
   let keys = 0
   for (const [k, v] of Object.entries(input as Record<string, unknown>)) {
     if (keys >= MAX_CONTEXT_KEYS) break

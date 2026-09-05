@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import type { Database } from '@/types/database'
 import { refuseAccess } from '@/lib/server/respond'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { verifyOwnerViaCookieWithRateLimit } from '@/lib/album-owner-access'
@@ -23,7 +24,12 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: 'Missing slug' }, { status: 400, headers: NO_STORE })
   }
 
-  const updates: Record<string, unknown> = {}
+  // TYPED FROM THE SCHEMA, where this was `Record<string, unknown>`.
+  //
+  // An untyped patch is a patch nobody checks: `updates.acccent_color = x` compiled, PostgREST
+  // answered 400, and the owner's save failed with no clue why. The generated Update type makes a
+  // misspelled column a compile error and a wrong value type too.
+  const updates: Database['public']['Tables']['albums']['Update'] = {}
 
   // accent_color: null clears to default; a string must be a valid #rrggbb hex.
   // NOTE: custom (non-palette) colours were gated to paid tiers. Gating is deliberately OFF while
