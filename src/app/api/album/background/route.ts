@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { refuseAccess } from '@/lib/server/respond'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { verifyOwnerViaCookieWithRateLimit } from '@/lib/album-owner-access'
 import { forbidCrossSiteRequest } from '@/lib/request-security'
@@ -72,7 +73,7 @@ export async function POST(req: Request) {
   }
 
   const access = await verifyOwnerViaCookieWithRateLimit<BgAlbum>(req, slug.trim(), 'background_theme')
-  if (!access.ok) return NextResponse.json({ error: access.error }, { status: access.status, headers: NO_STORE })
+  if (!access.ok) return refuseAccess(access)
 
   // Ownership is known only now, so the album-scoped check belongs here. A curated (non-image:)
   // theme has no URL to own, so only custom uploads are checked.

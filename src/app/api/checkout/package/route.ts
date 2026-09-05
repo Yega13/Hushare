@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { refuseRateLimited } from '@/lib/server/respond'
+import { refuseRateLimited, refuseAccess } from '@/lib/server/respond'
 import { createClient } from '@/lib/supabase/server'
 import { createCheckout } from '@/lib/polar'
 import { forbidCrossSiteRequest } from '@/lib/request-security'
@@ -85,7 +85,7 @@ export async function POST(req: Request) {
   // only ever ADD time to the album.
   const access = await verifyOwnerViaCookieOrAccount(req, slug, user.id)
   if (!access.ok) {
-    return NextResponse.json({ error: access.error }, { status: access.status, headers: NO_STORE })
+    return refuseAccess(access)
   }
 
   const site = process.env.NEXT_PUBLIC_SITE_URL ?? 'https://hushare.space'

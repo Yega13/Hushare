@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { refuseAccess } from '@/lib/server/respond'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { verifyOwnerViaCookieWithRateLimit } from '@/lib/album-owner-access'
 import { refuseBelowTier } from '@/lib/require-tier'
@@ -132,7 +133,7 @@ export async function POST(req: Request) {
   }
 
   const access = await verifyOwnerViaCookieWithRateLimit(req, body.slug.trim())
-  if (!access.ok) return NextResponse.json({ error: access.error }, { status: access.status, headers: NO_STORE })
+  if (!access.ok) return refuseAccess(access)
 
   // Moderation is gated per FIELD, not per route. Everything else this endpoint sets — slideshow
   // speed, autoplay, grid columns — is free, and refusing the whole request would take those away

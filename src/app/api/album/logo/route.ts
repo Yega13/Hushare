@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { refuseAccess } from '@/lib/server/respond'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { verifyOwnerViaCookieWithRateLimit } from '@/lib/album-owner-access'
 import { refuseBelowTier } from '@/lib/require-tier'
@@ -61,7 +62,7 @@ export async function POST(req: Request) {
   }
 
   const access = await verifyOwnerViaCookieWithRateLimit<LogoAlbum>(req, slug.trim(), 'logo_url')
-  if (!access.ok) return NextResponse.json({ error: access.error }, { status: access.status, headers: NO_STORE })
+  if (!access.ok) return refuseAccess(access)
 
   // A custom album logo is a paid feature — checked against the ALBUM OWNER'S plan, never the
   // caller's. Owner links are shareable, so asking about whoever is holding one would let a

@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { refuseAccess } from '@/lib/server/respond'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { requireTier } from '@/lib/subscriptions'
@@ -345,7 +346,7 @@ async function verifyOwnedAlbum(
   const access = await verifyOwnerViaCookie<AlbumForCollection>(albumSlug)
   if (!access.ok) {
     return {
-      error: NextResponse.json({ error: access.error }, { status: access.status, headers: NO_STORE }),
+      error: refuseAccess(access),
     }
   }
   return { album: access.album }

@@ -44,12 +44,30 @@ type AccessOk<T extends AlbumOwnerBase> = {
   claimCap: number
 }
 
-type AccessFail = {
-  ok: false
-  status: number
-  error: string
-  reason: 'missing' | 'not_found' | 'bad_token' | 'access_denied' | 'rate_limited'
-}
+// SPLIT SO THE RATE-LIMITED CASE CANNOT BE BUILT WITHOUT ITS WAIT.
+//
+// This was one flat shape, and both 429 branches below threw `ipRl.retryAfterSeconds` away on the
+// line after computing it. 28 route files consume these helpers, so that was the same defect the
+// respond.ts work just fixed in eight routes, at three times the scale and on the owner path —
+// /api/checkout/package ended up sending Retry-After on its own limiter's 429 and omitting it on
+// the owner-access 429 two checks later. Same endpoint, two 429s, two different shapes.
+//
+// As a union, a rate_limited failure without the number is a compile error rather than an omission
+// somebody has to notice.
+type AccessFail =
+  | {
+    ok: false
+    status: number
+    error: string
+    reason: 'missing' | 'not_found' | 'bad_token' | 'access_denied'
+  }
+  | {
+    ok: false
+    status: 429
+    error: string
+    reason: 'rate_limited'
+    retryAfterSeconds: number
+  }
 
 // Both `slug` and `custom_slug` columns are constrained by schema.sql to this exact charset
 // (`^[a-z0-9]{8}$` / `^[a-z0-9-]+$`). Validating the caller-supplied slug against it before use
@@ -196,12 +214,19 @@ export async function verifyOwnerWithRateLimit<T extends AlbumOwnerBase = AlbumO
   slug: string,
   token: string,
   extraColumns?: string,
-) {
+): Promise<AccessOk<T> | AccessFail> {
+  // ANNOTATED, not inferred, and that is the point rather than tidiness.
+  //
+  // Both of these wrappers had no declared return type, so AccessFail never constrained them: an
+  // inferred union simply widens to whatever the body happens to return. Splitting AccessFail so a
+  // rate_limited failure must carry retryAfterSeconds therefore enforced NOTHING here -- deleting
+  // the field from the 429 below left tsc perfectly green, which is how it went missing in the
+  // first place. The annotation is what turns the type into a gate.
   // Distinct key from verifyOwnerViaCookieWithRateLimit to avoid shared-bucket exhaustion.
   // failOpen:false — if rate-limit store is unavailable, deny rather than allow unlimited attempts.
   const ipRl = await checkRateLimit(clientIpKey(req, 'owner_token'), 60, 30, { failOpen: false })
   if (!ipRl.ok) {
-    return { ok: false as const, status: 429, error: 'Too many requests. Please slow down.', reason: 'rate_limited' as const }
+    return { ok: false as const, status: 429 as const, error: 'Too many requests. Please slow down.', reason: 'rate_limited' as const, retryAfterSeconds: ipRl.retryAfterSeconds }
   }
   return verifyAlbumOwnerAccess<T>(slug, token, extraColumns)
 }
@@ -290,12 +315,19 @@ export async function verifyOwnerViaCookieWithRateLimit<T extends AlbumOwnerBase
   req: Request,
   slug: string,
   extraColumns?: string,
-) {
+): Promise<AccessOk<T> | AccessFail> {
+  // ANNOTATED, not inferred, and that is the point rather than tidiness.
+  //
+  // Both of these wrappers had no declared return type, so AccessFail never constrained them: an
+  // inferred union simply widens to whatever the body happens to return. Splitting AccessFail so a
+  // rate_limited failure must carry retryAfterSeconds therefore enforced NOTHING here -- deleting
+  // the field from the 429 below left tsc perfectly green, which is how it went missing in the
+  // first place. The annotation is what turns the type into a gate.
   // failOpen:false — if rate-limit store is unavailable, deny rather than allow unlimited
   // mutations. An outage that opens the gate would allow unlimited settings changes.
   const ipRl = await checkRateLimit(clientIpKey(req, 'owner_settings'), 60, 30, { failOpen: false })
   if (!ipRl.ok) {
-    return { ok: false as const, status: 429, error: 'Too many requests. Please slow down.', reason: 'rate_limited' as const }
+    return { ok: false as const, status: 429 as const, error: 'Too many requests. Please slow down.', reason: 'rate_limited' as const, retryAfterSeconds: ipRl.retryAfterSeconds }
   }
   return verifyOwnerViaCookie<T>(slug, extraColumns)
 }

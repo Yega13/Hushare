@@ -532,3 +532,31 @@ script would have done the same thing silently in any file whose imports are for
 `const`, a closing brace of a known statement) rather than to a prefix that appears at the start of
 a construct as well as at the start of a line. And read back the region you edited, not just the
 compiler's verdict -- here they agreed, but they often do not.
+
+### 38. I STRENGTHENED A TYPE THAT WAS NOT GOVERNING THE CODE I STRENGTHENED IT FOR
+
+A review found two 429 branches in album-owner-access.ts throwing away the wait time they had just
+computed, on a path 28 route files depend on. I split `AccessFail` into a union so that a
+rate_limited failure without `retryAfterSeconds` would be a compile error, wrote a comment saying
+exactly that, and moved on.
+
+Then I ran the mutation. Deleting the field from both branches left `tsc` completely green.
+
+The cause: the two wrapper functions had NO DECLARED RETURN TYPE. `AccessFail` was named on the two
+inner functions, not on the wrappers where those 429s actually live, and an inferred return type does
+not constrain anything -- it simply widens to whatever the body returns. So the type I had just made
+stricter was decorative at the only two sites it was written for. Annotating both wrappers turned it
+into a real gate, verified: the same deletion now produces TS2322 at both lines.
+
+This is the second time in one session I documented an enforcement I had not exercised (see 35), and
+the pattern is the same both times: I wrote the comment at the moment the change felt finished,
+which is exactly the moment I had not yet tested it.
+
+**Habit to build:** a comment claiming "this is now a compile error" is a claim, and rule 16 applies
+to it as much as to a test. Delete the thing it protects and watch the build go red BEFORE writing
+the sentence. And when adding a union to constrain a function, check the function has a declared
+return type -- without one, the union is a suggestion.
+
+Checked afterwards for the systemic version: only 5 other exported async functions in src/lib lack a
+return annotation (email, three rekognition helpers, supabase/server createClient), and none returns
+a union a type is meant to constrain. So this was a real one-off, not the tip of a pattern.

@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { refuseAccess } from '@/lib/server/respond'
 import { cookies } from 'next/headers'
 import { verifyAlbumOwnerAccess } from '@/lib/album-owner-access'
 import { checkRateLimit, clientIpKey } from '@/lib/rate-limit'
@@ -45,7 +46,7 @@ export async function POST(req: Request) {
 
   const access = await verifyAlbumOwnerAccess(slug.trim(), owner_token.trim())
   if (!access.ok) {
-    return NextResponse.json({ error: access.error }, { status: access.status, headers: NO_STORE })
+    return refuseAccess(access)
   }
 
   const cookieStore = await cookies()

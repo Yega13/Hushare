@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { refuseAccess } from '@/lib/server/respond'
 import { verifyOwnerViaCookieWithRateLimit } from '@/lib/album-owner-access'
 import { forbidCrossSiteRequest } from '@/lib/request-security'
 import { checkRateLimit, clientIpKey } from '@/lib/rate-limit'
@@ -36,7 +37,7 @@ export async function POST(req: Request) {
   }
 
   const access = await verifyOwnerViaCookieWithRateLimit<{ id: string; owner_token: string; user_id: string | null; custom_slug?: string | null; sponsor_logos: unknown }>(req, slug.trim(), 'sponsor_logos')
-  if (!access.ok) return NextResponse.json({ error: access.error }, { status: access.status, headers: NO_STORE })
+  if (!access.ok) return refuseAccess(access)
 
   const existing = Array.isArray(access.album.sponsor_logos) ? access.album.sponsor_logos.length : 0
   if (existing >= MAX_SPONSORS) {

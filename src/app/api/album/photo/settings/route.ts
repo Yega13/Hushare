@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { refuseAccess } from '@/lib/server/respond'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { MEDIA_CAPTION_MAX, MEDIA_AUTHOR_MAX } from '@/lib/constants'
 import { verifyOwnerViaCookieWithRateLimit } from '@/lib/album-owner-access'
@@ -90,7 +91,7 @@ export async function POST(req: Request) {
   }
 
   const access = await verifyOwnerViaCookieWithRateLimit(req, body.slug.trim())
-  if (!access.ok) return NextResponse.json({ error: access.error }, { status: access.status, headers: NO_STORE })
+  if (!access.ok) return refuseAccess(access)
 
   const admin = createAdminClient()
 

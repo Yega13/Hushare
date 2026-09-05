@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { refuseAccess } from '@/lib/server/respond'
 import { refuseBelowTier } from '@/lib/require-tier'
 import { deleteCollection } from '@/lib/rekognition'
 import { createAdminClient } from '@/lib/supabase/admin'
@@ -36,7 +37,7 @@ export async function POST(req: Request) {
   }
 
   const access = await verifyOwnerViaCookieWithRateLimit(req, slug.trim())
-  if (!access.ok) return NextResponse.json({ error: access.error }, { status: access.status, headers: NO_STORE })
+  if (!access.ok) return refuseAccess(access)
 
   // ONLY TURNING IT ON IS GATED. Switching it off must always work, whatever the plan — the same
   // rule api/album/branding and api/album/media-settings already follow. A gate that runs in both

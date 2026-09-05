@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { refuseAccess } from '@/lib/server/respond'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { verifyOwnerViaCookieWithRateLimit } from '@/lib/album-owner-access'
 import { forbidCrossSiteRequest } from '@/lib/request-security'
@@ -33,7 +34,7 @@ export async function POST(req: Request) {
   // Auth BEFORE hashing — prevents unauthenticated callers from burning 600k PBKDF2
   // iterations per request up to the rate-limit window.
   const access = await verifyOwnerViaCookieWithRateLimit(req, slug.trim())
-  if (!access.ok) return NextResponse.json({ error: access.error }, { status: access.status, headers: NO_STORE })
+  if (!access.ok) return refuseAccess(access)
 
   // Hash only after auth is confirmed — 600k PBKDF2 iterations on authenticated requests only.
   let passwordHash: string | null = null

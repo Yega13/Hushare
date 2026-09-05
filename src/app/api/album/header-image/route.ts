@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { refuseAccess } from '@/lib/server/respond'
 import { isOwnAlbumAsset } from '@/lib/cloudflare/r2'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { verifyOwnerViaCookieWithRateLimit } from '@/lib/album-owner-access'
@@ -60,7 +61,7 @@ export async function POST(req: Request) {
   }
 
   const access = await verifyOwnerViaCookieWithRateLimit<HeaderImageAlbum>(req, slug.trim(), 'header_image')
-  if (!access.ok) return NextResponse.json({ error: access.error }, { status: access.status, headers: NO_STORE })
+  if (!access.ok) return refuseAccess(access)
 
   // Ownership is known only now, so the album-scoped check has to happen here. The prefix check
   // above rejects wrong-host and wrong-folder URLs cheaply; this one rejects another album's asset.

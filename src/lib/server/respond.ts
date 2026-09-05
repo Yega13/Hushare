@@ -103,6 +103,34 @@ export function refuseRateLimited(
 }
 
 /**
+ * Serialize an owner-access failure.
+ *
+ * `verifyAlbumOwnerAccess` / `verifyOwnerViaCookie` return a decision, and 31 route files each
+ * turned it into bytes by hand as
+ *   `NextResponse.json({ error: access.error }, { status: access.status, headers: NO_STORE })`
+ * — which dropped the `reason` the library had already computed, and dropped Retry-After on the
+ * two branches that are rate limits. So an endpoint could send the header on its own limiter's 429
+ * and omit it on the owner-access 429 a few lines later.
+ *
+ * Typed structurally rather than importing AccessFail, so lib/server does not depend on the module
+ * that depends on it.
+ */
+export function refuseAccess(fail: {
+  status: number
+  error: string
+  reason: string
+  retryAfterSeconds?: number
+}): NextResponse {
+  return json(
+    { error: fail.error, reason: fail.reason },
+    fail.status,
+    fail.retryAfterSeconds === undefined
+      ? undefined
+      : { 'Retry-After': String(Math.max(1, Math.ceil(fail.retryAfterSeconds))) },
+  )
+}
+
+/**
  * SOMETHING WENT WRONG ON OUR SIDE. Reports it, then answers 500.
  *
  * `source` is required and first for one reason: it is what makes forgetting to report impossible.

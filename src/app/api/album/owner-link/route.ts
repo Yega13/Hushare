@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { refuseAccess } from '@/lib/server/respond'
 import { verifyOwnerViaCookieWithRateLimit } from '@/lib/album-owner-access'
 import { forbidCrossSiteRequest } from '@/lib/request-security'
 
@@ -25,7 +26,7 @@ export async function GET(req: Request) {
 
   const access = await verifyOwnerViaCookieWithRateLimit(req, slug)
   if (!access.ok) {
-    return NextResponse.json({ error: access.error }, { status: access.status, headers: NO_STORE })
+    return refuseAccess(access)
   }
 
   return NextResponse.json({ owner_token: access.album.owner_token }, { headers: NO_STORE })

@@ -11,7 +11,7 @@ vi.mock('@/lib/report-server-error', () => ({
   },
 }))
 
-const { ok, refuse, toResponse, refuseRateLimited, serverError, askCallerToRetry } =
+const { ok, refuse, toResponse, refuseRateLimited, refuseAccess, serverError, askCallerToRetry } =
   await import('@/lib/server/respond')
 
 beforeEach(() => { reported.length = 0 })
@@ -110,6 +110,38 @@ describe('Retry-After travels with the decision', () => {
     // @ts-expect-error retryAfterSeconds is required on a rate_limited refusal
     const missing: Refusal = { kind: 'rate_limited', message: 'slow down' }
     expect(missing.kind).toBe('rate_limited')
+  })
+})
+
+describe('an owner-access failure keeps everything the library decided', () => {
+  it('carries Retry-After when the failure was a rate limit', async () => {
+    // 31 route files hand-rolled this as `{ error: access.error }` with `access.status`, which
+    // dropped both the reason and the wait. /api/checkout/package sent Retry-After on its own
+    // limiter's 429 and omitted it on the owner-access 429 two checks later — same endpoint, two
+    // 429s, two different shapes.
+    const res = refuseAccess({
+      status: 429, error: 'Too many requests. Please slow down.',
+      reason: 'rate_limited', retryAfterSeconds: 45,
+    })
+    expect(res.status).toBe(429)
+    expect(res.headers.get('Retry-After')).toBe('45')
+    expect(await res.json()).toEqual({ error: 'Too many requests. Please slow down.', reason: 'rate_limited' })
+  })
+
+  it('does not invent a Retry-After on failures that are not rate limits', () => {
+    // A 403 telling someone to retry in N seconds would be a lie — the answer will not change.
+    expect(refuseAccess({ status: 403, error: 'Not your album', reason: 'access_denied' })
+      .headers.get('Retry-After')).toBeNull()
+  })
+
+  it('keeps the reason the library computed, which the hand-rolled version threw away', async () => {
+    expect(await refuseAccess({ status: 404, error: 'Album not found', reason: 'not_found' }).json())
+      .toEqual({ error: 'Album not found', reason: 'not_found' })
+  })
+
+  it('carries no-store like every other answer', () => {
+    expect(refuseAccess({ status: 404, error: 'x', reason: 'not_found' })
+      .headers.get('Cache-Control')).toBe('no-store')
   })
 })
 

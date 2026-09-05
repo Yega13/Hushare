@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { refuseAccess } from '@/lib/server/respond'
 import { forbidCrossSiteRequest } from '@/lib/request-security'
 import { verifyOwnerViaCookieWithRateLimit } from '@/lib/album-owner-access'
 import { claimStatus, claimSucceeded } from '@/lib/album-claim'
@@ -45,7 +46,7 @@ export async function POST(req: Request) {
   // Proof of ownership, and the claim itself. Both live behind this one call.
   const access = await verifyOwnerViaCookieWithRateLimit(req, slug)
   if (!access.ok) {
-    return NextResponse.json({ error: access.error }, { status: access.status, headers: NO_STORE })
+    return refuseAccess(access)
   }
 
   const outcome = access.claim
