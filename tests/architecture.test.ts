@@ -365,9 +365,33 @@ describe('a new decision module arrives with its tests', () => {
     // file: how far the walk reaches.
   })
 
+  /**
+   * Does any test actually IMPORT this module?
+   *
+   * It used to be enough for the module's path to appear anywhere in the test sources, and it was
+   * written out twice, identically, in the two tests below — one fact, two copies, which is the
+   * shape rule 13 is about.
+   *
+   * The text match was also wrong, and tests/boundaries.test.ts proved it: that file lists
+   * '@/lib/supabase/admin' as a FORBIDDEN specifier — naming it precisely to assert nothing reaches
+   * it — and the register immediately reported admin.ts as "tested now, take it off". Removing it
+   * would have swapped a truthful debt entry for a false claim of coverage on the module that holds
+   * the service-role key.
+   *
+   * Requiring an import POSITION is both narrower and closer to what "tested" means. Static and
+   * dynamic forms both count; a mention in a string, an array or a comment does not. This is the
+   * same idea as stripMockPaths, which exists because a vi.mock() of a module is not a test of it.
+   */
+  function isTested(name: string): boolean {
+    const paths = [`@/lib/${name}`, `../src/lib/${name}`]
+    return paths.some((p) => {
+      const quoted = `['"]${p.replace(/[.*+?^${}()|[\]\\]/g, (c) => `\\${c}`)}['"]`
+      return new RegExp(`from\\s*${quoted}`).test(testSource)
+        || new RegExp(`import\\s*\\(\\s*${quoted}`).test(testSource)
+    })
+  }
+
   it('has no untested module that is not already on the debt register', () => {
-    const isTested = (name: string) =>
-      testSource.includes(`@/lib/${name}'`) || testSource.includes(`../src/lib/${name}'`)
     const offenders = libs.filter((l) => !isTested(l) && !UNTESTED_LEGACY.has(l))
     expect(
       offenders,
@@ -380,8 +404,6 @@ describe('a new decision module arrives with its tests', () => {
   it('shrinks the debt register as modules get tested', () => {
     // A name left on the register after its tests arrive makes the register lie, and a lying
     // register stops being read.
-    const isTested = (name: string) =>
-      testSource.includes(`@/lib/${name}'`) || testSource.includes(`../src/lib/${name}'`)
     const stale = [...UNTESTED_LEGACY].filter((name) => libs.includes(name) && isTested(name))
     expect(stale, 'these are tested now — take them off the register').toEqual([])
   })
