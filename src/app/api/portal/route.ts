@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { refuseRateLimited } from '@/lib/server/respond'
 import { createClient } from '@/lib/supabase/server'
 import { getActiveSubscription } from '@/lib/subscriptions'
 import { createCustomerSession } from '@/lib/polar'
@@ -15,7 +16,7 @@ export async function POST(req: Request) {
 
   const rl = await checkRateLimit(clientIpKey(req, 'portal'), 60, 5, { failOpen: true })
   if (!rl.ok) {
-    return NextResponse.json({ error: 'Too many requests' }, { status: 429, headers: NO_STORE })
+    return refuseRateLimited(rl, 'Too many requests')
   }
 
   const supabase = await createClient()

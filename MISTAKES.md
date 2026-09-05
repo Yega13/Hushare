@@ -499,3 +499,36 @@ checked, written confidently enough to stop the next reader checking either.
 **Habit to build:** when a comment justifies a branch with a claim about a CALLER, go read that
 caller in the same sitting. And when the precondition turns out not to hold, fix it upstream and say
 in the comment that the branch depends on it -- rather than reordering the branch to paper over it.
+
+### 36. MY COMMENT EXPLAINING A COMPILER DIRECTIVE BECAME ONE
+
+Writing a compile-time assertion, I explained the mechanism in a comment that began:
+
+    // @ts-expect-error is the exercise. It fails the build in BOTH directions...
+
+TypeScript does not read that as prose. It read the sentence as a directive and silently suppressed
+the error on the following line -- so the REAL directive underneath reported "unused", and the
+guarantee I was proving looked broken when it was fine. I then spent six tool calls hunting a
+type-system mystery that did not exist, including writing isolated probes that behaved "differently"
+from the test file for no visible reason.
+
+What finally found it was putting two probes in the same block and noticing that only ONE errored:
+the first was being eaten by the sentence above it.
+
+**Habit to build:** never begin a comment line with the literal name of a directive the toolchain
+parses -- `@ts-expect-error`, `@ts-ignore`, `eslint-disable`, `prettier-ignore`. Refer to it in the
+middle of a sentence, or rename it ("the expectation directive below"). This is rule 24's family:
+text that means one thing to a reader and another to a parser, invisible in review because it looks
+exactly like documentation.
+
+### 37. I INSERTED A LINE INTO THE MIDDLE OF A MULTI-LINE IMPORT
+
+A script placed a constant "after the last import" by finding the last line STARTING with `import `.
+That line was `import {` -- the opening of a multi-line import -- so the constant landed inside the
+braces and split the statement in half. tsc caught it immediately, so it cost a minute, but the
+script would have done the same thing silently in any file whose imports are formatted that way.
+
+**Habit to build:** anchor an insertion to something unambiguous and unique in the file (an existing
+`const`, a closing brace of a known statement) rather than to a prefix that appears at the start of
+a construct as well as at the start of a line. And read back the region you edited, not just the
+compiler's verdict -- here they agreed, but they often do not.

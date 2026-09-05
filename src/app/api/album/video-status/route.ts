@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { refuseRateLimited } from '@/lib/server/respond'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { checkRateLimit, clientIpKey } from '@/lib/rate-limit'
 import { forbidCrossSiteRequest } from '@/lib/request-security'
@@ -28,7 +29,7 @@ export async function POST(req: Request) {
   // answering here is one extra Stream lookup; the worst case of refusing is the bug this fixes.
   const rl = await checkRateLimit(clientIpKey(req, 'video_status'), 60, 60, { failOpen: true })
   if (!rl.ok) {
-    return NextResponse.json({ error: 'Too many requests' }, { status: 429, headers: NO_STORE })
+    return refuseRateLimited(rl, 'Too many requests')
   }
 
   const body = await req.json().catch(() => null) as { uid?: unknown } | null

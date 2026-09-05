@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { refuseRateLimited } from '@/lib/server/respond'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { checkRateLimit, clientIpKey } from '@/lib/rate-limit'
 import { canRestore } from '@/lib/album-bin'
@@ -31,7 +32,7 @@ export async function POST(req: Request) {
 
   // failOpen: a limiter blip must not make the list prune everything it can't verify.
   const rl = await checkRateLimit(clientIpKey(req, 'album_exists'), 60, 30, { failOpen: true })
-  if (!rl.ok) return NextResponse.json({ error: 'Too many requests' }, { status: 429, headers: NO_STORE })
+  if (!rl.ok) return refuseRateLimited(rl, 'Too many requests')
 
   const body = await req.json().catch(() => null) as { slugs?: unknown } | null
   const raw = Array.isArray(body?.slugs) ? body.slugs : []

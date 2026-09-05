@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { refuseRateLimited } from '@/lib/server/respond'
 import { createClient } from '@/lib/supabase/server'
 import { createCheckout } from '@/lib/polar'
 import { forbidCrossSiteRequest } from '@/lib/request-security'
@@ -39,7 +40,7 @@ export async function POST(req: Request) {
 
   const rl = await checkRateLimit(clientIpKey(req, 'checkout'), 60, 10, { failOpen: true })
   if (!rl.ok) {
-    return NextResponse.json({ error: 'Too many requests' }, { status: 429, headers: NO_STORE })
+    return refuseRateLimited(rl, 'Too many requests')
   }
 
   let body: { slug?: unknown; item?: unknown }

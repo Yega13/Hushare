@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { refuseRateLimited } from '@/lib/server/respond'
 import { clientIpKey } from '@/lib/rate-limit'
 import { getCloudflareContext } from '@opennextjs/cloudflare'
 import { forbidCrossSiteRequest } from '@/lib/request-security'
@@ -19,6 +20,17 @@ const GRANDFATHER_DATE = new Date(GRANDFATHER_FREE_BEFORE)
 export const runtime = 'nodejs'
 
 const NO_STORE = { 'Cache-Control': 'no-store' }
+
+// The window SUPPORT_CHAT_LIMITER is configured with, in wrangler.toml.
+//
+// A copy of a fact, which rule 13 allows only when the fact genuinely cannot be imported -- and it
+// cannot: wrangler.toml is build configuration, not a module, and code running inside the Worker
+// has no way to read it. tests/ratelimit-window.test.ts parses the real file and fails if these
+// stop agreeing.
+//
+// It exists because Cloudflare's rate-limit binding answers `{ success }` and nothing else, so this
+// is the only 429 in the codebase that cannot get Retry-After from the limiter's own decision.
+const SUPPORT_CHAT_WINDOW_SECONDS = 60
 
 // Llama 3.3 70B (fp8, fast) — strong answer quality for grounded FAQ support, still cheap/fast on
 // Workers AI. Must be an ID actually available on the account (verified via `wrangler ai models`).
@@ -266,7 +278,22 @@ export async function POST(req: Request): Promise<Response> {
     if (limiter) {
       const { success } = await limiter.limit({ key: clientIpKey(req, 'support_chat') })
       if (!success) {
-        return NextResponse.json({ error: "You're sending messages a little fast — give it a moment." }, { status: 429, headers: NO_STORE })
+        // THE ONE 429 IN THIS CODEBASE THAT CANNOT ASK THE LIMITER HOW LONG TO WAIT.
+        //
+        // Cloudflare's rate-limiting binding answers `{ success }` and nothing else — unlike
+        // checkRateLimit, which returns retryAfterSeconds and lets every other route build the
+        // header from the decision itself. So the only truthful number here is the window this
+        // limiter is configured with, which lives in wrangler.toml and cannot be imported by code
+        // running inside the Worker.
+        //
+        // That makes it a second copy of a fact, which rule 13 permits only with a test that reads
+        // the real source: tests/ratelimit-window.test.ts parses wrangler.toml and fails if the
+        // period there stops matching this constant. Without the header the client is told to slow
+        // down and not told for how long, so it guesses — and guesses fast.
+        return refuseRateLimited(
+          { ok: false, retryAfterSeconds: SUPPORT_CHAT_WINDOW_SECONDS },
+          "You're sending messages a little fast — give it a moment.",
+        )
       }
     }
   } catch { /* fail open */ }

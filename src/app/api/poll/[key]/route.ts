@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { refuseRateLimited } from '@/lib/server/respond'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { forbidCrossSiteRequest } from '@/lib/request-security'
 import { checkRateLimit, clientIpKey } from '@/lib/rate-limit'
@@ -26,7 +27,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ key: str
   // tally() reads every vote row for the poll on each call, and this was the one public GET with no
   // limit in front of it. failOpen: a poll is decoration, and a limiter blip must not break a page.
   const rl = await checkRateLimit(clientIpKey(req, 'poll_read'), 60, 120, { failOpen: true })
-  if (!rl.ok) return NextResponse.json({ error: 'Too many requests' }, { status: 429, headers: NO_STORE })
+  if (!rl.ok) return refuseRateLimited(rl, 'Too many requests')
 
   const { key } = await params
   const poll = getPoll(key)
@@ -44,7 +45,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ key: st
   if (!poll) return NextResponse.json({ error: 'Unknown poll' }, { status: 404, headers: NO_STORE })
 
   const rl = await checkRateLimit(clientIpKey(req, 'poll'), 60, 20, { failOpen: true })
-  if (!rl.ok) return NextResponse.json({ error: "You're voting a little fast — give it a moment." }, { status: 429, headers: NO_STORE })
+  if (!rl.ok) return refuseRateLimited(rl, "You're voting a little fast — give it a moment.")
 
   let body: { option_key?: unknown; voter_id?: unknown }
   try { body = await req.json() } catch { return NextResponse.json({ error: 'Invalid JSON' }, { status: 400, headers: NO_STORE }) }

@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { refuseRateLimited } from '@/lib/server/respond'
 import { reportServerError } from '@/lib/report-server-error'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
@@ -17,7 +18,7 @@ export async function POST(req: Request) {
 
   const rl = await checkRateLimit(clientIpKey(req, 'checkout'), 60, 10, { failOpen: true })
   if (!rl.ok) {
-    return NextResponse.json({ error: 'Too many requests' }, { status: 429, headers: NO_STORE })
+    return refuseRateLimited(rl, 'Too many requests')
   }
 
   // The client sends a stable PLAN KEY (e.g. "pro_monthly"), never a raw Polar product ID — see

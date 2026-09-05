@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { refuseRateLimited } from '@/lib/server/respond'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { attachAlbumOwners } from '@/lib/server/error-attribution'
@@ -31,7 +32,7 @@ export async function GET(req: Request) {
   // Polled by an open dashboard, so it needs a ceiling — an admin tab left open for a week should
   // not be able to run up an unbounded count query bill by itself.
   const rl = await checkRateLimit(clientIpKey(req, 'admin_stats'), 60, 120, { failOpen: true })
-  if (!rl.ok) return NextResponse.json({ error: 'Too many requests' }, { status: 429, headers: NO_STORE })
+  if (!rl.ok) return refuseRateLimited(rl, 'Too many requests')
 
   const admin = createAdminClient()
   const head = { count: 'exact' as const, head: true }

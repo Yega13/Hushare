@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { reportServerError } from '@/lib/report-server-error'
+import { askCallerToRetry } from '@/lib/server/respond'
 import { randomUUID } from 'node:crypto'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { verifyWebhookSignature, tierFromProduct, getCustomerEmail, getOrder } from '@/lib/polar'
@@ -124,8 +125,12 @@ export async function POST(req: Request) {
       }>()
 
     if (albumErr) {
-      console.error('[polar/webhook] album lookup failed for package order:', albumErr.message)
-      return NextResponse.json({ error: 'album_lookup_failed' }, { status: 500, headers: NO_STORE })
+      // REPORTED, not just logged. console.error goes to Workers Logs, which are disabled on this
+      // account, so this branch was invisible: a customer had paid and we could not tell which album
+      // to give it to, and nothing said so anywhere the owner looks.
+      return askCallerToRetry('polar-webhook', 'album_lookup_failed', {
+        albumId, context: { orderId: order.id, reason: albumErr.message.slice(0, 120) },
+      })
     }
     if (!album) {
       // Paid for an album that is gone — deleted or retired between checkout and webhook. Money
@@ -215,8 +220,10 @@ export async function POST(req: Request) {
     const { data: applied, error: updErr } = await q.select('id')
 
     if (updErr) {
-      console.error('[polar/webhook] package apply failed:', updErr.message)
-      return NextResponse.json({ error: 'apply_failed' }, { status: 500, headers: NO_STORE })
+      // Paid, and the entitlement did not land. Previously silent everywhere but a disabled log.
+      return askCallerToRetry('polar-webhook', 'apply_failed', {
+        albumId, context: { orderId: order.id, reason: updErr.message.slice(0, 120) },
+      })
     }
     if (!applied || applied.length === 0) {
       // Nothing matched: the row changed under us, or it is gone. Never a success — 500 asks Polar
@@ -287,8 +294,9 @@ export async function POST(req: Request) {
     if (lookupErr) {
       // 500 so Polar retries: silently keeping a refunded package is the failure this branch exists
       // to prevent, and a lookup that failed has not answered the question.
-      console.error('[polar/webhook] refund lookup failed:', lookupErr.message)
-      return NextResponse.json({ error: 'refund_lookup_failed' }, { status: 500, headers: NO_STORE })
+      return askCallerToRetry('polar-webhook', 'refund_lookup_failed', {
+        context: { orderId, reason: lookupErr.message.slice(0, 120) },
+      })
     }
     if (!album) {
       // A refunded subscription order, or a package already superseded by a later purchase.
@@ -308,8 +316,9 @@ export async function POST(req: Request) {
     if (!order) {
       // Could not ask Polar. 500 so it retries rather than guessing: revoking on a failed lookup
       // would take a paying customer's album away because a network call timed out.
-      console.error('[polar/webhook] refund: could not fetch order', orderId)
-      return NextResponse.json({ error: 'refund_order_fetch_failed' }, { status: 500, headers: NO_STORE })
+      return askCallerToRetry('polar-webhook', 'refund_order_fetch_failed', {
+        context: { orderId },
+      })
     }
 
     const outcome = refundOutcome(
@@ -335,8 +344,11 @@ export async function POST(req: Request) {
       .eq('id', album.id)
       .eq('package_last_order_id', orderId)
     if (updErr) {
-      console.error('[polar/webhook] refund revoke failed:', updErr.message)
-      return NextResponse.json({ error: 'revoke_failed' }, { status: 500, headers: NO_STORE })
+      // Money went back and the paid features did NOT come off. The one branch here that leaves
+      // the customer better off than the ledger says, so it must be visible.
+      return askCallerToRetry('polar-webhook', 'revoke_failed', {
+        albumId: album.id, context: { orderId, reason: updErr.message.slice(0, 120) },
+      })
     }
     // Loud on purpose: money went back and an album lost its paid features. That is a customer
     // conversation, not a log line — the album keeps every photo (retirement checks activity, not
