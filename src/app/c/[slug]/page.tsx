@@ -16,15 +16,6 @@ type Props = {
   params: Promise<{ slug: string }>
 }
 
-type Collection = {
-  id: string
-  user_id: string
-  name: string
-  description: string | null
-  slug: string
-  created_at: string
-}
-
 type AlbumSummary = {
   id: string
   slug: string
@@ -40,16 +31,6 @@ type AlbumSummary = {
   retired_at: string | null
 }
 
-type MediaPreview = {
-  id: string
-  album_id: string
-  url: string
-  poster_url: string | null
-  stream_thumbnail_url: string | null
-  media_type: 'image' | 'video'
-  created_at: string
-}
-
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { slug } = await params
   const admin = createAdminClient()
@@ -57,7 +38,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
     .from('collections')
     .select('name, description')
     .eq('slug', slug)
-    .maybeSingle<{ name: string; description: string | null }>()
+    .maybeSingle()
 
   if (!collection) return { title: 'Collection not found', robots: { index: false, follow: false } }
   return {
@@ -75,7 +56,7 @@ export default async function CollectionPage({ params }: Props) {
     .from('collections')
     .select('id, user_id, name, description, slug, created_at')
     .eq('slug', slug)
-    .maybeSingle<Collection>()
+    .maybeSingle()
 
   if (!collection) notFound()
 
@@ -197,14 +178,16 @@ export default async function CollectionPage({ params }: Props) {
     const coverQuery = album.cover_photo_id
       ? admin.from('photos')
           .select('id, album_id, url, poster_url, stream_thumbnail_url, media_type, created_at')
-          .eq('id', album.cover_photo_id).eq('hidden', false).maybeSingle<MediaPreview>()
+          .eq('id', album.cover_photo_id).eq('hidden', false).maybeSingle()
       : Promise.resolve({ data: null })
     const [totalRes, videoRes, pinnedRes] = await Promise.all([
       base(),
       base().eq('media_type', 'video'),
       coverQuery,
     ])
-    let cover = (pinnedRes as { data: MediaPreview | null }).data
+    // Derived from the select, not re-asserted: both branches of the Promise.all and the fallback
+    // query below select the same seven columns, so the compiler can see they agree.
+    let cover = pinnedRes.data
     if (!cover) {
       // The album's own first photo, preferring an image — one row, ordered, not the whole album.
       const { data } = await admin.from('photos')
@@ -213,7 +196,7 @@ export default async function CollectionPage({ params }: Props) {
         .order('media_type', { ascending: true })   // 'image' sorts before 'video'
         .order('created_at', { ascending: true })
         .limit(1)
-        .maybeSingle<MediaPreview>()
+        .maybeSingle()
       cover = data
     }
     return {

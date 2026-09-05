@@ -44,10 +44,7 @@ async function resolveAlbum(slug: string) {
     .select(`id, user_id, face_finder_enabled, ${ALBUM_GATE_COLS}`)
     .or(`slug.eq.${slug},custom_slug.eq.${slug}`)
     .is('retired_at', null)
-    .maybeSingle<{
-      id: string; user_id: string | null; face_finder_enabled: boolean
-      owner_token: string; password_hash: string | null; reveal_at: string | null
-    }>()
+    .maybeSingle()
   return { admin, album }
 }
 
@@ -215,7 +212,7 @@ async function handlePost(req: Request) {
       .select('id, url, thumb_url, face_ids')
       .eq('id', photoId)
       .eq('album_id', album.id)
-      .maybeSingle<{ id: string; url: string | null; thumb_url: string | null; face_ids: string[] | null }>()
+      .maybeSingle()
 
     if (!photo) return NextResponse.json({ error: 'Photo not found' }, { status: 404, headers: NO_STORE })
     if (photo.face_ids !== null) return NextResponse.json({ indexed: 0 }, { headers: NO_STORE })

@@ -69,7 +69,7 @@ export async function POST(req: Request) {
     .select('id, password_hash, slug, retired_at')
     .eq('slug', cleanSlug)
     .is('retired_at', null)
-    .maybeSingle<AlbumForPwVerify>()
+    .maybeSingle()
   if (bySlug) {
     album = bySlug
   } else {
@@ -77,7 +77,7 @@ export async function POST(req: Request) {
       .select('id, password_hash, slug, retired_at')
       .eq('custom_slug', cleanSlug)
       .is('retired_at', null)
-      .maybeSingle<AlbumForPwVerify>()
+      .maybeSingle()
     album = byCustom
   }
 

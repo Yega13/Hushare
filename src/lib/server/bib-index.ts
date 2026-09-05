@@ -80,7 +80,7 @@ export async function indexAlbumBibsBatch(albumId: string, max: number = BATCH):
     .from('albums')
     .select('bib_search_enabled, user_id')
     .eq('id', albumId)
-    .maybeSingle<{ bib_search_enabled: boolean; user_id: string | null }>()
+    .maybeSingle()
   // Re-checked every link: an owner who switches bib search back off mid-sweep stops it.
   if (!album?.bib_search_enabled) return 0
 

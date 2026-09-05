@@ -12,16 +12,6 @@ export const runtime = 'nodejs'
 
 const NO_STORE = { 'Cache-Control': 'no-store' }
 
-type PhotoRow = { url: string | null; storage_path: string | null; storage_backend: string; album_id: string; hidden: boolean }
-type AlbumRow = {
-  id: string
-  owner_token: string
-  allow_guest_downloads: boolean
-  password_hash: string | null
-  reveal_at: string | null
-  retired_at: string | null
-}
-
 export async function GET(req: Request) {
   const url = new URL(req.url)
   const photoId = url.searchParams.get('id')
@@ -55,7 +45,7 @@ export async function GET(req: Request) {
     .from('photos')
     .select('url, storage_path, storage_backend, album_id, hidden')
     .eq('id', photoId)
-    .maybeSingle<PhotoRow>()
+    .maybeSingle()
 
   if (photoErr) {
     reportServerError('download-photo', 'DB error (500)')
@@ -69,7 +59,7 @@ export async function GET(req: Request) {
     .from('albums')
     .select('id, owner_token, allow_guest_downloads, password_hash, reveal_at, retired_at')
     .eq('id', photo.album_id)
-    .maybeSingle<AlbumRow>()
+    .maybeSingle()
 
   if (albumErr || !album || album.retired_at) {
     return NextResponse.json({ error: 'Not found' }, { status: 404, headers: NO_STORE })

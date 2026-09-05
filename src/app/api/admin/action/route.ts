@@ -38,7 +38,7 @@ export async function POST(req: Request) {
     }
     // Extend the existing comp row if there is one, else insert — never leaves duplicate comp rows.
     const { data: existing } = await admin
-      .from('subscriptions').select('id').eq('user_id', userId).like('polar_product_id', 'comp-%').maybeSingle<{ id: string }>()
+      .from('subscriptions').select('id').eq('user_id', userId).like('polar_product_id', 'comp-%').maybeSingle()
     const { error } = existing
       ? await admin.from('subscriptions').update(fields).eq('id', existing.id)
       : await admin.from('subscriptions').insert({ id: randomUUID(), polar_subscription_id: `comp-${randomUUID()}`, polar_customer_id: '', ...fields })
@@ -66,7 +66,7 @@ export async function POST(req: Request) {
     if (!body.albumId) return NextResponse.json({ error: 'Missing albumId' }, { status: 400, headers: NO_STORE })
     const { data: album } = await admin
       .from('albums').select('slug, custom_slug, title, owner_token, user_id').eq('id', body.albumId)
-      .maybeSingle<{ slug: string; custom_slug: string | null; title: string; owner_token: string; user_id: string | null }>()
+      .maybeSingle()
     if (!album) return NextResponse.json({ error: 'Album not found' }, { status: 404, headers: NO_STORE })
     if (!album.user_id) return NextResponse.json({ error: 'Anonymous album — no account email to send to.' }, { status: 400, headers: NO_STORE })
     const { data: au } = await admin.auth.admin.getUserById(album.user_id)

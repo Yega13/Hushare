@@ -172,7 +172,7 @@ export async function POST(req: Request) {
       .from('albums')
       .select('mobile_grid_columns, desktop_grid_columns')
       .eq('id', access.album.id)
-      .maybeSingle<{ mobile_grid_columns: number | null; desktop_grid_columns: number | null }>()
+      .maybeSingle()
     // A failed read leaves desktop alone. The old coupling is a cosmetic surprise; overwriting a
     // choice the owner made would be worse, and this is not worth guessing about.
     if (cur && !isDesktopColumns(cur.desktop_grid_columns)) {

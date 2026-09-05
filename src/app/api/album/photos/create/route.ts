@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { asPackageTier } from '@/lib/db-unions'
 import { reportServerError } from '@/lib/report-server-error'
 import { validatePhoto, type PhotoInput } from '@/lib/photo-input'
 import { createAdminClient } from '@/lib/supabase/admin'
@@ -47,23 +48,6 @@ function cleanDimensions(photo: PhotoInput): { width: number; height: number } |
 type Body = {
   albumId?: unknown
   photos?: unknown
-}
-
-type AlbumRow = {
-  id: string
-  user_id: string | null
-  guest_uploads_enabled: boolean
-  require_approval: boolean
-  title: string
-  slug: string
-  owner_token: string
-  // Gate columns — the album's password/reveal state, checked by gateAllowsContribution below.
-  password_hash: string | null
-  reveal_at: string | null
-  created_at: string
-  media_cap_override: number | null
-  package_tier: 'pro' | 'studio' | null
-  package_expires_at: string | null
 }
 
 // The grandfather dates, the legacy ceiling and the override clamp all moved to
@@ -126,7 +110,7 @@ export async function POST(req: Request) {
     .select('id, user_id, guest_uploads_enabled, require_approval, title, slug, owner_token, password_hash, reveal_at, created_at, media_cap_override, package_tier, package_expires_at')
     .eq('id', albumId)
     .is('retired_at', null)
-    .maybeSingle<AlbumRow>()
+    .maybeSingle()
 
   if (albumError) {
     console.error('[photos/create] album lookup failed:', albumError.message)
@@ -256,7 +240,7 @@ export async function POST(req: Request) {
     }
     // The package rides along so its OWN item allowance applies — a Pro Package grants 5,000
     // where a Pro subscription grants 3,000, and albumCap's max() was built for exactly this.
-    const pkg = { tier: album.package_tier, expiresAt: album.package_expires_at }
+    const pkg = { tier: asPackageTier(album.package_tier), expiresAt: album.package_expires_at }
     const input = { ownerTier, createdAt: album.created_at, override: album.media_cap_override, pkg }
     const { cap } = albumCap(input)
 

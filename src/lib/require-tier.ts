@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { asPackageTier } from '@/lib/db-unions'
 import { getUserTierById } from '@/lib/subscriptions'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { albumEffectiveTier, type AlbumPackage } from '@/lib/album-entitlements'
@@ -38,7 +39,7 @@ async function packageFor(albumId: string): Promise<AlbumPackage | null> {
     .from('albums')
     .select('package_tier, package_expires_at')
     .eq('id', albumId)
-    .maybeSingle<{ package_tier: 'pro' | 'studio' | null; package_expires_at: string | null }>()
+    .maybeSingle()
   if (error || !data) {
     // A package we could not read is a package that does not grant (rule 19: the uncertain branch
     // does nothing). The owner's own tier was already considered, so nothing they subscribed to
@@ -46,7 +47,9 @@ async function packageFor(albumId: string): Promise<AlbumPackage | null> {
     if (error) console.error('[require-tier] package lookup failed:', error.message)
     return null
   }
-  return { tier: data.package_tier, expiresAt: data.package_expires_at }
+  // The column is CHECK-constrained text, not a union; narrowed here rather than asserted by the
+  // generic that used to sit on the query (see lib/db-unions).
+  return { tier: asPackageTier(data.package_tier), expiresAt: data.package_expires_at }
 }
 
 async function effectiveTier(album: GateAlbum): Promise<Tier> {

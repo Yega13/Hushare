@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
-import { refuseAccess } from '@/lib/server/respond'
+import { isOneOf, STORAGE_BACKENDS } from '@/lib/db-unions'
+import { refuseAccess, serverError } from '@/lib/server/respond'
 import { deleteFaces } from '@/lib/rekognition'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { verifyOwnerViaCookieWithRateLimit } from '@/lib/album-owner-access'
@@ -25,15 +26,6 @@ type AlbumWithCover = {
   user_id: string | null
   custom_slug?: string | null
   cover_photo_id: string | null
-}
-
-type PhotoForDelete = {
-  id: string
-  storage_backend: 'r2' | 'stream'
-  storage_path: string | null
-  thumb_url: string | null
-  poster_url: string | null
-  stream_uid: string | null
 }
 
 async function deleteR2Keys(keys: string[]): Promise<void> {
@@ -76,7 +68,7 @@ export async function POST(req: Request) {
     .select('id, storage_backend, storage_path, thumb_url, poster_url, stream_uid, face_ids')
     .eq('id', photo_id)
     .eq('album_id', access.album.id)
-    .maybeSingle<PhotoForDelete>()
+    .maybeSingle()
 
   if (!photo) {
     return NextResponse.json({ error: 'Photo not found in this album' }, { status: 404, headers: NO_STORE })
@@ -92,7 +84,19 @@ export async function POST(req: Request) {
   //
   // .r2Keys ONLY. The shared function also returns streamUids, but this route deletes the Stream
   // video itself further down — taking both here would issue the delete twice.
-  for (const key of collectDeletionTargets([photo], null).r2Keys) r2Keys.push(key)
+  // A DELETION MUST NOT GUESS. storage_backend is CHECK-constrained text; the cast that used to sit
+  // on the query declared it 'r2' | 'stream' by assertion. collectDeletionTargets treats anything that
+  // is not 'stream' as R2 and adds storage_path to the delete set -- so an unknown value here would
+  // derive a key to destroy from a backend we do not understand. It is refused and reported instead
+  // (rule 19: when a decision could destroy customer data, the uncertain branch does nothing).
+  // Unreachable on live data (zero rows outside r2|stream); this is the branch for the day that
+  // stops being true.
+  if (!isOneOf(STORAGE_BACKENDS, photo.storage_backend)) {
+    return serverError('photo-delete', `refusing to delete photo ${photo.id}: unknown storage_backend ${JSON.stringify(photo.storage_backend)}`, {
+      albumId: access.album.id, publicMessage: 'This photo could not be deleted. Please contact support.',
+    })
+  }
+  for (const key of collectDeletionTargets([{ ...photo, storage_backend: photo.storage_backend }], null).r2Keys) r2Keys.push(key)
 
   // Clear cover pointer before deleting the row — if DB delete later fails, the worst
   // case is no cover (acceptable), not a broken cover URL pointing at a deleted photo

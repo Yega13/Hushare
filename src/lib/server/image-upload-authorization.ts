@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { asPackageTier } from '@/lib/db-unions'
 import { cookies } from 'next/headers'
 import { v4 as uuid } from 'uuid'
 import { createAdminClient } from '@/lib/supabase/admin'
@@ -73,12 +74,7 @@ export async function authorizeImageUpload(
       .select(`id, user_id, guest_uploads_enabled, media_cap_override, created_at, package_tier, package_expires_at, ${ALBUM_GATE_COLS}`)
       .eq('id', params.albumId)
       .is('retired_at', null)
-      .maybeSingle<{
-        id: string; user_id: string | null; guest_uploads_enabled: boolean
-        media_cap_override: number | null; created_at: string
-        package_tier: 'pro' | 'studio' | null; package_expires_at: string | null
-        owner_token: string; password_hash: string | null; reveal_at: string | null
-      }>(),
+      .maybeSingle(),
   ])
   if (!ipRl.ok) {
     return {
@@ -138,7 +134,7 @@ export async function authorizeImageUpload(
     ownerTier: album.user_id ? (tierRes.tier ?? 'free') : null,
     createdAt: album.created_at,
     override: album.media_cap_override,
-    pkg: { tier: album.package_tier, expiresAt: album.package_expires_at },
+    pkg: { tier: asPackageTier(album.package_tier), expiresAt: album.package_expires_at },
   })
   const albumRl = await checkRateLimit(
     `presign_album:${params.albumId}`,
@@ -161,7 +157,7 @@ export async function authorizeImageUpload(
   }
 
   const caps = uploadCapsForTier(albumEffectiveTier(album.user_id ? tierRes.tier : null, {
-    tier: album.package_tier, expiresAt: album.package_expires_at,
+    tier: asPackageTier(album.package_tier), expiresAt: album.package_expires_at,
   }))
   if (params.fileSize !== null && params.fileSize > caps.image) {
     return {

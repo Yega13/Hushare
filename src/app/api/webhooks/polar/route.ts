@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { asPackageTier } from '@/lib/db-unions'
 import { reportServerError } from '@/lib/report-server-error'
 import { askCallerToRetry } from '@/lib/server/respond'
 import { randomUUID } from 'node:crypto'
@@ -116,13 +117,7 @@ export async function POST(req: Request) {
       .select('id, user_id, package_tier, package_expires_at, package_last_order_id')
       .eq('id', albumId)
       .is('retired_at', null)
-      .maybeSingle<{
-        id: string
-        user_id: string | null
-        package_tier: 'pro' | 'studio' | null
-        package_expires_at: string | null
-        package_last_order_id: string | null
-      }>()
+      .maybeSingle()
 
     if (albumErr) {
       // REPORTED, not just logged. console.error goes to Workers Logs, which are disabled on this
@@ -176,7 +171,7 @@ export async function POST(req: Request) {
     }
 
     const next = applyPackageGrant(
-      { tier: album.package_tier, expiresAt: album.package_expires_at },
+      { tier: asPackageTier(album.package_tier), expiresAt: album.package_expires_at },
       grant,
       new Date(),
     )
@@ -285,12 +280,7 @@ export async function POST(req: Request) {
       .from('albums')
       .select('id, package_tier, package_expires_at, package_last_order_id')
       .eq('package_last_order_id', orderId)
-      .maybeSingle<{
-        id: string
-        package_tier: 'pro' | 'studio' | null
-        package_expires_at: string | null
-        package_last_order_id: string | null
-      }>()
+      .maybeSingle()
     if (lookupErr) {
       // 500 so Polar retries: silently keeping a refunded package is the failure this branch exists
       // to prevent, and a lookup that failed has not answered the question.
@@ -322,7 +312,7 @@ export async function POST(req: Request) {
     }
 
     const outcome = refundOutcome(
-      { tier: album.package_tier, expiresAt: album.package_expires_at, lastOrderId: album.package_last_order_id },
+      { tier: asPackageTier(album.package_tier), expiresAt: album.package_expires_at, lastOrderId: album.package_last_order_id },
       orderId,
       { totalCents: order.total_amount ?? order.net_amount, refundedCents: order.refunded_amount },
     )
@@ -333,7 +323,7 @@ export async function POST(req: Request) {
       // safe direction was taken on purpose.
       if (outcome.reason === 'partial' || outcome.reason === 'unknown') {
         reportServerError('polar-webhook', `Refund on a paid package — package KEPT (${outcome.reason})`, {
-          context: { orderId, albumId: album.id, tier: album.package_tier, reason: outcome.reason },
+          context: { orderId, albumId: album.id, tier: asPackageTier(album.package_tier), reason: outcome.reason },
         })
       }
       return NextResponse.json({ ok: true, ignored: outcome.reason }, { headers: NO_STORE })
@@ -429,7 +419,7 @@ export async function POST(req: Request) {
     .from('subscriptions')
     .select('id, polar_modified_at')
     .eq('polar_subscription_id', sub.id)
-    .maybeSingle<{ id: string; polar_modified_at: string | null }>()
+    .maybeSingle()
 
   // Ignore an event that is OLDER than what we have already applied.
   //

@@ -38,7 +38,7 @@ export async function checkRateLimit(
       const admin = createAdminClient()
       const { data, error } = await admin
         .rpc('rate_limit_hit', { p_key: key, p_window_seconds: windowSeconds, p_max: maxRequests })
-        .single<{ allowed: boolean; retry_after: number }>()
+        .single()
       if (error) {
         // Fall through to the sliding implementation rather than failing the request: a limiter
         // that breaks the product it protects is worse than one that costs an extra round trip.

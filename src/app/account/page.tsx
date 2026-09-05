@@ -100,8 +100,12 @@ type AccountAlbum = {
 type AccountMediaRow = {
   id: string
   album_id: string
-  media_type: 'image' | 'video'
-  url: string
+  // `string`, as the column is: CHECK-constrained text. The one consumer is `=== 'video'`, which
+  // is correct on string; the hand-copied union here was the same shape lib/db-unions exists for.
+  media_type: string
+  // Nullable, as the column is. This said `string` -- non-null by fiat, behind a cast that stopped the
+  // compiler checking -- and a photo row with no url would have reached an <img src> as "null".
+  url: string | null
   poster_url: string | null
   stream_thumbnail_url: string | null
   created_at: string
@@ -130,7 +134,7 @@ export default async function AccountPage({ searchParams }: Props) {
   // can write directly through the client SDK — see the profiles migration.
   const profileAdmin = createAdminClient()
   const { data: profile } = await profileAdmin
-    .from('profiles').select('avatar_url').eq('user_id', user.id).maybeSingle<{ avatar_url: string | null }>()
+    .from('profiles').select('avatar_url').eq('user_id', user.id).maybeSingle()
   const avatarUrl = profile?.avatar_url ?? null
   const hasAccess = isAdmin || subscription !== null
 
@@ -334,7 +338,7 @@ export default async function AccountPage({ searchParams }: Props) {
       // cover_photo_id must not render another album's photo here.
       if (a.cover_photo_id) {
         const { data } = await admin.from('photos').select(mediaCols)
-          .eq('id', a.cover_photo_id).eq('album_id', a.id).maybeSingle<CoverRow>()
+          .eq('id', a.cover_photo_id).eq('album_id', a.id).maybeSingle()
         if (data) return data
       }
       // Else the earliest image, else the earliest video: media_type sorts 'image' before

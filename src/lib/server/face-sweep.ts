@@ -79,7 +79,7 @@ export async function indexAlbumFacesBatch(albumId: string, max: number = BATCH)
     .from('albums')
     .select('face_finder_enabled, user_id')
     .eq('id', albumId)
-    .maybeSingle<{ face_finder_enabled: boolean; user_id: string | null }>()
+    .maybeSingle()
   if (!album?.face_finder_enabled) return 0
 
   // AND the ALBUM must still be entitled to Max — by its owner's subscription OR a live package.

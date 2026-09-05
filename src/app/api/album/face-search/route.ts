@@ -110,7 +110,7 @@ async function handlePost(req: Request) {
     .select(`id, user_id, face_finder_enabled, ${ALBUM_GATE_COLS}`)
     .or(`slug.eq.${slug},custom_slug.eq.${slug}`)
     .is('retired_at', null)
-    .maybeSingle<{ id: string; user_id: string | null; face_finder_enabled: boolean } & Parameters<typeof gateAllowsContribution>[0]>()
+    .maybeSingle()
 
   if (!album) {
     return NextResponse.json({ error: 'Album not found' }, { status: 404, headers: NO_STORE })

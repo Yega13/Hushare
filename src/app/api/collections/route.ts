@@ -245,7 +245,7 @@ export async function PATCH(req: Request) {
     .select('id')
     .eq('id', collectionId)
     .eq('user_id', user.id)
-    .maybeSingle<{ id: string }>()
+    .maybeSingle()
 
   if (lookupError || !collection) {
     return NextResponse.json({ error: 'Collection not found' }, { status: 404, headers: NO_STORE })
@@ -261,7 +261,7 @@ export async function PATCH(req: Request) {
     })
     .eq('id', collection.id)
     .select('id, name, slug, description')
-    .single<{ id: string; name: string; slug: string; description: string | null }>()
+    .single()
 
   if (updateError) {
     if ((updateError as { code?: string }).code === '23505') {
@@ -314,7 +314,7 @@ export async function DELETE(req: Request) {
     .select('id')
     .eq('id', collectionId)
     .eq('user_id', user.id)
-    .maybeSingle<{ id: string }>()
+    .maybeSingle()
 
   if (lookupError || !collection) {
     return NextResponse.json({ error: 'Collection not found' }, { status: 404, headers: NO_STORE })
@@ -358,7 +358,7 @@ async function getExistingCollection(
     .select('id, slug, name')
     .eq('id', collectionId)
     .eq('user_id', userId)
-    .maybeSingle<{ id: string; slug: string; name: string }>()
+    .maybeSingle()
 
   if (error || !collection) {
     return {
@@ -379,7 +379,7 @@ async function createCollection(
     .from('collections')
     .insert({ user_id: userId, name, slug, description: description || null })
     .select('id, slug, name')
-    .single<{ id: string; slug: string; name: string }>()
+    .single()
 
   if (error) {
     if ((error as { code?: string }).code === '23505') {

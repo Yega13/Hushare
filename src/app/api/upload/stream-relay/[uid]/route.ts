@@ -49,7 +49,7 @@ async function lookupPendingUpload(uid: string): Promise<PendingRow | null> {
     // Nothing about the relay itself needs to change for the retry fix. A retried SAVE never comes
     // back through here — the bytes are already in Stream; it is the database row that is missing.
     .is('consumed_at', null)
-    .maybeSingle<PendingRow>()
+    .maybeSingle()
   return data ?? null
 }
 

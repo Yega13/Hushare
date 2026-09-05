@@ -100,7 +100,7 @@ export async function POST(req: Request) {
   // nobody can read (rule 19). A permanent read failure therefore means permanent silence, and this
   // log line is the only signal of it.
   const { data: state, error: stateErr } = await admin
-    .from('system_state').select('value').eq('key', STATE_KEY).maybeSingle<{ value: string }>()
+    .from('system_state').select('value').eq('key', STATE_KEY).maybeSingle()
   if (stateErr) {
     console.error('[cron/error-alert] could not read the alert state — not sending, because every '
       + 'cooldown and the hourly ceiling live in that row:', stateErr.message)

@@ -72,7 +72,7 @@ export async function reconcilePolarSubscriptions(admin: SupabaseClient): Promis
     // turn an UPDATE into an INSERT, which the unique index then rejected — safe, but it spent a
     // write and reported a skip whose message named the wrong problem.
     const { data: existing, error: readErr } = await admin
-      .from('subscriptions').select('id').eq('polar_subscription_id', sub.id).maybeSingle<{ id: string }>()
+      .from('subscriptions').select('id').eq('polar_subscription_id', sub.id).maybeSingle()
     if (readErr) { skipped++; notes.push(`skip ${sub.id}: read ${readErr.message}`); continue }
 
     const { error } = existing

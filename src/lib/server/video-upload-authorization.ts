@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { asPackageTier } from '@/lib/db-unions'
 import { cookies } from 'next/headers'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { isAllowedVideo } from '@/lib/cloudflare/r2'
@@ -90,11 +91,7 @@ export async function authorizeVideoUpload(
     .select(`id, user_id, guest_uploads_enabled, package_tier, package_expires_at, ${ALBUM_GATE_COLS}`)
     .eq('id', params.albumId)
     .is('retired_at', null)
-    .maybeSingle<{
-      id: string; user_id: string | null; guest_uploads_enabled: boolean
-      package_tier: 'pro' | 'studio' | null; package_expires_at: string | null
-      owner_token: string; password_hash: string | null; reveal_at: string | null
-    }>()
+    .maybeSingle()
 
   if (albumError || !album) {
     return { ok: false, response: NextResponse.json({ error: 'Album not found' }, { status: 404, headers: NO_STORE }) }
@@ -134,7 +131,7 @@ export async function authorizeVideoUpload(
   // The ALBUM's tier, not just its owner's — a package raises both the file-size cap and the video
   // budget below, or a Max Package album would refuse the 4 GB uploads it was sold with.
   const effectiveTier = albumEffectiveTier(album.user_id ? tier : null, {
-    tier: album.package_tier, expiresAt: album.package_expires_at,
+    tier: asPackageTier(album.package_tier), expiresAt: album.package_expires_at,
   })
   const caps = uploadCapsForTier(effectiveTier)
   if (params.fileSize > caps.video) {

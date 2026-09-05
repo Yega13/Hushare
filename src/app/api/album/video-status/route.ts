@@ -44,7 +44,7 @@ export async function POST(req: Request) {
     .select('id, duration_seconds')
     .eq('stream_uid', uid)
     .limit(1)
-    .maybeSingle<{ id: string; duration_seconds: number | null }>()
+    .maybeSingle()
   if (!row) {
     return NextResponse.json({ error: 'Not found' }, { status: 404, headers: NO_STORE })
   }

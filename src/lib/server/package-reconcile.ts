@@ -120,13 +120,7 @@ export async function reconcilePackageOrders(
       .select('id, user_id, package_tier, package_expires_at, package_last_order_id')
       .eq('id', albumId)
       .is('retired_at', null)
-      .maybeSingle<{
-        id: string
-        user_id: string | null
-        package_tier: 'pro' | 'studio' | null
-        package_expires_at: string | null
-        package_last_order_id: string | null
-      }>()
+      .maybeSingle()
     if (error) { skipped++; notes.push(`order ${orderId}: album lookup failed`); continue }
     if (!album) { skipped++; notes.push(`order ${orderId}: album ${albumId} is gone`); continue }
 
