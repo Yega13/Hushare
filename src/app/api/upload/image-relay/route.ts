@@ -1,4 +1,6 @@
 import { NextResponse } from 'next/server'
+import { refuse, serverError } from '@/lib/server/respond'
+import { reportServerError } from '@/lib/report-server-error'
 import { tooLargeMessage } from '@/lib/media'
 import { getCloudflareContext } from '@opennextjs/cloudflare'
 import { r2PublicUrl, IMMUTABLE_CACHE_CONTROL } from '@/lib/cloudflare/r2'
@@ -105,8 +107,11 @@ export async function POST(req: Request): Promise<Response> {
 
   const bucket = (getCloudflareContext()?.env as ImageRelayEnv | undefined)?.R2_BUCKET
   if (!bucket) {
-    console.error('[image-relay] R2_BUCKET binding unavailable')
-    return NextResponse.json({ error: 'Service temporarily unavailable' }, { status: 503, headers: NO_STORE })
+    // console.error goes to Workers Logs, and wrangler sends observability {enabled:false} on
+    // every deploy from this repo -- so this was invisible. The relay IS the fallback: a guest
+    // reaching it has already failed to reach R2 directly.
+    reportServerError('image-relay', 'R2_BUCKET binding unavailable')
+    return refuse({ kind: 'unavailable', message: 'Service temporarily unavailable' })
   }
   if (!req.body) {
     return NextResponse.json({ error: 'Missing request body' }, { status: 400, headers: NO_STORE })
@@ -158,8 +163,8 @@ export async function POST(req: Request): Promise<Response> {
   try {
     await Promise.all([pipePromise, putPromise])
   } catch (e) {
-    console.error('[image-relay] R2 put failed:', e instanceof Error ? e.message : String(e))
-    return NextResponse.json({ error: 'Upload failed' }, { status: 502, headers: NO_STORE })
+    // A guest's photo did not land, on the path they were sent to BECAUSE the direct one failed.
+    return serverError('image-relay', e)
   }
 
   return NextResponse.json({ key, publicUrl: r2PublicUrl(key) }, { headers: NO_STORE })

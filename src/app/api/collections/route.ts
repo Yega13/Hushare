@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { refuseAccess } from '@/lib/server/respond'
+import { refuseAccess, serverError } from '@/lib/server/respond'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { requireTier } from '@/lib/subscriptions'
@@ -62,8 +62,7 @@ export async function GET(req: Request) {
     .returns<CollectionSummary[]>()
 
   if (error) {
-    console.error('[collections] list failed:', error.message)
-    return NextResponse.json({ error: 'Could not load collections' }, { status: 500, headers: NO_STORE })
+    return serverError('collections', error.message, { publicMessage: 'Could not load collections' })
   }
 
   const collectionIds = (collections ?? []).map((c) => c.id)
@@ -268,8 +267,7 @@ export async function PATCH(req: Request) {
     if ((updateError as { code?: string }).code === '23505') {
       return NextResponse.json({ error: 'That collection URL is already taken' }, { status: 409, headers: NO_STORE })
     }
-    console.error('[collections] update failed:', updateError.message)
-    return NextResponse.json({ error: 'Could not update collection' }, { status: 500, headers: NO_STORE })
+    return serverError('collections', updateError.message, { publicMessage: 'Could not update collection' })
   }
 
   return NextResponse.json({ ok: true, collection: updated }, { headers: NO_STORE })
@@ -325,14 +323,12 @@ export async function DELETE(req: Request) {
   // Delete links first (FK), then the collection row.
   const { error: linksError } = await admin.from('collection_albums').delete().eq('collection_id', collection.id)
   if (linksError) {
-    console.error('[collections] link delete failed:', linksError.message)
-    return NextResponse.json({ error: 'Could not delete collection' }, { status: 500, headers: NO_STORE })
+    return serverError('collections', linksError.message, { publicMessage: 'Could not delete collection' })
   }
 
   const { error: deleteError } = await admin.from('collections').delete().eq('id', collection.id)
   if (deleteError) {
-    console.error('[collections] delete failed:', deleteError.message)
-    return NextResponse.json({ error: 'Could not delete collection' }, { status: 500, headers: NO_STORE })
+    return serverError('collections', deleteError.message, { publicMessage: 'Could not delete collection' })
   }
 
   return NextResponse.json({ ok: true }, { headers: NO_STORE })

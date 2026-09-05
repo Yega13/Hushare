@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { refuseRateLimited, refuseAccess } from '@/lib/server/respond'
+import { refuseRateLimited, refuseAccess, serverError } from '@/lib/server/respond'
 import { createClient } from '@/lib/supabase/server'
 import { createCheckout } from '@/lib/polar'
 import { forbidCrossSiteRequest } from '@/lib/request-security'
@@ -63,8 +63,11 @@ export async function POST(req: Request) {
 
   const productId = process.env[spec.envVar]
   if (!productId) {
-    console.error('[checkout/package] product env not set:', spec.envVar)
-    return NextResponse.json({ error: 'This package is not available right now.' }, { status: 503, headers: NO_STORE })
+    // A package is on sale and cannot be bought. Its sibling /api/checkout reported; this one did
+    // not, so the $49/$99 path could be dead with nothing in the panel.
+    return serverError('checkout-package', `product env not set: ${spec.envVar}`, {
+      status: 503, publicMessage: 'This package is not available right now.',
+    })
   }
 
   const supabase = await createClient()
@@ -98,8 +101,9 @@ export async function POST(req: Request) {
       metadata: { albumId: access.album.id, item: String(item), userId: user.id },
     })
   } catch (e) {
-    console.error('[checkout/package] createCheckout failed:', e instanceof Error ? e.message : String(e))
-    return NextResponse.json({ error: 'Could not start checkout. Please try again.' }, { status: 502, headers: NO_STORE })
+    return serverError('checkout-package', e, {
+      status: 502, publicMessage: 'Could not start checkout. Please try again.',
+    })
   }
 
   track({ name: 'checkout_started', userId: user.id, tier: spec === RENEWAL_CATALOGUE.renewal_max || spec === PACKAGE_CATALOGUE.package_max ? 'studio' : 'pro', cycle: 'package' })

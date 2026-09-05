@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { refuseRateLimited } from '@/lib/server/respond'
+import { refuseRateLimited, serverError } from '@/lib/server/respond'
 import { createClient } from '@/lib/supabase/server'
 import { getActiveSubscription } from '@/lib/subscriptions'
 import { createCustomerSession } from '@/lib/polar'
@@ -41,11 +41,10 @@ export async function POST(req: Request) {
   try {
     portalUrl = await createCustomerSession(subscription.polar_customer_id)
   } catch (err) {
-    console.error('[portal] Polar customer session failed:', err instanceof Error ? err.message : String(err))
-    return NextResponse.json(
-      { error: 'Could not open the billing portal. Please try again.' },
-      { status: 502, headers: NO_STORE },
-    )
+    // A PAYING customer cannot reach billing. Nobody learned.
+    return serverError('portal', err, {
+      status: 502, publicMessage: 'Could not open the billing portal. Please try again.',
+    })
   }
 
   return NextResponse.redirect(portalUrl, { status: 303, headers: NO_STORE })

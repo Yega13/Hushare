@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { serverError } from '@/lib/server/respond'
 import { cookies } from 'next/headers'
 import { fetchAuthorizedPhotos } from '@/lib/server/album-access'
 import { checkRateLimit, clientIpKey } from '@/lib/rate-limit'
@@ -96,7 +97,11 @@ export async function GET(req: Request) {
           { headers: NO_STORE },
         )
     }
-  } catch {
-    return NextResponse.json({ error: 'Failed to load photos' }, { status: 500, headers: NO_STORE })
+  } catch (e) {
+    // THE ROUTE A RUNNER IS STANDING IN FRONT OF. This was `catch {}` with no binding, so the error
+    // was discarded before anything could look at it: the grid and the bib search both load through
+    // here, and if this fails during a race the admin panel stays clean while every guest sees an
+    // empty album. Reported with the album so the owner can be told which one.
+    return serverError('album-photos', e, { albumId, context: { bib: bibRaw ?? null, statsOnly } })
   }
 }

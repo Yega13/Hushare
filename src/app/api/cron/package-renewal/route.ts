@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { serverError } from '@/lib/server/respond'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { timingSafeEqual } from '@/lib/timing-safe'
 import { renewalReminderDue, daysUntil, RENEWAL_WARN_FIRST_DAYS } from '@/lib/package-renewal'
@@ -63,8 +64,8 @@ export async function POST(req: Request) {
     }>>()
 
   if (error) {
-    console.error('[package-renewal] candidate lookup failed:', error.message)
-    return NextResponse.json({ error: 'Could not scan albums' }, { status: 500, headers: NO_STORE })
+    // The renewal scan stopping means renewals silently stop. Nothing said so.
+    return serverError('package-renewal', error.message, { publicMessage: 'Could not scan albums' })
   }
 
   let sent = 0

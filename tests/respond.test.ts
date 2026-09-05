@@ -63,6 +63,28 @@ describe('a 5xx cannot be produced without reporting it', () => {
     const res = serverError('x', new Error('service role key rejected by postgres'))
     expect(await res.json()).toEqual({ error: 'Something went wrong on our side. Please try again.' })
   })
+
+  it('keeps a route’s own better sentence when it has one', async () => {
+    // Several routes already said something more useful than the default — "Could not open the
+    // billing portal", "This package is not available right now". Reporting must not be paid for
+    // with a worse message, or the next person weighs one against the other and picks silence.
+    const res = serverError('portal', new Error('polar 502'), {
+      status: 502, publicMessage: 'Could not open the billing portal. Please try again.',
+    })
+    expect(res.status).toBe(502)
+    expect(await res.json()).toEqual({ error: 'Could not open the billing portal. Please try again.' })
+    expect(reported).toHaveLength(1)
+  })
+
+  it('still reports, and still hides the detail, when a public message is given', async () => {
+    // publicMessage is a hand-written sentence, never the error's own text. If someone ever wired
+    // `detail` into it, this is what catches it.
+    const res = serverError('x', new Error('service role key rejected by postgres'), {
+      publicMessage: 'Could not load collections',
+    })
+    expect(JSON.stringify(await res.json())).not.toContain('service role key')
+    expect(reported[0].message).toContain('service role key')
+  })
 })
 
 describe('the Polar retry contract is preserved exactly', () => {

@@ -140,11 +140,31 @@ export function refuseAccess(fail: {
 export function serverError(
   source: string,
   detail: string | unknown,
-  opts: { albumId?: string | null; account?: string | null; context?: Record<string, unknown> } = {},
+  opts: {
+    albumId?: string | null
+    account?: string | null
+    context?: Record<string, unknown>
+    /**
+     * A better sentence for THIS failure, when one exists.
+     *
+     * Several routes already said something more useful than the default — "Could not open the
+     * billing portal. Please try again.", "This package is not available right now." Those are worth
+     * keeping, so reporting is not paid for with a worse message.
+     *
+     * It is a deliberate, hand-written string, never an error's own text: whatever is passed here
+     * reaches the customer's browser, while `detail` never does.
+     */
+    publicMessage?: string
+    /** Some of these are 502/503 by intent. Defaults to 500. */
+    status?: number
+  } = {},
 ): NextResponse {
   const message = detail instanceof Error ? `${detail.name}: ${detail.message}` : String(detail)
   reportServerError(source, message, opts)
-  return json({ error: 'Something went wrong on our side. Please try again.' }, 500)
+  return json(
+    { error: opts.publicMessage ?? 'Something went wrong on our side. Please try again.' },
+    opts.status ?? 500,
+  )
 }
 
 /**
