@@ -2,6 +2,8 @@ import { getCloudflareContext } from '@opennextjs/cloudflare'
 import type { Json } from '@/types/database'
 import { parseSponsorLogos } from '@/lib/sponsor-logos'
 import { asPackageTier } from '@/lib/db-unions'
+import { narrowPhotoRows, type DroppedPhoto } from '@/lib/photo-row'
+import { reportServerError } from '@/lib/report-server-error'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { createClient } from '@/lib/supabase/server'
 import { verifyAccessToken } from '@/lib/album-password'
@@ -64,23 +66,14 @@ export const ALBUM_SELECT_COLS =
 import { bibSearchCandidates } from '@/lib/bib-match'
 import { orderClausesFor, isPhotoOrder } from '@/lib/photo-order'
 
-// Composed the same way as ALBUM_SELECT_COLS above, but READ THIS BEFORE BELIEVING IT IS CHECKED.
-//
-// An earlier version of this comment said "a literal, so PostgREST can check it". A review proved
-// that false: misspelling a column here still compiles with zero errors. The literal is a necessary
-// condition, not a sufficient one — TWO casts downstream erase the result type before anything can
-// disagree with it:
-//
-//   .returns<Photo[]>()          on the delta branch
-//   as unknown as Photo[]        on the MAIN branch, the one that serves the album grid
-//
-// Both are annotated where they sit. Remove them and a typo here does produce
-// SelectQueryError<"column 'thmb_url' does not exist on 'photos'.">, at both call sites — verified.
-// What blocks removing them is `media_type` and `storage_backend`: text columns whose real
-// constraint is a CHECK, mirrored by hand in src/lib/db-unions.ts and held to the database by
-// tests/schema-unions.test.ts. Narrowing the rows through those is the change that finishes this.
-//
-// Until then tests/album-select-cols.test.ts is what actually guards this string, by pinning it.
+// Composed the same way as ALBUM_SELECT_COLS above, and CHECKED the same way -- which was not true
+// until the two casts downstream were removed. For a while this comment claimed the literal made it
+// checked; a review proved a misspelled column still compiled, because `.returns<Photo[]>()` on the
+// delta branch and `as unknown as Photo[]` on the main branch erased the result type before anything
+// could disagree with it. Both are gone. The three CHECK-constrained text columns that blocked
+// removing them (media_type, storage_backend, display_filter) are narrowed once, at the boundary, by
+// lib/photo-row -- so a misspelled column here now fails the build at both call sites, and
+// tests/album-select-cols.test.ts pins the string itself byte-for-byte.
 const P_IDENTITY = 'id, album_id, storage_path, storage_backend'
 const P_DISPLAY = 'url, thumb_url, caption, author_name, created_at'
 const P_MEDIA = 'media_type, poster_url, stream_uid, stream_iframe_url'
@@ -178,7 +171,6 @@ function maybeAutoSuggestHeader(admin: ReturnType<typeof createAdminClient>, alb
       .eq('hidden', false)
       .order('created_at', { ascending: true })
       .limit(20)
-      .returns<{ id: string; width: number | null; height: number | null }[]>()
     if (!candidates || candidates.length === 0) return
     const best = candidates.find((c) => c.width && c.height && c.width > c.height) ?? candidates[0]
     const { error } = await admin.from('albums')
@@ -254,7 +246,7 @@ export async function resolveAlbum(
   if (ownerCookieVal && (wantsOwner || gated)) {
     const { data: ownerRow } = await admin
       .from('albums').select('owner_token').eq('id', albumId)
-      .maybeSingle<{ owner_token: string }>()
+      .maybeSingle()
     isOwner = !!ownerRow && timingSafeEqual(ownerCookieVal, ownerRow.owner_token)
   }
 
@@ -374,6 +366,16 @@ export async function resolveAlbum(
       collections_enabled: ownerTier === 'studio',
     } as unknown as Album,
   }
+}
+
+// A photos row the product cannot represent -- an unknown media_type or storage_backend -- is left
+// out of the grid and lands in the admin panel, rather than rendering as a broken tile nobody can
+// explain. See lib/photo-row for which way each field errs and why. Zero such rows exist today; if
+// one ever does, this is how the owner finds out.
+function reportDroppedPhoto(d: DroppedPhoto): void {
+  reportServerError('album-access', `photo ${d.id} dropped: ${d.column} = ${JSON.stringify(d.value)} is not a value the product knows`, {
+    context: { photoId: d.id, column: d.column, value: d.value },
+  })
 }
 
 // The gate applied to CONTRIBUTING to an album, as opposed to reading it.
@@ -541,7 +543,7 @@ export async function fetchAuthorizedPhotos(
     // pull back photos the owner's bounds were set to exclude.
     .select('id, user_id, owner_token, password_hash, reveal_at, retired_at, bib_search_enabled, bib_min, bib_max, photo_order, package_tier, package_expires_at')
     .eq('id', albumId)
-    .maybeSingle<{ id: string; user_id: string | null; owner_token: string; password_hash: string | null; reveal_at: string | null; retired_at: string | null; bib_search_enabled: boolean; bib_min: number | null; bib_max: number | null; photo_order: string; package_tier: 'pro' | 'studio' | null; package_expires_at: string | null }>()
+    .maybeSingle()
 
   if (!album || album.retired_at) return { kind: 'notfound' }
 
@@ -608,7 +610,8 @@ export async function fetchAuthorizedPhotos(
     const resolved = await getUserTierResolved(album.user_id)
     if (!resolved.authoritative) return { kind: 'unavailable' }
     const entitled = albumEffectiveTier(resolved.tier, {
-      tier: album.package_tier,
+      // Narrowed at use: the column is CHECK-constrained text, not a union (see lib/db-unions).
+      tier: asPackageTier(album.package_tier),
       expiresAt: album.package_expires_at,
     })
     if (entitled !== 'studio') return { kind: 'ok', photos: [], total: 0 }
@@ -637,7 +640,7 @@ export async function fetchAuthorizedPhotos(
     const newest = () => {
       const q = admin.from('photos').select('created_at').eq('album_id', albumId)
       return (isOwner ? q : q.eq('hidden', false))
-        .order('created_at', { ascending: false }).limit(1).maybeSingle<{ created_at: string }>()
+        .order('created_at', { ascending: false }).limit(1).maybeSingle()
     }
     const [{ count }, { data: last }] = await Promise.all([visible(), newest()])
     return { kind: 'ok', photos: [], total: count ?? 0, latest: last?.created_at ?? null }
@@ -673,22 +676,13 @@ export async function fetchAuthorizedPhotos(
       .order('created_at', { ascending: false })
       .order('id', { ascending: false })
       .limit(Math.min(opts.limit ?? 100, 200))
-      // STILL A CAST, deliberately, and it is the last one on a hot read.
-      //
-      // Removing it leaves exactly one error: `media_type` is `text` in the database while `Photo`
-      // declares the narrower MediaType union. The database's real constraint is a CHECK, and the
-      // earlier audit found the same mismatch on `storage_backend` — its CHECK permits 'supabase',
-      // the TypeScript union does not. Narrowing those honestly means reading the CHECK constraints
-      // rather than hand-writing a second copy of them (rule 13), which is its own change with its
-      // own test. Left as a cast WITH this note rather than half-done and silent.
-      .returns<Photo[]>()
 
     if (rows.error) return { kind: 'ok', photos: [], total: 0 }
     // The count comes back with it, so a client applying a delta still learns the true size and
     // can tell that its own arithmetic agreed with the database.
     const countQ = admin.from('photos').select('id', { count: 'exact', head: true }).eq('album_id', albumId)
     const { count } = await (isOwner ? countQ : countQ.eq('hidden', false))
-    return { kind: 'ok', photos: rows.data ?? [], total: count ?? 0 }
+    return { kind: 'ok', photos: narrowPhotoRows(rows.data ?? [], reportDroppedPhoto), total: count ?? 0 }
   }
   if (!isOwner) query = query.eq('hidden', false)
   if (bibCandidates) query = query.overlaps('bib_numbers', bibCandidates)
@@ -735,11 +729,7 @@ export async function fetchAuthorizedPhotos(
 
   return {
     kind: 'ok',
-    // THE SECOND CAST, and the one that had no note. This is the main branch — the album grid and
-    // the photo wall both come through here — so it, not the delta branch, is what mostly erases
-    // PHOTO_SELECT_COLS's type checking. Same blocker as the other: media_type and storage_backend
-    // are CHECK-constrained text. See the comment on PHOTO_SELECT_COLS.
-    photos: (photos ?? []) as unknown as Photo[],
+    photos: narrowPhotoRows(photos ?? [], reportDroppedPhoto),
     total,
     bibStats: opts.bibStats ? await countBibStats(albumId, isOwner) : undefined,
   }

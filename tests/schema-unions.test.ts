@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { PACKAGE_TIERS, MEDIA_TYPES, STORAGE_BACKENDS, NARROWED_ON_PURPOSE } from '@/lib/db-unions'
+import { PACKAGE_TIERS, MEDIA_TYPES, STORAGE_BACKENDS, DISPLAY_FILTERS, NARROWED_ON_PURPOSE } from '@/lib/db-unions'
 
 // THE TWO COPIES OF AN ENUM THAT IS NOT AN ENUM, HELD TOGETHER.
 //
@@ -60,6 +60,10 @@ const MIRRORED: Array<{ column: string; ts: readonly string[] }> = [
   { column: 'albums.package_tier', ts: PACKAGE_TIERS },
   { column: 'photos.media_type', ts: MEDIA_TYPES },
   { column: 'photos.storage_backend', ts: STORAGE_BACKENDS },
+  // One TypeScript list, two database columns. If the two CHECKs ever diverge, exactly one of
+  // these two rows fails and names which column moved.
+  { column: 'photos.display_filter', ts: DISPLAY_FILTERS },
+  { column: 'albums.media_filter', ts: DISPLAY_FILTERS },
 ]
 
 describe('the TypeScript unions agree with the database CHECK constraints', () => {

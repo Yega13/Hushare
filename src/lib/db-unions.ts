@@ -39,6 +39,20 @@ export function asPackageTier(value: unknown): PackageTier | null {
 
 /** photos.media_type */
 export const MEDIA_TYPES = ['image', 'video'] as const
+export type MediaTypeValue = (typeof MEDIA_TYPES)[number]
+
+/**
+ * photos.display_filter AND albums.media_filter -- one list, because the database constrains both
+ * columns to the same six values and the UI renders them with one component. Two consts here would
+ * be the second copy rule 13 forbids; tests/schema-unions.test.ts holds this one list to BOTH checks.
+ */
+export const DISPLAY_FILTERS = ['none', 'warm', 'cool', 'mono', 'vintage', 'soft'] as const
+export type DisplayFilterValue = (typeof DISPLAY_FILTERS)[number]
+
+/** A cheap membership test that narrows. `includes` on a readonly tuple does not, on its own. */
+export function isOneOf<T extends readonly string[]>(list: T, value: unknown): value is T[number] {
+  return typeof value === 'string' && (list as readonly string[]).includes(value)
+}
 
 /**
  * photos.storage_backend — DELIBERATELY NARROWER THAN THE DATABASE.
@@ -52,6 +66,7 @@ export const MEDIA_TYPES = ['image', 'video'] as const
  * the NEXT divergence fails rather than blending in with a known one.
  */
 export const STORAGE_BACKENDS = ['r2', 'stream'] as const
+export type StorageBackendValue = (typeof STORAGE_BACKENDS)[number]
 
 /** Columns whose TypeScript union is deliberately a SUBSET of the database CHECK, with the reason. */
 export const NARROWED_ON_PURPOSE: Record<string, { missing: readonly string[]; why: string }> = {
