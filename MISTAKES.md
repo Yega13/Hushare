@@ -627,3 +627,31 @@ explaining it, and that is before I have any evidence for the sentence.
 **Habit to build:** a compile error tells me the TYPE requires something. It does NOT tell me a bug
 existed. Those are different claims and only the first one is free. Before writing "this was a bug",
 ask what input actually reaches the line — and if the answer needs a query, run the query.
+
+### 43. THE COMMIT TITLED "THE SELECT FETCHED 44 COLUMNS WHILE ITS TYPE DECLARED 42" DID NOT CLOSE THAT GAP
+
+I wrote the title in the past tense. A review measured it afterwards:
+
+    AlbumRow fields: 42   selected columns: 44
+    SELECTED but NOT in AlbumRow: [ 'package_tier', 'package_expires_at' ]
+
+Exactly the two columns that decide whether a PAID album gets what it paid for. They were read
+through two `as` casts twenty lines below the query, which is why deleting the outer
+`.returns<AlbumRow[]>()` did not surface them.
+
+The reviewer proved the cost rather than describing it: with those casts in place, DELETING both
+columns from the select still compiled and still passed all 1,260 tests. At runtime every packaged
+album would fall back to its owner's ACCOUNT tier — logo masked, sponsor marks emptied, bib search
+gone from a race album while the API kept working. One live paying album sits behind it.
+
+In the same commit I wrote that PHOTO_SELECT_COLS was "a literal, so PostgREST can check it". Also
+false: a photo typo compiles clean, because two casts erase the result type — and the one doing most
+of the erasing, on the main branch serving the album grid, I had not even noticed.
+
+**Habit to build:** when a commit message states a defect is FIXED, the mutation that proves it must
+run before the message is written, not after. "I removed the cast that hid it" is not the same claim
+as "the gap is closed", and I have now conflated those twice in one day. Count the two sets and diff
+them; the number is cheap and the sentence is not.
+
+The corrected version is enforced: dropping either package column from the select is now a compile
+error, proven by mutation.

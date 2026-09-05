@@ -1,4 +1,7 @@
 import { getCloudflareContext } from '@opennextjs/cloudflare'
+import type { Json } from '@/types/database'
+import { parseSponsorLogos } from '@/lib/sponsor-logos'
+import { asPackageTier } from '@/lib/db-unions'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { createClient } from '@/lib/supabase/server'
 import { verifyAccessToken } from '@/lib/album-password'
@@ -6,7 +9,7 @@ import { timingSafeEqual } from '@/lib/timing-safe'
 import { getUserTierById, getUserTierResolved } from '@/lib/subscriptions'
 import { albumEffectiveTier } from '@/lib/album-entitlements'
 import { uploadCapsForTier , GRANDFATHER_FREE_BEFORE } from '@/lib/media'
-import type { Album, Photo, SponsorLogo } from '@/types'
+import type { Album, Photo } from '@/types'
 
 // Shared album access/gating logic — the SINGLE source of truth used by both the API routes
 // (/api/album/resolve, /api/album/photos) and the server-rendered album page. Keeping the
@@ -22,31 +25,70 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 
 // Mirrors the SELECT in the former resolve route. password_hash + retired_at are internal
 // (stripped before returning); owner_token is fetched separately only when owner mode is asked.
-const ALBUM_SELECT_COLS = [
-  // user_id is fetched to size this album's upload caps by its OWNER's tier (see media_caps below).
-  // It is stripped before the album is returned — it must never reach a client.
-  'id', 'user_id', 'slug', 'custom_slug', 'title', 'background_theme',
-  'media_radius', 'media_filter', 'mobile_grid_columns', 'desktop_grid_columns', 'photo_layout', 'photo_order',
-  'slideshow_interval_ms', 'slideshow_animation', 'slideshow_motion', 'video_autoplay',
-  'cover_photo_id', 'header_image', 'header_focal', 'header_zoom', 'header_touched', 'header_video_mode', 'reveal_at', 'guest_uploads_enabled', 'allow_guest_downloads',
-  'require_approval', 'face_finder_enabled', 'bib_search_enabled', 'bib_min', 'bib_max', 'branding_locked',
-  'package_tier', 'package_expires_at',
-  'accent_color', 'logo_url', 'sponsor_logos', 'title_font', 'photo_style', 'welcome_message', 'hide_branding',
-  'last_activity_at', 'created_at',
-  'password_hash', 'retired_at',
-].join(', ')
+// ONE STRING LITERAL, NOT AN ARRAY JOINED AT RUNTIME, and the difference is the whole point.
+//
+// `[...].join(', ')` is typed `string`. PostgREST's select parser needs a LITERAL type to work, so
+// with a plain string it gives up and hands back GenericStringError -- meaning these 44 columns were
+// checked against the database by nobody, and the `.returns<AlbumRow[]>()` below then asserted a
+// shape TypeScript had no way to verify. That is how this select came to fetch 44 columns while
+// AlbumRow declared 42, papered over by two `as` casts eighty lines down.
+//
+// Written as interpolated literals the compiler parses it: a typo produces
+//   SelectQueryError<"column 'sponsr_logos' does not exist on 'albums'.">
+// at the first line that reads a field. Verified on this exact string.
+//
+// DO NOT rewrite this as an array, and DO NOT join it with `+`. Both widen to `string` and silently
+// restore the old behaviour with no error anywhere. Keep each group on ONE line: the value must stay
+// byte-identical to the old join, because it goes into a live query -- tests/album-select-cols.test.ts
+// pins that.
+//
+// user_id is fetched to size this album's upload caps by its OWNER's tier (see media_caps below).
+// It is stripped before the album is returned — it must never reach a client.
+const A_IDENTITY = 'id, user_id, slug, custom_slug, title, background_theme'
+const A_LAYOUT = 'media_radius, media_filter, mobile_grid_columns, desktop_grid_columns, photo_layout, photo_order'
+const A_SLIDESHOW = 'slideshow_interval_ms, slideshow_animation, slideshow_motion, video_autoplay'
+const A_HEADER = 'cover_photo_id, header_image, header_focal, header_zoom, header_touched, header_video_mode, reveal_at, guest_uploads_enabled, allow_guest_downloads'
+const A_GATES = 'require_approval, face_finder_enabled, bib_search_enabled, bib_min, bib_max, branding_locked'
+const A_PACKAGE = 'package_tier, package_expires_at'
+const A_BRAND = 'accent_color, logo_url, sponsor_logos, title_font, photo_style, welcome_message, hide_branding'
+const A_TIMES = 'last_activity_at, created_at'
+const A_INTERNAL = 'password_hash, retired_at'
+
+// Exported ONLY so tests/album-select-cols.test.ts can assert the built string byte-for-byte
+// against the list it replaced. A test that retyped the column list would be checking its own copy
+// (rule 17); this checks the value the query actually sends.
+export const ALBUM_SELECT_COLS =
+  `${A_IDENTITY}, ${A_LAYOUT}, ${A_SLIDESHOW}, ${A_HEADER}, ${A_GATES}, ${A_PACKAGE}, ${A_BRAND}, ${A_TIMES}, ${A_INTERNAL}`
 
 // Same columns AlbumPageClient renders (mirrors the former photos route).
 import { bibSearchCandidates } from '@/lib/bib-match'
 import { orderClausesFor, isPhotoOrder } from '@/lib/photo-order'
 
-const PHOTO_SELECT_COLS = [
-  'id', 'album_id', 'storage_path', 'storage_backend',
-  'url', 'thumb_url', 'caption', 'author_name', 'created_at',
-  'media_type', 'poster_url', 'stream_uid', 'stream_iframe_url',
-  'stream_thumbnail_url', 'duration_seconds', 'width', 'height',
-  'display_radius', 'display_filter', 'sort_order', 'face_ids', 'hidden', 'bib_numbers',
-].join(', ')
+// Composed the same way as ALBUM_SELECT_COLS above, but READ THIS BEFORE BELIEVING IT IS CHECKED.
+//
+// An earlier version of this comment said "a literal, so PostgREST can check it". A review proved
+// that false: misspelling a column here still compiles with zero errors. The literal is a necessary
+// condition, not a sufficient one — TWO casts downstream erase the result type before anything can
+// disagree with it:
+//
+//   .returns<Photo[]>()          on the delta branch
+//   as unknown as Photo[]        on the MAIN branch, the one that serves the album grid
+//
+// Both are annotated where they sit. Remove them and a typo here does produce
+// SelectQueryError<"column 'thmb_url' does not exist on 'photos'.">, at both call sites — verified.
+// What blocks removing them is `media_type` and `storage_backend`: text columns whose real
+// constraint is a CHECK, mirrored by hand in src/lib/db-unions.ts and held to the database by
+// tests/schema-unions.test.ts. Narrowing the rows through those is the change that finishes this.
+//
+// Until then tests/album-select-cols.test.ts is what actually guards this string, by pinning it.
+const P_IDENTITY = 'id, album_id, storage_path, storage_backend'
+const P_DISPLAY = 'url, thumb_url, caption, author_name, created_at'
+const P_MEDIA = 'media_type, poster_url, stream_uid, stream_iframe_url'
+const P_STREAM = 'stream_thumbnail_url, duration_seconds, width, height'
+const P_SETTINGS = 'display_radius, display_filter, sort_order, face_ids, hidden, bib_numbers'
+
+export const PHOTO_SELECT_COLS =
+  `${P_IDENTITY}, ${P_DISPLAY}, ${P_MEDIA}, ${P_STREAM}, ${P_SETTINGS}`
 
 type AlbumRow = {
   id: string; user_id: string | null; slug: string; custom_slug: string | null; title: string
@@ -57,10 +99,38 @@ type AlbumRow = {
   header_video_mode: string | null; reveal_at: string | null; guest_uploads_enabled: boolean
   allow_guest_downloads: boolean; require_approval: boolean; face_finder_enabled: boolean; bib_search_enabled: boolean
   bib_min: number | null; bib_max: number | null
-  accent_color: string | null; logo_url: string | null; sponsor_logos: SponsorLogo[]
+  accent_color: string | null; logo_url: string | null
+  // Json, NOT SponsorLogo[] — and this line is the one MISTAKES.md is about.
+  //
+  // sponsor_logos is a jsonb column, so the database guarantees it is valid JSON and NOTHING else.
+  // Declaring it SponsorLogo[] here asserted a shape nothing enforces, and that assertion is
+  // exactly what let `startsWith` be called on a `url` field holding a NUMBER — throwing in the
+  // middle of deleting an album. The row had been written by an older client; the type said it
+  // could not exist.
+  //
+  // Typing the Supabase client surfaced this as the single error left after the hand-written cast
+  // was removed. Consumers now have to narrow before they use it, which is the whole point.
+  sponsor_logos: Json
   title_font: string | null; photo_style: string | null; welcome_message: string | null; hide_branding: boolean
   branding_locked: boolean
   last_activity_at: string; created_at: string
+  // DECLARED, where these two were the entire 44-vs-42 gap.
+  //
+  // They were selected and never declared, so the row type had 42 fields for a 44-column select and
+  // two `as` casts twenty lines down bridged it. A review proved the cost concretely: with the casts
+  // in place, DELETING these two columns from the select still compiled and still passed all 1,260
+  // tests — and at runtime every packaged album would silently fall back to its owner's ACCOUNT
+  // tier. On a free-account owner that masks the logo, empties the sponsor marks, and takes the
+  // bib-search button off a race album while the API keeps working. One paying package album is
+  // live behind this.
+  //
+  // Typed as the COLUMN is, not as the CHECK constrains it. package_tier is `text` with a
+  // `CHECK (= ANY (ARRAY['pro','studio']))`, and a CHECK can be added NOT VALID — rows that
+  // predate it are then not covered. Declaring the union on the read type would assert something
+  // about stored rows the database does not guarantee, so it is narrowed at USE by asPackageTier,
+  // whose allowed set tests/schema-unions.test.ts holds to the real constraint.
+  package_tier: string | null
+  package_expires_at: string | null
   password_hash: string | null; retired_at: string | null
 }
 
@@ -153,7 +223,7 @@ export async function resolveAlbum(
     .or(`slug.eq.${slug},custom_slug.eq.${slug}`)
     .is('retired_at', null)
     .limit(2)
-    .returns<AlbumRow[]>()
+
   const album: AlbumRow | null = rows && rows.length > 0
     ? (rows.find((r) => r.slug === slug) ?? rows[0])
     : null
@@ -214,8 +284,8 @@ export async function resolveAlbum(
   // for any of them would re-split the fact require-tier just unified, and its symptom is precise:
   // a paid Max Package album whose guests see no Face Finder button while the search itself works.
   const effectiveTier = albumEffectiveTier(ownerTier, {
-    tier: (album as { package_tier?: 'pro' | 'studio' | null }).package_tier ?? null,
-    expiresAt: (album as { package_expires_at?: string | null }).package_expires_at ?? null,
+    tier: asPackageTier(album.package_tier),
+    expiresAt: album.package_expires_at,
   })
 
   // THESE ALBUMS WERE PROMISED THE FEATURE, AND WE DO NOT TAKE IT BACK.
@@ -290,7 +360,12 @@ export async function resolveAlbum(
       // here is being un-hidden — a mark disappearing costs the owner a mark, not their guests'
       // privacy.
       logo_url: (isOwner || markGrandfathered || effectiveTier !== 'free') ? album.logo_url : null,
-      sponsor_logos: (isOwner || markGrandfathered || effectiveTier === 'studio') ? album.sponsor_logos : [],
+      // VALIDATED HERE, once, at the only point a database row becomes an Album. Everything
+      // downstream can then trust SponsorLogo[] instead of re-narrowing jsonb in three deletion
+      // paths that each learned to distrust it separately.
+      sponsor_logos: (isOwner || markGrandfathered || effectiveTier === 'studio')
+        ? parseSponsorLogos(album.sponsor_logos)
+        : [],
       media_caps: uploadCapsForTier(effectiveTier),
       // The ONE deliberately account-scoped feature. A collection groups albums across an
       // account, so a single-album package must not unlock it — `plan` above would say it does.
@@ -598,7 +673,16 @@ export async function fetchAuthorizedPhotos(
       .order('created_at', { ascending: false })
       .order('id', { ascending: false })
       .limit(Math.min(opts.limit ?? 100, 200))
+      // STILL A CAST, deliberately, and it is the last one on a hot read.
+      //
+      // Removing it leaves exactly one error: `media_type` is `text` in the database while `Photo`
+      // declares the narrower MediaType union. The database's real constraint is a CHECK, and the
+      // earlier audit found the same mismatch on `storage_backend` — its CHECK permits 'supabase',
+      // the TypeScript union does not. Narrowing those honestly means reading the CHECK constraints
+      // rather than hand-writing a second copy of them (rule 13), which is its own change with its
+      // own test. Left as a cast WITH this note rather than half-done and silent.
       .returns<Photo[]>()
+
     if (rows.error) return { kind: 'ok', photos: [], total: 0 }
     // The count comes back with it, so a client applying a delta still learns the true size and
     // can tell that its own arithmetic agreed with the database.
@@ -651,6 +735,10 @@ export async function fetchAuthorizedPhotos(
 
   return {
     kind: 'ok',
+    // THE SECOND CAST, and the one that had no note. This is the main branch — the album grid and
+    // the photo wall both come through here — so it, not the delta branch, is what mostly erases
+    // PHOTO_SELECT_COLS's type checking. Same blocker as the other: media_type and storage_backend
+    // are CHECK-constrained text. See the comment on PHOTO_SELECT_COLS.
     photos: (photos ?? []) as unknown as Photo[],
     total,
     bibStats: opts.bibStats ? await countBibStats(albumId, isOwner) : undefined,
