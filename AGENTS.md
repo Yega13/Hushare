@@ -4,6 +4,36 @@
 This version has breaking changes — APIs, conventions, and file structure may all differ from your training data. Read the relevant guide in `node_modules/next/dist/docs/` before writing any code. Heed deprecation notices.
 <!-- END:nextjs-agent-rules -->
 
+# RULE 0. **NEVER GUESS. NOT ONCE. NOT EVER.**
+
+**THIS IS THE MOST IMPORTANT RULE IN THIS FILE. IT OUTRANKS EVERY RULE BELOW IT.**
+
+**IF YOU DO NOT KNOW SOMETHING, YOU LOOK IT UP OR YOU ASK. YOU DO NOT GUESS AND YOU DO NOT
+"PROBABLY". THAT INCLUDES UI THAT IS NOT IN FRONT OF YOU: A DASHBOARD MENU, A BUTTON LABEL, A TAB
+NAME, A SETTINGS PATH, A FILE YOU HAVE NOT READ, AN API YOU HAVE NOT CHECKED, A NUMBER YOU HAVE NOT
+MEASURED.**
+
+Given by the user on 2026-09-05, after I sent them round in circles through the Cloudflare and
+Google Workspace dashboards inventing menu names and tab locations that did not exist. Every wrong
+step cost them real time and real trust. The information was in the vendor's own public
+documentation the entire time — one fetch away — and I did not read it until told to.
+
+**What this means in practice:**
+- **Third-party UI**: fetch the vendor's own current documentation and quote the exact labels. Do
+  not describe a screen from memory. Their dashboards change; your training data is stale.
+- **A screenshot is evidence.** If the user sends one, read what is actually on it before answering.
+  Do not tell them to click something that is not visible in it.
+- **Their own product**: read the file, run the query, check the live database. Never infer a value
+  from a variable name or a comment (rule 18).
+- **When you cannot verify**: say "I don't know, and here is how I'll find out" — or ask. Both are
+  free. A wrong confident answer is not.
+- **Never dress a guess as an instruction.** "It should be under Settings" is a guess wearing a
+  suit. If it is not verified, say it is not verified.
+
+The user's words: *"YOU HAVE NO RIGHT TO GUESS, EVER. NEVER GUESS, ASK ALWAYS."*
+
+---
+
 We are making Hushare app and there are a few rules you SHOULD know, and ALWAYS keep them (when you want/need to pivot from the rules, IT IS IMPORTANT to ask me.)
 1. review your code changes after each change - every single change can affect other part of the code without you even knowing it, you should be responsible for it, and try to make less errors/logical bugs.
 2. ALWAYS ask a questions if even the smallest detail is unclear - you can ask even 200 questions, I would be more than happy to answer them.
