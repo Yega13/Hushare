@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { showAppToast } from '@/components/AppToast'
 import type { Photo } from '@/types'
+import { MAX_BULK_DELETE } from '@/lib/constants'
 
 type Options = {
   slug: string
@@ -60,8 +61,8 @@ export function useSelectMode({
     for (const id of ids) onPhotoDeleted(id)
     exitSelectMode()
 
-    // Server max is 200 per request — chunk just in case.
-    const CHUNK = 200
+    // Chunked to the route's own cap, imported rather than retyped (it had drifted to 200 here).
+    const CHUNK = MAX_BULK_DELETE
     let deleted = 0
     let failed = 0
     let reason: string | undefined

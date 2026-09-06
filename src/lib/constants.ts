@@ -69,3 +69,8 @@ export const DOWNLOAD_CONCURRENCY_DESKTOP = 16;
 // Each photo gets more than one go before it is given up on. A single dropped connection on venue
 // wifi should not silently remove a photo from somebody's album download.
 export const DOWNLOAD_ATTEMPTS = 3;
+
+// The most photos one bulk-delete request may carry. The route refuses more; the select-mode client
+// chunks its selection to exactly this. It was written twice -- 500 in the route, "server max is
+// 200" in a client comment beside a CHUNK of 200 -- and the two had already drifted (rule 13).
+export const MAX_BULK_DELETE = 500

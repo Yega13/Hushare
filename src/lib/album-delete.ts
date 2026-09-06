@@ -2,6 +2,8 @@ import { getCloudflareContext } from '@opennextjs/cloudflare'
 import type { createAdminClient } from '@/lib/supabase/admin'
 import { deleteStreamVideo } from '@/lib/cloudflare/stream'
 import { deleteCollection } from '@/lib/rekognition'
+import { isOneOf, STORAGE_BACKENDS, type StorageBackendValue } from '@/lib/db-unions'
+import { reportServerError } from '@/lib/report-server-error'
 
 type AdminClient = ReturnType<typeof createAdminClient>
 
@@ -88,10 +90,36 @@ export function albumAssetKeys(album: AlbumAssets, ownAlbumId?: string): string[
 
 export type PhotoToDelete = {
   storage_path: string | null
-  storage_backend: 'r2' | 'stream'
+  // The union comes from lib/db-unions, not a second copy written here: a third place spelling
+  // out 'r2' | 'stream' is exactly the drift rule 13 exists for.
+  storage_backend: StorageBackendValue
   poster_url: string | null
   stream_uid: string | null
   thumb_url: string | null
+}
+
+/** A row as the survivor check needs it: what it references, whatever its backend says. */
+export type PhotoRef = Pick<PhotoToDelete, 'storage_path' | 'poster_url' | 'stream_uid' | 'thumb_url'>
+
+/**
+ * Split rows the database holds into the ones a deletion may reason about and the ones it may not.
+ *
+ * `storage_backend` is text with a CHECK; the generated type calls it `string`. A row whose value is
+ * outside the union this code knows (the constraint still permits the pre-R2 'supabase') must not
+ * reach collectDeletionTargets, which treats anything that is not 'stream' as R2 and would derive a
+ * key to destroy from a backend it does not understand. The caller decides what to do with the
+ * unknown ones -- the deleting path skips and reports them (the file stays in the bucket, rule 19).
+ */
+export function partitionDeletable<R extends { id: string; storage_backend: string }>(
+  rows: readonly R[],
+): { deletable: (Omit<R, 'storage_backend'> & { storage_backend: StorageBackendValue })[]; unknown: { id: string; storage_backend: string }[] } {
+  const deletable: (Omit<R, 'storage_backend'> & { storage_backend: StorageBackendValue })[] = []
+  const unknown: { id: string; storage_backend: string }[] = []
+  for (const row of rows) {
+    if (isOneOf(STORAGE_BACKENDS, row.storage_backend)) deletable.push({ ...row, storage_backend: row.storage_backend })
+    else unknown.push({ id: row.id, storage_backend: row.storage_backend })
+  }
+  return { deletable, unknown }
 }
 
 // R2's delete() takes at most 1000 keys per call, and an over-long array fails the WHOLE batch.
@@ -229,12 +257,14 @@ export async function rowsReferencingKeys(
   admin: AdminClient,
   albumId: string,
   r2Keys: Iterable<string>,
-): Promise<PhotoToDelete[]> {
+): Promise<PhotoRef[]> {
   const names = [...new Set([...r2Keys].map(keyFileName).filter((n): n is string => n !== null))]
   if (names.length === 0) return []
 
-  const cols = 'id, storage_backend, storage_path, thumb_url, poster_url, stream_uid'
-  const out: PhotoToDelete[] = []
+  // No storage_backend: a survivor protects everything it references whatever its backend says
+  // (see keysReferencedBy), so the column is not needed and the row needs no narrowing or cast.
+  const cols = 'storage_path, thumb_url, poster_url, stream_uid'
+  const out: PhotoRef[] = []
   // Batched: the or-string grows with the number of names and PostgREST takes it in the URL.
   const PER_QUERY = 25
   for (let i = 0; i < names.length; i += PER_QUERY) {
@@ -257,16 +287,38 @@ export async function rowsReferencingKeys(
       .order('id', { ascending: true })
       .limit(500)
     if (error) throw new Error(`survivor lookup failed: ${error.message}`)
-    out.push(...((data ?? []) as unknown as PhotoToDelete[]))
+    out.push(...(data ?? []))
   }
   return out
 }
 
+/**
+ * Every key a row COULD reference, ignoring which backend it claims.
+ *
+ * This is the protective superset for the survivor check: a surviving row must keep every file it
+ * points at, and reading its backend to decide which of its columns count is a way to protect
+ * less. An R2 row's poster and stream columns are null and cost nothing; a Stream row's
+ * storage_path, if set, is protected too. Erring here can only orphan a file, never destroy one.
+ */
+export function keysReferencedBy(rows: readonly PhotoRef[]): { r2Keys: Set<string>; streamUids: Set<string> } {
+  const r2Keys = new Set<string>()
+  const streamUids = new Set<string>()
+  for (const row of rows) {
+    if (row.storage_path) r2Keys.add(row.storage_path)
+    if (row.stream_uid) streamUids.add(row.stream_uid)
+    const thumbKey = r2KeyFromUrl(row.thumb_url)
+    if (thumbKey) r2Keys.add(thumbKey)
+    const posterKey = r2KeyFromUrl(row.poster_url)
+    if (posterKey) r2Keys.add(posterKey)
+  }
+  return { r2Keys, streamUids }
+}
+
 export function withoutStillReferenced(
   targets: { r2Keys: Set<string>; streamUids: Set<string> },
-  surviving: PhotoToDelete[],
+  surviving: readonly PhotoRef[],
 ): { r2Keys: Set<string>; streamUids: Set<string> } {
-  const kept = collectDeletionTargets(surviving, null)
+  const kept = keysReferencedBy(surviving)
   return {
     r2Keys: new Set([...targets.r2Keys].filter((k) => !kept.r2Keys.has(k))),
     streamUids: new Set([...targets.streamUids].filter((u) => !kept.streamUids.has(u))),
@@ -283,12 +335,13 @@ export async function deleteAlbumAssetsAndRows(
   const PAGE_SIZE = 1000
   const r2Keys = new Set<string>()
   const streamUids = new Set<string>()
+  const skippedUnknown: { id: string; storage_backend: string }[] = []
 
   let offset = 0
   while (true) {
     const { data: batch, error: photosError } = await admin
       .from('photos')
-      .select('storage_path, storage_backend, poster_url, stream_uid, thumb_url')
+      .select('id, storage_path, storage_backend, poster_url, stream_uid, thumb_url')
       .eq('album_id', album.id)
       // ORDERED, because .range() without it is not pagination — it is two independent queries.
       //
@@ -303,7 +356,6 @@ export async function deleteAlbumAssetsAndRows(
       // reachable today, not theoretical.
       .order('id', { ascending: true })
       .range(offset, offset + PAGE_SIZE - 1)
-      .returns<PhotoToDelete[]>()
 
     if (photosError) {
       console.error('[album/delete] photo lookup failed:', photosError.message)
@@ -311,8 +363,14 @@ export async function deleteAlbumAssetsAndRows(
     }
 
     // The decision itself lives in collectDeletionTargets, where it can be tested without a
-    // database. Only the paging is here.
-    const page = collectDeletionTargets(batch ?? [], null)
+    // database. Only the paging is here. A row with a backend this code does not know is SKIPPED,
+    // not guessed at: its file stays in the bucket ($0.015/GB/month) rather than a key derived
+    // from an unknown scheme being destroyed, and the skip is reported so it is not invisible.
+    // The album deletion itself proceeds -- an owner should not be unable to delete their album
+    // over a row only support can repair.
+    const { deletable, unknown } = partitionDeletable(batch ?? [])
+    for (const u of unknown) skippedUnknown.push(u)
+    const page = collectDeletionTargets(deletable, null)
     for (const k of page.r2Keys) r2Keys.add(k)
     for (const u of page.streamUids) streamUids.add(u)
 
@@ -325,6 +383,14 @@ export async function deleteAlbumAssetsAndRows(
   // The album's OWN id — this is the deleting path, so anything that cannot be proved to belong
   // to this album stays in the bucket.
   for (const k of albumAssetKeys(album, album.id)) r2Keys.add(k)
+
+  if (skippedUnknown.length > 0) {
+    // Once per deletion, stable message, the rows in context: the operator can find the files.
+    reportServerError('album-delete', 'album deletion skipped rows with an unknown storage_backend; their files stay in the bucket', {
+      albumId: album.id,
+      context: { skipped: skippedUnknown.length, sample: skippedUnknown.slice(0, 5) },
+    })
+  }
 
   // Step 2a: Delete pending_stream_uploads rows for this album. These may not have a DB-level
   // CASCADE (depending on schema migration order), so we clean them up explicitly. Best-effort.

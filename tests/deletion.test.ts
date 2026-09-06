@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeAll } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { r2KeyFromUrl, collectDeletionTargets, albumAssetKeys, ALBUM_ASSET_COLUMNS, type PhotoToDelete, withoutStillReferenced, keyFileName } from '@/lib/album-delete'
+import { r2KeyFromUrl, collectDeletionTargets, albumAssetKeys, ALBUM_ASSET_COLUMNS, type PhotoToDelete, withoutStillReferenced, keyFileName, keysReferencedBy, partitionDeletable } from '@/lib/album-delete'
 import { r2PublicUrl } from '@/lib/cloudflare/r2'
 
 // r2KeyFromUrl decides WHICH FILE GETS DELETED. Everything about album and photo deletion
@@ -430,6 +430,74 @@ describe('withoutStillReferenced — a delete must never destroy a file still in
   })
 })
 
+
+describe('keysReferencedBy — what a SURVIVING row protects, whatever its backend says', () => {
+  // The two sides of a deletion err in opposite directions, on purpose. collectDeletionTargets
+  // (what to destroy) reads the backend and ignores a Stream row's storage_path. keysReferencedBy
+  // (what to keep) ignores the backend and protects everything the row points at. Reading the
+  // backend here would be a way to protect LESS, and a survivor check that protects less is a
+  // live file deleted. Erring this way can only orphan a file, never destroy one.
+  const HOST = 'https://videos.hushare.space'
+
+  it('protects an image original and its thumbnail', () => {
+    const k = keysReferencedBy([{ storage_path: 'albums/A/p.jpg', thumb_url: `${HOST}/thumbs/A/p.jpg`, poster_url: null, stream_uid: null }])
+    expect([...k.r2Keys].sort()).toEqual(['albums/A/p.jpg', 'thumbs/A/p.jpg'])
+    expect(k.streamUids.size).toBe(0)
+  })
+
+  it('protects a video uid AND its poster AND a storage_path if one is set -- the superset', () => {
+    const k = keysReferencedBy([{ storage_path: 'albums/A/also.mp4', thumb_url: null, poster_url: `${HOST}/posters/A/u.jpg`, stream_uid: 'u' }])
+    expect([...k.streamUids]).toEqual(['u'])
+    expect([...k.r2Keys].sort()).toEqual(['albums/A/also.mp4', 'posters/A/u.jpg'])
+  })
+
+  it('a survivor whose backend is UNKNOWN still protects its keys through withoutStillReferenced', () => {
+    // The pre-R2 'supabase' backend, or a value nobody has seen: the survivor check must not need
+    // to understand it to keep the file. The type has no backend field at all now, so this cannot
+    // regress by someone adding a branch on it.
+    const targets = { r2Keys: new Set(['albums/A/keep.jpg', 'albums/A/go.jpg']), streamUids: new Set<string>() }
+    const safe = withoutStillReferenced(targets, [{ storage_path: 'albums/A/keep.jpg', thumb_url: null, poster_url: null, stream_uid: null }])
+    expect([...safe.r2Keys]).toEqual(['albums/A/go.jpg'])
+  })
+
+  it('still lets a poster go when no survivor references it', () => {
+    const targets = { r2Keys: new Set(['posters/A/u.jpg']), streamUids: new Set(['u']) }
+    const safe = withoutStillReferenced(targets, [])
+    expect([...safe.r2Keys]).toEqual(['posters/A/u.jpg'])
+    expect([...safe.streamUids]).toEqual(['u'])
+  })
+})
+
+describe('partitionDeletable — a deletion must not reason about a backend it does not know', () => {
+  const row = (id: string, storage_backend: string) => ({ id, storage_backend, storage_path: `albums/A/${id}.jpg`, thumb_url: null, poster_url: null, stream_uid: null })
+
+  it('passes r2 and stream rows through, narrowed, and sets the others aside by id', () => {
+    const { deletable, unknown } = partitionDeletable([row('a', 'r2'), row('b', 'supabase'), row('c', 'stream'), row('d', '')])
+    expect(deletable.map((r) => r.id)).toEqual(['a', 'c'])
+    expect(unknown).toEqual([{ id: 'b', storage_backend: 'supabase' }, { id: 'd', storage_backend: '' }])
+    // The deletable rows keep every column the deletion reads.
+    expect(deletable[0].storage_path).toBe('albums/A/a.jpg')
+  })
+
+  it('an unknown row contributes NO key to the deletion -- the file is orphaned, never guessed at', () => {
+    const { deletable } = partitionDeletable([row('b', 'supabase')])
+    const targets = collectDeletionTargets(deletable, null)
+    expect(targets.r2Keys.size).toBe(0)
+    expect(targets.streamUids.size).toBe(0)
+  })
+
+  it('the deleting sweep skips unknown rows and reports them, and does not refuse the album', () => {
+    // Wiring, held by source: deleteAlbumAssetsAndRows partitions before collecting, reports the
+    // skipped rows once, and carries on. Refusing the whole album over a row only support can
+    // repair would leave an owner unable to delete their own album.
+    const src = readFileSync(join(process.cwd(), 'src', 'lib', 'album-delete.ts'), 'utf8')
+    const sweep = src.slice(src.indexOf('export async function deleteAlbumAssetsAndRows'))
+    expect(sweep.indexOf('partitionDeletable(')).toBeGreaterThan(0)
+    expect(sweep.indexOf('partitionDeletable(')).toBeLessThan(sweep.indexOf('collectDeletionTargets('))
+    expect(sweep).toMatch(/if \(skippedUnknown\.length > 0\) \{\s*\n\s*\/\/[^\n]*\n\s*reportServerError\('album-delete'/)
+    expect(sweep.includes('.returns<'), 'the sweep asserts the row shape by cast again').toBe(false)
+  })
+})
 
 describe('the file name a deletion key is matched by', () => {
   // keyFileName feeds rowsReferencingKeys, which decides whether a file is still in use. Getting

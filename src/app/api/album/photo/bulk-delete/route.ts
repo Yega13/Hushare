@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { MAX_BULK_DELETE } from '@/lib/constants'
 import { refuseAccess, serverError } from '@/lib/server/respond'
 import { isOneOf, STORAGE_BACKENDS, type StorageBackendValue } from '@/lib/db-unions'
 import { createAdminClient } from '@/lib/supabase/admin'
@@ -16,7 +17,6 @@ export const runtime = 'nodejs'
 const NO_STORE = { 'Cache-Control': 'no-store' }
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
-const MAX_BULK_DELETE = 500
 
 type R2BucketLike = { delete(keys: string | string[]): Promise<void> }
 type R2Env = { R2_BUCKET: R2BucketLike }
