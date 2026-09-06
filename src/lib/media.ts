@@ -1,5 +1,18 @@
 import type { Tier, UploadCaps } from '@/types'
 
+// THE CACHE-CONTROL HEADER EVERY UPLOADED OBJECT IS STORED WITH -- defined ONCE, here, because both
+// sides of the wire must send the same bytes and neither can import the other.
+//
+// It was written twice: in lib/cloudflare/r2.ts (server, presigning) and in UploadZone.tsx (browser,
+// the PUT that carries it), with a comment saying "must match exactly" and nothing holding them equal.
+// The presigned PUT's SIGNATURE binds this header's value, so a drift is not a caching quirk -- it is
+// every upload rejected with SignatureDoesNotMatch. This module is already the shared home for what
+// the browser and server must agree on (the accepted MIME types), for the same reason (rule 13).
+//
+// Objects are immutable by construction -- the key is derived from content -- so a year with
+// `immutable` is safe: the CDN never has to revalidate a key that can never change underneath it.
+export const IMMUTABLE_CACHE_CONTROL = 'public, max-age=31536000, immutable'
+
 export type MediaKind = 'image' | 'video'
 
 // The formats we accept, and the SINGLE definition of them.

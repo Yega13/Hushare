@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from 'vitest'
-import { monotonicNow, elapsedSince, createDeadline, createStallWatch, type Timers } from '@/lib/clock'
+import { monotonicNow, elapsedSince, createDeadline, createStallWatch, settleWithin, type Timers } from '@/lib/clock'
 
 // THE FAILURE THIS MODULE EXISTS FOR, DRIVEN DIRECTLY.
 //
@@ -227,5 +227,26 @@ describe('a deadline owns its own arithmetic', () => {
     const d = createDeadline(1000)
     clock.now = 9999
     expect(d.remaining()).toBe(0)
+  })
+})
+
+describe('settleWithin', () => {
+  it('resolves to the value when the promise wins, and clears the now-useless timer', async () => {
+    vi.useFakeTimers()
+    expect(await settleWithin(Promise.resolve('v'), 1000, 'fallback')).toBe('v')
+    expect(vi.getTimerCount(), 'the losing timer was left pinning the loop').toBe(0)
+  })
+  it('resolves to the fallback when time runs out first', async () => {
+    vi.useFakeTimers()
+    const never = new Promise<string>(() => {})
+    const p = settleWithin(never, 500, 'fallback')
+    await vi.advanceTimersByTimeAsync(500)
+    expect(await p).toBe('fallback')
+    expect(vi.getTimerCount()).toBe(0)
+  })
+  it('a rejection wins the race as a rejection -- the fallback is for time, not for errors', async () => {
+    vi.useFakeTimers()
+    await expect(settleWithin(Promise.reject(new Error('x')), 1000, 'fallback')).rejects.toThrow('x')
+    expect(vi.getTimerCount()).toBe(0)
   })
 })

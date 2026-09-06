@@ -1,4 +1,5 @@
 import { VIDEO_ALBUM_FULL_PREFIX } from '@/lib/album-entitlements'
+import { monotonicNow } from '@/lib/clock'
 // THE DECISIONS THE UPLOADER MAKES ABOUT SOMEONE ELSE'S PHOTO.
 //
 // UploadZone.tsx is 2,846 lines of canvas work, retries, workers and progress plumbing, and until
@@ -325,7 +326,7 @@ export type RelayPolicy = {
 }
 
 export function createRelayPolicy(
-  now: () => number = Date.now,
+  now: () => number = () => monotonicNow() as number,
   reprobeMs: number = RELAY_REPROBE_MS,
 ): RelayPolicy {
   let believed = false

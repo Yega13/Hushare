@@ -53,7 +53,7 @@ export function monotonicNow(): Millis {
  *
  * NEVER NEGATIVE. Monotonicity already guarantees that, and the clamp is the belt to those braces —
  * it also states the direction this errs in: a duration that reads 0 makes a caller act EARLY
- * (retry sooner, treat something as stale sooner), never never.
+ * (retry sooner, treat something as stale sooner), never late.
  */
 export function elapsedSince(start: Millis): number {
   return Math.max(0, (monotonicNow() as number) - (start as number))
@@ -151,4 +151,17 @@ export function createStallWatch(config: {
     poke: () => { last = monotonicNow() },
     stop,
   }
+}
+
+/**
+ * Race a promise against a budget, resolving to `fallback` if time runs out first.
+ *
+ * For bounding a best-effort side task -- the video poster upload, which must never hold a video's
+ * concurrency slot hostage. Always clears its timer, so a promise that settles early leaves no
+ * pending timeout behind it (one per file otherwise).
+ */
+export function settleWithin<T>(p: Promise<T>, ms: number, fallback: T): Promise<T> {
+  let timer: ReturnType<typeof setTimeout>
+  const timeout = new Promise<T>((resolve) => { timer = setTimeout(() => resolve(fallback), ms) })
+  return Promise.race([p, timeout]).finally(() => clearTimeout(timer))
 }
