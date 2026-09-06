@@ -130,7 +130,7 @@ const SIZE_BUDGET: Record<string, number> = {
   // extendTo IS the Math.max recovery grace that was hand-written here.
   // -685 (2026-09-06): the Semaphore, xhrPut/HttpError/readJson, the reachability probe, the
   // three retry loops with their relay fallback, and reportClientEvent moved to src/lib/upload/*,
-  // each behind its own test file and a mutation run (89 tests, 90 mutations killed). The budget
+  // each behind its own test file and a mutation run (89 tests, 70 mutations killed). The budget
   // drops to the new size, not to "the new size plus room": the ratchet only holds when every
   // line above it has to be paid for (see memory: ratchet-is-not-holding).
   'src/components/UploadZone.tsx': 2242,

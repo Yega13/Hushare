@@ -700,3 +700,75 @@ by something.
 **Habit to build:** an `is` annotation is an assertion the compiler trusts, not one it verifies. When
 I write one, the body needs a test of its own -- and the rule-16 mutation to run is on the BODY, not
 the signature, because that is the half that can quietly stop matching.
+
+### 46. THREE GUARDS THAT COULD NOT RUN, FOUND ONLY BECAUSE A MUTATION DELETED THEM
+
+Extracting the upload path into lib, three separate "defensive" lines survived their mutation:
+xhrPut's `settled` flag, the reachability probe's `if (probe === loop)` before clearing the slot,
+and the probe loop's second deadline check. Each read as the thing holding an invariant. Each was
+unreachable -- finish() disarms both possible callers; a new loop is only created after the old one
+cleared the slot; the two deadline checks overlapped so completely that deleting either alone kept
+every test green.
+
+The lesson from MISTAKES 44 (createStallWatch) was already written down, and I still wrote the
+three, because "add a settled flag" is a reflex that arrives faster than the question "who could
+call this twice?".
+
+**Habit to build:** a surviving mutation is not always a weak test. Before strengthening the test,
+ask whether the code it failed to kill can execute at all. If not, delete the code and write WHY in
+its place -- an unreachable guard is worse than none, because the next person edits around it
+trusting it.
+
+### 47. I WROTE A HISTORY INTO A COMMENT WITHOUT READING THE HISTORY
+
+Moving `settleWithin` to lib/clock, I wrote that it "used to leave a twelve-second timer behind
+every poster that arrived in two". The original, twenty lines up in the file I was moving it out
+of, cleared its timer and said so in its own comment. Rule 0, in a comment: I described a past I
+had not looked at because it made the paragraph read better.
+
+Caught before commit only because I went back to check a different claim in the same block.
+
+**Habit to build:** a comment that says "used to" or "was" is a factual claim about a specific
+older version of the code. `git show` it or `sed -n` it before writing the sentence. If the point
+of the comment is why the code is shaped this way, the ORIGINAL's own reasoning is usually the
+honest thing to carry across, verbatim.
+
+### 48. RULE 24, FOURTH TIME: A `\n` THROUGH BASH-THEN-PYTHON BECAME A NEWLINE INSIDE A STRING LITERAL
+
+Appending mutation entries to a harness, I piped a Python heredoc through Bash. The `\n` I wrote
+for the JS string literal arrived on disk as a real line break, splitting the literal across two
+lines. `node --check` refused the file. I only ran that check because the Note on the edit looked
+wrong; had I trusted the tool result, the harness would have "run" and reported nothing.
+
+Two layers of escaping, each correct on its own, are still a guess about what the other layer does.
+
+**Habit to build:** file CONTENT goes through Write or Edit, full stop -- including scratchpad
+harnesses, which I had been treating as exempt because they are not shipped. And after any
+generated file, `node --check` (or the language's equivalent) before believing it ran.
+
+### 49. TWO TESTS THAT WERE WRONG ABOUT WHAT THEY MEASURED, WRITTEN MINUTES APART
+
+`putWithRetry` "keeps trying for the full 120s budget": I asserted the attempt count would be at
+least `PUT_DEADLINE_MS / 10_000 - 1`, re-deriving the loop's arithmetic in the test and getting it
+wrong (backoff sleeps also spend the budget; the real count was 9). Rule 17, exactly.
+
+"A cancel DURING the outage wait ends promptly": I measured `Date.now() - before` after advancing
+the fake clock 100 seconds -- so I measured how far I had advanced the clock, not when the promise
+settled. It failed for the wrong reason, and a version that passed for the wrong reason was one
+sign flip away.
+
+**Habit to build:** an assertion about TIME records the instant the thing under test settles
+(inside its `.then`), never the instant the test finishes waiting. An assertion about COUNT states
+the property ("more than the old fixed five, and the budget was spent"), not a number derived by
+redoing the code's arithmetic.
+
+### 50. THE TEST HELPER THAT ERASED THE EVIDENCE
+
+Every retry test drove the loop with `outcome(p)`, which advances 500 seconds of fake time and then
+reads the result. The mutation "per-attempt cleanup never runs" survived: the orphaned 20-second
+timers it leaves behind had FIRED during those 500 seconds and were gone by the time I counted them.
+The helper that made the tests convenient also destroyed the one artefact the leak test needed.
+
+**Habit to build:** a test for "nothing is left behind" must count immediately after the thing
+completes, with no fake time advanced in between. More generally: when a mutation that OBVIOUSLY
+changes behaviour survives, suspect the harness around the assertion before the assertion.
