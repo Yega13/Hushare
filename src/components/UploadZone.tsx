@@ -1,7 +1,12 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { createStallWatch, createDeadline, monotonicNow, elapsedSince } from '@/lib/clock'
+import { createStallWatch, settleWithin } from '@/lib/clock'
+import { Semaphore } from '@/lib/upload/semaphore'
+import { readJson, HttpError } from '@/lib/upload/http'
+import { reportClientEvent } from '@/lib/upload/report'
+import { reachability } from '@/lib/upload/reachability'
+import { fetchWithRetry, putImageWithRelay, FETCH_DEADLINE_SAVE_MS } from '@/lib/upload/retry'
 import * as tus from 'tus-js-client'
 import type { Album } from '@/types'
 import { stripExifFromJpeg, jpegOrientation, stripMetadataFromPng, stripMetadataFromWebp } from '@/lib/exif'
@@ -11,8 +16,7 @@ import { stripExifFromJpeg, jpegOrientation, stripMetadataFromPng, stripMetadata
 import {
   maxImageDimFor, shrinkLadderFor, needsReEncode, outputMimeFor, nextShrinkDim,
   isMissingContentLengthFailure, tusFailureAction, isEvalBlockedByCsp,
-  backoffDelay, isNetworkClass, isExpectedRefusal, createRelayPolicy,
-  verdictForResponse, verdictForThrow,
+  isExpectedRefusal,
 } from '@/lib/upload-policy'
 import { decodeBitmapSafe, decodeImageSource, setFallbackDecodeReporter } from '@/lib/image-decode'
 import { reportClientError } from '@/lib/report-error'
@@ -48,92 +52,6 @@ import {
   VIDEO_SOLO_LANE_BYTES,
   STREAM_CHUNK_SIZE_BYTES,
 } from '@/lib/constants'
-
-// ─── Upload stall watchdog ────────────────────────────────────────────────────
-// Deliberately NO hard total-time cap on a PUT. On congested event Wi-Fi / cellular a large
-// image can legitimately take minutes, and the old fixed 60s ceiling killed slow-but-healthy
-// uploads with "Upload timed out" (then every retry hit the same wall → permanent failure).
-// Instead we watch for *stalls*: if the socket sends no bytes for this long, abort and let the
-// retry loop reconnect. Any real progress resets the clock, so a slow upload is never cut off.
-const STALL_TIMEOUT_MS = 20_000
-// MAX_IMG_DIM, the shrink ladder and the re-encode rule now live in lib/upload-policy.ts, with the
-// reasoning for each. They moved so they could be tested: this file is 2,800 lines and none of it
-// was reachable from a test.
-
-// ─── Semaphore ────────────────────────────────────────────────────────────────
-
-// Weighted counting semaphore with a RUNTIME-adjustable capacity (for adaptive video concurrency).
-//   • Default weight 1 = a plain N-slot semaphore. A caller can take a larger weight to hold several
-//     slots at once (a big video takes the whole video lane and uploads alone; short clips overlap).
-//   • acquire() resolves to a RELEASE FUNCTION that returns EXACTLY the weight it took — so capacity
-//     can grow/shrink mid-flight with zero accounting drift, and a double-release is a no-op.
-//   • FIFO: a heavy waiter can't be starved by a stream of light ones jumping the queue.
-//   • setCapacity() grows (frees slots + wakes waiters) or shrinks (never revokes an in-flight
-//     holder — it just caps future grants, so the lane settles to the new size as holders finish).
-class Semaphore {
-  private available: number
-  private cap: number
-  private queue: { w: number; resolve: (release: () => void) => void }[] = []
-  constructor(capacity: number) { this.cap = Math.max(1, Math.floor(capacity)); this.available = this.cap }
-  get capacity(): number { return this.cap }
-
-  acquire(weight = 1): Promise<() => void> {
-    const w = Math.min(Math.max(1, Math.floor(weight)), this.cap)
-    if (this.queue.length === 0 && this.available >= w) {
-      this.available -= w
-      return Promise.resolve(this.makeRelease(w))
-    }
-    return new Promise<() => void>(resolve => this.queue.push({ w, resolve }))
-  }
-
-  setCapacity(next: number): void {
-    const target = Math.max(1, Math.floor(next))
-    const delta = target - this.cap
-    this.cap = target
-    if (delta < 0) {
-      if (this.available > this.cap) this.available = this.cap
-      // A shrink must never leave a queued waiter needing more slots than the lane now has — it
-      // would wait forever. Re-clamp to the new capacity (still correct: that weight already means
-      // "the whole lane" at this size).
-      for (const item of this.queue) if (item.w > this.cap) item.w = this.cap
-    } else if (delta > 0) {
-      this.available += delta
-    }
-    this.drain()
-  }
-
-  private makeRelease(w: number): () => void {
-    let released = false
-    return () => {
-      if (released) return
-      released = true
-      this.available += w
-      if (this.available > this.cap) this.available = this.cap // absorb slots retired by a shrink
-      this.drain()
-    }
-  }
-
-  private drain(): void {
-    while (this.queue.length > 0 && this.available >= this.queue[0].w) {
-      const next = this.queue.shift()!
-      this.available -= next.w
-      next.resolve(this.makeRelease(next.w))
-    }
-  }
-}
-
-// Parse a JSON response body defensively. A flaky mobile network can deliver a 200 with a
-// truncated/empty body — res.json() then throws the cryptic "Unexpected end of JSON input".
-// Reading text first turns that into a clean, retryable error the user actually understands.
-async function readJson<T>(res: Response): Promise<T> {
-  const text = await res.text()
-  if (!text) throw new Error('Empty response from the server — please retry')
-  try {
-    return JSON.parse(text) as T
-  } catch {
-    throw new Error('Incomplete response from the server — please retry')
-  }
-}
 
 // ─── HEIC Worker singleton ────────────────────────────────────────────────────
 // Module-level state: safe in 'use client' — each browser tab gets its own JS heap.
@@ -663,583 +581,6 @@ async function processImageInner(file: File, capBytes: number, maxDim: number): 
     bitmap.close()
   }
 }
-
-// ─── XHR PUT ──────────────────────────────────────────────────────────────────
-
-// isExpectedRefusal — which failures the product MEANT to make — is in lib/upload-policy.ts, with
-// the full reasoning and the list of prefixes. A refused contribution is still recorded server-side
-// with its exact reason (see the reportServerError call in api/album/photos/create); downgrading
-// the client-side copy to warn removed a duplicate, not the evidence.
-
-class HttpError extends Error {
-  constructor(public readonly status: number, message: string) { super(message) }
-}
-
-// Must match IMMUTABLE_CACHE_CONTROL in src/lib/cloudflare/r2.ts exactly — the presigned PUT's
-// signature binds this header's value, so any mismatch is rejected by R2 as SignatureDoesNotMatch.
-const IMMUTABLE_CACHE_CONTROL = 'public, max-age=31536000, immutable'
-
-// method: 'PUT' for the direct-to-R2 presigned PUT; 'POST' for the same-origin image-relay
-// fallback (src/app/api/upload/image-relay/route.ts). Returns the response body text — R2's PUT
-// response is empty (callers ignore it), the relay's POST response is JSON ({key, publicUrl}).
-async function xhrPut(
-  method: 'PUT' | 'POST',
-  url: string,
-  body: Blob,
-  contentType: string,
-  onProgress: (pct: number) => void,
-  signal?: AbortSignal,
-): Promise<string> {
-  return new Promise<string>((resolve, reject) => {
-    if (signal?.aborted) { reject(new DOMException('Upload aborted', 'AbortError')); return }
-    const xhr = new XMLHttpRequest()
-    let settled = false
-
-    // Stall watchdog: mobile connections sometimes open the socket then stop sending bytes.
-    // Abort after STALL_TIMEOUT_MS of zero progress so the retry loop can reconnect quickly.
-    // Reset on every upload-progress event and once the body is fully sent (see below).
-    //
-    // ON A MONOTONIC CLOCK, because this comparison used to be `Date.now() - lastActivity`, and a
-    // wall clock breaks it in BOTH directions (rule 22). A phone taking an NTP correction mid-upload
-    // — which is exactly when a device that just joined venue wifi syncs its time — steps the clock
-    // BACKWARDS, the difference goes negative, the comparison never becomes true, and the watchdog
-    // silently stops existing: the guest watches a spinner until they give up. A forward step fires
-    // it instantly and aborts an upload that was perfectly healthy.
-    //
-    // The timer lives inside createStallWatch with the decision it enforces (rule 15) — as a bare
-    // setInterval here, neither the comparison nor the cleanup could be tested at all.
-    const stall = createStallWatch({
-      stallMs: STALL_TIMEOUT_MS,
-      checkEveryMs: 4000,
-      onStall: () => {
-        finish(() => { try { xhr.abort() } catch { /* ignore */ }; reject(new Error('Upload stalled — retrying')) })
-      },
-    })
-
-    const finish = (fn: () => void) => {
-      if (settled) return
-      settled = true
-      stall.stop()
-      signal?.removeEventListener('abort', onAbort)
-      fn()
-    }
-
-    const onAbort = () => finish(() => { try { xhr.abort() } catch { /* ignore */ }; reject(new DOMException('Upload aborted', 'AbortError')) })
-    signal?.addEventListener('abort', onAbort, { once: true })
-    xhr.open(method, url)
-    xhr.setRequestHeader('Content-Type', contentType)
-    // Cache-Control is bound into R2's presigned-PUT signature (must match IMMUTABLE_CACHE_CONTROL
-    // in src/lib/cloudflare/r2.ts exactly); the relay route doesn't read/require this header at all.
-    if (method === 'PUT') xhr.setRequestHeader('Cache-Control', IMMUTABLE_CACHE_CONTROL)
-    xhr.upload.onprogress = (e) => {
-      stall.poke()
-      if (e.lengthComputable) onProgress(Math.round((e.loaded / e.total) * 100))
-    }
-    // Body fully sent — restart the stall clock so a slow server response during the
-    // request→response gap (when upload progress no longer fires) isn't mistaken for a stall.
-    xhr.upload.onload = () => { stall.poke() }
-    xhr.onload = () => finish(() => {
-      if (xhr.status >= 200 && xhr.status < 300) { resolve(xhr.responseText); return }
-      // The relay returns a JSON {error} body with the real reason (rate limited, too large, etc).
-      // R2's own PUT error body is XML, which fails to parse here and falls back to the generic
-      // message below — no change to the existing direct-PUT error text.
-      let message = method === 'PUT' ? `R2 PUT ${xhr.status}` : `Relay upload failed (${xhr.status})`
-      try {
-        const parsed = JSON.parse(xhr.responseText) as { error?: string }
-        if (parsed?.error) message = parsed.error
-      } catch { /* non-JSON error body — keep the generic message */ }
-      reject(new HttpError(xhr.status, message))
-    })
-    xhr.onerror = () => finish(() => reject(new Error('Network error during upload')))
-    xhr.send(body)
-  })
-}
-
-// ─── Transient-failure retry helpers ─────────────────────────────────────────
-// 4xx responses are deterministic server verdicts (validation, caps, auth) — never retried.
-// Network failures, timeouts, stalls and 5xx are transient — retried with jittered
-// exponential backoff. A deliberate cancel (AbortError) always propagates immediately.
-
-// The wait between attempts is backoffDelay in lib/upload-policy.ts — the COMPLETE wait, including
-// both jitters. Every retry re-PUTs the same immutable R2 key, so extra attempts are idempotent.
-
-// Is our origin actually reachable right now?
-//
-// navigator.onLine cannot answer this, and relying on it is the trap. It reports whether the device
-// is ASSOCIATED with a network, not whether anything gets through — so a phone sitting on a
-// saturated venue access point reports onLine === true while every request dies. That is precisely
-// the situation at a race, so a gate keyed on onLine would never engage when it matters, and the
-// 'online' event it waits for would never fire either. A cheap HEAD to our own origin answers the
-// only question worth asking. onLine === false is still honoured as a fast "definitely down".
-// HEAD, not GET: /api/health answers HEAD from the edge without touching the database (see the
-// note on its route). Treating ANY response as "reachable" was wrong — a 503 from a failing
-// Supabase, or a Cloudflare 52x when the edge is up but the origin is dead, would both have read
-// as healthy and sent us back to hammer a service that cannot serve us. Only a sub-500 answer
-// means there is any point trying again.
-async function originReachable(): Promise<boolean> {
-  if (typeof navigator !== 'undefined' && navigator.onLine === false) return false
-  try {
-    const res = await fetch('/api/health', { method: 'HEAD', cache: 'no-store', signal: AbortSignal.timeout(5000) })
-    return res.status < 500
-  } catch {
-    return false
-  }
-}
-
-// Settle to `fallback` if `p` hasn't resolved within `ms`. Generic enough that two very different
-// callers want it: bounding a best-effort side task (the poster upload, which must never hold a
-// video's concurrency slot hostage) and racing the shared reachability probe below against one
-// caller's own deadline. Always clears its timer, so neither use leaks a pending timeout.
-function settleWithin<T>(p: Promise<T>, ms: number, fallback: T): Promise<T> {
-  let timer: ReturnType<typeof setTimeout>
-  const timeout = new Promise<T>(resolve => { timer = setTimeout(() => resolve(fallback), ms) })
-  return Promise.race([p, timeout]).finally(() => clearTimeout(timer))
-}
-
-// ONE reachability probe for the whole page, not one per file.
-//
-// Every in-flight file used to run its own probe loop: six concurrent images plus a video meant
-// ~70 HEADs from a single device for a single outage, each independently rediscovering a fact the
-// page already knew. They also recovered independently, so files trickled back one deadline at a
-// time instead of resuming together. Now the first caller starts the loop and every other caller
-// awaits the same promise — identical detection latency, a fraction of the traffic, and one shared
-// moment of recovery. At an event, where hundreds of devices sit behind one venue NAT, that
-// difference is the gap between probing an origin and hammering it.
-//
-// Deliberately has NO deadline of its own: callers have different budgets (a presign waits 30s, a
-// save 180s), so a shared loop bounded by the shortest one would cut the others short. Each caller
-// races it against its own deadline instead, via settleWithin.
-let reachabilityProbe: Promise<boolean> | null = null
-
-// Hard cap so the loop can never outlive the uploads that wanted it — a tab left open on a dead
-// network would otherwise poll forever. Comfortably longer than the longest caller deadline
-// (the 180s save), so this bound never cuts a caller short; it only stops an orphaned loop.
-const REACHABILITY_PROBE_MAX_MS = 4 * 60_000
-
-function originRecovered(): Promise<boolean> {
-  if (!reachabilityProbe) {
-    const until = Date.now() + REACHABILITY_PROBE_MAX_MS
-    const probeLoop = (async () => {
-      let probe = 0
-      while (Date.now() < until) {
-        if (await originReachable()) return true
-        // Ramps 1s → 5s. Full jitter for the same reason the fetch backoff carries it: devices that
-        // lost the network together come back together, and lockstep recovery is a second outage.
-        probe++
-        const wait = Math.min(5000, 1000 * probe) * (0.5 + Math.random() * 0.5)
-        if (Date.now() + wait >= until) break
-        await new Promise(r => setTimeout(r, wait))
-      }
-      return false
-    })()
-    reachabilityProbe = probeLoop
-    // Cleared on settle so a LATER outage starts a fresh loop rather than reusing a resolved one.
-    void probeLoop.finally(() => { if (reachabilityProbe === probeLoop) reachabilityProbe = null })
-  }
-  return reachabilityProbe
-}
-
-// Presign, stream-init and save are the control plane: small JSON calls that decide whether a
-// photo's bytes are allowed up and whether they are recorded once they are. They used to get 3
-// attempts with 0.5s + 1s of backoff — about 1.5 SECONDS of total tolerance, against byte
-// transfers that tolerate 7.5s (image PUT) to minutes (tus video). A WiFi drop of a few seconds
-// therefore killed the control plane while the transfers would have ridden it out, and that
-// asymmetry is what turned one connectivity blip into four dead photos and two uploaded-but-lost
-// ones. Retrying is now bounded by a WALL-CLOCK DEADLINE instead of an attempt count, so the
-// budget is expressed in the unit that actually matters: how long a drop we can survive.
-// 30s, not 60s: the requirement is to ride out a WiFi drop of a few seconds, and every second of
-// patience is a second holding one of only 6 upload slots (1 for video) with an unexplained
-// spinner on screen. A presign costs nothing to redo — no bytes have moved — so failing sooner and
-// offering a tappable Retry beats a long silent hold.
-const FETCH_DEADLINE_DEFAULT_MS = 30_000
-// Save is the exception, and gets six times the patience: by this point the bytes are already in
-// R2, so giving up doesn't cost an attempt, it strands an uploaded photo with no database row.
-const FETCH_DEADLINE_SAVE_MS = 180_000
-// A 5xx proves the server is reachable and struggling. Wall-clock patience is the right answer to
-// lost connectivity and the wrong answer to an overloaded origin — without this cap the deadline
-// alone would send ~11 requests per call (26 on save), and with a whole venue behind one NAT that
-// is how a slow database becomes a tripped rate limit and a hard failure for every guest.
-const MAX_SERVER_ERROR_ATTEMPTS = 4
-
-// Extra time granted when connectivity is CONFIRMED back inside the window.
-//
-// The probe loop returning true is fresh positive evidence: the origin answered a HEAD moments ago.
-// Without this, that evidence was thrown away — the loop exited reachable, fell into the ordinary
-// backoff at the top of the for, hit `Date.now() + wait >= deadline` and threw "Failed to fetch"
-// having just proved the server was up, WITHOUT ever re-issuing the request. The whole budget went
-// on detecting the outage and the one attempt it was saving up for was never made. That is the
-// exact shape of the 2026-08-18 19:47 report: 5 images and 3 videos, every one of them dead at the
-// control plane with no bytes moved.
-const POST_RECOVERY_GRACE_MS = 8_000
-// Capped so a network that flaps up and down can extend the deadline twice, not indefinitely.
-const MAX_RECOVERY_GRACES = 2
-
-// Per-attempt timeout that ALSO honours the caller's own cancellation.
-//
-// AbortSignal.any() would be one line, but it lands in Chrome 116 / Safari 17.4 and a good share of
-// the phones at an event are older than that — the Android 10 devices in our own error log among
-// them. Wiring the two together by hand keeps cancellation working on the devices most likely to
-// need it. Returns a cleanup that must run in a finally: without it every attempt leaves a live
-// timer and an abort listener on a signal that outlives the request.
-function withTimeoutSignal(caller: AbortSignal | undefined, timeoutMs: number) {
-  const ctrl = new AbortController()
-  const onCallerAbort = () => ctrl.abort(caller?.reason)
-  // TimeoutError, not a bare abort: isNetworkClass treats it as network-class, which is what makes
-  // a hung request wait for the origin rather than burn an attempt.
-  const timer = setTimeout(() => ctrl.abort(new DOMException('Timed out', 'TimeoutError')), timeoutMs)
-  if (caller) {
-    if (caller.aborted) ctrl.abort(caller.reason)
-    else caller.addEventListener('abort', onCallerAbort, { once: true })
-  }
-  return {
-    signal: ctrl.signal,
-    cleanup: () => {
-      clearTimeout(timer)
-      caller?.removeEventListener('abort', onCallerAbort)
-    },
-  }
-}
-
-async function fetchWithRetry(
-  url: string,
-  init: RequestInit,
-  // signal: the CALLER's cancellation. `{ ...init, signal }` used to overwrite whatever was passed
-  // in init, silently — so the control-plane calls were simply not cancellable, and any future
-  // caller adding one would have had it discarded without a word. Taken as an explicit option now
-  // so it cannot be shadowed by a spread again.
-  opts: { deadlineMs?: number; signal?: AbortSignal } = {},
-): Promise<Response> {
-  // MONOTONIC. This deadline guards presign, stream-init and the SAVE that writes the database row
-  // after the bytes are already in R2. On the wall clock a forward step larger than the budget made
-  // the first retry check read the deadline as passed -- so a transient failure on the SAVE gave up
-  // at once, leaving bytes in R2 with no row that references them (rule 22). createDeadline owns the
-  // arithmetic; `extendTo` is exactly the `Math.max(deadline, ...)` the recovery grace used to do
-  // by hand here, now in one tested place (rules 13, 15).
-  const startedAt = monotonicNow()
-  const deadline = createDeadline(opts.deadlineMs ?? FETCH_DEADLINE_DEFAULT_MS)
-  let graces = 0
-  // Set when the probe confirms the origin is back: the next attempt skips the backoff, because
-  // waiting out a delay we already spent probing is exactly the wasted patience described above.
-  let skipBackoff = false
-  let lastErr: Error | null = null
-  // The most recent 5xx, held so that running out of time still returns the server's own response
-  // rather than throwing a generic error. Callers read the real message — and the `code` that
-  // tells an expected refusal from a genuine failure — out of that body, so throwing instead would
-  // replace an accurate explanation with a useless one. At most one is ever retained.
-  let lastServerRes: Response | null = null
-  let attempt = 0
-  let serverErrors = 0
-  for (;;) {
-    if (attempt > 0 && !skipBackoff) {
-      // FULL jitter, not the ±300ms the raw curve carries. Devices that lost the network together
-      // come back together, and at an event that means thousands of clients firing inside the same
-      // narrow window — recovery turning straight back into an outage. Spreading each wait across
-      // half its nominal value is what breaks the lockstep.
-      const wait = backoffDelay(attempt)
-      // Never sleep past the deadline just to fail on the far side of it.
-      if (deadline.wouldOverrun(wait)) break
-      await new Promise(r => setTimeout(r, wait))
-    }
-    skipBackoff = false
-    attempt++
-    // Per-attempt timeout: a hung request should burn 20s, not hang the file forever. Combined with
-    // the caller's signal, so cancelling an upload also stops the request it is waiting on.
-    const attemptSignal = withTimeoutSignal(opts.signal, 20_000)
-    try {
-      const res = await fetch(url, { ...init, signal: attemptSignal.signal })
-      // Verdict and reasoning both live in lib/upload-policy, where they are tested.
-      const verdict = verdictForResponse({
-        status: res.status,
-        serverErrorsSoFar: serverErrors,
-        maxServerErrors: MAX_SERVER_ERROR_ATTEMPTS,
-        withinDeadline: !deadline.expired(),
-      })
-      if (verdict === 'retry') {
-        serverErrors++
-        lastErr = new Error(`HTTP ${res.status}`)
-        // Keep only the newest; draining the one it replaces frees its connection instead of
-        // leaving it pinned until garbage collection.
-        void lastServerRes?.body?.cancel()
-        lastServerRes = res
-        continue
-      }
-      void lastServerRes?.body?.cancel()
-      return res
-    } catch (e) {
-      // A deliberate cancel is a final answer, not a transient failure. Without this the abort
-      // surfaces as a plain DOMException, isNetworkClass says "not network", and the loop politely
-      // backs off and tries again — retrying the exact request the caller just cancelled.
-      const throwVerdict = verdictForThrow({
-        aborted: opts.signal?.aborted === true,
-        withinDeadline: !deadline.expired(),
-      })
-      if (throwVerdict === 'give-up' && opts.signal?.aborted) {
-        // Drain a retained 5xx on the way out, same as every other exit from this loop — otherwise
-        // cancelling mid-retry is the one path that leaves a body pinning its connection.
-        void lastServerRes?.body?.cancel()
-        throw new DOMException('Upload aborted', 'AbortError')
-      }
-      lastErr = e instanceof Error ? e : new Error(String(e))
-      if (throwVerdict === 'give-up') break
-      // Nothing came back. Before spending another attempt (and another 20s timeout) on a
-      // connection that may simply be gone, ask whether we can reach ourselves at all. While we
-      // can't, poll cheaply rather than hammering the real endpoint — this is the part that turns
-      // "the batch died" into "the batch paused". The probe is shared page-wide (see
-      // originRecovered) and raced against THIS call's deadline, so every file waiting on the same
-      // outage waits on one loop and they all resume together the instant it clears.
-      if (isNetworkClass(e)) {
-        const remaining = deadline.remaining()
-        if (remaining <= 0) break
-        const recovered = await settleWithin(originRecovered(), remaining, false)
-        // Confirmed up. Give the request a real chance to run now rather than expiring on the
-        // doorstep — and go straight there, without a backoff we effectively already served.
-        //
-        // Both effects are deliberately tied to the SAME budget. An origin that answers HEAD while
-        // this particular request keeps failing (a proxy blocking one path, a body that won't
-        // stream) would otherwise loop probe→retry→probe with no backoff for as long as the window
-        // lasted, turning a bounded wait into a tight spin against our own health endpoint. Once
-        // the graces are spent, further recoveries fall back to ordinary jittered backoff, which
-        // the deadline already bounds.
-        if (recovered && graces < MAX_RECOVERY_GRACES) {
-          graces++
-          deadline.extendTo(POST_RECOVERY_GRACE_MS)
-          skipBackoff = true
-        }
-      }
-    } finally {
-      // Must be finally: the try block exits by `continue` on a retried 5xx and by `return` on
-      // success, so anything after it would be skipped on exactly the paths that run most. Each
-      // attempt otherwise leaves a live 20s timer and an abort listener on a signal that outlives
-      // the whole upload — one per attempt, per file.
-      attemptSignal.cleanup()
-    }
-  }
-  // Out of time. A server that answered badly still told us something useful — hand that back
-  // rather than a generic network error, exactly as the pre-deadline version did.
-  if (lastServerRes) return lastServerRes
-  // Name the endpoint. "Failed to fetch" on its own cannot distinguish a presign from a
-  // stream-init from a save — all three are the same TypeError from this one helper — so an /admin
-  // report of it was unactionable: it said the network broke, never where. The message stays
-  // PREFIXED by the original text, so friendlyUploadError's substring matching (and the network
-  // classifier) behave exactly as before.
-  //
-  // How long we waited is deliberately NOT in the message. /admin tallies incidents by exact
-  // message string, so a value that varies per file (30s here, 31s there) would shatter one
-  // outage into a column of one-count chips — destroying the grouping this same file works hard
-  // to produce. It rides along in the report context instead, where it is recorded without
-  // affecting how rows are grouped.
-  const path = (() => { try { return new URL(url, window.location.origin).pathname } catch { return url } })()
-  const err = new Error(`${lastErr?.message ?? 'Network request failed'} (${path})`)
-  throw Object.assign(err, { waitedMs: elapsedSince(startedAt) })
-}
-
-// The old policy threw on ANY HTTP error — including R2's transient 500/502/503s, which are
-// exactly the errors a retry fixes. Only 4xx (bad/expired signature, too large) is deterministic.
-// The byte transfer gets MORE patience than the control plane, not less.
-//
-// Measured on 2026-08-17: a guest on Android lost 25 photos in 61 seconds. The presign calls had
-// already been given a wall-clock deadline, but this function had not — it was still a fixed 5
-// attempts, about 7.5 seconds of tolerance, so a minute-long drop killed every transfer in flight
-// while the deadline logic sat one layer above doing nothing for them.
-//
-// Being generous here is close to free: the bytes are already in memory and the R2 key is fixed
-// and immutable, so re-PUTting is idempotent — the only cost of waiting is time, while the cost of
-// giving up is a photo the guest believed they had handed over.
-const PUT_DEADLINE_MS = 120_000
-
-async function putWithRetry(
-  url: string,
-  body: Blob,
-  contentType: string,
-  onProgress: (pct: number) => void,
-  signal?: AbortSignal,
-  deadlineMs = PUT_DEADLINE_MS,
-): Promise<void> {
-  // MONOTONIC, because a wall-clock deadline can expire before it is ever consulted.
-  //
-  // This was `const deadline = Date.now() + deadlineMs`, compared against Date.now() at four points
-  // below. A phone whose clock is WRONG — off for a while, flat battery, hand-set — corrects when it
-  // joins the venue wifi, and if that correction steps FORWARD by more than PUT_DEADLINE_MS (120s)
-  // while a PUT is in flight, the very first retry check reads the deadline as already passed. The
-  // loop breaks immediately and the guest is told their photo failed, having spent none of its two
-  // minutes. Nothing retries; this is the byte-transfer budget itself.
-  //
-  // createDeadline owns the arithmetic rather than exposing a timestamp, so `wouldOverrun(wait)`
-  // replaces four hand-written `Date.now() + wait >= deadline` comparisons (rule 15).
-  const deadline = createDeadline(deadlineMs)
-  let lastErr: Error | null = null
-  let attempt = 0
-  for (;;) {
-    if (signal?.aborted) throw new DOMException('Upload aborted', 'AbortError')
-    if (attempt > 0) {
-      const wait = backoffDelay(attempt)
-      if (deadline.wouldOverrun(wait)) break
-      await new Promise(r => setTimeout(r, wait))
-    }
-    attempt++
-    try {
-      await xhrPut('PUT', url, body, contentType, onProgress, signal)
-      return
-    } catch (e) {
-      if (e instanceof DOMException && e.name === 'AbortError') throw e
-      // R2 answered and refused — a signature or size problem no amount of waiting fixes.
-      if (e instanceof HttpError && e.status < 500) throw e
-      lastErr = e instanceof Error ? e : new Error(String(e))
-      if (deadline.expired()) break
-      // No response at all: wait for the connection rather than spending attempts on a dead one.
-      if (!(e instanceof HttpError)) {
-        let probe = 0
-        while (!deadline.expired() && !signal?.aborted && !(await originReachable())) {
-          probe++
-          const wait = Math.min(5000, 1000 * probe) * (0.5 + Math.random() * 0.5)
-          if (deadline.wouldOverrun(wait)) break
-          await new Promise(r => setTimeout(r, wait))
-        }
-      }
-    }
-  }
-  throw lastErr ?? new Error('Upload failed')
-}
-
-// ─── Image relay fallback (same-origin, via R2 native binding) ──────────────
-// Image analogue of runTusWithRecovery's video relay: when a network blocks R2's upload domain
-// outright (confirmed in production: the same blocked device also failed image uploads), fall back
-// to routing the bytes through hushare.space's own server (src/app/api/upload/image-relay/route.ts,
-// which writes to R2 via the native Workers binding — no outbound fetch, no SSRF surface).
-//
-// Session-scoped flag, SEPARATE from video's networkNeedsRelay: the two direct-upload domains
-// (Stream's upload.cloudflarestream.com vs R2's private <account>.r2.cloudflarestorage.com) are
-// genuinely distinct, so one confirmed block shouldn't be assumed to cover the other.
-// Has this network proven that it BLOCKS R2's upload domain? Only a relay that actually succeeded
-// after a direct failure proves that; a direct failure on its own proves nothing, because plain
-// loss of connectivity looks identical.
-//
-// Getting this wrong is expensive, not cosmetic. The flag routes every remaining photo in the
-// session through our own Worker, which streams each body through it — and on 2026-08-17 that is
-// what Cloudflare killed 328 requests for exceeding resources, 100% of the day's worker errors,
-// clustered in exactly the two hours that had relay switches. A single connectivity blip used to
-// set this permanently, so one bad moment turned the whole rest of the upload into the expensive,
-// failure-prone path. It also tripled the server authorization work per photo.
-// Rules and expiry live in lib/upload-policy, with the incident that shaped them. Deliberately
-// SEPARATE from video's networkNeedsRelay: the two upload domains are distinct hosts, so a
-// confirmed block on one says nothing about the other.
-const imageRelay = createRelayPolicy()
-
-// Every relay attempt re-runs the FULL server-side authorization chain (both rate-limit checks +
-// album/tier lookups) — unlike a direct PUT retry, which just re-sends bytes to an already-signed
-// URL. Capped lower than putWithRetry's 5 attempts to avoid multiplying DB load across retries.
-
-async function relayUploadImage(
-  albumId: string,
-  fileName: string,
-  contentType: string,
-  isThumb: boolean,
-  body: Blob,
-  onProgress: (pct: number) => void,
-  signal?: AbortSignal,
-): Promise<{ key: string; publicUrl: string }> {
-  const url = `/api/upload/image-relay?albumId=${encodeURIComponent(albumId)}&fileName=${encodeURIComponent(fileName)}&contentType=${encodeURIComponent(contentType)}&isThumb=${isThumb ? '1' : '0'}`
-  // Deadline-driven for the same reason as the direct path: this is the LAST route the bytes have,
-  // so two quick attempts meant a connection blip discarded a photo that was already in memory and
-  // already authorized. Same key derivation server-side on every attempt, so retrying is safe.
-  // Monotonic, same reason as putWithRetry — and it matters MORE here, because this is the last
-  // route the bytes have. A forward clock step larger than PUT_DEADLINE_MS made this loop break on
-  // its first check with the full budget unspent, and there is no further fallback behind it.
-  const deadline = createDeadline(PUT_DEADLINE_MS)
-  let lastErr: Error | null = null
-  let attempt = 0
-  for (;;) {
-    if (signal?.aborted) throw new DOMException('Upload aborted', 'AbortError')
-    if (attempt > 0) {
-      const wait = backoffDelay(attempt)
-      if (deadline.wouldOverrun(wait)) break
-      await new Promise(r => setTimeout(r, wait))
-    }
-    attempt++
-    try {
-      const text = await xhrPut('POST', url, body, contentType, onProgress, signal)
-      return JSON.parse(text) as { key: string; publicUrl: string }
-    } catch (e) {
-      if (e instanceof DOMException && e.name === 'AbortError') throw e
-      // A 4xx from the relay (rate limited, oversized, disabled) is a final verdict — never retried,
-      // mirroring putWithRetry's policy for the direct path.
-      if (e instanceof HttpError && e.status < 500) throw e
-      lastErr = e instanceof Error ? e : new Error(String(e))
-      if (deadline.expired()) break
-      if (!(e instanceof HttpError)) {
-        let probe = 0
-        while (!deadline.expired() && !signal?.aborted && !(await originReachable())) {
-          probe++
-          const wait = Math.min(5000, 1000 * probe) * (0.5 + Math.random() * 0.5)
-          if (deadline.wouldOverrun(wait)) break
-          await new Promise(r => setTimeout(r, wait))
-        }
-      }
-    }
-  }
-  throw lastErr ?? new Error('Relay upload failed')
-}
-
-// Wraps a presigned direct-to-R2 PUT with the relay fallback. A network-class failure (plain
-// Error — no HTTP response ever arrived, mirroring runTusWithRecovery's tusHttpStatus(e) === null
-// check) switches to the relay for a fresh attempt of the SAME bytes; an HttpError (R2 itself
-// responded, even with a 5xx) is not network-class and is never relayed — putWithRetry already
-// exhausted its own retries against that same signed URL.
-//
-// CRITICAL: the relay always re-derives its OWN server-side key (never the original presign-time
-// key), so this always returns the key/publicUrl that ACTUALLY got written — callers must use the
-// returned values, never the original presign-time ones, or the DB row would point at bytes that
-// were never written while the relay's real object sits orphaned under a different key.
-async function putImageWithRelay(
-  originalKey: string,
-  originalPublicUrl: string,
-  presignedUrl: string,
-  relay: { albumId: string; fileName: string; contentType: string; isThumb: boolean },
-  body: Blob,
-  onProgress: (pct: number) => void,
-  signal?: AbortSignal,
-): Promise<{ key: string; publicUrl: string }> {
-  let directFailed = false
-  let lastDirectErr: unknown
-  if (!imageRelay.shouldRelayFirst()) {
-    try {
-      await putWithRetry(presignedUrl, body, relay.contentType, onProgress, signal)
-      return { key: originalKey, publicUrl: originalPublicUrl }
-    } catch (e) {
-      if (e instanceof DOMException && e.name === 'AbortError') throw e
-      if (e instanceof HttpError) throw e
-      directFailed = true
-      lastDirectErr = e
-    }
-  }
-  try {
-    const result = await relayUploadImage(relay.albumId, relay.fileName, relay.contentType, relay.isThumb, body, onProgress, signal)
-    // The relay working where the direct path did not is the ONLY evidence that this network
-    // blocks R2 specifically. Recorded here, after the fact, rather than guessed at above.
-    if (directFailed && !imageRelay.isRelayBelieved()) {
-      imageRelay.recordRelaySucceededAfterDirectFailure()
-      reportClientEvent('warn', 'upload:image-relay', 'Switched to relay after direct upload was network-blocked', relay.albumId, { fileName: relay.fileName })
-    }
-    return result
-  } catch (e) {
-    if (e instanceof DOMException && e.name === 'AbortError') throw e
-    if (e instanceof HttpError) throw e
-    // Both the direct path AND the relay failed on a pure network-level basis — a rarer, more
-    // serious case than a single blocked domain. Thrown pre-formatted (rather than pattern-matched
-    // in friendlyUploadError) since this message is already the final, user-facing text.
-    //
-    // The two underlying failures ride along as data, NOT in the message. On 2026-08-23 this
-    // message appeared 23 times for one photographer and said nothing about WHY both routes died:
-    // a stalled transfer, a dropped connection and a request that outlived its deadline all arrive
-    // here looking identical, and they need completely different fixes. The message stays fixed so
-    // /admin still groups the incident into one row; the causes travel in context, where they can
-    // be read without fragmenting the grouping.
-    const why = new Error("Couldn't upload after trying multiple connection methods. Check that you're connected to the internet, then tap Retry.")
-    const cause = (x: unknown) => (x instanceof Error ? `${x.name}: ${x.message}` : String(x)).slice(0, 80)
-    throw Object.assign(why, { directCause: directFailed ? cause(lastDirectErr) : 'skipped', relayCause: cause(e) })
-  }
-}
-
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 // Everything needed to RESUME a failed video upload instead of restarting it: the tus
@@ -1472,14 +813,14 @@ async function uploadImageToR2(
   // saving its row (thumb-less) beats orphaning the uploaded bytes.
   const thumbPut: Promise<string | null> = (processed.thumbBlob && thumb)
     ? putImageWithRelay(
-        thumb.key, thumb.publicUrl, thumb.presignedUrl,
+        { key: thumb.key, publicUrl: thumb.publicUrl }, thumb.presignedUrl,
         { albumId, fileName: processed.name, contentType: 'image/jpeg', isThumb: true },
         processed.thumbBlob, () => {}, signal,
       ).then(r => r.publicUrl).catch(() => null)
     : Promise.resolve(null)
 
   const main = await putImageWithRelay(
-    key, publicUrl, presignedUrl,
+    { key, publicUrl }, presignedUrl,
     { albumId, fileName: processed.name, contentType: putContentType, isThumb: false },
     processed.blob, pct => onProgress(16 + Math.round(pct * 0.8)), signal,
   )
@@ -1511,7 +852,7 @@ async function uploadPosterToR2(albumId: string, blob: Blob, signal?: AbortSigna
   if (!presign.ok) throw new Error(`Poster presign failed (${presign.status})`)
   const { presignedUrl, key, publicUrl } = await readJson<{ presignedUrl: string; key: string; publicUrl: string }>(presign)
   const result = await putImageWithRelay(
-    key, publicUrl, presignedUrl,
+    { key, publicUrl }, presignedUrl,
     { albumId, fileName: 'poster.jpg', contentType: 'image/jpeg', isThumb: true },
     blob, () => {}, signal,
   )
@@ -1828,31 +1169,6 @@ async function saveUploadedRows(albumId: string, rows: PhotoRow[]): Promise<{ wa
   return { warning: data.warning, rejected: data.rejected }
 }
 
-// Fire-and-forget telemetry so real guest failures/near-misses surface in /admin. Never throws,
-// never blocks the upload, never awaited. keepalive lets it survive a tab close mid-report.
-function reportClientEvent(
-  level: 'error' | 'warn',
-  source: string,
-  message: string,
-  albumId: string,
-  context?: Record<string, unknown>,
-): void {
-  try {
-    void fetch('/api/log/client-error', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      // build: which bundle produced this. Inlined at compile time, so it identifies the code the
-      // BROWSER is running -- not the code the server is serving -- which is the whole point when a
-      // long-open tab is still on a version from days ago.
-      body: JSON.stringify({
-        level, source, message: String(message).slice(0, 500), albumId,
-        context: { ...(context ?? {}), build: process.env.NEXT_PUBLIC_BUILD_ID ?? 'unknown' },
-      }),
-      keepalive: true,
-    }).catch(() => {})
-  } catch { /* never let telemetry break an upload */ }
-}
-
 // Did this file fail because the NETWORK went away, rather than because anything about the file or
 // the server was wrong? Only those are worth parking and resuming on our own: the connection coming
 // back is a real, observable event that changes the answer, whereas a 413 or an unsupported codec
@@ -2038,10 +1354,10 @@ export default function UploadZone({ album, onPhotosUploaded, isOwner }: Props) 
   const cameraInputRef = useRef<HTMLInputElement>(null)
 
   // Computed once at mount — userAgent never changes during a session
-  const isMobileRef = useRef(typeof navigator !== 'undefined' && /Mobi|Android/i.test(navigator.userAgent))
-  const concurrency = isMobileRef.current ? UPLOAD_CONCURRENCY_MOBILE : UPLOAD_CONCURRENCY_DESKTOP
+  const [isMobile] = useState(() => typeof navigator !== 'undefined' && /Mobi|Android/i.test(navigator.userAgent))
+  const concurrency = isMobile ? UPLOAD_CONCURRENCY_MOBILE : UPLOAD_CONCURRENCY_DESKTOP
   // Adaptive video lane widens toward this ceiling only as a network proves it can take it.
-  const videoMax = isMobileRef.current ? VIDEO_CONCURRENCY_MAX_MOBILE : VIDEO_CONCURRENCY_MAX_DESKTOP
+  const videoMax = isMobile ? VIDEO_CONCURRENCY_MAX_MOBILE : VIDEO_CONCURRENCY_MAX_DESKTOP
 
   // The ALBUM's caps, sized server-side by its owner's tier — not the visitor's own tier.
   //
@@ -2473,7 +1789,7 @@ export default function UploadZone({ album, onPhotosUploaded, isOwner }: Props) 
 
   // Revoke any remaining preview object URLs when the component unmounts.
   const entriesRef = useRef(entries)
-  entriesRef.current = entries
+  useEffect(() => { entriesRef.current = entries })
   useEffect(() => () => {
     for (const e of entriesRef.current) if (e.preview) URL.revokeObjectURL(e.preview)
   }, [])
@@ -2582,7 +1898,7 @@ export default function UploadZone({ album, onPhotosUploaded, isOwner }: Props) 
     // resume that had already been called off. The probe is page-wide and the callback resumes
     // whatever is parked at the moment it resolves, so simply letting it finish is both correct and
     // what makes the later arrivals recover in the same sweep. mountedRef is the only guard needed.
-    void originRecovered().then((recovered) => {
+    void reachability.originRecovered().then((recovered) => {
       if (!mountedRef.current) return
       if (recovered) { resumeWaitingUploads(); return }
       // The shared probe hit its 4-minute cap and the origin is still unreachable. Stop promising a
@@ -2827,7 +2143,6 @@ export default function UploadZone({ album, onPhotosUploaded, isOwner }: Props) 
                   title={entry.status === 'error' ? entry.error : entry.status === 'waiting' ? t('upload.waitingNetwork') : entry.file.name}
                 >
                   {entry.preview && isVid ? (
-                    // eslint-disable-next-line jsx-a11y/media-has-caption
                     <video src={entry.preview} muted playsInline preload="metadata" className="w-full h-full object-cover" />
                   ) : entry.preview ? (
                     // eslint-disable-next-line @next/next/no-img-element

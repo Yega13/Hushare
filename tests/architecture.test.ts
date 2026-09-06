@@ -128,7 +128,12 @@ const SIZE_BUDGET: Record<string, number> = {
   // larger than the budget made a transient SAVE failure give up on its first check, leaving bytes
   // in R2 with no row referencing them. Seven wall-clock sites became one createDeadline; its
   // extendTo IS the Math.max recovery grace that was hand-written here.
-  'src/components/UploadZone.tsx': 2927,
+  // -685 (2026-09-06): the Semaphore, xhrPut/HttpError/readJson, the reachability probe, the
+  // three retry loops with their relay fallback, and reportClientEvent moved to src/lib/upload/*,
+  // each behind its own test file and a mutation run (89 tests, 90 mutations killed). The budget
+  // drops to the new size, not to "the new size plus room": the ratchet only holds when every
+  // line above it has to be paid for (see memory: ratchet-is-not-holding).
+  'src/components/UploadZone.tsx': 2242,
   // +3 on 2026-08-30: the branding toggle gained a real plan check (it was dimmed but still
   // clickable), and Face Finder and bib search stopped riding on the collections flag. Three
   // lines of reasoning for three gates that were wrong. Deliberate.

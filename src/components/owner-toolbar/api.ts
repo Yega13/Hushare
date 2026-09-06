@@ -2,6 +2,7 @@ import type { CollectionSummary } from '@/components/owner-toolbar/types'
 import type { MediaDisplayFilter, MobileGridColumns, SlideshowAnimation } from '@/lib/media-display'
 import type { SponsorLogo, SlideshowMotion } from '@/types'
 import { readFileRobust } from '@/lib/file-read'
+import { IMMUTABLE_CACHE_CONTROL } from '@/lib/media'
 
 async function jsonBody<T>(res: Response): Promise<T> {
   return (await res.json().catch(() => ({}))) as T
@@ -257,10 +258,10 @@ export async function uploadBackgroundRequest(
     return { ok: false, error: presignBody.error ?? `Upload failed (${presignRes.status})` }
   }
 
-  // Step 2: PUT the in-memory blob to R2 via the presigned URL. Cache-Control must match
-  // IMMUTABLE_CACHE_CONTROL in src/lib/cloudflare/r2.ts exactly — it's bound into the presigned
-  // signature, so any mismatch is rejected by R2 as SignatureDoesNotMatch. Each background upload
-  // gets a fresh uuid() key (see background/upload/route.ts), so caching it forever is safe.
+  // Step 2: PUT the in-memory blob to R2 via the presigned URL. Cache-Control is bound into the
+  // presigned signature, so it must be byte-identical to what the server signed — both sides import
+  // the one definition in lib/media (this used to be a retyped literal with a comment asking it to
+  // match). Each background upload gets a fresh uuid() key, so caching it forever is safe.
   // (Content-Length is set automatically by the browser from the blob; setting it manually is a
   // no-op — it's a forbidden header — and the raw-File read is what actually used to fail.)
   let putRes: Response
@@ -270,7 +271,7 @@ export async function uploadBackgroundRequest(
       body: blob,
       headers: {
         'Content-Type': uploadType,
-        'Cache-Control': 'public, max-age=31536000, immutable',
+        'Cache-Control': IMMUTABLE_CACHE_CONTROL,
       },
     })
   } catch {
@@ -349,7 +350,7 @@ async function uploadImageViaPresign(
       body: blob,
       headers: {
         'Content-Type': uploadType,
-        'Cache-Control': 'public, max-age=31536000, immutable',
+        'Cache-Control': IMMUTABLE_CACHE_CONTROL,
       },
     })
   } catch {

@@ -4,6 +4,7 @@ import { getCloudflareContext } from '@opennextjs/cloudflare'
 // The bucket name is decided in ONE place. It used to be a literal here, which meant no environment
 // variable could redirect what these presigned URLs address -- see r2BucketName's comment.
 import { r2BucketName } from '@/lib/server/environment'
+import { IMMUTABLE_CACHE_CONTROL } from '@/lib/media'
 
 // Re-exported from lib/media so the browser and the server cannot disagree about what we accept.
 // This file imports the AWS SDK and the Cloudflare context, so it can never be imported client-side
@@ -68,10 +69,6 @@ function getS3Client(): S3Client {
   })
   return _s3Client
 }
-
-// Every key we presign a PUT for is a fresh uuid() — the object at a given key never changes —
-// so it is safe for browsers/CDN to cache indefinitely without revalidating on repeat visits.
-export const IMMUTABLE_CACHE_CONTROL = 'public, max-age=31536000, immutable'
 
 export async function createPresignedPut(
   key: string,
