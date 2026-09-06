@@ -64,6 +64,7 @@ export function useSelectMode({
     const CHUNK = 200
     let deleted = 0
     let failed = 0
+    let reason: string | undefined
     for (let i = 0; i < ids.length; i += CHUNK) {
       const batch = ids.slice(i, i + CHUNK)
       try {
@@ -77,6 +78,9 @@ export function useSelectMode({
           deleted += body.deleted
         } else {
           failed += batch.length
+          // Keep the server's own sentence for the toast: a 429 or a refused row says WHY, and the
+          // owner is the one who can act on it. The console line stays for the panel-less case.
+          if (body.error && !reason) reason = body.error
           console.error('[bulk-delete] server error:', body.error ?? res.status)
         }
       } catch {
@@ -84,7 +88,7 @@ export function useSelectMode({
       }
     }
     setBulkDeleting(false)
-    if (failed > 0) showAppToast(`${deleted} deleted, ${failed} failed — refresh to see current state`, 'error')
+    if (failed > 0) showAppToast(`${deleted} deleted, ${failed} failed${reason ? ` — ${reason}` : ''} — refresh to see current state`, 'error')
   }
 
   // Exit select mode when arrange mode activates (they're mutually exclusive).

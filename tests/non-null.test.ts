@@ -85,17 +85,22 @@ describe('nullDropReport -- a skipped row is heard, not swallowed', () => {
 describe('every route that narrows with withNonNull reports what it dropped', () => {
   // Wiring, not behaviour: the crons have no route test. What this holds is that a new call site
   // cannot arrive without the report beside it -- rule 19's "say which way it errs" half.
-  const root = join(process.cwd(), 'src', 'app')
+  // ALL of src, .ts and .tsx, minus the module that defines the helper: a call site in lib or in a
+  // server component is as silent as one in a route.
+  const root = join(process.cwd(), 'src')
   const files = readdirSync(root, { recursive: true, encoding: 'utf8' })
-    .filter((f) => f.endsWith('.ts'))
+    .filter((f) => /\.tsx?$/.test(f) && !f.replace(/\\/g, '/').endsWith('lib/non-null.ts'))
     .map((f) => join(root, f))
     .filter((f) => readFileSync(f, 'utf8').includes('withNonNull('))
   it('finds the call sites it is checking', () => { expect(files.length).toBeGreaterThanOrEqual(2) })
   for (const f of files) {
-    it(`${f.slice(root.length)} reports its drops`, () => {
+    it(`${f.slice(root.length)} reports its drops, and the report is what it sends`, () => {
       const src = readFileSync(f, 'utf8')
       expect(src.includes('nullDropReport('), 'narrows without reporting the rows it left out').toBe(true)
-      expect(src.includes('reportServerError(')).toBe(true)
+      // Not "both names appear somewhere": the report's message must be what reportServerError
+      // receives, guarded on the report existing. A file that computed the report and logged
+      // something else, or reported when there was NO drop, passed the looser version of this.
+      expect(src, 'the drop report is not what gets reported').toMatch(/if \(drop\) reportServerError\('[a-z-]+', drop\.message, \{ context: drop\.context \}\)/)
     })
   }
 })

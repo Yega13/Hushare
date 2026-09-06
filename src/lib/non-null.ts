@@ -44,8 +44,12 @@ export function withNonNull<T, K extends keyof T>(rows: readonly T[], ...keys: K
  *
  * withNonNull errs toward skipping (above), and a skip nobody hears about is the silent failure
  * this codebase keeps paying for: a renewal reminder that never went out looks exactly like one
- * that was not due. The message is STABLE -- the count rides in context -- so a cron dropping the
- * same rows every morning coalesces into one panel row, not thirty.
+ * that was not due. The message is STABLE and the count rides in context, so that /admin, which
+ * groups by exact message, marks a repeat as seen-before rather than as a fresh incident. (It does
+ * NOT collapse a daily cron's reports into one row: coalesce_error_event merges only within five
+ * minutes, so a row dropped every morning is a row in the panel every morning -- which is the
+ * intended amount of noise for a reminder that is not going out. The count is written to context
+ * for the query that follows; the panel does not render it.)
  */
 export function nullDropReport(
   scanned: number,

@@ -230,7 +230,7 @@ const SIZE_BUDGET: Record<string, number> = {
   // derived from searchPhase, since two props for one fact could disagree.
   // +1 (2026-09-06, review finding): the delete toast says the server's reason -- "Too many
   // requests", "Photo not found in this album" -- instead of only the status code. The route had
-  // been writing a publicMessage nothing read. useSelectMode already reads the same body.
+  // been writing a publicMessage nothing read. useSelectMode's bulk toast carries it too now.
   'src/components/PhotoGrid.tsx': 865,
   'src/components/AlbumDesigner.tsx': 774,
   // +3 net (2026-08-31): deleted the duplicate ±1 prefetch loop, added strip windowing wired
