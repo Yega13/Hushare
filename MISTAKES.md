@@ -772,3 +772,48 @@ The helper that made the tests convenient also destroyed the one artefact the le
 **Habit to build:** a test for "nothing is left behind" must count immediately after the thing
 completes, with no fake time advanced in between. More generally: when a mutation that OBVIOUSLY
 changes behaviour survives, suspect the harness around the assertion before the assertion.
+
+### 51. "EVERY MUTATION KILLED" MEANT EVERY MUTATION I THOUGHT OF
+
+The upload-lib extraction shipped with 63 mutations, all killed. Two reviewers then wrote ten of
+their own and eight survived -- the relay POST opened as a PUT (no test read `calls.open`), a
+5,000-second probe timeout (the test asserted `instanceof AbortSignal` and nothing about the
+number), a listener never removed (the test's NAME said "drops its listener", its body counted
+timers), no backoff on a PUT retry (the test asserted a call count, no timing). Each was a test
+whose title promised a property its assertions could not observe.
+
+The pattern in all eight: I wrote the mutation list from the code I had just written, so it
+covered the branches I remembered adding and missed the ones a stranger would poke first.
+
+**Habit to build:** before declaring a set complete, write three mutations from the TEST NAMES,
+not from the code -- for each `it('...')`, what change to the code would make that sentence false
+while leaving every other test green? If none of the listed mutations is that change, the test is
+decoration and the set is short one entry.
+
+### 52. A COMMIT THAT SAID "VERBATIM" AND WAS NOT
+
+657309c's message listed four deliberate behaviour changes and called everything else a verbatim
+move. A reviewer diffed the moved code against the original and found two more: a user-facing
+string ("Incomplete" became "Unreadable" -- /admin groups incidents by exact message, so the change
+would have split one incident into two rows) and `HttpError.name`. Neither was harmful; both were
+unlisted, which made the list a lie by omission.
+
+I also shipped a fourth equivalent guard (`if (deadline.expired()) break` beside a `wouldOverrun`
+that already breaks first) in the same commit whose message explained why three such guards had
+been removed. The reviewer's mutation found it the same way mine had found the other three.
+
+**Habit to build:** when a commit claims equivalence, produce the evidence the reviewer will
+produce: `git show <parent>:<file>` beside the new module, and diff the function bodies, not the
+memory of writing them. And re-read the commit message's own standard against the code it ships.
+
+### 53. THE RESTORE THAT CHANGED THE BYTES
+
+A process exit left two reviewer mutations on disk. `git checkout --` restored them -- to CRLF,
+under `core.autocrlf=true`, in a tree that is LF everywhere else. Git reported both files clean.
+Every newline-keyed `from` string in every harness then silently missed: five shipped mutations and
+all six of a reviewer's reported DID NOT APPLY against files whose only difference was the line
+ending. My own runner had the same hole until the reviewer named it.
+
+**Habit to build:** a mutation harness matches on normalised text and restores the original bytes;
+that is in `scripts/mutations/run.mjs` now. And after any `git checkout` of a file on this machine,
+`git ls-files --eol <file>` -- "clean" is not "identical".

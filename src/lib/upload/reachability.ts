@@ -59,7 +59,7 @@ export function createReachability(deps: ReachabilityDeps) {
   /**
    * Resolve true the moment the origin answers again, or false once the budget is spent.
    *
-   * Callers race this against their own deadline with settleWithin(); several files waiting on the
+   * Callers race this against their own budget through awaitRecovery(); several files waiting on the
    * same outage all wait on the same loop, so an event's worth of phones does not each hammer
    * /api/health on its own schedule.
    */
