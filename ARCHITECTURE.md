@@ -118,11 +118,12 @@ incident, and each was mutation-tested before it landed.
 The loop in AGENTS.md rule 27, and it is not shortened for small changes to customer-touching code:
 
 1. `npx tsc --noEmit`, `npx vitest run`, `npx eslint` on the touched files — to zero.
-2. **Mutation run.** For each new module, a script changes the code so it is wrong (a guard
-   deleted, a boundary moved by one, a constant multiplied by ten), asserts the change actually
-   applied, runs the module's tests, and reports KILLED or SURVIVED. A survivor is either a missing
-   test or — as often — code that cannot execute, which is then deleted with its reason written in
-   its place.
+2. **Mutation run.** `npm run mutate` (or `node scripts/mutations/run.mjs <set>`). Each set under
+   `scripts/mutations/` lists changes that would make its module wrong (a guard deleted, a boundary
+   moved by one, a constant multiplied by ten); the runner asserts each one applies exactly once,
+   runs the module's tests, restores the file, and reports KILLED or SURVIVED. A survivor is either
+   a missing test or — as often — code that cannot execute, which is then deleted with its reason
+   written in its place. New modules arrive with a set -- a convention today, not an enforced rule.
 3. One to three agents whose only job is to break the change, briefed to be fair (rule 12b): every
    finding carries a reproducible path, and the report ends with what was checked and found sound.
 4. A different agent plans the fix. The loop repeats.
@@ -149,9 +150,10 @@ Stated plainly, because a map that hides the swamps is not a map.
   rule that takes a page down. The rest is unowned.
 - **The schema gates depend on a secret.** Migrations, `db:check` and the types drift check run
   only when `SUPABASE_DB_URL` is set in CI; without it the deploy proceeds with a warning.
-- **Mutation results are not reproducible by CI.** The harnesses live outside the repository; the
-  results are recorded in commit messages and MISTAKES.md. A regression in a test's strength would
-  not be caught until someone runs a harness again.
+- **Mutation runs are on demand, not a gate.** `npm run mutate` reproduces every recorded result
+  (114 mutations, about twelve minutes), but CI does not run it, so a test that quietly weakens is
+  caught the next time somebody runs the set rather than at the push that weakened it. Only eight
+  modules have sets; the older `lib` modules were tested before the practice existed.
 - **A restore has not been rehearsed on record.** `scripts/restore-db.mjs` exists (insert-only,
   dry-run by default) and the nightly backup is verified to upload; no run of a restore against a
   real dump is recorded anywhere in the repository.
