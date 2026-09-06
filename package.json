@@ -19,6 +19,7 @@
     "backup": "node scripts/backup-db.mjs",
     "db:types": "node scripts/gen-db-types.mjs",
     "db:types:check": "node scripts/gen-db-types.mjs --check",
+    "mutate": "node scripts/mutations/run.mjs",
     "restore": "node scripts/restore-db.mjs",
     "test:raw": "vitest run"
   },
