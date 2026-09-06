@@ -121,4 +121,18 @@ describe('summarizeDrops collapses a request into one report', () => {
     ])!
     expect(s.context.columns).toEqual(['media_type', 'storage_backend'])
   })
+
+  it('the sample is the FIRST five rows, each carrying its own id, column and value', () => {
+    // "capped at five" said nothing about what the five were: ids blanked, values swapped for the
+    // column name, and a slice starting at the second row all passed the length check. The ids are
+    // what an operator opens first; a wrong one sends them to the wrong photo.
+    const rows = Array.from({ length: 7 }, (_, i) => d(`p${i}`, i % 2 ? 'storage_backend' : 'media_type', `v${i}`))
+    expect(summarizeDrops(rows)!.context.sample).toEqual([
+      { id: 'p0', column: 'media_type', value: 'v0' },
+      { id: 'p1', column: 'storage_backend', value: 'v1' },
+      { id: 'p2', column: 'media_type', value: 'v2' },
+      { id: 'p3', column: 'storage_backend', value: 'v3' },
+      { id: 'p4', column: 'media_type', value: 'v4' },
+    ])
+  })
 })

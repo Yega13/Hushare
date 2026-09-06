@@ -346,6 +346,19 @@ describe('every delete path uses the same rule', () => {
     })
   }
 
+  it('both photo delete routes REFUSE an unknown storage_backend before deriving any key, and no cast says otherwise', () => {
+    // Wiring, not behaviour: isOneOf is tested in lib. What this holds is that the check is present
+    // in both siblings and that no `.returns<>()` re-asserts the union the check exists to establish.
+    // bulk-delete kept a cast declaring every row 'r2' | 'stream' while single-delete refused, so
+    // the two disagreed about the same question -- the exact drift the sibling's comment warns of.
+    for (const route of ['app/api/album/photo/delete/route.ts', 'app/api/album/photo/bulk-delete/route.ts']) {
+      const src = read(route)
+      expect(src.includes('isOneOf(STORAGE_BACKENDS, '), `${route} hands rows to collectDeletionTargets unchecked`).toBe(true)
+      expect(src.includes('.returns<'), `${route} asserts the row shape by cast again`).toBe(false)
+      expect(src.indexOf('isOneOf(STORAGE_BACKENDS, '), `${route} checks after it has already derived keys`).toBeLessThan(src.lastIndexOf('collectDeletionTargets('))
+    }
+  })
+
   it('no route still hand-rolls the storage_backend branch', () => {
     // The exact shape of the three copies. If it reappears, someone has written a fourth.
     for (const route of ['app/api/album/photo/delete/route.ts', 'app/api/album/photo/bulk-delete/route.ts']) {

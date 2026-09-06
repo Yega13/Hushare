@@ -1,5 +1,7 @@
 import { describe, it, expect } from 'vitest'
-import { withNonNull } from '@/lib/non-null'
+import { readFileSync, readdirSync } from 'node:fs'
+import { join } from 'node:path'
+import { withNonNull, nullDropReport } from '@/lib/non-null'
 
 // THE BODY OF A TYPE PREDICATE, TESTED -- because the compiler does not.
 //
@@ -55,4 +57,45 @@ describe('withNonNull keeps exactly the rows where every named key is present', 
   it('empty in, empty out', () => {
     expect(withNonNull([] as Row[], 'expires')).toEqual([])
   })
+
+  it('a FALSY value that is not null is kept -- an empty string or a zero is data, not absence', () => {
+    // `!row[k]` would drop these; so would a special case for ''. Both survived a review's mutation
+    // run because every fixture value here was a truthy string.
+    const falsy = [{ id: 'z', expires: '', count: 0, flag: false }]
+    expect(withNonNull(falsy, 'expires', 'count', 'flag').map((r) => r.id)).toEqual(['z'])
+  })
+})
+
+describe('nullDropReport -- a skipped row is heard, not swallowed', () => {
+  it('is null when every row passed, including an empty scan', () => {
+    expect(nullDropReport(3, 3, ['a'])).toBeNull()
+    expect(nullDropReport(0, 0, ['a'])).toBeNull()
+  })
+  it('names the keys, counts the drop in context, and keeps the message stable across counts', () => {
+    const one = nullDropReport(5, 4, ['package_expires_at', 'package_tier'])!
+    const many = nullDropReport(9, 2, ['package_expires_at', 'package_tier'])!
+    expect(one.message).toBe(many.message)
+    expect(one.message).toContain('package_expires_at, package_tier')
+    expect(one.message).not.toMatch(/\d/)
+    expect(one.context).toEqual({ scanned: 5, dropped: 1, keys: ['package_expires_at', 'package_tier'] })
+    expect(many.context.dropped).toBe(7)
+  })
+})
+
+describe('every route that narrows with withNonNull reports what it dropped', () => {
+  // Wiring, not behaviour: the crons have no route test. What this holds is that a new call site
+  // cannot arrive without the report beside it -- rule 19's "say which way it errs" half.
+  const root = join(process.cwd(), 'src', 'app')
+  const files = readdirSync(root, { recursive: true, encoding: 'utf8' })
+    .filter((f) => f.endsWith('.ts'))
+    .map((f) => join(root, f))
+    .filter((f) => readFileSync(f, 'utf8').includes('withNonNull('))
+  it('finds the call sites it is checking', () => { expect(files.length).toBeGreaterThanOrEqual(2) })
+  for (const f of files) {
+    it(`${f.slice(root.length)} reports its drops`, () => {
+      const src = readFileSync(f, 'utf8')
+      expect(src.includes('nullDropReport('), 'narrows without reporting the rows it left out').toBe(true)
+      expect(src.includes('reportServerError(')).toBe(true)
+    })
+  }
 })

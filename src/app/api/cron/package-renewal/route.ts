@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
-import { withNonNull } from '@/lib/non-null'
+import { withNonNull, nullDropReport } from '@/lib/non-null'
+import { reportServerError } from '@/lib/report-server-error'
 import { serverError } from '@/lib/server/respond'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { timingSafeEqual } from '@/lib/timing-safe'
@@ -68,14 +69,19 @@ export async function POST(req: Request) {
   // stays `string | null`. The `.returns<>()` that used to sit on the query declared them non-null by
   // fiat. withNonNull establishes it, with its body tested in lib and its signature checked here; the
   // two column names are written beside the query they mirror so a reader can check they agree.
-  const due = withNonNull(candidates ?? [], 'package_expires_at', 'package_tier')
+  const NON_NULL_COLS = ['package_expires_at', 'package_tier'] as const
+  const due = withNonNull(candidates ?? [], ...NON_NULL_COLS)
+  // A row the narrowing dropped is a reminder that never goes out, and it looks exactly like one
+  // that was not due. Reported once per run; the shape and its stable message live in lib/non-null.
+  const drop = nullDropReport(candidates?.length ?? 0, due.length, NON_NULL_COLS)
+  if (drop) reportServerError('package-renewal', drop.message, { context: drop.context })
   for (const album of due) {
-    const due = renewalReminderDue(
+    const remind = renewalReminderDue(
       new Date(album.package_expires_at),
       album.package_reminder_at ? new Date(album.package_reminder_at) : null,
       now,
     )
-    if (!due) {
+    if (!remind) {
       quiet += 1
       continue
     }

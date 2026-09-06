@@ -351,7 +351,8 @@ export default function PhotoGrid({ album, photos, albumPhotoCount, isOwner, slu
     })
 
     if (!res.ok) {
-      showAppToast(`Delete failed (${res.status}) — refresh to see current state`, 'error')
+      const body = (await res.json().catch(() => ({}))) as { error?: string }
+      showAppToast(`${body.error ?? 'Delete failed'} (${res.status}) — refresh to see current state`, 'error')
     }
 
     setDeleting(null)

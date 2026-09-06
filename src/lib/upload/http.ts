@@ -38,7 +38,7 @@ export async function readJson<T>(res: Response): Promise<T> {
   try {
     return JSON.parse(text) as T
   } catch {
-    throw new Error('Unreadable response from the server — please retry')
+    throw new Error('Incomplete response from the server — please retry')
   }
 }
 

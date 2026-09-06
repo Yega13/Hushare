@@ -48,6 +48,27 @@ describe('originReachable -- one cheap HEAD to /api/health', () => {
     expect(await r.originReachable()).toBe(false)
     expect(f.fetch).not.toHaveBeenCalled()
   })
+
+  it('with no `online` injected, it reads the browser’s own navigator.onLine', async () => {
+    // The offline test above injects `online`; this one exercises the default the browser hits.
+    vi.stubGlobal('navigator', { onLine: false })
+    try {
+      const f = scriptedFetch([200])
+      expect(await createReachability({ fetch: f.fetch }).originReachable()).toBe(false)
+      expect(f.fetch).not.toHaveBeenCalled()
+    } finally { vi.unstubAllGlobals() }
+  })
+
+  it('the probe’s own timeout is five seconds, and THAT signal is the one handed to fetch', async () => {
+    // A captive portal black-holes the HEAD; without a bound the shared probe parks every waiter.
+    // Node runs AbortSignal.timeout on an internal unref'd timer that vi.useFakeTimers cannot
+    // drive, so the number is asserted at the call rather than waited out.
+    const timeout = vi.spyOn(AbortSignal, 'timeout')
+    const f = scriptedFetch([200])
+    await createReachability({ fetch: f.fetch }).originReachable()
+    expect(timeout).toHaveBeenCalledWith(5000)
+    expect(f.calls[0].signal).toBe(timeout.mock.results[0].value)
+  })
 })
 
 describe('originRecovered -- the shared probe', () => {
@@ -173,6 +194,22 @@ describe('awaitRecovery -- the one outage wait every retry loop performs', () =>
     // after the probe loop is torn down by exhausting its script.
     const timersAfterAbort = vi.getTimerCount()
     expect(timersAfterAbort).toBeLessThanOrEqual(1)
+  })
+
+  it('a probe that WINS takes its abort listener back off the caller’s signal', async () => {
+    // Every attempt of every parked file leaves one of these on the upload's signal, which lives as
+    // long as the upload. settle() must remove it, or a 5,000-photo batch accumulates them.
+    vi.useFakeTimers()
+    const f = scriptedFetch(['down', 200])
+    const r = createReachability({ fetch: f.fetch, random: () => 0.5 })
+    const ctrl = new AbortController()
+    const add = vi.spyOn(ctrl.signal, 'addEventListener')
+    const remove = vi.spyOn(ctrl.signal, 'removeEventListener')
+    const p = r.awaitRecovery({ remainingMs: 30_000, signal: ctrl.signal })
+    await vi.advanceTimersByTimeAsync(5000)
+    expect(await p).toBe(true)
+    expect(add).toHaveBeenCalledTimes(1)
+    expect(remove, 'the listener that was added is not the one removed, or none was').toHaveBeenCalledWith('abort', add.mock.calls[0][1])
   })
 
   it('does not probe at all with no budget left, or when already cancelled', async () => {

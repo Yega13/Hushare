@@ -60,6 +60,8 @@ describe('a successful PUT', () => {
     const p = run(f, 'POST'); f.xhr.fire.load()
     await expect(p).resolves.toBe('{"key":"k","publicUrl":"u"}')
     expect(f.headers['Cache-Control']).toBeUndefined()
+    // The relay route exports only POST; opened as a PUT it would answer 405 to every relay upload.
+    expect(f.calls.open, 'the relay POST was opened as a PUT').toEqual(['POST https://r2/key'])
   })
 
   it('reports progress as a rounded percentage, and only when the length is computable', async () => {
@@ -207,10 +209,10 @@ describe('readJson', () => {
   const res = (text: string) => ({ text: async () => text }) as unknown as Response
   it('parses a body', async () => { expect(await readJson<{ a: number }>(res('{"a":1}'))).toEqual({ a: 1 }) })
   it('turns an EMPTY body into a retryable, readable error -- not "Unexpected end of JSON input"', async () => {
-    await expect(readJson(res(''))).rejects.toThrow('Empty response from the server')
+    await expect(readJson(res(''))).rejects.toThrow('Empty response from the server — please retry')
   })
   it('turns a truncated body into a readable error', async () => {
-    await expect(readJson(res('{"a":'))).rejects.toThrow('Unreadable response from the server')
+    await expect(readJson(res('{"a":'))).rejects.toThrow('Incomplete response from the server — please retry')
   })
 })
 

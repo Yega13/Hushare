@@ -30,5 +30,14 @@ export default {
     from: "  if (dropped.length === 0) return null\n  const columns", to: "  const columns" },
   { name: 'columns are not deduplicated',
     from: "const columns = [...new Set(dropped.map((d) => d.column))]", to: "const columns = dropped.map((d) => d.column)" },
+  // Added 2026-09-06 after a review's own mutations survived: the sample's CONTENTS were untested.
+  { name: 'sample ids are blanked',
+    from: "sample: dropped.slice(0, 5).map((d) => ({ id: d.id, column: d.column, value: d.value }))",
+    to:   "sample: dropped.slice(0, 5).map((d) => ({ id: '', column: d.column, value: d.value }))" },
+  { name: 'sample value is the column name',
+    from: "sample: dropped.slice(0, 5).map((d) => ({ id: d.id, column: d.column, value: d.value }))",
+    to:   "sample: dropped.slice(0, 5).map((d) => ({ id: d.id, column: d.column, value: d.column }))" },
+  { name: 'sample skips the first row',
+    from: "sample: dropped.slice(0, 5).map(", to: "sample: dropped.slice(1, 6).map(" },
   ],
 }

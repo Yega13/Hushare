@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
-import { refuseAccess } from '@/lib/server/respond'
+import { refuseAccess, serverError } from '@/lib/server/respond'
+import { isOneOf, STORAGE_BACKENDS, type StorageBackendValue } from '@/lib/db-unions'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { verifyOwnerViaCookieWithRateLimit } from '@/lib/album-owner-access'
 import { forbidCrossSiteRequest } from '@/lib/request-security'
@@ -26,15 +27,6 @@ type AlbumWithCover = {
   user_id: string | null
   custom_slug?: string | null
   cover_photo_id: string | null
-}
-
-type PhotoForDelete = {
-  id: string
-  storage_backend: 'r2' | 'stream'
-  storage_path: string | null
-  thumb_url: string | null
-  poster_url: string | null
-  stream_uid: string | null
 }
 
 async function deleteR2Keys(keys: string[]): Promise<void> {
@@ -85,14 +77,28 @@ export async function POST(req: Request) {
     .select('id, storage_backend, storage_path, thumb_url, poster_url, stream_uid, face_ids')
     .eq('album_id', access.album.id)
     .in('id', photo_ids as string[])
-    .returns<PhotoForDelete[]>()
 
   if (fetchError) {
     console.error('[photo/bulk-delete] fetch failed:', fetchError.message)
     return NextResponse.json({ error: 'Could not fetch photos' }, { status: 500, headers: NO_STORE })
   }
 
-  const validPhotos = photos ?? []
+  // A DELETION MUST NOT GUESS -- the same refusal as photo/delete, for the same reason:
+  // collectDeletionTargets treats anything that is not 'stream' as R2 and would derive a key to
+  // destroy from a backend we do not understand. The cast that sat on the query declared every row
+  // 'r2' | 'stream' by assertion, so this route would have deleted what its sibling refuses. The
+  // WHOLE request is refused, not the one row: nothing has been mutated yet, and a partial delete
+  // that quietly kept one row is the invisible skip this guard exists to prevent (rule 19).
+  type DeletableRow = Omit<NonNullable<typeof photos>[number], 'storage_backend'> & { storage_backend: StorageBackendValue }
+  const validPhotos: DeletableRow[] = []
+  for (const p of photos ?? []) {
+    if (!isOneOf(STORAGE_BACKENDS, p.storage_backend)) {
+      return serverError('photo-bulk-delete', `refusing bulk delete: photo ${p.id} has unknown storage_backend ${JSON.stringify(p.storage_backend)}`, {
+        albumId: access.album.id, publicMessage: 'Some of these photos could not be deleted. Please contact support.',
+      })
+    }
+    validPhotos.push({ ...p, storage_backend: p.storage_backend })
+  }
 
   if (validPhotos.length === 0) {
     return NextResponse.json({ ok: true, deleted: 0 }, { headers: NO_STORE })
@@ -170,7 +176,7 @@ export async function POST(req: Request) {
   // Same as photo/delete: the biometric templates these photos produced have to go with them,
   // or a bulk delete quietly leaves every face still enrolled and searchable.
   const allFaceIds = validPhotos.flatMap(
-    (p) => ((p as { face_ids?: string[] | null }).face_ids ?? []),
+    (p) => p.face_ids ?? [],
   )
   if (allFaceIds.length) {
     deleteFaces(access.album.id, allFaceIds).catch(e =>

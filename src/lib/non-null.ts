@@ -37,3 +37,24 @@ export function withNonNull<T, K extends keyof T>(rows: readonly T[], ...keys: K
   }
   return out
 }
+
+/**
+ * What one run says about rows a query promised were non-null and were not -- or null, which is
+ * every run today.
+ *
+ * withNonNull errs toward skipping (above), and a skip nobody hears about is the silent failure
+ * this codebase keeps paying for: a renewal reminder that never went out looks exactly like one
+ * that was not due. The message is STABLE -- the count rides in context -- so a cron dropping the
+ * same rows every morning coalesces into one panel row, not thirty.
+ */
+export function nullDropReport(
+  scanned: number,
+  kept: number,
+  keys: readonly string[],
+): { message: string; context: { scanned: number; dropped: number; keys: string[] } } | null {
+  if (kept === scanned) return null
+  return {
+    message: `rows the query filtered as non-null arrived null: ${keys.join(', ')}`,
+    context: { scanned, dropped: scanned - kept, keys: [...keys] },
+  }
+}

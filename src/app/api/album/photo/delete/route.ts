@@ -166,7 +166,7 @@ export async function POST(req: Request) {
   // later selfie search -- so "delete this photo" did not delete the most sensitive thing derived
   // from it. The privacy policy promises the opposite in as many words, and deleteFaces() existed
   // for exactly this and had never been called from anywhere.
-  const faceIds = (photo as { face_ids?: string[] | null }).face_ids
+  const faceIds = photo.face_ids
   if (faceIds?.length) {
     deleteFaces(access.album.id, faceIds).catch(e =>
       console.error('[photo/delete] Rekognition deleteFaces failed:', e instanceof Error ? e.message : String(e))

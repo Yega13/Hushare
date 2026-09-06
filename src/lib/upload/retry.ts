@@ -246,7 +246,11 @@ export function createUploadTransport(deps: TransportDeps) {
         // The server answered and refused -- a signature or size problem no amount of waiting fixes.
         if (e instanceof HttpError && e.status < 500) throw e
         lastErr = e instanceof Error ? e : new Error(String(e))
-        if (deadline.expired()) break
+        // NO `if (deadline.expired()) break` here, on purpose. wouldOverrun at the top of the loop
+        // uses >=, so an expired deadline already breaks before any wait; the only thing that line
+        // ever did was skip one awaitRecovery call with remainingMs 0, which returns false at once.
+        // A review's mutation deleted it and every test stayed green -- the same equivalent-guard
+        // shape as the probe loop's second deadline check (rule 16).
         // No response at all: wait for the connection rather than spending attempts on a dead one.
         if (!(e instanceof HttpError)) {
           await deps.reachability.awaitRecovery({ remainingMs: deadline.remaining(), signal })

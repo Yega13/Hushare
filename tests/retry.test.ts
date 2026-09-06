@@ -6,7 +6,7 @@ import {
 } from '@/lib/upload/retry'
 import { HttpError } from '@/lib/upload/http'
 import { createReachability } from '@/lib/upload/reachability'
-import { createRelayPolicy } from '@/lib/upload-policy'
+import { createRelayPolicy, backoffDelay } from '@/lib/upload-policy'
 
 // THE RETRY LOOPS, TESTED FOR THE FIRST TIME. Every comment in lib/upload/retry.ts names an incident
 // -- 25 photos lost in 61 seconds, 8 files dead with no bytes moved, 328 Worker kills -- and until
@@ -213,6 +213,31 @@ describe('fetchWithRetry -- the control plane', () => {
     expect(f.fetch.mock.calls.length).toBeLessThan(12)
   })
 
+  it('the post-recovery skip is ONE attempt, not a mode: once the graces are spent, backoff resumes', async () => {
+    // `skipBackoff = false` after the backoff block is what limits the skip to the next attempt.
+    // Without it, two confirmed recoveries switch the backoff off for the rest of the call: an
+    // origin that answers HEAD but not this request is then hit as fast as the probe returns.
+    // Unlike the flapping test above, the probe answers at once, so the only thing that can
+    // bound the attempt count is the backoff itself.
+    const f = scriptedFetch(['down'])
+    const reach = scriptedReach(true, 100)   // "up" every time, 100ms of clock per probe
+    const { t } = transport({ fetch: f.fetch, reachability: reach })
+    const res = await outcome(t.fetchWithRetry('/x', {}))
+    expect('err' in res).toBe(true)
+    expect(f.fetch.mock.calls.length).toBeGreaterThan(MAX_RECOVERY_GRACES + 1)
+    expect(f.fetch.mock.calls.length, 'no backoff between attempts after the graces were spent').toBeLessThan(12)
+  })
+
+  it('never sleeps past the deadline just to fail on the far side: less time left than one backoff means stop now', async () => {
+    const f = scriptedFetch(['down'])
+    const reach = scriptedReach(false, FETCH_DEADLINE_DEFAULT_MS - 200)   // the probe gave up with 200ms left
+    const { t } = transport({ fetch: f.fetch, reachability: reach })
+    const res = await outcome(t.fetchWithRetry('/x', {}))
+    if (!('err' in res)) throw new Error('resolved')
+    expect(f.fetch, 'an attempt was issued after a sleep that overran the budget').toHaveBeenCalledTimes(1)
+    expect((res.err as { waitedMs: number }).waitedMs).toBeLessThan(FETCH_DEADLINE_DEFAULT_MS)
+  })
+
   it('out of time with a retained 5xx returns THAT response rather than throwing -- the caller reads the server’s reason from it', async () => {
     const f = scriptedFetch([503, 'down'])
     const reach = scriptedReach(false, 40_000)
@@ -332,10 +357,15 @@ describe('putWithRetry -- the bytes, direct to R2', () => {
     const put = scriptedPut([{ http: 503 }, { ok: '' }])
     const reach = scriptedReach(true)
     const { t } = transport({ xhrPut: put.xhrPut, reachability: reach })
+    const setTimeoutSpy = vi.spyOn(globalThis, 'setTimeout')
     const res = await outcome(t.putWithRetry('u', body, 'image/jpeg', noProgress))
     expect('ok' in res).toBe(true)
     expect(put.xhrPut).toHaveBeenCalledTimes(2)
     expect(reach.awaitRecovery).not.toHaveBeenCalled()
+    // The retry WAITED. xhrPut is a fake here, so the only timer this loop can schedule is the
+    // backoff sleep -- and the imported curve, not a number re-derived here, says how long (rule 17).
+    const sleeps = setTimeoutSpy.mock.calls.map((c) => c[1] as number)
+    expect(sleeps, 'the first retry fired with no backoff').toEqual([backoffDelay(1, () => 0.5)])
   })
 
   it('no answer at all waits for the origin (page-wide probe, this call’s budget and signal) before the next attempt', async () => {
@@ -481,6 +511,26 @@ describe('putImageWithRelay -- direct first, relay behind it', () => {
     deps.relayPolicy.recordRelaySucceededAfterDirectFailure()
     const res = await outcome(t.putImageWithRelay(ORIGINAL, 'u', RELAY, body, noProgress))
     expect('err' in res && (res.err as { directCause: string }).directCause).toBe('skipped')
+  })
+
+  it('the RELAY answering with a refusal is final: its HttpError is thrown as-is, never wrapped as a network failure', async () => {
+    // Direct is network-dead; the relay answers 413. That is a verdict with the relay's own reason
+    // in it, and the guest must read that -- not "check that you're connected".
+    const put = scriptedPut(['down', { http: 413 }], 130_000)
+    const { t } = transport({ xhrPut: put.xhrPut, reachability: scriptedReach(false) })
+    const res = await outcome(t.putImageWithRelay(ORIGINAL, 'u', RELAY, body, noProgress))
+    if (!('err' in res)) throw new Error('resolved')
+    expect(res.err).toBeInstanceOf(HttpError)
+    expect((res.err as HttpError).status).toBe(413)
+    expect(put.calls.map((c) => c.method)).toEqual(['PUT', 'POST'])
+  })
+
+  it('a cancel on the RELAY leg is an AbortError too, not the multi-route message', async () => {
+    const put = scriptedPut(['down', 'abort'], 130_000)
+    const { t } = transport({ xhrPut: put.xhrPut, reachability: scriptedReach(false) })
+    const res = await outcome(t.putImageWithRelay(ORIGINAL, 'u', RELAY, body, noProgress))
+    expect('err' in res && (res.err as DOMException).name).toBe('AbortError')
+    expect(put.calls.map((c) => c.method)).toEqual(['PUT', 'POST'])
   })
 
   it('a cancel anywhere in the chain surfaces as AbortError, not as the multi-route message', async () => {

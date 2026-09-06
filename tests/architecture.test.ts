@@ -228,7 +228,10 @@ const SIZE_BUDGET: Record<string, number> = {
   // answer to a question the guest asked and changes without a navigation — a screen-reader user
   // who typed a bib number heard nothing at all. `filtered` also stopped being a prop and is
   // derived from searchPhase, since two props for one fact could disagree.
-  'src/components/PhotoGrid.tsx': 864,
+  // +1 (2026-09-06, review finding): the delete toast says the server's reason -- "Too many
+  // requests", "Photo not found in this album" -- instead of only the status code. The route had
+  // been writing a publicMessage nothing read. useSelectMode already reads the same body.
+  'src/components/PhotoGrid.tsx': 865,
   'src/components/AlbumDesigner.tsx': 774,
   // +3 net (2026-08-31): deleted the duplicate ±1 prefetch loop, added strip windowing wired
   // to lib/lightbox-plan.ts.

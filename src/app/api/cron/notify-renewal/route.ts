@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
-import { withNonNull } from '@/lib/non-null'
+import { withNonNull, nullDropReport } from '@/lib/non-null'
+import { reportServerError } from '@/lib/report-server-error'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { sendBillingReminderEmail } from '@/lib/email'
 import { timingSafeEqual } from '@/lib/timing-safe'
@@ -67,7 +68,12 @@ export async function POST(req: Request) {
   // at runtime -- a PostgREST filter the compiler cannot see over a nullable column. The `.returns<>()`
   // that sat on the query declared it non-null by fiat; withNonNull establishes it (see lib/non-null
   // for why a tested helper and not an inline predicate).
-  const due = withNonNull(upcoming ?? [], 'current_period_end')
+  const NON_NULL_COLS = ['current_period_end'] as const
+  const due = withNonNull(upcoming ?? [], ...NON_NULL_COLS)
+  // A dropped row here is a pre-billing notice that never went out -- a chargeback risk that looks
+  // like a quiet run. Reported once per run; the shape and its stable message live in lib/non-null.
+  const drop = nullDropReport(upcoming?.length ?? 0, due.length, NON_NULL_COLS)
+  if (drop) reportServerError('notify-renewal', drop.message, { context: drop.context })
   for (const sub of due) {
     try {
       const { data: { user } } = await admin.auth.admin.getUserById(sub.user_id)

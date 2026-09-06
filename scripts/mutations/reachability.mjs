@@ -38,5 +38,14 @@ export default {
     from: "      signal?.addEventListener('abort', onAbort, { once: true })\n", to: '' },
   { name: 'awaitRecovery leaves its budget timer running after the probe wins',
     from: "        clearTimeout(timer)\n        signal?.removeEventListener('abort', onAbort)", to: "        signal?.removeEventListener('abort', onAbort)" },
+  // Added 2026-09-06 after a review's own mutations survived.
+  { name: 'probe timeout is 5000 seconds, not 5',
+    from: "signal: AbortSignal.timeout(5000)", to: "signal: AbortSignal.timeout(5_000_000)" },
+  { name: 'default online() ignores navigator.onLine',
+    from: "const online = deps.online ?? (() => (typeof navigator === 'undefined' ? true : navigator.onLine !== false))",
+    to:   "const online = deps.online ?? (() => true)" },
+  { name: 'settle() leaves the abort listener on the caller signal',
+    from: "        clearTimeout(timer)\n        signal?.removeEventListener('abort', onAbort)\n        resolve(v)",
+    to:   "        clearTimeout(timer)\n        resolve(v)" },
   ],
 }

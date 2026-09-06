@@ -372,6 +372,13 @@ export async function resolveAlbum(
 // out of the grid and land in the admin panel as ONE row per request, rather than rendering as broken
 // tiles nobody can explain. See lib/photo-row for which way each field errs and why. Zero such rows exist today; if
 // one ever does, this is how the owner finds out.
+//
+// THE COUNT IS NOT NARROWED, on purpose. `total` comes from the HEAD count or the page length, so a
+// dropped row leaves photos.length one short of it for the album's lifetime: on an album over the
+// first window that shows as a "Load more" button that adds nothing (the next page re-fetches from
+// an offset the server's un-narrowed order has already passed). Both repairs are worse -- subtracting
+// this page's drops leaves other pages wrong and desyncs offset paging; filtering the queries by
+// the union makes the row vanish with no report, and the report IS the repair path.
 function narrowAndReport<R extends PhotoRowIn>(rows: readonly R[]): NarrowedPhotoRow<R>[] {
   const dropped: DroppedPhoto[] = []
   const out = narrowPhotoRows(rows, (d) => dropped.push(d))

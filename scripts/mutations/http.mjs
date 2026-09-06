@@ -36,5 +36,11 @@ export default {
     from: "if (xhr.status >= 200 && xhr.status < 300)", to: "if (xhr.status >= 199 && xhr.status < 300)" },
   { name: 'readJson accepts an empty body',
     from: "  if (!text) throw new Error('Empty response from the server — please retry')\n", to: '' },
+  // Added 2026-09-06 after a review's own mutations survived.
+  { name: 'every request is opened as a PUT (the relay POST becomes a PUT)',
+    from: "    xhr.open(method, url)", to: "    xhr.open('PUT', url)" },
+  { name: 'readJson truncated-body message drifts (/admin groups by exact string)',
+    from: "    throw new Error('Incomplete response from the server — please retry')",
+    to:   "    throw new Error('Unreadable response from the server — please retry')" },
   ],
 }
