@@ -875,3 +875,17 @@ match for my pattern in one file. Rule 0, three hours after writing entry 55.
 **Habit to build:** a claim about the database is checked against the database -- pg_constraint,
 information_schema, or the generated types -- never against a text file that describes it. And a
 negative claim ("there is no X") needs the query that would have found X, shown returning nothing.
+
+### 59. `git checkout --` ON A FILE WITH THREE PEOPLE'S UNCOMMITTED WORK IN IT
+
+To prove a new test caught a review's mutation, I applied the mutation to OwnerToolbar.tsx, ran the
+test, and "restored" the file with `git checkout -- <file>`. That restores HEAD -- not the file I
+had a minute earlier. It threw away my own uncommitted panel extraction, the badge edits I had just
+made, and a one-line comment another session had written in the same file. The only reason nothing
+was lost is that the line before the mutation was `cp <file> /tmp/ot.bak`, a habit I had not
+thought about while typing it.
+
+**Habit to build:** a file is restored from the copy taken immediately before the change, never
+from git, whenever there is ANY uncommitted work in it -- mine or anyone's. `git checkout --` is
+for files that are clean. And when another session shares the working tree, every write is
+assumed to be on top of someone else's.

@@ -159,7 +159,9 @@ const SIZE_BUDGET: Record<string, number> = {
   // lib/owner-rows and tested there, 14 mutations killed; the toolbar reads rows.<key>.
   // -146 (2026-09-07): the delayed-reveal panel is owner-toolbar/RevealSection with its own state;
   // its rules (picker value, what a save sends, is the album sealed) are lib/reveal-input, tested.
-  'src/components/OwnerToolbar.tsx': 1843,
+  // -81 (2026-09-07): the custom-URL panel is owner-toolbar/CustomUrlSection; it validates with the
+  // same lib/custom-slug the route uses, so the owner reads the reason before the round trip.
+  'src/components/OwnerToolbar.tsx': 1762,
   // +23 (2026-08-31): fallback-poll wiring for realtime REFUSAL — the cadence decision is in
   // lib/realtime-fallback.ts; the timer must live beside the channel it covers (rule 15).
   // +17 (2026-08-31, review finding): channel-identity guard + timer hygiene in the reconnect

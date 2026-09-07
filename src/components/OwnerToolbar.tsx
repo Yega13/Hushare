@@ -3,10 +3,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useT } from '@/i18n/LocaleProvider'
 import { ownerRows } from '@/lib/owner-rows'
+import { FEATURE_TIER } from '@/lib/plan-gates'
 import { packageExpired } from '@/lib/album-entitlements'
 import PackageSection from '@/components/owner-toolbar/PackageSection'
 import { useZipDownload } from '@/components/photo-grid/useZipDownload'
-import { Search, ChevronDown, Copy, Download, FolderPlus, Images, Link2, Loader2, Lock, LockOpen, MonitorPlay, Move, Play, ScanFace, Settings, ShieldCheck, Trash2, X } from 'lucide-react'
+import { Search, ChevronDown, Copy, Download, FolderPlus, Images, Loader2, Lock, LockOpen, MonitorPlay, Move, Play, ScanFace, Settings, ShieldCheck, Trash2, X } from 'lucide-react'
 import type { Album, Photo, Tier } from '@/types'
 import {
   DEFAULT_SLIDESHOW_INTERVAL_MS,
@@ -35,13 +36,13 @@ import type { SlideshowMotion } from '@/types'
 import { showAppToast, storeAppToast } from '@/components/AppToast'
 import { BIN_DAYS } from '@/lib/album-bin'
 import RevealSection from '@/components/owner-toolbar/RevealSection'
+import CustomUrlSection from '@/components/owner-toolbar/CustomUrlSection'
 import ShareMenu from '@/components/owner-toolbar/ShareMenu'
 import {
   addAlbumToCollectionRequest,
   deleteAlbumRequest,
   restoreAlbumRequest,
   fetchCollections,
-  saveCustomUrlRequest,
   saveGuestDownloadsRequest,
   saveGuestUploadsRequest,
   saveRequireApprovalRequest,
@@ -130,11 +131,6 @@ export default function OwnerToolbar({ album, photos, albumPhotoCount, ownerToke
   const [deletedFor, setDeletedFor] = useState<number | null>(null)
   const [restoring, setRestoring] = useState(false)
   const [deleteError, setDeleteError] = useState('')
-
-  const [customUrlInput, setCustomUrlInput] = useState(album.custom_slug ?? '')
-  const [customUrlSaving, setCustomUrlSaving] = useState(false)
-  const [customUrlError, setCustomUrlError] = useState('')
-  const [customUrlSaved, setCustomUrlSaved] = useState(false)
 
   const [passwordInput, setPasswordInput] = useState('')
   const [passwordInputKey, setPasswordInputKey] = useState(0)
@@ -340,9 +336,6 @@ export default function OwnerToolbar({ album, photos, albumPhotoCount, ownerToke
         // now, so nothing is pending.
         mediaEditPendingRef.current = false
       }
-      setCustomUrlInput(album.custom_slug ?? '')
-      setCustomUrlError('')
-      setCustomUrlSaved(false)
       setPasswordError('')
       setPasswordSaved(false)
       setPasswordInput('')
@@ -409,33 +402,6 @@ export default function OwnerToolbar({ album, photos, albumPhotoCount, ownerToke
       setTimeout(() => setCopied(null), 2000)
     } catch {
       showAppToast(t('ot.copyFail'), 'error')
-    }
-  }
-
-  async function saveCustomUrl(action: 'set' | 'clear') {
-    setCustomUrlSaving(true)
-    setCustomUrlError('')
-    setCustomUrlSaved(false)
-    try {
-      const result = await saveCustomUrlRequest(
-        album.slug,
-        action === 'clear' ? null : customUrlInput.trim().toLowerCase(),
-      )
-      if (!result.ok) {
-        setCustomUrlError(result.error)
-        showAppToast(result.error, 'error')
-        return
-      }
-      onAlbumUpdated({ custom_slug: result.custom_slug })
-      setCustomUrlSaved(true)
-      showAppToast(action === 'clear' ? t('ot.customUrlCleared') : t('ot.customUrlSaved'))
-      if (action === 'clear') setCustomUrlInput('')
-    } catch (e) {
-      const message = e instanceof Error ? e.message : t('common.networkError')
-      setCustomUrlError(message)
-      showAppToast(message, 'error')
-    } finally {
-      setCustomUrlSaving(false)
     }
   }
 
@@ -745,7 +711,7 @@ export default function OwnerToolbar({ album, photos, albumPhotoCount, ownerToke
           title={t('ot.liveWallTitle')}
         >
           <MonitorPlay className="w-4 h-4" style={{ color: '#7C5C3E' }} />
-          {t('ot.liveWall')} <PlanBadge need="studio" tier={userTier} />
+          {t('ot.liveWall')} <PlanBadge need={FEATURE_TIER.liveWall} tier={userTier} />
         </button>}
 
         <button
@@ -1291,7 +1257,7 @@ export default function OwnerToolbar({ album, photos, albumPhotoCount, ownerToke
                     <label className="flex items-center justify-between gap-4 rounded-xl px-3 py-3" style={{ background: '#FDFAF5', border: '1px solid #DDD5C5', ...gatedRowStyle(rows.moderation.dimmed, !rows.moderation.show) }}>
                       <span>
                         <span className="block text-sm font-semibold" style={{ color: '#630826' }}>
-                          {t('ot.requireApproval')} <PlanBadge need="pro" tier={userTier} />
+                          {t('ot.requireApproval')} <PlanBadge need={FEATURE_TIER.photoModeration} tier={userTier} />
                         </span>
                         <span className="block text-xs" style={{ color: '#7C5C3E' }}>
                           {moderationIsMoot ? t('ot.requireApprovalMoot') : t('ot.requireApprovalSub')}
@@ -1371,7 +1337,7 @@ export default function OwnerToolbar({ album, photos, albumPhotoCount, ownerToke
                     >
                       <span>
                         <span className="flex items-center gap-2 text-sm font-semibold" style={{ color: '#630826' }}>
-                          Remove Hushare branding <PlanBadge need="pro" tier={userTier} />
+                          Remove Hushare branding <PlanBadge need={FEATURE_TIER.hideBranding} tier={userTier} />
                         </span>
                         <span className="block text-xs" style={{ color: '#7C5C3E' }}>
                           {album.branding_locked
@@ -1420,7 +1386,7 @@ export default function OwnerToolbar({ album, photos, albumPhotoCount, ownerToke
                         <span className="flex items-center gap-2 text-sm font-semibold" style={{ color: '#630826' }}>
                           <ScanFace className="w-4 h-4" />
                           {t('ot.faceFinder')}
-                          <PlanBadge need="studio" tier={userTier} />
+                          <PlanBadge need={FEATURE_TIER.faceFinder} tier={userTier} />
                         </span>
                         <span className="block text-xs" style={{ color: '#7C5C3E' }}>{t('ot.faceFinderSub')}</span>
                       </span>
@@ -1446,7 +1412,7 @@ export default function OwnerToolbar({ album, photos, albumPhotoCount, ownerToke
                       <span>
                         <span className="flex items-center gap-2 text-sm font-semibold" style={{ color: '#630826' }}>
                           <Search className="w-4 h-4" />
-                          {t('ot.bibSearch')} <PlanBadge need="studio" tier={userTier} />
+                          {t('ot.bibSearch')} <PlanBadge need={FEATURE_TIER.bibSearch} tier={userTier} />
                         </span>
                         <span className="block text-xs" style={{ color: '#7C5C3E' }}>{t('ot.bibSearchSub')}</span>
                       </span>
@@ -1550,63 +1516,16 @@ export default function OwnerToolbar({ album, photos, albumPhotoCount, ownerToke
                 )}
               </section>
 
-              {/* Custom URL */}
-              <section style={settingsSectionStyle}>
-                <button type="button" className="hush-motion" style={accordionButton} onClick={() => toggleSection('customUrl')}>
-                  <Link2 className="w-4 h-4" style={{ color: '#7C5C3E' }} />
-                  <span style={sectionTitle}>{t('ot.customUrl')}</span>
-                  <PlanBadge need="pro" tier={userTier} />
-                  <ChevronDown
-                    className="ml-auto w-4 h-4 transition-transform"
-                    style={{ color: '#A89880', transform: openSection === 'customUrl' ? 'rotate(180deg)' : 'rotate(0deg)' }}
-                  />
-                </button>
-                {openSection === 'customUrl' && (
-                  <div className="px-4 pb-4">
-                    <p className="text-xs mb-3" style={{ color: '#7C5C3E' }}>
-                      {t('ot.customUrlSub')}
-                    </p>
-                    <div className="flex items-stretch rounded-lg overflow-hidden" style={{ border: '1px solid #DDD5C5', background: '#FDFAF5', ...gatedRowStyle(rows.customUrl.dimmed, !rows.customUrl.show) }}>
-                      <span className="text-xs flex items-center px-2 select-none" style={{ color: '#A89880' }}>hushare.space/</span>
-                      <input
-                        type="text"
-                        value={customUrlInput}
-                        onChange={(e) => setCustomUrlInput(e.target.value)}
-                        placeholder="anna-and-david"
-                        maxLength={40}
-                        disabled={!rows.customUrl.enabled}
-                        className="flex-1 text-sm px-2 py-2 focus:outline-none disabled:cursor-not-allowed"
-                        style={{ background: 'transparent', color: '#630826' }}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter' && rows.customUrl.enabled && !customUrlSaving && customUrlInput.trim()) void saveCustomUrl('set')
-                        }}
-                      />
-                    </div>
-                    {customUrlError && <p className="text-xs mt-2" style={{ color: '#C0392B' }}>{customUrlError}</p>}
-                    {customUrlSaved && !customUrlError && <p className="text-xs mt-2" style={{ color: '#630826' }}>{t('ot.saved')}</p>}
-                    <div className="flex items-center gap-2 mt-3">
-                      <button
-                        onClick={() => void saveCustomUrl('set')}
-                        disabled={!rows.customUrl.enabled || customUrlSaving || !customUrlInput.trim()}
-                        className="hush-press flex-1 text-sm font-semibold rounded-lg py-2 transition hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed"
-                        style={{ background: '#630826', color: '#FDFAF5' }}
-                      >
-                        {customUrlSaving ? t('ot.saving') : t('ot.save')}
-                      </button>
-                      {album.custom_slug && (
-                        <button
-                          onClick={() => void saveCustomUrl('clear')}
-                          disabled={!rows.customUrl.enabled || customUrlSaving}
-                          className="hush-press text-sm rounded-lg py-2 px-3 transition hover:opacity-90 disabled:opacity-50"
-                          style={{ background: '#F5F0E8', color: '#7C5C3E', border: '1px solid #DDD5C5' }}
-                        >
-                          {t('ot.clear')}
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                )}
-              </section>
+              {/* Custom URL -- keyed on the stored value so another device's change remounts it */}
+              <CustomUrlSection
+                key={album.custom_slug ?? ''}
+                album={album}
+                userTier={userTier}
+                row={rows.customUrl}
+                open={openSection === 'customUrl'}
+                onToggle={() => toggleSection('customUrl')}
+                onAlbumUpdated={onAlbumUpdated}
+              />
 
               {/* Delayed reveal -- its rules are lib/reveal-input, its state its own */}
               <RevealSection
@@ -1627,7 +1546,7 @@ export default function OwnerToolbar({ album, photos, albumPhotoCount, ownerToke
                 <button type="button" className="hush-motion" style={accordionButton} onClick={() => toggleSection('collection')}>
                   <FolderPlus className="w-4 h-4" style={{ color: rows.collections.dimmed ? '#A89880' : '#7C5C3E' }} />
                   <span style={sectionTitle}>{t('ot.collections')}</span>
-                  <PlanBadge need="studio" tier={userTier} />
+                  <PlanBadge need={FEATURE_TIER.collections} tier={userTier} />
                   <ChevronDown
                     className="ml-auto w-4 h-4 transition-transform"
                     style={{ color: '#A89880', transform: openSection === 'collection' ? 'rotate(180deg)' : 'rotate(0deg)' }}

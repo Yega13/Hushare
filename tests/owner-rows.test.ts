@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
 import { ownerRows, type OwnerRowsInput, type RowLook } from '@/lib/owner-rows'
 import { FEATURE_TIER } from '@/lib/plan-gates'
 
@@ -109,5 +109,56 @@ describe('collections follow the account, not the album tier', () => {
   })
   it('a free album whose account has collections shows the row live', () => {
     expect(look({ tier: 'free', collectionsEnabled: true }).collections).toEqual(LIVE)
+  })
+})
+
+describe('each row asks about ITS OWN feature -- a same-tier swap must not pass', () => {
+  // The cases above derive expectations from FEATURE_TIER, so a module that asked about the wrong
+  // feature AT THE SAME TIER (faceFinder reading 'bibSearch') agreed with every one of them. A
+  // review's mutation did exactly that and survived. Here the gate is replaced by one that allows a
+  // single named feature, so only the row that asks about that feature can be live.
+  const ROW_FEATURE = {
+    customUrl: 'customUrl', moderation: 'photoModeration', branding: 'hideBranding',
+    faceFinder: 'faceFinder', bibSearch: 'bibSearch', liveWall: 'liveWall',
+  } as const
+
+  for (const [row, feature] of Object.entries(ROW_FEATURE) as Array<[keyof typeof ROW_FEATURE, string]>) {
+    it(`${row} asks about '${feature}' and nothing else`, async () => {
+      vi.resetModules()
+      vi.doMock('@/lib/plan-gates', async () => {
+        const real = await vi.importActual<typeof import('@/lib/plan-gates')>('@/lib/plan-gates')
+        return {
+          ...real,
+          tierAllows: (_tier: unknown, f: string) => f === feature,
+          showsAsLocked: (_tier: unknown, f: string) => f !== feature,
+        }
+      })
+      const { ownerRows: rowsWithOneFeature } = await import('@/lib/owner-rows')
+      const r = rowsWithOneFeature({ ...base, tier: 'pro', packagedLive: true })
+      for (const other of Object.keys(ROW_FEATURE) as Array<keyof typeof ROW_FEATURE>) {
+        const expectLive = other === row
+        expect(r[other].enabled, `${other} should be ${expectLive ? 'live' : 'not live'} when only '${feature}' is allowed`).toBe(expectLive)
+      }
+      vi.doUnmock('@/lib/plan-gates')
+      vi.resetModules()
+    })
+  }
+})
+
+describe('a hidden row is also dimmed, because the render hides through gatedRowStyle', () => {
+  it('HIDDEN carries dimmed:true -- gatedRowStyle applies display:none only to a dimmed row', () => {
+    // {show:false, dimmed:false} would render plain and visible. The module never emits it; this
+    // pins that it never starts to.
+    for (const row of Object.values(look({ tier: 'free', packagedLive: true }))) {
+      if (!row.show) expect(row.dimmed).toBe(true)
+    }
+  })
+})
+
+describe('the tier still loading on a packaged album', () => {
+  it('shows every row plain and inert, including the live-wall button -- no button that appears once the tier lands', () => {
+    const r = look({ tier: null, packagedLive: true })
+    for (const key of ['customUrl', 'moderation', 'branding', 'faceFinder', 'bibSearch'] as const) expect(r[key], key).toEqual(PENDING)
+    expect(r.liveWall).toEqual(LIVE)
   })
 })

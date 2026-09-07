@@ -166,9 +166,42 @@ describe('the owner toolbar reads the same table as the server, through lib/owne
     expect(/userTier === 'pro' \|\| userTier === 'studio'/.test(toolbar), 'inline pro-or-max test is back').toBe(false)
     expect(/const canUseCollections = userTier === 'studio'/.test(toolbar), 'inline studio test is back').toBe(false)
     // Each gated control reads its own row -- shown, dimmed, enabled -- and none reads another's.
-    for (const key of ['customUrl', 'moderation', 'branding', 'faceFinder', 'bibSearch', 'collections', 'liveWall']) {
-      expect(toolbar.includes(`rows.${key}.`), `${key} row is not read from lib/owner-rows`).toBe(true)
+    // Held PER LABEL: a review wired the face-finder checkbox to rows.customUrl.enabled and a
+    // file-wide "rows.faceFinder. appears somewhere" scan stayed green because the row's STYLE
+    // still read its own key. So: from each control's label, every rows.<key>. inside the window
+    // that holds its control must be that row's own key -- and each panel file is scanned for
+    // the label it owns, because the panels are moving out of the toolbar one by one.
+    const panels = {
+      OwnerToolbar: toolbar,
+      CustomUrlSection: readFileSync(join(process.cwd(), 'src', 'components', 'owner-toolbar', 'CustomUrlSection.tsx'), 'utf8'),
     }
+    const controls: Array<{ label: string; key: string; file: keyof typeof panels; window: number }> = [
+      { label: "t('ot.requireApproval')", key: 'moderation', file: 'OwnerToolbar', window: 1600 },
+      { label: 'Remove Hushare branding', key: 'branding', file: 'OwnerToolbar', window: 1600 },
+      { label: "t('ot.faceFinder')", key: 'faceFinder', file: 'OwnerToolbar', window: 1200 },
+      { label: "t('ot.bibSearch')", key: 'bibSearch', file: 'OwnerToolbar', window: 2200 },
+      { label: "t('ot.collections')", key: 'collections', file: 'OwnerToolbar', window: 1200 },
+      { label: "t('ot.customUrlSub')", key: 'row', file: 'CustomUrlSection', window: 2400 },
+    ]
+    for (const c of controls) {
+      const src = panels[c.file]
+      const at = src.indexOf(c.label)
+      expect(at, `${c.label} missing from ${c.file}`).toBeGreaterThan(-1)
+      const slice = src.slice(at, at + c.window)
+      if (c.file === 'OwnerToolbar') {
+        const reads = [...slice.matchAll(/\brows\.([a-zA-Z]+)\./g)].map((m) => m[1])
+        expect(reads.length, `${c.key}: no row read near its label`).toBeGreaterThan(0)
+        for (const read of reads) expect(read, `${c.key} control reads another row's answer`).toBe(c.key)
+      } else {
+        // A section receives its ONE row as the prop `row`, so it cannot read another's; what is
+        // held is that it reads the row at all and never reaches for the toolbar's `rows`.
+        const reads = [...slice.matchAll(/\brow\.(show|dimmed|enabled)\b/g)].map((m) => m[1])
+        expect(reads.length, `${c.file}: the control ignores its row`).toBeGreaterThan(0)
+        expect(slice.includes('rows.'), `${c.file}: a section must not read the toolbar's rows`).toBe(false)
+      }
+    }
+    // The live-wall button is wired by its render guard rather than a labelled control.
+    expect(toolbar.includes('{rows.liveWall.show && <button'), 'the live-wall button is not guarded by its own row').toBe(true)
   })
 
   it('gates COLLECTIONS on the account, because a package cannot grant it', () => {

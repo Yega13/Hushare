@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { ChevronDown, Clock } from 'lucide-react'
 import type { Album, Tier } from '@/types'
 import { toDatetimeLocal, revealRequestFor, revealStatus } from '@/lib/reveal-input'
+import { FEATURE_TIER } from '@/lib/plan-gates'
 import { showAppToast } from '@/components/AppToast'
 import { saveRevealRequest } from '@/components/owner-toolbar/api'
 import { accordionButton, sectionTitle, settingsSectionStyle } from '@/components/owner-toolbar/styles'
@@ -70,7 +71,7 @@ export default function RevealSection({ album, userTier, open, onToggle, onAlbum
       <button type="button" className="hush-motion" style={accordionButton} onClick={onToggle}>
         <Clock className="w-4 h-4" style={{ color: revealIsFuture ? '#630826' : '#7C5C3E' }} />
         <span style={sectionTitle}>{t('ot.delayedReveal')}</span>
-        <PlanBadge need="pro" tier={userTier} />
+        <PlanBadge need={FEATURE_TIER.countdownReveal} tier={userTier} />
         {revealIsFuture && (
           <span
             className="text-[10px] font-semibold uppercase tracking-wide px-1.5 py-0.5 rounded-full"
