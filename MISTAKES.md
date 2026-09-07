@@ -863,3 +863,15 @@ above them and needed no change at all.
 **Habit to build:** a claim in a commit message is checked the way the reviewer will check it --
 per site, with the exact grep in the message -- and a claim about a file the commit does not touch
 is not made. Rule 23 applies to prose as much as to deploys.
+
+### 58. "NO CHECK CONSTRAINT" -- FROM A GREP OF A DUMP FILE THAT MATCHED NOTHING
+
+I wrote, in code and in a commit message, that `subscriptions.tier` has no CHECK constraint. My
+evidence was `grep -rn "tier" supabase/schema.sql | grep -i check` returning empty. The reviewer
+read `pg_constraint` from the live database: `subscriptions_tier_check CHECK (tier = ANY
+(ARRAY['pro','studio']))`. An empty grep is not the absence of a thing; it is the absence of a
+match for my pattern in one file. Rule 0, three hours after writing entry 55.
+
+**Habit to build:** a claim about the database is checked against the database -- pg_constraint,
+information_schema, or the generated types -- never against a text file that describes it. And a
+negative claim ("there is no X") needs the query that would have found X, shown returning nothing.
