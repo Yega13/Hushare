@@ -1,0 +1,23 @@
+// Mutation set for src/lib/delete-flow.ts -- run with: node scripts/mutations/run.mjs delete-flow
+export default {
+  file: 'src/lib/delete-flow.ts',
+  test: 'tests/delete-flow.test.ts',
+  mutations: [
+  { name: 'the first tap deletes (no confirmation step)',
+    from: "      return event.type === 'tap' ? { phase: 'confirm', error: '' } : flow", to: "      return event.type === 'tap' ? { phase: 'deleting' } : flow" },
+  { name: 'cancel does nothing',
+    from: "      if (event.type === 'cancel') return DELETE_IDLE\n", to: "" },
+  { name: 'a failure drops the reason',
+    from: "      if (event.type === 'failed') return { phase: 'confirm', error: event.error }", to: "      if (event.type === 'failed') return { phase: 'confirm', error: '' }" },
+  { name: 'a failure goes back to idle (the owner must tap twice again, and never reads why)',
+    from: "      if (event.type === 'failed') return { phase: 'confirm', error: event.error }", to: "      if (event.type === 'failed') return DELETE_IDLE" },
+  { name: 'a tap during the request sends again',
+    from: "    case 'deleting':\n      if (event.type === 'succeeded')", to: "    case 'deleting':\n      if (event.type === 'tap') return { phase: 'deleting' }\n      if (event.type === 'succeeded')" },
+  { name: 'the deleted state can be tapped out of',
+    from: "    case 'deleted':\n      return flow", to: "    case 'deleted':\n      return event.type === 'tap' ? DELETE_IDLE : flow" },
+  { name: 'the bin window is not carried into the deleted state',
+    from: "return { phase: 'deleted', restorableForDays: event.restorableForDays }", to: "return { phase: 'deleted', restorableForDays: 0 }" },
+  { name: 'a tap sends from idle too',
+    from: "  return flow.phase === 'confirm'\n", to: "  return flow.phase === 'confirm' || flow.phase === 'idle'\n" },
+  ],
+}

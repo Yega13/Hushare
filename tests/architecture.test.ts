@@ -164,7 +164,9 @@ const SIZE_BUDGET: Record<string, number> = {
   // -193 (2026-09-07): the password and collections panels are their own components; the
   // collections list loads on the panel's mount (which is Settings opening) without a setState in
   // an effect, so two frozen lint findings fell with it.
-  'src/components/OwnerToolbar.tsx': 1569,
+  // -141 (2026-09-07): the delete/restore panel is owner-toolbar/DangerSection; its two-tap flow is
+  // lib/delete-flow (9 tests, 8 mutations), and closing the accordion disarms the red button.
+  'src/components/OwnerToolbar.tsx': 1428,
   // +23 (2026-08-31): fallback-poll wiring for realtime REFUSAL — the cadence decision is in
   // lib/realtime-fallback.ts; the timer must live beside the channel it covers (rule 15).
   // +17 (2026-08-31, review finding): channel-identity guard + timer hygiene in the reconnect

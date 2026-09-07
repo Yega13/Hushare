@@ -7,7 +7,7 @@ import { FEATURE_TIER } from '@/lib/plan-gates'
 import { packageExpired } from '@/lib/album-entitlements'
 import PackageSection from '@/components/owner-toolbar/PackageSection'
 import { useZipDownload } from '@/components/photo-grid/useZipDownload'
-import { Search, ChevronDown, Copy, Download, Images, Loader2, MonitorPlay, Move, Play, ScanFace, Settings, ShieldCheck, Trash2, X } from 'lucide-react'
+import { Search, ChevronDown, Copy, Download, Images, Loader2, MonitorPlay, Move, Play, ScanFace, Settings, ShieldCheck, X } from 'lucide-react'
 import type { Album, Photo, Tier } from '@/types'
 import {
   DEFAULT_SLIDESHOW_INTERVAL_MS,
@@ -33,16 +33,14 @@ import {
   slideshowMotionVars,
 } from '@/lib/slideshow-motion'
 import type { SlideshowMotion } from '@/types'
-import { showAppToast, storeAppToast } from '@/components/AppToast'
-import { BIN_DAYS } from '@/lib/album-bin'
+import { showAppToast } from '@/components/AppToast'
 import RevealSection from '@/components/owner-toolbar/RevealSection'
 import CustomUrlSection from '@/components/owner-toolbar/CustomUrlSection'
 import PasswordSection from '@/components/owner-toolbar/PasswordSection'
 import CollectionsSection from '@/components/owner-toolbar/CollectionsSection'
+import DangerSection from '@/components/owner-toolbar/DangerSection'
 import ShareMenu from '@/components/owner-toolbar/ShareMenu'
 import {
-  deleteAlbumRequest,
-  restoreAlbumRequest,
   saveGuestDownloadsRequest,
   saveGuestUploadsRequest,
   saveRequireApprovalRequest,
@@ -121,15 +119,6 @@ export default function OwnerToolbar({ album, photos, albumPhotoCount, ownerToke
   const [showSettings, setShowSettings] = useState(false)
   const [openSection, setOpenSection] = useState<SettingsSection | null>(null)
 
-  const [deleteConfirm, setDeleteConfirm] = useState(false)
-  const [deletingAlbum, setDeletingAlbum] = useState(false)
-  // AFTER A DELETE, BEFORE LEAVING. Deleting no longer destroys anything for a week, and an undo
-  // the owner cannot reach is not an undo — telling them it is restorable while offering no way to
-  // restore it would be a promise the screen does not keep (rule 20). So the redirect waits behind
-  // this, and the owner cookie is still in the browser to authorise it.
-  const [deletedFor, setDeletedFor] = useState<number | null>(null)
-  const [restoring, setRestoring] = useState(false)
-  const [deleteError, setDeleteError] = useState('')
 
   // Bumped whenever the password panel opens or Settings opens: PasswordSection is keyed on it,
   // so a partially-typed password is cleared at exactly those moments and nowhere else.
@@ -347,8 +336,6 @@ export default function OwnerToolbar({ album, photos, albumPhotoCount, ownerToke
       }))
       setMediaError('')
       setOpenSection(null)
-      setDeleteConfirm(false)
-      setDeleteError('')
     }
   }, [album.allow_guest_downloads, album.guest_uploads_enabled, album.custom_slug, album.media_filter, album.media_radius, album.mobile_grid_columns, album.desktop_grid_columns, album.reveal_at, album.slideshow_animation, album.slideshow_motion, album.slideshow_interval_ms, album.video_autoplay, showSettings])
 
@@ -526,51 +513,6 @@ export default function OwnerToolbar({ album, photos, albumPhotoCount, ownerToke
     setSlideshowIntervalMs(nextInterval)
     onAlbumUpdated({ slideshow_interval_ms: nextInterval })
     scheduleAutoSave(mediaRadius, videoAutoplay, mediaFilter, mobileGridColumns, nextInterval, slideshowAnimation)
-  }
-
-  async function deleteAlbum() {
-    if (!deleteConfirm) {
-      setDeleteConfirm(true)
-      setDeleteError('')
-      return
-    }
-
-    setDeletingAlbum(true)
-    setDeleteError('')
-    try {
-      const result = await deleteAlbumRequest(album.slug)
-      if (!result.ok) {
-        setDeleteError(result.error)
-        showAppToast(result.error, 'error')
-        return
-      }
-      // NOT redirected yet. The owner gets the chance to undo first; leaving is their choice.
-      setDeletedFor(result.restorableForDays)
-      setDeleteConfirm(false)
-    } catch (e) {
-      const message = e instanceof Error ? e.message : t('common.networkError')
-      setDeleteError(message)
-      showAppToast(message, 'error')
-    } finally {
-      setDeletingAlbum(false)
-    }
-  }
-
-  async function restoreAlbum() {
-    setRestoring(true)
-    try {
-      const result = await restoreAlbumRequest(album.slug)
-      if (!result.ok) {
-        showAppToast(result.error, 'error')
-        return
-      }
-      storeAppToast(t('ot.albumRestored'))
-      window.location.reload()
-    } catch (e) {
-      showAppToast(e instanceof Error ? e.message : t('common.networkError'), 'error')
-    } finally {
-      setRestoring(false)
-    }
   }
 
   return (
@@ -1410,91 +1352,8 @@ export default function OwnerToolbar({ album, photos, albumPhotoCount, ownerToke
                 />
               )}
 
-              {/* Delete album */}
-              <section style={{ ...settingsSectionStyle, marginBottom: 0 }}>
-                <button type="button" className="hush-motion" style={accordionButton} onClick={() => toggleSection('danger')}>
-                  <Trash2 className="w-4 h-4" style={{ color: '#C0392B' }} />
-                  <span style={sectionTitle}>{t('ot.deleteAlbum')}</span>
-                  <ChevronDown
-                    className="ml-auto w-4 h-4 transition-transform"
-                    style={{ color: '#A89880', transform: openSection === 'danger' ? 'rotate(180deg)' : 'rotate(0deg)' }}
-                  />
-                </button>
-                {openSection === 'danger' && (
-                  <div className="px-4 pb-4">
-                    <div className={`hush-delete-dialog hush-delete-panel rounded-xl p-3 ${deleteConfirm ? 'hush-delete-dialog-open' : ''}`} style={{ background: '#FFF7F4', border: '1px solid rgba(192,57,43,0.25)' }}>
-                      {deletedFor !== null ? (
-                        // DELETED, AND STILL RECOVERABLE. The redirect waits here on purpose: an undo
-                        // the owner cannot reach is not an undo.
-                        <div>
-                          <p className="text-xs leading-relaxed mb-3" style={{ color: '#7A2A1F' }}>
-                            {t('ot.albumDeleted')} {t('ot.restorableFor').replace('{days}', String(deletedFor))}
-                          </p>
-                          <div className="flex flex-col gap-2 sm:flex-row">
-                            <button
-                              type="button"
-                              onClick={() => void restoreAlbum()}
-                              disabled={restoring}
-                              className="hush-press flex flex-1 items-center justify-center gap-2 rounded-lg py-2 text-sm font-semibold transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
-                              style={{ background: '#FFFFFF', border: '1px solid #630826', color: '#630826' }}
-                            >
-                              {restoring ? t('ot.restoring') : t('ot.undoDelete')}
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => { storeAppToast(t('ot.albumDeleted')); window.location.href = '/' }}
-                              className="hush-press rounded-lg px-3 py-2 text-sm font-semibold transition hover:opacity-90"
-                              style={{ background: '#FFFFFF', border: '1px solid #DDD5C5', color: '#7C5C3E' }}
-                            >
-                              {t('ot.done')}
-                            </button>
-                          </div>
-                        </div>
-                      ) : (
-                      <>
-                      <p className="text-xs leading-relaxed mb-3" style={{ color: '#7A2A1F' }}>
-                        {t('ot.deleteSub')}
-                      </p>
-                      <div className="flex flex-col gap-2 sm:flex-row">
-                        <button
-                          type="button"
-                          onClick={() => void deleteAlbum()}
-                          disabled={deletingAlbum}
-                          className="hush-press flex flex-1 items-center justify-center gap-2 rounded-lg py-2 text-sm font-semibold transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
-                          style={{ background: deleteConfirm ? '#C0392B' : '#FFFFFF', border: '1px solid #C0392B', color: deleteConfirm ? '#FFFFFF' : '#C0392B' }}
-                        >
-                          <Trash2 className="w-4 h-4" />
-                          {deletingAlbum ? t('ot.deleting') : deleteConfirm ? t('ot.deletePermanently') : t('ot.deleteAlbum')}
-                        </button>
-                        {deleteConfirm && (
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setDeleteConfirm(false)
-                              setDeleteError('')
-                            }}
-                            className="hush-press rounded-lg px-3 py-2 text-sm font-semibold transition hover:opacity-90"
-                            style={{ background: '#FFFFFF', border: '1px solid #DDD5C5', color: '#7C5C3E' }}
-                          >
-                            Cancel
-                          </button>
-                        )}
-                      </div>
-                      {deleteConfirm && !deleteError && (
-                        <p className="mt-2 text-xs" style={{ color: '#7A2A1F' }}>
-                          {/* It CAN be undone now, for a week. Saying otherwise was true when deleting
-                              was final and is not any more — and the scarier sentence is the one that
-                              stops somebody deleting a duplicate album they meant to tidy up. */}
-                          {t('ot.deleteConfirmHint').replace('{days}', String(BIN_DAYS))}
-                        </p>
-                      )}
-                      {deleteError && <p className="mt-2 text-xs" style={{ color: '#C0392B' }}>{deleteError}</p>}
-                      </>
-                      )}
-                    </div>
-                  </div>
-                )}
-              </section>
+              {/* Delete album -- the two-tap flow is lib/delete-flow; the panel body owns it */}
+              <DangerSection album={album} open={openSection === 'danger'} onToggle={() => toggleSection('danger')} />
             </div>
           )}
         </div>
