@@ -889,3 +889,40 @@ thought about while typing it.
 from git, whenever there is ANY uncommitted work in it -- mine or anyone's. `git checkout --` is
 for files that are clean. And when another session shares the working tree, every write is
 assumed to be on top of someone else's.
+
+### 64. "UNMOUNT IS THE RESET" -- TRUE, AND IT ALSO UNMOUNTED THE ONE STATE THAT HAD TO SURVIVE
+
+Moving the delete panel out of the toolbar, I put its flow state in the panel body so that closing
+the accordion would disarm a half-confirmed red button. Correct, and I said so. What I did not
+trace: the body also held "deleted, restorable for N days", and the request that produces that
+state outlives a tap on the accordion header. Close during the request and the success landed on
+nothing -- no undo shown, and a retry answering "Album not found". The old code had kept that one
+value in the toolbar, which never unmounts, without a comment saying why; I moved it with the rest.
+
+**Habit to build:** when a component's lifetime becomes the reset mechanism, list every piece of
+state it holds and ask, for each, whether an in-flight request can finish after the unmount and
+whether the owner needs to SEE its result. Anything that must be seen belongs in the thing that
+stays mounted.
+
+### 65. A REMOUNT KEY IS A RESET THAT ALSO FIRES ON YOUR OWN SAVE
+
+`key={album.custom_slug}` was meant to reinitialise the panel when another device changed the slug.
+It also fired when the owner's own save landed -- the prop changed -- so the section was discarded
+in the same batch as `setSaved(true)`, and the "Saved" line never rendered. And it would have wiped
+a half-typed draft on a remote change, which the old resync had deliberately refused to do. A key
+cannot tell "someone else changed it" from "I just changed it"; a render-time reconcile that resets
+only a pristine input can.
+
+**Habit to build:** before keying a component on a prop, ask who ELSE changes that prop -- the
+component itself, on success, almost always does.
+
+### 66. RULE 24, THREE MORE TIMES IN ONE EVENING, ALL THROUGH PYTHON
+
+`\b` inside a Python string became a backspace; `\n` inside a Python heredoc became a newline in
+the JS file it wrote; `\.` warned and matched nothing. Each time the script aborted or wrote a file
+that did not parse, and each time the fix was the same: the Edit tool. I kept reaching for python
+because it handles multi-line replacement conveniently, and paid three times.
+
+**Habit to build:** the Edit tool for any content containing a backslash, full stop. Python only for
+content that is pure ASCII prose with no escapes -- and even then, `assert count == 1` before every
+write, which is the only reason none of the three aborted scripts corrupted a file.

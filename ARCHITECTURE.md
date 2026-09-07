@@ -139,9 +139,13 @@ Before any deploy, `.github/workflows/deploy.yml` runs: `npm test` (through `run
 
 Stated plainly, because a map that hides the swamps is not a map.
 
-- **Components are still where decisions hide.** 19,958 lines across 67 files; the three largest
-  are `UploadZone.tsx` 2,242, `OwnerToolbar.tsx` 2,009, `AlbumPageClient.tsx` 1,789. The budget
-  stops them growing; it does not make them small. Each extraction so far has found a real defect.
+- **Components are still where decisions hide -- two of them.** `UploadZone.tsx` 2,242 and
+  `AlbumPageClient.tsx` 1,789 remain. `OwnerToolbar.tsx` went from 2,009 to 448 on 2026-09-07:
+  its ten panels are components under `components/owner-toolbar/`, each owning its own state, and
+  the decisions they make -- what each plan-gated row looks like (`lib/owner-rows`), the reveal
+  rules (`lib/reveal-input`), the two-tap delete (`lib/delete-flow`) -- are tested modules with
+  mutation sets. The media/slideshow save pipeline moved as a unit and is not yet decomposed. The
+  budget stops the other two growing; it does not make them small.
 - **Every 500 is reported now, but not every refusal is serialised.** 63 of 90 route files import
   `lib/server/respond.ts`; no route returns a 500 without a `reportServerError` in the same
   block (checked per site, 2026-09-07). The 4xx side is still mostly hand-written
