@@ -32,6 +32,20 @@ export default function CustomUrlSection({ album, userTier, row, open, onToggle,
   const [error, setError] = useState('')
   const [saved, setSaved] = useState(false)
 
+  // WHEN THE STORED VALUE CHANGES UNDER US -- another device saved, or our own save landed -- the
+  // input follows it only if the owner has not typed anything: a draft is never wiped, and a save
+  // keeps its "Saved" line. The first version keyed the whole component on album.custom_slug, which
+  // remounted it on the owner's OWN save and discarded the confirmation in the same batch (and would
+  // have wiped a half-typed draft on a change from another device). Reconciling during render is
+  // the React-sanctioned shape for state that derives from a prop.
+  const [seenSlug, setSeenSlug] = useState<string | null>(album.custom_slug ?? null)
+  const storedSlug = album.custom_slug ?? null
+  if (storedSlug !== seenSlug) {
+    const pristine = input === (seenSlug ?? '')
+    setSeenSlug(storedSlug)
+    if (pristine) setInput(storedSlug ?? '')
+  }
+
   async function save(action: 'set' | 'clear') {
     setError('')
     setSaved(false)

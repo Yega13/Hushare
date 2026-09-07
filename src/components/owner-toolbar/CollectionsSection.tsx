@@ -18,8 +18,10 @@ import { useT } from '@/i18n/LocaleProvider'
 //
 // The list loads when this mounts, which is when Settings opens (the panels render only then), so
 // it is ready before the accordion is expanded -- the same moment the toolbar used to load it.
-// `loading` starts as the answer rather than being set inside the effect, so the effect writes
-// state only after its await.
+// "Loading" is DERIVED -- the row is enabled and no list has arrived -- rather than a flag set once
+// at mount: a review found that if the account's collections flag flipped on while this was
+// mounted, the flag read false during the fetch and the panel printed "No collections yet" for a
+// list that was on its way (rule 20).
 
 type Props = {
   album: Album
@@ -31,8 +33,8 @@ type Props = {
 
 export default function CollectionsSection({ album, userTier, row, open, onToggle }: Props) {
   const { t } = useT()
-  const [collections, setCollections] = useState<CollectionSummary[]>([])
-  const [loading, setLoading] = useState(row.enabled)
+  const [collections, setCollections] = useState<CollectionSummary[] | null>(null)
+  const loading = row.enabled && collections === null
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
   const [addedUrl, setAddedUrl] = useState('')
@@ -40,9 +42,7 @@ export default function CollectionsSection({ album, userTier, row, open, onToggl
   useEffect(() => {
     if (!row.enabled) return
     let cancelled = false
-    fetchCollections(album.slug)
-      .then((list) => { if (!cancelled) setCollections(list) })
-      .finally(() => { if (!cancelled) setLoading(false) })
+    fetchCollections(album.slug).then((list) => { if (!cancelled) setCollections(list) })
     return () => { cancelled = true }
   }, [album.slug, row.enabled])
 
@@ -93,7 +93,7 @@ export default function CollectionsSection({ album, userTier, row, open, onToggl
                 {loading && <span className="text-xs" style={{ color: '#A89880' }}>{t('ot.loading')}</span>}
               </div>
               <div className="space-y-2">
-                {collections.map((collection) => (
+                {(collections ?? []).map((collection) => (
                   <button
                     key={collection.id}
                     type="button"
@@ -113,7 +113,7 @@ export default function CollectionsSection({ album, userTier, row, open, onToggl
                     </span>
                   </button>
                 ))}
-                {!loading && collections.length === 0 && (
+                {!loading && collections !== null && collections.length === 0 && (
                   <p className="text-xs" style={{ color: '#8B6F4E' }}>{t('ot.noCollections')}</p>
                 )}
               </div>

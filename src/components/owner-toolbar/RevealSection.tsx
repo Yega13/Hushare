@@ -31,6 +31,17 @@ export default function RevealSection({ album, userTier, open, onToggle, onAlbum
   const [revealError, setRevealError] = useState('')
   const [revealSaved, setRevealSaved] = useState(false)
 
+  // When the stored reveal changes under us, the picker follows it only if the owner has not
+  // started choosing a different time -- see CustomUrlSection for why this is a render-time
+  // reconcile and not a remount key.
+  const [seenRevealAt, setSeenRevealAt] = useState<string | null>(album.reveal_at ?? null)
+  const storedRevealAt = album.reveal_at ?? null
+  if (storedRevealAt !== seenRevealAt) {
+    const pristine = revealInput === toDatetimeLocal(seenRevealAt)
+    setSeenRevealAt(storedRevealAt)
+    if (pristine) setRevealInput(toDatetimeLocal(storedRevealAt))
+  }
+
   // One `now` per render, so the header badge and the panel body agree about "future".
   const status = revealStatus(album.reveal_at, new Date())
   const revealIsFuture = status === 'future'

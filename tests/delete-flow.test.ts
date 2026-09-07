@@ -46,6 +46,12 @@ describe('events that must be ignored', () => {
       expect(step(deleted, e)).toBe(deleted)
     }
   })
+  it('a tap on a deleted album sends nothing, and cancel mid-request does not abandon the request', () => {
+    // The JSX does not render those buttons in those phases today; this holds the machine's own
+    // promise so the JSX may change without the promise going with it.
+    expect(deleteTapSends({ phase: 'deleted', restorableForDays: 7 })).toBe(false)
+    expect(step({ phase: 'deleting' }, { type: 'cancel' })).toEqual({ phase: 'deleting' })
+  })
   it('cancel, success and failure mean nothing from idle', () => {
     for (const e of [{ type: 'cancel' }, { type: 'failed', error: 'x' }, { type: 'succeeded', restorableForDays: 7 }] as const) {
       expect(step(DELETE_IDLE, e)).toBe(DELETE_IDLE)

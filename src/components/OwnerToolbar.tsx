@@ -72,6 +72,11 @@ export default function OwnerToolbar({ album, photos, albumPhotoCount, ownerToke
   // Bumped whenever the password panel opens or Settings opens: PasswordSection is keyed on it,
   // so a partially-typed password is cleared at exactly those moments and nowhere else.
   const [passwordEpoch, setPasswordEpoch] = useState(0)
+  // AFTER A DELETE, BEFORE LEAVING. Deleting no longer destroys anything for a week, and an undo the
+  // owner cannot reach is not an undo -- so the redirect waits, and this lives HERE, in the one
+  // component that stays mounted whether or not Settings or the accordion is open. The panel body
+  // reports a landed deletion up; this reopens Settings on it and hands the days back down.
+  const [deletedFor, setDeletedFor] = useState<number | null>(null)
 
 
 
@@ -146,7 +151,6 @@ export default function OwnerToolbar({ album, photos, albumPhotoCount, ownerToke
     if (new URLSearchParams(window.location.search).get('renew') !== '1') return
     setShowSettings(true)
     setOpenSection('package')
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   useEffect(() => {
@@ -369,9 +373,8 @@ export default function OwnerToolbar({ album, photos, albumPhotoCount, ownerToke
                 onAlbumUpdated={onAlbumUpdated}
               />
 
-              {/* Custom URL -- keyed on the stored value so another device's change remounts it */}
+              {/* Custom URL -- its state is its own; it follows the stored value only while pristine */}
               <CustomUrlSection
-                key={album.custom_slug ?? ''}
                 album={album}
                 userTier={userTier}
                 row={rows.customUrl}
@@ -382,10 +385,6 @@ export default function OwnerToolbar({ album, photos, albumPhotoCount, ownerToke
 
               {/* Delayed reveal -- its rules are lib/reveal-input, its state its own */}
               <RevealSection
-                // Keyed on the stored value: when another device changes the reveal, the panel
-                // remounts and reinitialises from the prop -- the resync the effect above used to do
-                // for it, without a setState in an effect.
-                key={album.reveal_at ?? ''}
                 album={album}
                 userTier={userTier}
                 open={openSection === 'reveal'}
@@ -405,7 +404,20 @@ export default function OwnerToolbar({ album, photos, albumPhotoCount, ownerToke
               )}
 
               {/* Delete album -- the two-tap flow is lib/delete-flow; the panel body owns it */}
-              <DangerSection album={album} open={openSection === 'danger'} onToggle={() => toggleSection('danger')} />
+              <DangerSection
+                album={album}
+                open={openSection === 'danger'}
+                onToggle={() => toggleSection('danger')}
+                deletedFor={deletedFor}
+                onDeleted={(days) => {
+                  setDeletedFor(days)
+                  // Wherever the owner went while the request was in flight, the undo is in front
+                  // of them now.
+                  setShowSettings(true)
+                  setShowShare(false)
+                  setOpenSection('danger')
+                }}
+              />
             </div>
           )}
         </div>
