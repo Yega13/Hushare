@@ -1,7 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, useMemo } from 'react'
-import { searchPhase } from '@/lib/search-answer'
+import { indexKnownComplete, searchPhase } from '@/lib/search-answer'
 import { monotonicNow, elapsedSince, type Millis } from '@/lib/clock'
 import { createPortal } from 'react-dom'
 import { useParams, notFound } from 'next/navigation'
@@ -544,11 +544,20 @@ export default function AlbumPageClient({ initialAlbum = null, initialPhotos, in
   // and combined them privately, while the grid got `bibFilterActive` — true on keystroke one. So
   // a runner whose number was outside the loaded window saw "Searching…" and "No photos with that
   // number" at the same moment, the second one telling them to try a different number.
+  // Progress figures for the "still reading photos" note. COUNTED OVER THE WHOLE ALBUM BY THE
+  // SERVER, not the loaded window: counting locally made the two numbers agree perfectly on a
+  // partly-loaded album — "2,000 of 2,000 read" while 3,000 were still coming — the most
+  // reassuring possible way to be wrong. Local counts are the fallback until the first response.
+  // Read here, not at render, so searchPhase and the bar judge "fully read" from the SAME numbers.
+  const totalImageCount = bibStats?.totalImages ?? photos.filter((p) => p.media_type !== 'video').length
+  const bibIndexedCount = bibStats?.indexed ?? photos.filter((p) => p.media_type !== 'video' && p.bib_numbers != null).length
   const bibPhase = searchPhase({
     enabled: bibEnabled,
     query: bibDigits,
     answeredQuery: bibResult?.query ?? null,
     failedQuery: bibFailedQuery,
+    answerIsEmpty: (bibResult?.total ?? 0) <= 0,
+    indexComplete: indexKnownComplete(bibStats),
   })
 
   useEffect(() => {
@@ -1576,15 +1585,6 @@ export default function AlbumPageClient({ initialAlbum = null, initialPhotos, in
   // since pending photos left the grid it no longer describes what is on screen: the lightbox
   // read "1 / 10" over seven photos and wrapped at seven.
   const publishedTotal = Math.max(0, total - pendingPhotos.length)
-  // Progress figures for the "still reading photos" note — indexing happens in the background
-  // after upload, so a guest can arrive before every photo has been read.
-  //
-  // COUNTED OVER THE WHOLE ALBUM BY THE SERVER, not over the loaded window. Counting locally made
-  // the two numbers agree with each other perfectly on a partly-loaded album — "2,000 of 2,000
-  // read" while 3,000 photos were still coming — which is the most reassuring possible way to be
-  // wrong. The local counts remain as the fallback until the first response lands.
-  const totalImageCount = bibStats?.totalImages ?? photos.filter((p) => p.media_type !== 'video').length
-  const bibIndexedCount = bibStats?.indexed ?? photos.filter((p) => p.media_type !== 'video' && p.bib_numbers != null).length
   const headerVideo = resolveHeaderVideo(album, photos)
 
   return (

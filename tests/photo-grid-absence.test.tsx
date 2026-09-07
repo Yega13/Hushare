@@ -85,6 +85,20 @@ describe('an empty grid says which KIND of empty it is', () => {
     expect(screen.getByText(/try a different number/i)).toBeTruthy()
   })
 
+  it('does NOT state absence while the album is still being read', () => {
+    // THE SECOND SURFACE OF THE SAME BUG, found 2026-09-07. searchPhase had no indexing input, so a
+    // search that COMPLETED against a half-read album returned 'answered' and this grid printed the
+    // negative — underneath a bar that was simultaneously saying "Still reading photos (1,200 of
+    // 5,000)". Two surfaces, one question, opposite answers. During a race the index is behind for
+    // most of the event, so this was the normal case rather than an edge one.
+    renderGrid('indexing')
+    expect(
+      screen.queryByText(/no photos with that number/i),
+      'a half-read album has not earned a negative',
+    ).toBeNull()
+    expect(screen.queryByText(/try a different number/i)).toBeNull()
+  })
+
   it('an unfiltered empty album still says the album is empty', () => {
     // The regression that would matter most to an owner opening a brand-new album.
     renderGrid('off')

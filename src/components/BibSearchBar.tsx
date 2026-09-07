@@ -3,7 +3,7 @@
 import { Search, X } from 'lucide-react'
 import { useT } from '@/i18n/LocaleProvider'
 import { bibMatches, type BibRange } from '@/lib/bib-match'
-import { mayStateAbsence, type SearchPhase } from '@/lib/search-answer'
+import { attemptIsOver, indexKnownIncomplete, mayStateAbsence, type SearchPhase } from '@/lib/search-answer'
 
 // Re-exported so the album page keeps importing the matcher from the search bar it belongs to.
 // The rule itself lives in lib/bib-match.ts because the server needs the same one.
@@ -53,7 +53,11 @@ export default function BibSearchBar({ query, onQueryChange, matchCount, totalMa
   // Only when photos are GENUINELY unread. "4,565 of 4,565" is a finished album, and telling a
   // runner it is still reading makes them wait for something that already happened — the mirror
   // of rule 20's forbidden negative: an unbacked "not yet".
-  const stillIndexing = totalImages > 0 && indexedCount < totalImages
+  //
+  // THE RULE MOVED TO lib/search-answer AND THIS READS IT. It was a private const here, so the
+  // grid below could not know the index was behind and printed "No photos with that number" under
+  // this bar's "Still reading photos (1,200 of 5,000)". searchPhase now takes the same answer.
+  const stillIndexing = indexKnownIncomplete({ indexed: indexedCount, totalImages })
   // NOTHING NEGATIVE MAY BE STATED UNTIL THE REAL ANSWER IS IN. While the request is in flight the
   // grid is showing a local filter over the photos this phone happens to hold, which on a big album
   // is not the answer — and if the request failed, there is no answer at all.
@@ -61,6 +65,11 @@ export default function BibSearchBar({ query, onQueryChange, matchCount, totalMa
   // Read from lib/search-answer rather than recomputed here, so this bar and the grid beneath it
   // cannot reach different conclusions about the same request. They did, and the grid's was wrong.
   const answerIsFinal = mayStateAbsence(phase)
+  // WHETHER WE ARE STILL WAITING, which is a different question from whether we may state absence,
+  // and they stopped having the same answer when 'indexing' was added. Gating the escape hatch on
+  // answerIsFinal hid it for the whole of a half-read album — the exact regression the comment
+  // above that gate says was already fixed once.
+  const attemptOver = attemptIsOver(phase)
   const failed = phase === 'failed'
   // Saying "300 photos" when the answer was cut off at 300 states a cap as a total. It only happens
   // on a number OCR read off something that is not a bib, but the fix for that is the album's
@@ -115,10 +124,16 @@ export default function BibSearchBar({ query, onQueryChange, matchCount, totalMa
               {/* Order matters: a failure and an unfinished search both outrank a count of zero,
                   because zero is only true once the server has said so. */}
               {failed ? t('bib.failed')
-                : !answerIsFinal ? t('bib.searching')
+                : !attemptOver ? t('bib.searching')
                 : capped ? t('bib.foundCapped', { n: matchCount, total: totalMatches })
                 : matchCount > 0 ? t('bib.found', { n: matchCount })
-                : t('bib.none')}
+                /* Zero matches, request finished, album not fully read. Neither string is honest
+                   here: "No photos with that number" is the forbidden negative, and "Searching…"
+                   never resolves because nothing re-fetches once the answer has landed. The
+                   "Still reading photos (x of y)" note directly below states it accurately, so
+                   this says nothing rather than saying something wrong. */
+                : answerIsFinal ? t('bib.none')
+                : ''}
             </span>
           ) : (
             <span style={{ fontSize: 13, color: MUTED }}>{t('bib.hint')}</span>
@@ -160,7 +175,7 @@ export default function BibSearchBar({ query, onQueryChange, matchCount, totalMa
             true forever. A runner who searched and found nothing was then shown no way forward at
             the exact moment they needed one. The "still reading photos" note above already says
             the album is incomplete; this offers them something to do about it. */}
-        {searching && matchCount === 0 && answerIsFinal && (
+        {searching && matchCount === 0 && attemptOver && (
           <div style={{ marginTop: 12, paddingTop: 12, borderTop: `1px solid ${BORDER}` }}>
             <p style={{ fontSize: 13, lineHeight: 1.5, color: MUTED, margin: 0 }}>
               {onTryFaceFinder ? t('bib.noneHelpFace') : t('bib.noneHelp')}

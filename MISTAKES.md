@@ -890,6 +890,86 @@ from git, whenever there is ANY uncommitted work in it -- mine or anyone's. `git
 for files that are clean. And when another session shares the working tree, every write is
 assumed to be on top of someone else's.
 
+## 2026-09-07 — Circle: the bib search's indexing state
+
+### 60. I FIXED A RULE-20 BUG IN A MODULE AND THE CALL SITE SURVIVED THE MUTATION
+
+`searchPhase` had no idea whether the album's OCR had finished, so a search that COMPLETED against a
+half-read album returned 'answered' and PhotoGrid printed "No photos with that number" underneath a
+bar that was simultaneously reporting "Still reading photos (1,200 of 5,000)". I added an
+`indexing` phase and `indexComplete()`, wrote 24 tests, and killed 9 of 9 mutations on the module.
+
+Then I mutated the CALL SITE -- `indexComplete: true` in AlbumPageClient -- and **38 tests passed**.
+One token reinstates the entire bug: the album always looks fully read, so the new phase can never
+be returned. Entry 10 records this same shape four times and I did it again, in the commit whose
+whole purpose was to close a two-surfaces-disagreeing bug.
+
+`tests/album-page-search-wiring.test.ts` now pins the call site, and the same mutation fails it.
+
+**Habit to build:** the mutation set for an extracted decision must name the CALLER's file too, or
+the run proves the half that was never in doubt.
+
+### 61. MY FIX RE-CREATED A REGRESSION THE FILE ITSELF SAID HAD ALREADY BEEN FIXED ONCE
+
+A breaking agent found it before it shipped. `BibSearchBar` gated three things on
+`answerIsFinal = mayStateAbsence(phase)`, which is false for 'indexing'. So on a half-read album the
+new state hid the "Find me by face" escape hatch and pinned the label on "Searching…" -- and nothing
+re-fetches after the answer lands, so it never resolved. A runner sat on a spinner with no way
+forward, at a race, on the primary path.
+
+Six lines above that gate is a comment explaining that this exact outcome was reached once before by
+a different route (it used to require `!stillIndexing`) and why it must never happen again. I read
+that file three times while making the change and did not connect it.
+
+The cause: `mayStateAbsence` answers "may I claim nothing was found"; the bar was also using it for
+"is the attempt over, so may I offer a way out". Those are two questions that happened to have one
+answer while there were four phases. Adding a fifth split them, and reusing the old predicate for
+both is what recreated the bug. `attemptIsOver` is now the second predicate, and a test asserts the
+two disagree on exactly one phase -- so if they ever agree everywhere again, one of them is
+redundant and that is a finding rather than a silence.
+
+**Habit to build:** when adding a member to a union, list every predicate over that union and ask
+what each one MEANS, not what it currently returns. A predicate that was correct for four cases is a
+new claim about the fifth, made silently.
+
+### 62. TWO SMALLER ONES FROM THE SAME CIRCLE
+
+- **My new wiring test failed against correct code.** Its regex read a property value with
+  `[^,\n]+`, which truncates `indexComplete(a, b)` at the argument comma. The instinct on a red test
+  is to suspect the subject; the fixture was wrong. Entry 23's shape.
+- **A mutation went AMBIGUOUS and the harness refused it.** `  return phase === 'answered'` stopped
+  being unique the moment `attemptIsOver` was added below it, because its body starts with the same
+  text. The runner declined to land it rather than mutating a line I had not looked at -- the guard
+  written after entry 19/20 doing its job. Needles anchor on a signature, not on a shared return.
+
+### 63. MY GATE TRUSTED A NUMBER THE FILE ITSELF CALLS "THE MOST REASSURING POSSIBLE WAY TO BE WRONG"
+
+The indexing gate read `bibIndexedCount`/`totalImageCount`, which fall back to counting the LOADED
+WINDOW when the server's figures have not arrived. Two lines above them sits a comment I moved
+myself, in the same edit, saying those local counts "made the two numbers agree with each other
+perfectly on a partly-loaded album -- '2,000 of 2,000 read' while 3,000 photos were still coming --
+which is the most reassuring possible way to be wrong."
+
+It was harmless while it only decorated a hint line. I promoted it to gating a rule-20 negative and
+did not re-read the sentence I was moving. Worse, the bias runs the wrong way twice: albums default
+to OLDEST-FIRST, so the loaded window is exactly the photos OCR finished first and reads as 100%
+indexed -- and the stats request is issued only when the search box is EMPTY, then aborted by the
+first keystroke, so absent stats are the common case during a search rather than a rare one.
+
+The fix is two predicates instead of one, deliberately NOT complements: `indexKnownComplete` and
+`indexKnownIncomplete`, both false when the server's stats are absent. A single boolean cannot
+express "I do not know", so whichever way it defaults, one of the two surfaces states something it
+cannot back -- either the grid claims absence or the bar claims "still reading". A test asserts the
+two are never both true, and the wiring test now fails if anyone feeds the fallback counts back into
+the gate.
+
+**Habit to build:** when a number moves from decoration to enforcement, re-read every comment
+already attached to it. The warning was three lines away and I was the one who carried it there.
+
+**Also worth recording:** this is the second predicate-splitting fix in one circle (entry 61 was the
+first). Both had the same cause -- one boolean answering two questions that only happened to share
+an answer. When a union grows, every predicate over it is a new claim about the new member.
+
 ### 64. "UNMOUNT IS THE RESET" -- TRUE, AND IT ALSO UNMOUNTED THE ONE STATE THAT HAD TO SURVIVE
 
 Moving the delete panel out of the toolbar, I put its flow state in the panel body so that closing

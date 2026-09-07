@@ -11,7 +11,9 @@
 --
 -- Deliberately NOT applied at indexing time. Filtering happens when a guest searches, so an owner
 -- who mistypes the range or gets it from the organiser late can correct it and have every photo
--- re-filtered instantly, with no re-OCR and no new AWS bill. The detections stay raw on the row.
+-- re-filtered instantly, with no re-OCR and no new AWS bill. What the row stores is the FILTERED
+-- digit strings, not raw detections -- this line said "the detections stay raw on the row" until
+-- 2026-09-07, which was never true and was cited as if it were while designing a change on top.
 alter table albums add column if not exists bib_min integer;
 alter table albums add column if not exists bib_max integer;
 

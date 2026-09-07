@@ -85,6 +85,41 @@ describe('the bib bar never states a negative it cannot back up', () => {
     expect(screen.getByText(/1200 of 5000/)).toBeTruthy()
   })
 
+  // THE SAME REGRESSION, REACHED BY A DIFFERENT ROUTE, and this is the state the app now actually
+  // emits for a half-read album. The case above passes `phase` as the fixture default 'answered',
+  // which AlbumPageClient can no longer produce with those counts — so without the three below, the
+  // combination the product really renders had no test at all.
+  //
+  // When 'indexing' was added, the bar gated the escape hatch on mayStateAbsence, which is false for
+  // it. That hid the hatch and pinned the label on "Searching…" with nothing left to re-fetch, so
+  // the runner sat on a spinner forever with no way forward — MISTAKES entry 35's symptom exactly.
+  describe('a half-read album: the attempt is over even though absence cannot be claimed', () => {
+    const halfRead = { phase: 'indexing' as const, matchCount: 0, indexedCount: 1200, totalImages: 5000 }
+
+    it('OFFERS the escape hatch — the whole point of the state', () => {
+      renderBar({ ...halfRead, onTryFaceFinder: () => {} })
+      expect(
+        screen.getByRole('button', { name: /find me by face/i }),
+        'gating this on mayStateAbsence hides it for the entire event',
+      ).toBeTruthy()
+    })
+
+    it('does NOT sit on "Searching…" after the request has come back', () => {
+      // Nothing re-fetches once the answer lands, so this spinner would never resolve. An unbacked
+      // "not yet" is the mirror of rule 20's forbidden negative, not a cheap fallback.
+      renderBar(halfRead)
+      expect(screen.queryByText(/^searching/i)).toBeNull()
+      // The honest sentence is the one the bar already owns, with the real counts in it.
+      expect(screen.getByText(/1200 of 5000/)).toBeTruthy()
+    })
+
+    it('still refuses to state the negative', () => {
+      // The half that must NOT regress while fixing the half that did.
+      renderBar(halfRead)
+      expect(screen.queryByText(/no photos with that number/i)).toBeNull()
+    })
+  })
+
   it('reports a capped result as capped, not as the total', () => {
     renderBar({ matchCount: 300, totalMatches: 1847 })
     // Interpolation substitutes raw numbers, so this reads "the first 300 of 1847 photos".

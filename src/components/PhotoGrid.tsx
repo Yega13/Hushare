@@ -586,13 +586,13 @@ export default function PhotoGrid({ album, photos, albumPhotoCount, isOwner, slu
               wrong afterwards. `filtered` goes true on the first keystroke, so between the local
               window missing the number and the server replying, this printed "No photos with that
               number" — with a subtitle telling the runner to try a different one — while the bar
-              above it said "Searching…". Three states, one boolean. searchPhase is the fact; it
-              cannot say 'answered' until an answer for THIS number is actually in hand. */}
+              above it said "Searching…". Three states, one boolean. searchPhase is the fact, and
+              the branch order below is load-bearing — see mayStateAbsence in lib/search-answer. */}
           <p className="text-lg" style={{ color: '#630826', fontFamily: 'var(--font-serif)', fontWeight: 700 }}>
             {!filtered ? t('pg.empty')
-              : searchPhase === 'searching' ? t('bib.searching')
               : searchPhase === 'failed' ? t('bib.failed')
-              : t('pg.noMatches')}
+              : mayStateAbsence(searchPhase) ? t('pg.noMatches')
+              : t('bib.searching')}
           </p>
           {/* Only a FINAL answer earns an instruction. "Try a different number" under a search that
               is still running sends someone away from a query about to succeed, and under a failed
