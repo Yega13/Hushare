@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useT } from '@/i18n/LocaleProvider'
-import { tierAllows, showsAsLocked } from '@/lib/plan-gates'
+import { ownerRows } from '@/lib/owner-rows'
 import { packageExpired } from '@/lib/album-entitlements'
 import PackageSection from '@/components/owner-toolbar/PackageSection'
 import { useZipDownload } from '@/components/photo-grid/useZipDownload'
@@ -259,23 +259,9 @@ export default function OwnerToolbar({ album, photos, albumPhotoCount, ownerToke
   const motionPreviewThumb = photos.find((p) => p.media_type !== 'video')?.thumb_url
     ?? photos[0]?.poster_url ?? photos[0]?.thumb_url ?? ''
   // EACH CONTROL ASKS ABOUT ITS OWN FEATURE, by name, against lib/plan-gates.ts — the same table
-  // every server route is held to in tests/plan-gates.test.ts.
-  //
-  // These used to be two booleans, canCustomize and canUseCollections, shared across unrelated
-  // controls because those controls happen to sit at the same tier TODAY. That is fine right up
-  // until one of them moves: repackaging the album logo as Max would silently take photo
-  // moderation and the custom URL with it, and the only signal would be a customer saying that
-  // something they pay for stopped working. Naming the feature lets each row move alone.
-  //
-  // showsAsLocked rather than plain "not allowed": while the tier is still being looked up the row
-  // renders PLAIN and inert. A PRO badge appearing on something the owner pays for and then
-  // vanishing is worse than a few hundred milliseconds of a control that does nothing.
-  const canSetCustomUrl = tierAllows(userTier, 'customUrl')
-  const canModeratePhotos = tierAllows(userTier, 'photoModeration')
-  // Collections are the one ACCOUNT-scoped feature: userTier here is the ALBUM'S plan (package
-  // included), but the collections API gates on the signed-in account — so this reads the
-  // account-level answer the server sent, or the row unlocks on packaged albums and 403s on use.
-  const canUseCollections = album.collections_enabled === true
+  // every server route is held to in tests/plan-gates.test.ts. WHAT EACH ROW LOOKS LIKE for this
+  // owner -- shown, dimmed, enabled -- is decided in lib/owner-rows, where "what does a free owner
+  // on a packaged album see?" is a test rather than a re-read of four booleans per row.
   // A LIVE PACKAGE flips the toolbar into pure-hide: rows the album is not entitled to render
   // not at all, instead of greyed with an upsell badge. The owner's rule, verbatim: "in packages
   // don't show anything that is unaccessible." They bought a finished product; a purchased
@@ -284,6 +270,16 @@ export default function OwnerToolbar({ album, photos, albumPhotoCount, ownerToke
   const packagedLive = !packageExpired({
     tier: album.package_tier ?? null,
     expiresAt: album.package_expires_at ?? null,
+  })
+  // Collections are the one ACCOUNT-scoped feature: userTier here is the ALBUM'S plan (package
+  // included), but the collections API gates on the signed-in account — so the row reads the
+  // account-level answer the server sent, or it unlocks on packaged albums and 403s on use.
+  const rows = ownerRows({
+    tier: userTier,
+    packagedLive,
+    collectionsEnabled: album.collections_enabled === true,
+    brandingLocked: !!album.branding_locked,
+    guestUploadsEnabled,
   })
   // The renewal email lands on /album?renew=1 — open straight onto the package section so the
   // person who clicked "Renew" in an email is one tap from paying, not spelunking a settings menu.
@@ -295,24 +291,8 @@ export default function OwnerToolbar({ album, photos, albumPhotoCount, ownerToke
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  const showLockedCustomUrl = showsAsLocked(userTier, 'customUrl')
-  const showLockedModeration = showsAsLocked(userTier, 'photoModeration')
-  // APPROVAL ONLY MEANS SOMETHING WHILE GUESTS CAN ADD PHOTOS.
-  //
-  // With uploads off, nothing can ever arrive to be approved, so the switch below governs an empty
-  // set — it looks live, it saves, and it changes nothing anybody will ever see. Greying it out
-  // says that in the only way a control can: by not pretending to work.
-  //
-  // It is only DISABLED, never switched off. The stored value is left exactly as it was, so
-  // turning guest uploads back on restores the album's real moderation setting rather than
-  // silently publishing the next guest photo straight into a wedding album.
+  // The moot-moderation COPY needs the reason, not just the look (lib/owner-rows owns the look).
   const moderationIsMoot = !guestUploadsEnabled
-  const moderationDisabled = !canModeratePhotos || moderationIsMoot
-  const showLockedCollections = !canUseCollections
-  // Branding removal is gated by api/album/branding, and it had NO badge and NO dimming — a free
-  // owner saw an ordinary switch, flipped it, and learned it was paid from the error that came
-  // back. The row simply never asked.
-  const showLockedBranding = showsAsLocked(userTier, 'hideBranding')
   const radiusMax = Math.max(1, Math.round(mediaRadiusMax))
 
   useEffect(() => {
@@ -417,8 +397,8 @@ export default function OwnerToolbar({ album, photos, albumPhotoCount, ownerToke
   }, [album.allow_guest_downloads, album.guest_uploads_enabled, album.custom_slug, album.media_filter, album.media_radius, album.mobile_grid_columns, album.desktop_grid_columns, album.reveal_at, album.slideshow_animation, album.slideshow_motion, album.slideshow_interval_ms, album.video_autoplay, showSettings])
 
   useEffect(() => {
-    if (showSettings && canUseCollections) void loadCollections()
-  }, [showSettings, canUseCollections, loadCollections])
+    if (showSettings && rows.collections.enabled) void loadCollections()
+  }, [showSettings, rows.collections.enabled, loadCollections])
 
   function toggleSection(section: SettingsSection) {
     setOpenSection((current) => {
@@ -811,7 +791,7 @@ export default function OwnerToolbar({ album, photos, albumPhotoCount, ownerToke
           {t('ot.slideshow')}
         </button>
 
-        {!(packagedLive && showsAsLocked(userTier, 'liveWall')) && <button
+        {rows.liveWall.show && <button
           className="hush-press hush-owner-action"
           style={btnBase}
           onClick={() => {
@@ -1365,7 +1345,7 @@ export default function OwnerToolbar({ album, photos, albumPhotoCount, ownerToke
                       />
                     </label>
 
-                    <label className="flex items-center justify-between gap-4 rounded-xl px-3 py-3" style={{ background: '#FDFAF5', border: '1px solid #DDD5C5', ...gatedRowStyle(showLockedModeration || moderationIsMoot, packagedLive && showLockedModeration) }}>
+                    <label className="flex items-center justify-between gap-4 rounded-xl px-3 py-3" style={{ background: '#FDFAF5', border: '1px solid #DDD5C5', ...gatedRowStyle(rows.moderation.dimmed, !rows.moderation.show) }}>
                       <span>
                         <span className="block text-sm font-semibold" style={{ color: '#630826' }}>
                           {t('ot.requireApproval')} <PlanBadge need="pro" tier={userTier} />
@@ -1395,7 +1375,7 @@ export default function OwnerToolbar({ album, photos, albumPhotoCount, ownerToke
                           }
                         }}
                         className="h-4 w-4"
-                        disabled={moderationDisabled}
+                        disabled={!rows.moderation.enabled}
                       />
                     </label>
                   </div>
@@ -1444,7 +1424,7 @@ export default function OwnerToolbar({ album, photos, albumPhotoCount, ownerToke
                         not-allowed/dimmed treatment the locked Collections row already uses. */}
                     <label
                       className="flex items-center justify-between gap-4 rounded-xl px-3 py-3"
-                      style={{ background: '#FDFAF5', border: '1px solid #DDD5C5', ...gatedRowStyle(album.branding_locked || showLockedBranding, packagedLive && showLockedBranding) }}
+                      style={{ background: '#FDFAF5', border: '1px solid #DDD5C5', ...gatedRowStyle(rows.branding.dimmed, !rows.branding.show) }}
                     >
                       <span>
                         <span className="flex items-center gap-2 text-sm font-semibold" style={{ color: '#630826' }}>
@@ -1462,7 +1442,7 @@ export default function OwnerToolbar({ album, photos, albumPhotoCount, ownerToke
                         // The plan check as well as the lock: this row was dimmed and badged but
                         // still clickable, so a free owner flipped it and learned it was paid from
                         // the error — the experience the badge was added to replace.
-                        disabled={album.branding_locked || !tierAllows(userTier, 'hideBranding')}
+                        disabled={!rows.branding.enabled}
                         onChange={async (e) => {
                           const next = e.target.checked
                           setHideBranding(next)
@@ -1491,7 +1471,7 @@ export default function OwnerToolbar({ album, photos, albumPhotoCount, ownerToke
 
                     <label
                       className="flex items-center justify-between gap-4 rounded-xl px-3 py-3"
-                      style={{ background: '#FDFAF5', border: '1px solid #DDD5C5', ...gatedRowStyle(showsAsLocked(userTier, 'faceFinder'), packagedLive) }}
+                      style={{ background: '#FDFAF5', border: '1px solid #DDD5C5', ...gatedRowStyle(rows.faceFinder.dimmed, !rows.faceFinder.show) }}
                     >
                       <span>
                         <span className="flex items-center gap-2 text-sm font-semibold" style={{ color: '#630826' }}>
@@ -1504,7 +1484,7 @@ export default function OwnerToolbar({ album, photos, albumPhotoCount, ownerToke
                       <input
                         type="checkbox"
                         checked={faceFinderEnabled}
-                        disabled={!tierAllows(userTier, 'faceFinder')}
+                        disabled={!rows.faceFinder.enabled}
                         onChange={(e) => {
                           if (e.target.checked) { setConsentCopied(false); setFaceConsentOpen(true); return }
                           void applyFaceFinder(false)
@@ -1552,7 +1532,7 @@ export default function OwnerToolbar({ album, photos, albumPhotoCount, ownerToke
                           }
                         }}
                         className="h-4 w-4"
-                        disabled={!tierAllows(userTier, 'bibSearch')}
+                        disabled={!rows.bibSearch.enabled}
                       />
                     </label>
                   </div>
@@ -1643,7 +1623,7 @@ export default function OwnerToolbar({ album, photos, albumPhotoCount, ownerToke
                     <p className="text-xs mb-3" style={{ color: '#7C5C3E' }}>
                       {t('ot.customUrlSub')}
                     </p>
-                    <div className="flex items-stretch rounded-lg overflow-hidden" style={{ border: '1px solid #DDD5C5', background: '#FDFAF5', ...gatedRowStyle(showLockedCustomUrl, packagedLive) }}>
+                    <div className="flex items-stretch rounded-lg overflow-hidden" style={{ border: '1px solid #DDD5C5', background: '#FDFAF5', ...gatedRowStyle(rows.customUrl.dimmed, !rows.customUrl.show) }}>
                       <span className="text-xs flex items-center px-2 select-none" style={{ color: '#A89880' }}>hushare.space/</span>
                       <input
                         type="text"
@@ -1651,11 +1631,11 @@ export default function OwnerToolbar({ album, photos, albumPhotoCount, ownerToke
                         onChange={(e) => setCustomUrlInput(e.target.value)}
                         placeholder="anna-and-david"
                         maxLength={40}
-                        disabled={!canSetCustomUrl}
+                        disabled={!rows.customUrl.enabled}
                         className="flex-1 text-sm px-2 py-2 focus:outline-none disabled:cursor-not-allowed"
                         style={{ background: 'transparent', color: '#630826' }}
                         onKeyDown={(e) => {
-                          if (e.key === 'Enter' && canSetCustomUrl && !customUrlSaving && customUrlInput.trim()) void saveCustomUrl('set')
+                          if (e.key === 'Enter' && rows.customUrl.enabled && !customUrlSaving && customUrlInput.trim()) void saveCustomUrl('set')
                         }}
                       />
                     </div>
@@ -1664,7 +1644,7 @@ export default function OwnerToolbar({ album, photos, albumPhotoCount, ownerToke
                     <div className="flex items-center gap-2 mt-3">
                       <button
                         onClick={() => void saveCustomUrl('set')}
-                        disabled={!canSetCustomUrl || customUrlSaving || !customUrlInput.trim()}
+                        disabled={!rows.customUrl.enabled || customUrlSaving || !customUrlInput.trim()}
                         className="hush-press flex-1 text-sm font-semibold rounded-lg py-2 transition hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed"
                         style={{ background: '#630826', color: '#FDFAF5' }}
                       >
@@ -1673,7 +1653,7 @@ export default function OwnerToolbar({ album, photos, albumPhotoCount, ownerToke
                       {album.custom_slug && (
                         <button
                           onClick={() => void saveCustomUrl('clear')}
-                          disabled={!canSetCustomUrl || customUrlSaving}
+                          disabled={!rows.customUrl.enabled || customUrlSaving}
                           className="hush-press text-sm rounded-lg py-2 px-3 transition hover:opacity-90 disabled:opacity-50"
                           style={{ background: '#F5F0E8', color: '#7C5C3E', border: '1px solid #DDD5C5' }}
                         >
@@ -1788,10 +1768,10 @@ export default function OwnerToolbar({ album, photos, albumPhotoCount, ownerToke
               </section>
 
               {/* Collections — hidden outright on a packaged album that is not entitled */}
-              {!(packagedLive && showLockedCollections) && (
+              {rows.collections.show && (
               <section style={settingsSectionStyle}>
                 <button type="button" className="hush-motion" style={accordionButton} onClick={() => toggleSection('collection')}>
-                  <FolderPlus className="w-4 h-4" style={{ color: showLockedCollections ? '#A89880' : '#7C5C3E' }} />
+                  <FolderPlus className="w-4 h-4" style={{ color: rows.collections.dimmed ? '#A89880' : '#7C5C3E' }} />
                   <span style={sectionTitle}>{t('ot.collections')}</span>
                   <PlanBadge need="studio" tier={userTier} />
                   <ChevronDown
@@ -1805,7 +1785,7 @@ export default function OwnerToolbar({ album, photos, albumPhotoCount, ownerToke
                       {t('ot.collectionsSub')}
                     </p>
 
-                    {canUseCollections && (
+                    {rows.collections.enabled && (
                       <div className="mb-4 rounded-xl p-3" style={{ background: '#FDFAF5', border: '1px solid #E8E0D2' }}>
                         <div className="mb-2 flex items-center justify-between gap-3">
                           <span className="text-xs font-semibold uppercase tracking-[0.08em]" style={{ color: '#8B6F4E' }}>{t('ot.yourCollections')}</span>

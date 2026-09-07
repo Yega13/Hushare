@@ -155,7 +155,9 @@ const SIZE_BUDGET: Record<string, number> = {
   // telling them the album is restorable while offering no way to restore it would be a promise
   // the screen does not keep (rule 20). The redirect now waits behind a Restore/Done choice, and
   // the old "This cannot be undone" line is gone because it is no longer true.
-  'src/components/OwnerToolbar.tsx': 2009,
+  // -20 (2026-09-07): every plan-gated row's look (shown, dimmed, enabled) is decided in
+  // lib/owner-rows and tested there, 14 mutations killed; the toolbar reads rows.<key>.
+  'src/components/OwnerToolbar.tsx': 1989,
   // +23 (2026-08-31): fallback-poll wiring for realtime REFUSAL — the cadence decision is in
   // lib/realtime-fallback.ts; the timer must live beside the channel it covers (rule 15).
   // +17 (2026-08-31, review finding): channel-identity guard + timer hygiene in the reconnect

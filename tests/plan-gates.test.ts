@@ -135,36 +135,39 @@ describe('an unknown tier is not a refusal', () => {
 // THE FIFTH PLACE: the toolbar that draws the badges.
 //
 // The server refusing and the client showing an ordinary switch is the one-sided failure this whole
-// file exists for — the owner does not find out until they have already tried. So the toolbar is
-// held to the same table, and to asking about ITS OWN feature by name.
-describe('the owner toolbar reads the same table as the server', () => {
+// file exists for — the owner does not find out until they have already tried. The toolbar used to
+// compose each row's look inline from this table, four booleans per row; since 2026-09-07 that
+// composition is lib/owner-rows.ts, where tests/owner-rows.test.ts holds the BEHAVIOUR ("what does a
+// free owner on a packaged album see?"). What is held here by source is the wiring: the module asks
+// this table by feature name, and the toolbar reads every gated row from the module.
+describe('the owner toolbar reads the same table as the server, through lib/owner-rows', () => {
+  const rows = readFileSync(join(process.cwd(), 'src', 'lib', 'owner-rows.ts'), 'utf8')
   const toolbar = readFileSync(join(process.cwd(), 'src', 'components', 'OwnerToolbar.tsx'), 'utf8')
 
-  it('asks plan-gates rather than comparing tiers by hand', () => {
-    expect(toolbar.includes("from '@/lib/plan-gates'"), 'must import the shared table').toBe(true)
-    // The hand-rolled comparisons this replaced. Either of them coming back means a control whose
-    // tier can drift away from the server's without anything noticing.
-    expect(/userTier === 'pro' \|\| userTier === 'studio'/.test(toolbar), 'inline pro-or-max test is back').toBe(false)
-    expect(/const canUseCollections = userTier === 'studio'/.test(toolbar), 'inline studio test is back').toBe(false)
-  })
-
-  it('names a real feature at every gate', () => {
+  it('lib/owner-rows asks plan-gates by feature name, and every name is real', () => {
+    expect(rows.includes("from '@/lib/plan-gates'"), 'must import the shared table').toBe(true)
     // A typo'd or invented feature name would be a gate that silently allows everyone, since a
     // missing key makes tierAllows compare against undefined.
-    const used = [...toolbar.matchAll(/(?:tierAllows|showsAsLocked)\(userTier, '([a-zA-Z]+)'\)/g)].map((m) => m[1])
-    expect(used.length, 'the toolbar should be gating several controls').toBeGreaterThan(3)
+    const used = [...rows.matchAll(/(?:tierAllows|showsAsLocked|planRow)\(tier, '([a-zA-Z]+)'/g)].map((m) => m[1])
+    expect(used.length, 'the module should be gating several controls').toBeGreaterThan(3)
     for (const name of used) {
       expect(Object.keys(FEATURE_TIER), `${name} is not a feature in the table`).toContain(name)
     }
+    // EVERY feature the toolbar has a control for, not a hand-picked four: repackaging one as a
+    // different tier must move that row alone.
+    for (const feature of ['customUrl', 'photoModeration', 'hideBranding', 'faceFinder', 'bibSearch', 'liveWall']) {
+      expect(rows.includes(`'${feature}'`), `${feature} must be gated by name`).toBe(true)
+    }
   })
 
-  it('gates each control on its own feature, not a shared bucket', () => {
-    // EVERY feature the toolbar has a control for, not a hand-picked four. The first version of
-    // this test listed four names and passed while Face Finder and bib search were both still
-    // riding on the 'collections' flag — identical tier today, so nothing looked wrong, and
-    // repackaging Face Finder as Pro would have left its switch Max-only in silence.
-    for (const feature of ['customUrl', 'photoModeration', 'hideBranding', 'faceFinder', 'bibSearch']) {
-      expect(toolbar.includes(`'${feature}'`), `${feature} must be gated by name`).toBe(true)
+  it('the toolbar gates nothing by hand any more', () => {
+    expect(toolbar.includes("from '@/lib/owner-rows'"), 'must read its rows from the module').toBe(true)
+    expect(/(?:tierAllows|showsAsLocked)\(/.test(toolbar), 'an inline gate is back in the toolbar').toBe(false)
+    expect(/userTier === 'pro' \|\| userTier === 'studio'/.test(toolbar), 'inline pro-or-max test is back').toBe(false)
+    expect(/const canUseCollections = userTier === 'studio'/.test(toolbar), 'inline studio test is back').toBe(false)
+    // Each gated control reads its own row -- shown, dimmed, enabled -- and none reads another's.
+    for (const key of ['customUrl', 'moderation', 'branding', 'faceFinder', 'bibSearch', 'collections', 'liveWall']) {
+      expect(toolbar.includes(`rows.${key}.`), `${key} row is not read from lib/owner-rows`).toBe(true)
     }
   })
 
@@ -173,12 +176,9 @@ describe('the owner toolbar reads the same table as the server', () => {
     // account, so a single-album package must not open it. The toolbar's `userTier` is the ALBUM's
     // plan (package included), so gating this row on the tier table showed an unlocked control on
     // every Max Package album and the collections API then 403'd it. It reads the account-level
-    // answer the server sends instead.
-    expect(toolbar, 'must use the account-scoped flag').toContain('album.collections_enabled === true')
-    expect(
-      /(?:tierAllows|showsAsLocked)\(userTier, 'collections'\)/.test(toolbar),
-      'the album tier must not decide an account feature',
-    ).toBe(false)
+    // answer the server sends instead, and hands it to the module as a fact, not a tier.
+    expect(toolbar, 'must use the account-scoped flag').toContain('collectionsEnabled: album.collections_enabled === true')
+    expect(/(?:tierAllows|showsAsLocked)\(tier, 'collections'\)/.test(rows), 'the album tier must not decide an account feature').toBe(false)
     // And the server must be the one computing it, from the OWNER's tier and not the album's.
     expect(source('lib/server/album-access.ts')).toContain("collections_enabled: ownerTier === 'studio'")
   })
@@ -189,15 +189,8 @@ describe('the owner toolbar reads the same table as the server', () => {
     // "Remove Hushare branding" was exactly that: styled by the plan, disabled only by the lock.
     const at = toolbar.indexOf('Remove Hushare branding')
     expect(at).toBeGreaterThan(-1)
-    // 1,600 chars: the control sits ~1,000 after its label and the gap grows whenever the row
-    // gains a comment. A window sized to today's layout is a test that breaks on formatting.
     const row = toolbar.slice(at, at + 1600)
-    // Plain string, no regex: the first version built one with escapes and they were mangled before
-    // the file reached disk, so it failed against correct code. Rule 24, for the third time today.
-    expect(
-      row.includes("disabled={album.branding_locked || !tierAllows(userTier, 'hideBranding')}"),
-      'the branding toggle must be disabled by the plan as well as by the collaboration lock',
-    ).toBe(true)
+    expect(row.includes('disabled={!rows.branding.enabled}'), 'the branding toggle must be disabled by the same answer that dims it').toBe(true)
   })
 })
 
