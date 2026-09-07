@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import type { Database } from '@/types/database'
-import { refuseAccess } from '@/lib/server/respond'
+import { refuseAccess, serverError } from '@/lib/server/respond'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { verifyOwnerViaCookieWithRateLimit } from '@/lib/album-owner-access'
 import { forbidCrossSiteRequest } from '@/lib/request-security'
@@ -124,8 +124,7 @@ export async function POST(req: Request) {
   const admin = createAdminClient()
   const { error } = await admin.from('albums').update(updates).eq('id', access.album.id)
   if (error) {
-    console.error('[album/design] update failed:', error.message)
-    return NextResponse.json({ error: 'Could not update design' }, { status: 500, headers: NO_STORE })
+    return serverError('album/design', error.message, { albumId: access.album.id, publicMessage: 'Could not update design' })
   }
 
   queueAlbumSettingsBroadcast(access.album.id, updates)

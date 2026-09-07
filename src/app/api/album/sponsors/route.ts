@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { refuseAccess } from '@/lib/server/respond'
+import { refuseAccess, serverError } from '@/lib/server/respond'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { verifyOwnerViaCookieWithRateLimit } from '@/lib/album-owner-access'
 import { refuseBelowTier } from '@/lib/require-tier'
@@ -52,8 +52,7 @@ export async function POST(req: Request) {
 
   const r2Host = (process.env.R2_PUBLIC_HOST ?? '').trim().replace(/\/+$/, '')
   if (sponsor_logos.length > 0 && !r2Host) {
-    console.error('[album/sponsors] R2_PUBLIC_HOST not set')
-    return NextResponse.json({ error: 'Server configuration error' }, { status: 500, headers: NO_STORE })
+    return serverError('album/sponsors', 'R2_PUBLIC_HOST not set', { publicMessage: 'Server configuration error' })
   }
 
   const next: SponsorLogo[] = []
@@ -107,8 +106,7 @@ export async function POST(req: Request) {
   const admin = createAdminClient()
   const { error } = await admin.from('albums').update({ sponsor_logos: next }).eq('id', access.album.id)
   if (error) {
-    console.error('[album/sponsors] update failed:', error.message)
-    return NextResponse.json({ error: 'Could not update sponsors' }, { status: 500, headers: NO_STORE })
+    return serverError('album/sponsors', error.message, { albumId: access.album.id, publicMessage: 'Could not update sponsors' })
   }
 
   // Clean up R2 objects for any sponsor logo that was removed (present before, absent now).

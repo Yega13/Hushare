@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { serverError } from '@/lib/server/respond'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { RETIRE_AFTER_DAYS, WARN_AFTER_DAYS } from '@/lib/retention'
 import { getUserTierById, getPaidRetentionUntil } from '@/lib/subscriptions'
@@ -72,8 +73,7 @@ export async function POST(req: Request) {
     .limit(BATCH_SIZE)
 
   if (error) {
-    console.error('[notify-expiry] candidate lookup failed:', error.message)
-    return NextResponse.json({ error: 'Could not scan albums' }, { status: 500, headers: NO_STORE })
+    return serverError('cron/notify-expiry', error.message, { publicMessage: 'Could not scan albums' })
   }
 
   let notified = 0

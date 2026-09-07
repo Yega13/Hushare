@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { serverError } from '@/lib/server/respond'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { isAccountAdmin } from '@/lib/auth'
@@ -38,7 +39,7 @@ export async function GET() {
     admin.from('active_sessions').select('path').gte('last_seen', since).limit(3000),
   ])
   if (countRes.error && rowsRes.error) {
-    return NextResponse.json({ error: 'query failed' }, { status: 500, headers: NO_STORE })
+    return serverError('admin/presence', countRes.error?.message ?? rowsRes.error?.message ?? 'query failed', { publicMessage: 'query failed' })
   }
 
   const rows = rowsRes.data ?? []

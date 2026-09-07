@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { refuseAccess } from '@/lib/server/respond'
+import { refuseAccess, serverError } from '@/lib/server/respond'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { verifyOwnerViaCookieWithRateLimit } from '@/lib/album-owner-access'
 import { refuseBelowTier } from '@/lib/require-tier'
@@ -93,8 +93,7 @@ export async function POST(req: Request) {
     if (error.code === '23505') {
       return NextResponse.json({ error: 'This URL is already taken' }, { status: 409, headers: NO_STORE })
     }
-    console.error('[album/custom-url] update failed:', error.message)
-    return NextResponse.json({ error: 'Could not update custom URL' }, { status: 500, headers: NO_STORE })
+    return serverError('album/custom-url', error.message, { albumId: access.album.id, publicMessage: 'Could not update custom URL' })
   }
 
   queueAlbumSettingsBroadcast(access.album.id, { custom_slug: newCustomSlug })

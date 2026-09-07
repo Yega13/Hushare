@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { serverError } from '@/lib/server/respond'
 import { randomUUID } from 'node:crypto'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
@@ -42,7 +43,7 @@ export async function POST(req: Request) {
     const { error } = existing
       ? await admin.from('subscriptions').update(fields).eq('id', existing.id)
       : await admin.from('subscriptions').insert({ id: randomUUID(), polar_subscription_id: `comp-${randomUUID()}`, polar_customer_id: '', ...fields })
-    if (error) return NextResponse.json({ error: error.message }, { status: 500, headers: NO_STORE })
+    if (error) return serverError('admin/action', error.message, { publicMessage: error.message })
     return NextResponse.json({ ok: true, message: `${tier} granted through ${periodEnd.slice(0, 10)}` }, { headers: NO_STORE })
   }
 
@@ -57,7 +58,7 @@ export async function POST(req: Request) {
     const { error } = await admin.from('albums')
       .update({ last_activity_at: new Date().toISOString(), retired_at: null, deleted_at: null })
       .eq('id', body.albumId)
-    if (error) return NextResponse.json({ error: error.message }, { status: 500, headers: NO_STORE })
+    if (error) return serverError('admin/action', error.message, { publicMessage: error.message })
     return NextResponse.json({ ok: true, message: 'Retention reset — one more year from today.' }, { headers: NO_STORE })
   }
 
@@ -76,7 +77,7 @@ export async function POST(req: Request) {
     try {
       await sendOwnerLinkEmail(email, album.title, link)
     } catch (e) {
-      return NextResponse.json({ error: e instanceof Error ? e.message : 'Email send failed' }, { status: 500, headers: NO_STORE })
+      return serverError('admin/action', e instanceof Error ? e.message : 'Email send failed', { publicMessage: e instanceof Error ? e.message : 'Email send failed' })
     }
     return NextResponse.json({ ok: true, message: `Management link sent to ${email}` }, { headers: NO_STORE })
   }

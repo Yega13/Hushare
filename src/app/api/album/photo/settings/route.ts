@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { isOneOf, DISPLAY_FILTERS } from '@/lib/db-unions'
 import type { Database } from '@/types/database'
-import { refuseAccess } from '@/lib/server/respond'
+import { refuseAccess, serverError } from '@/lib/server/respond'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { MEDIA_CAPTION_MAX, MEDIA_AUTHOR_MAX } from '@/lib/constants'
 import { verifyOwnerViaCookieWithRateLimit } from '@/lib/album-owner-access'
@@ -114,8 +114,7 @@ export async function POST(req: Request) {
     .select('id, display_radius, display_filter, caption, author_name, hidden')
 
   if (error) {
-    console.error('[photo/settings] update failed:', error.message)
-    return NextResponse.json({ error: 'Could not update photo settings' }, { status: 500, headers: NO_STORE })
+    return serverError('album/photo/settings', error.message, { albumId: access.album.id, publicMessage: 'Could not update photo settings' })
   }
   if (!data || data.length === 0) {
     return NextResponse.json({ error: 'Photo not found in this album' }, { status: 404, headers: NO_STORE })

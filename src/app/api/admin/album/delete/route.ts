@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { serverError } from '@/lib/server/respond'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { isAccountAdmin } from '@/lib/auth'
@@ -41,7 +42,7 @@ export async function POST(req: Request) {
 
   const result = await deleteAlbumAssetsAndRows(admin, album)
   if (!result.ok) {
-    return NextResponse.json({ error: result.error }, { status: 500, headers: NO_STORE })
+    return serverError('admin/album/delete', result.error, { publicMessage: result.error })
   }
   return NextResponse.json({ ok: true }, { headers: NO_STORE })
 }

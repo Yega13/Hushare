@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { serverError } from '@/lib/server/respond'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { createClient } from '@/lib/supabase/server'
 import { BIN_DAYS, binMessage } from '@/lib/album-bin'
@@ -66,8 +67,7 @@ export async function POST(req: Request) {
     .is('deleted_at', null)
 
   if (binErr) {
-    console.error('[account/albums/delete] could not bin album', album.id, ':', binErr.message)
-    return NextResponse.json({ error: 'Could not delete the album' }, { status: 500, headers: NO_STORE })
+    return serverError('account/albums/delete', binErr.message, { albumId: album.id, publicMessage: 'Could not delete the album' })
   }
 
   return NextResponse.json(

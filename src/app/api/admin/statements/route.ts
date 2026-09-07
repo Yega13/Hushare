@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { serverError } from '@/lib/server/respond'
 import type { Database } from '@/types/database'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
@@ -62,8 +63,7 @@ export async function POST(req: Request) {
 
   const { error } = await admin.from('statements').insert(row)
   if (error) {
-    console.error('[admin/statements] insert failed:', error.message)
-    return NextResponse.json({ error: `Could not publish — ${error.message}` }, { status: 500, headers: NO_STORE })
+    return serverError('admin/statements', error.message, { publicMessage: `Could not publish — ${error.message}` })
   }
 
   return NextResponse.json({ ok: true, slug, url: `/statement/${slug}` }, { headers: NO_STORE })

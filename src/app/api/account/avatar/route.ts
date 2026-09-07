@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { serverError } from '@/lib/server/respond'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { forbidCrossSiteRequest } from '@/lib/request-security'
@@ -60,8 +61,7 @@ export async function POST(req: Request) {
     .upsert({ user_id: user.id, avatar_url: clearing ? null : (raw as string), updated_at: new Date().toISOString() })
 
   if (error) {
-    console.error('[account/avatar] save failed:', error.message)
-    return NextResponse.json({ error: 'Could not save' }, { status: 500, headers: NO_STORE })
+    return serverError('account/avatar', error.message, { publicMessage: 'Could not save' })
   }
 
   const previous = existing?.avatar_url

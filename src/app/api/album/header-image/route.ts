@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { refuseAccess } from '@/lib/server/respond'
+import { refuseAccess, serverError } from '@/lib/server/respond'
 import { isOwnAlbumAsset } from '@/lib/cloudflare/r2'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { verifyOwnerViaCookieWithRateLimit } from '@/lib/album-owner-access'
@@ -52,8 +52,7 @@ export async function POST(req: Request) {
 
   const r2Host = (process.env.R2_PUBLIC_HOST ?? '').trim().replace(/\/+$/, '')
   if (value !== null && !r2Host) {
-    console.error('[album/header-image] R2_PUBLIC_HOST not set')
-    return NextResponse.json({ error: 'Server configuration error' }, { status: 500, headers: NO_STORE })
+    return serverError('album/header-image', 'R2_PUBLIC_HOST not set', { publicMessage: 'Server configuration error' })
   }
 
   if (!isValidHeaderImage(value, r2Host)) {
@@ -80,7 +79,7 @@ export async function POST(req: Request) {
     access.album.header_image,
   )
   if (!result.ok) {
-    return NextResponse.json({ error: result.error }, { status: 500, headers: NO_STORE })
+    return serverError('album/header-image', result.error, { albumId: access.album.id, publicMessage: result.error })
   }
 
   return NextResponse.json({ ok: true }, { headers: NO_STORE })

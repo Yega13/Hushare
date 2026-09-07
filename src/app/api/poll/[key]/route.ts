@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { refuseRateLimited } from '@/lib/server/respond'
+import { refuseRateLimited, serverError } from '@/lib/server/respond'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { forbidCrossSiteRequest } from '@/lib/request-security'
 import { checkRateLimit, clientIpKey } from '@/lib/rate-limit'
@@ -66,8 +66,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ key: st
     .from('poll_votes')
     .upsert({ poll_key: key, option_key: optionKey, voter_id: voterId }, { onConflict: 'poll_key,voter_id' })
   if (error) {
-    console.error('[poll] vote upsert failed:', error.message)
-    return NextResponse.json({ error: 'Could not record your vote' }, { status: 500, headers: NO_STORE })
+    return serverError('poll/[key]', error.message, { publicMessage: 'Could not record your vote' })
   }
 
   const { tallies, total } = await tally(key)

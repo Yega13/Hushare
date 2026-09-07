@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { serverError } from '@/lib/server/respond'
 import { cookies } from 'next/headers'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { createClient } from '@/lib/supabase/server'
@@ -171,11 +172,9 @@ export async function POST(req: Request) {
 
     // 23505 = unique_violation — slug collision, retry with a new slug
     if (error.code !== '23505') {
-      console.error('[album/create] insert failed:', error.code)
-      return NextResponse.json({ error: 'Could not create album' }, { status: 500, headers: NO_STORE })
+      return serverError('album/create', error.code, { publicMessage: 'Could not create album' })
     }
   }
 
-  console.error('[album/create] exhausted slug retry attempts')
-  return NextResponse.json({ error: 'Could not create album, please try again' }, { status: 500, headers: NO_STORE })
+  return serverError('album/create', 'exhausted slug retry attempts', { publicMessage: 'Could not create album, please try again' })
 }

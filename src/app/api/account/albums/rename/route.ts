@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { serverError } from '@/lib/server/respond'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { createClient } from '@/lib/supabase/server'
 import { forbidCrossSiteRequest } from '@/lib/request-security'
@@ -46,8 +47,7 @@ export async function POST(req: Request) {
     .eq('user_id', user.id)
 
   if (error) {
-    console.error('[account/albums/rename] update failed:', error.message)
-    return NextResponse.json({ error: 'Could not rename album' }, { status: 500, headers: NO_STORE })
+    return serverError('account/albums/rename', error.message, { publicMessage: 'Could not rename album' })
   }
 
   if (!count) {

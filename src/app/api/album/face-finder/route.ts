@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { refuseAccess } from '@/lib/server/respond'
+import { refuseAccess, serverError } from '@/lib/server/respond'
 import { refuseBelowTier } from '@/lib/require-tier'
 import { deleteCollection } from '@/lib/rekognition'
 import { createAdminClient } from '@/lib/supabase/admin'
@@ -95,8 +95,7 @@ export async function POST(req: Request) {
     }
   }
   if (error) {
-    console.error('[album/face-finder] update failed:', error.message)
-    return NextResponse.json({ error: 'Could not update Face Finder' }, { status: 500, headers: NO_STORE })
+    return serverError('album/face-finder', error.message, { albumId: access.album.id, publicMessage: 'Could not update Face Finder' })
   }
 
   return NextResponse.json({ ok: true, face_finder_enabled: enabled }, { headers: NO_STORE })

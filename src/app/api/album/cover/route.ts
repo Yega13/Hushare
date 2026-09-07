@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { refuseAccess } from '@/lib/server/respond'
+import { refuseAccess, serverError } from '@/lib/server/respond'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { verifyOwnerViaCookieWithRateLimit } from '@/lib/album-owner-access'
 import { forbidCrossSiteRequest } from '@/lib/request-security'
@@ -65,7 +65,7 @@ export async function POST(req: Request) {
     access.album.header_image,
   )
   if (!result.ok) {
-    return NextResponse.json({ error: result.error }, { status: 500, headers: NO_STORE })
+    return serverError('album/cover', result.error, { albumId: access.album.id, publicMessage: result.error })
   }
 
   return NextResponse.json({ ok: true }, { headers: NO_STORE })

@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { refuseAccess } from '@/lib/server/respond'
+import { refuseAccess, serverError } from '@/lib/server/respond'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { verifyOwnerViaCookieWithRateLimit } from '@/lib/album-owner-access'
 import { refuseBelowTier } from '@/lib/require-tier'
@@ -80,8 +80,7 @@ export async function POST(req: Request) {
   const admin = createAdminClient()
   const { error } = await admin.from('albums').update(patch).eq('id', access.album.id)
   if (error) {
-    console.error('[album/bib-search] update failed:', error.message)
-    return NextResponse.json({ error: 'Could not update bib search' }, { status: 500, headers: NO_STORE })
+    return serverError('album/bib-search', error.message, { albumId: access.album.id, publicMessage: 'Could not update bib search' })
   }
 
   // Switching it on mid-event must also catch up on photos uploaded BEFORE the switch — otherwise

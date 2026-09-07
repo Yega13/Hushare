@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { refuseAccess } from '@/lib/server/respond'
+import { refuseAccess, serverError } from '@/lib/server/respond'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { verifyOwnerViaCookieWithRateLimit } from '@/lib/album-owner-access'
 import { refuseBelowTier } from '@/lib/require-tier'
@@ -53,8 +53,7 @@ export async function POST(req: Request) {
 
   const r2Host = (process.env.R2_PUBLIC_HOST ?? '').trim().replace(/\/+$/, '')
   if (value !== null && !r2Host) {
-    console.error('[album/logo] R2_PUBLIC_HOST not set')
-    return NextResponse.json({ error: 'Server configuration error' }, { status: 500, headers: NO_STORE })
+    return serverError('album/logo', 'R2_PUBLIC_HOST not set', { publicMessage: 'Server configuration error' })
   }
 
   if (!isValidLogoUrl(value, r2Host)) {
@@ -91,8 +90,7 @@ export async function POST(req: Request) {
   const admin = createAdminClient()
   const { error } = await admin.from('albums').update({ logo_url: value }).eq('id', access.album.id)
   if (error) {
-    console.error('[album/logo] update failed:', error.message)
-    return NextResponse.json({ error: 'Could not update logo' }, { status: 500, headers: NO_STORE })
+    return serverError('album/logo', error.message, { albumId: access.album.id, publicMessage: 'Could not update logo' })
   }
 
   const oldValue = access.album.logo_url

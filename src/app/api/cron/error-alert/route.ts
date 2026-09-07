@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { serverError } from '@/lib/server/respond'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { timingSafeEqual } from '@/lib/timing-safe'
 import { sendErrorSpikeEmail } from '@/lib/email'
@@ -70,8 +71,7 @@ export async function POST(req: Request) {
     .limit(SAMPLE_LIMIT)
     .returns<{ album_id: string | null; message: string; source: string; ua: string | null; context: { repeats?: number } | null }[]>()
   if (error) {
-    console.error('[cron/error-alert] query failed:', error.message)
-    return NextResponse.json({ error: 'query failed' }, { status: 500, headers: NO_STORE })
+    return serverError('cron/error-alert', error.message, { publicMessage: 'query failed' })
   }
 
   const count = totalOccurrences(rows ?? [])

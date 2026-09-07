@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { refuseAccess } from '@/lib/server/respond'
+import { refuseAccess, serverError } from '@/lib/server/respond'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { verifyOwnerViaCookieWithRateLimit } from '@/lib/album-owner-access'
 import { BIN_DAYS, binMessage } from '@/lib/album-bin'
@@ -60,8 +60,7 @@ export async function POST(req: Request) {
     .is('deleted_at', null)
 
   if (binErr) {
-    console.error('[album/delete] could not bin album', access.album.id, ':', binErr.message)
-    return NextResponse.json({ error: 'Could not delete the album' }, { status: 500, headers: NO_STORE })
+    return serverError('album/delete', binErr.message, { albumId: access.album.id, publicMessage: 'Could not delete the album' })
   }
 
   // THE OWNER COOKIE IS KEPT, deliberately, and this is the one line that makes the bin usable.

@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { refuseAccess } from '@/lib/server/respond'
+import { refuseAccess, serverError } from '@/lib/server/respond'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { verifyOwnerViaCookieWithRateLimit } from '@/lib/album-owner-access'
 import { refuseBelowTier } from '@/lib/require-tier'
@@ -63,8 +63,7 @@ export async function POST(req: Request) {
   const admin = createAdminClient()
   const { error } = await admin.from('albums').update({ reveal_at: revealAt }).eq('id', access.album.id)
   if (error) {
-    console.error('[album/reveal] update failed:', error.message)
-    return NextResponse.json({ error: 'Could not update reveal date' }, { status: 500, headers: NO_STORE })
+    return serverError('album/reveal', error.message, { albumId: access.album.id, publicMessage: 'Could not update reveal date' })
   }
 
   queueAlbumSettingsBroadcast(access.album.id, { reveal_at: revealAt })

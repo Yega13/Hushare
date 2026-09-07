@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { serverError } from '@/lib/server/respond'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { createClient } from '@/lib/supabase/server'
 import { forbidCrossSiteRequest } from '@/lib/request-security'
@@ -78,8 +79,7 @@ export async function POST(req: Request) {
     .select('id')
 
   if (updateErr) {
-    console.error('[account/albums/restore] update failed for album', album.id, ':', updateErr.message)
-    return NextResponse.json({ error: 'Could not restore the album' }, { status: 500, headers: NO_STORE })
+    return serverError('account/albums/restore', updateErr.message, { albumId: album.id, publicMessage: 'Could not restore the album' })
   }
   if (!restored || restored.length === 0) {
     // Somebody else restored it first, which from here is a success.

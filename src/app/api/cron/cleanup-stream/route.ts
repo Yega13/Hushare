@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { serverError } from '@/lib/server/respond'
 import { cleanupStaleStreamUploads } from '@/lib/cloudflare/stream'
 import { timingSafeEqual } from '@/lib/timing-safe'
 
@@ -26,7 +27,6 @@ export async function POST(req: Request) {
     console.log('[cleanup-stream]', JSON.stringify(result))
     return NextResponse.json({ ok: true, ...result }, { headers: NO_STORE })
   } catch (e) {
-    console.error('[cleanup-stream] failed:', e instanceof Error ? e.message : String(e))
-    return NextResponse.json({ error: 'Cleanup failed' }, { status: 500, headers: NO_STORE })
+    return serverError('cron/cleanup-stream', e instanceof Error ? e.message : String(e), { publicMessage: 'Cleanup failed' })
   }
 }

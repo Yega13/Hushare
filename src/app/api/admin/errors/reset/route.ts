@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { serverError } from '@/lib/server/respond'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { isAccountAdmin } from '@/lib/auth'
@@ -37,8 +38,7 @@ export async function POST(req: Request) {
   const { error } = await q
 
   if (error) {
-    console.error('[admin/errors/reset] update failed:', error.message)
-    return NextResponse.json({ error: 'Could not clear errors' }, { status: 500, headers: NO_STORE })
+    return serverError('admin/errors/reset', error.message, { publicMessage: 'Could not clear errors' })
   }
   return NextResponse.json({ ok: true }, { headers: NO_STORE })
 }

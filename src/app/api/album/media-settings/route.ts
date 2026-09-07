@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { isOneOf, DISPLAY_FILTERS } from '@/lib/db-unions'
 import type { Database } from '@/types/database'
-import { refuseAccess } from '@/lib/server/respond'
+import { refuseAccess, serverError } from '@/lib/server/respond'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { verifyOwnerViaCookieWithRateLimit } from '@/lib/album-owner-access'
 import { refuseBelowTier } from '@/lib/require-tier'
@@ -185,8 +185,7 @@ export async function POST(req: Request) {
 
   const { error } = await admin.from('albums').update(updates).eq('id', access.album.id)
   if (error) {
-    console.error('[album/media-settings] update failed:', error.message)
-    return NextResponse.json({ error: 'Could not update settings' }, { status: 500, headers: NO_STORE })
+    return serverError('album/media-settings', error.message, { albumId: access.album.id, publicMessage: 'Could not update settings' })
   }
 
   // Clear per-photo overrides when the owner explicitly changes the album-level setting.

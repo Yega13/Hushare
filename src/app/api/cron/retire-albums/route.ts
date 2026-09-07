@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { serverError } from '@/lib/server/respond'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { RETIRE_AFTER_DAYS, WARN_BEFORE_DAYS } from '@/lib/retention'
 import { BIN_DAYS, isPurgeable } from '@/lib/album-bin'
@@ -150,8 +151,7 @@ export async function POST(req: Request) {
     .returns<RetirementCandidate[]>()
 
   if (error) {
-    console.error('[retire-albums] candidate lookup failed:', error.message)
-    return NextResponse.json({ error: 'Could not scan albums' }, { status: 500, headers: NO_STORE })
+    return serverError('cron/retire-albums', error.message, { publicMessage: 'Could not scan albums' })
   }
 
   let retired = 0

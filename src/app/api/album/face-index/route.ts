@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { serverError } from '@/lib/server/respond'
 import { cookies } from 'next/headers'
 import { ALBUM_GATE_COLS, gateAllowsContribution, signedInUserForGate } from '@/lib/server/album-access'
 import { createAdminClient } from '@/lib/supabase/admin'
@@ -160,8 +161,7 @@ export async function POST(req: Request) {
     return await handlePost(req)
   } catch (err) {
     const msg = err instanceof Error ? `${err.name}: ${err.message}` : String(err)
-    console.error('[face-index] unhandled:', msg)
-    return NextResponse.json({ error: msg }, { status: 500, headers: NO_STORE })
+    return serverError('album/face-index', msg, { publicMessage: 'Face indexing failed. Please try again.' })
   }
 }
 

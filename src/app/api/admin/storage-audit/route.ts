@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { serverError } from '@/lib/server/respond'
 import { getCloudflareContext } from '@opennextjs/cloudflare'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
@@ -73,8 +74,7 @@ export async function GET() {
       .order('id', { ascending: true })
       .range(offset, offset + PAGE - 1)
     if (error) {
-      console.error('[admin/storage-audit] photo page failed:', error.message)
-      return NextResponse.json({ error: 'Could not read photos' }, { status: 500, headers: NO_STORE })
+      return serverError('admin/storage-audit', error.message, { publicMessage: 'Could not read photos' })
     }
     for (const p of data ?? []) {
       if (p.storage_path) referenced.add(p.storage_path)
@@ -106,8 +106,7 @@ export async function GET() {
     const { data, error } = await admin
       .from('albums').select(ALBUM_ASSET_COLUMNS).order('id', { ascending: true }).range(offset, offset + PAGE - 1)
     if (error) {
-      console.error('[admin/storage-audit] album page failed:', error.message)
-      return NextResponse.json({ error: 'Could not read albums' }, { status: 500, headers: NO_STORE })
+      return serverError('admin/storage-audit', error.message, { publicMessage: 'Could not read albums' })
     }
     for (const a of data ?? []) {
       for (const key of albumAssetKeys(a as Parameters<typeof albumAssetKeys>[0])) referenced.add(key)
@@ -121,8 +120,7 @@ export async function GET() {
     const { data, error } = await admin
       .from('profiles').select('user_id, avatar_url').order('user_id', { ascending: true }).range(offset, offset + PAGE - 1)
     if (error) {
-      console.error('[admin/storage-audit] profile page failed:', error.message)
-      return NextResponse.json({ error: 'Could not read profiles' }, { status: 500, headers: NO_STORE })
+      return serverError('admin/storage-audit', error.message, { publicMessage: 'Could not read profiles' })
     }
     for (const pr of data ?? []) {
       const key = r2KeyFromUrl((pr as { avatar_url: string | null }).avatar_url)

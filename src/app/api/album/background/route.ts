@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { refuseAccess } from '@/lib/server/respond'
+import { refuseAccess, serverError } from '@/lib/server/respond'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { verifyOwnerViaCookieWithRateLimit } from '@/lib/album-owner-access'
 import { forbidCrossSiteRequest } from '@/lib/request-security'
@@ -64,8 +64,7 @@ export async function POST(req: Request) {
   // r2Host is needed for both validating the incoming theme and cleaning up the old one.
   const r2Host = (process.env.R2_PUBLIC_HOST ?? '').trim().replace(/\/+$/, '')
   if (theme !== null && theme.startsWith('image:') && !r2Host) {
-    console.error('[album/background] R2_PUBLIC_HOST not set')
-    return NextResponse.json({ error: 'Server configuration error' }, { status: 500, headers: NO_STORE })
+    return serverError('album/background', 'R2_PUBLIC_HOST not set', { publicMessage: 'Server configuration error' })
   }
 
   if (!isValidBackgroundTheme(theme, r2Host)) {
@@ -84,8 +83,7 @@ export async function POST(req: Request) {
   const admin = createAdminClient()
   const { error } = await admin.from('albums').update({ background_theme: theme }).eq('id', access.album.id)
   if (error) {
-    console.error('[album/background] update failed:', error.message)
-    return NextResponse.json({ error: 'Could not update background' }, { status: 500, headers: NO_STORE })
+    return serverError('album/background', error.message, { albumId: access.album.id, publicMessage: 'Could not update background' })
   }
 
   // Clean up the previous custom background from R2 — best-effort, non-fatal, fire-and-forget.

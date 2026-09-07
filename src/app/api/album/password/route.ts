@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { refuseAccess } from '@/lib/server/respond'
+import { refuseAccess, serverError } from '@/lib/server/respond'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { verifyOwnerViaCookieWithRateLimit } from '@/lib/album-owner-access'
 import { forbidCrossSiteRequest } from '@/lib/request-security'
@@ -45,8 +45,7 @@ export async function POST(req: Request) {
   const admin = createAdminClient()
   const { error } = await admin.from('albums').update({ password_hash: passwordHash }).eq('id', access.album.id)
   if (error) {
-    console.error('[album/password] update failed:', error.message)
-    return NextResponse.json({ error: 'Could not update password' }, { status: 500, headers: NO_STORE })
+    return serverError('album/password', error.message, { albumId: access.album.id, publicMessage: 'Could not update password' })
   }
 
   queueAlbumSettingsBroadcast(access.album.id, { password_protected: passwordHash !== null })

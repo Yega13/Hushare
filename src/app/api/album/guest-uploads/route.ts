@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { refuseAccess } from '@/lib/server/respond'
+import { refuseAccess, serverError } from '@/lib/server/respond'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { verifyOwnerViaCookieWithRateLimit } from '@/lib/album-owner-access'
 import { forbidCrossSiteRequest } from '@/lib/request-security'
@@ -45,8 +45,7 @@ export async function POST(req: Request) {
     .eq('id', access.album.id)
 
   if (error) {
-    console.error('[album/guest-uploads] update failed:', error.message)
-    return NextResponse.json({ error: 'Could not update setting' }, { status: 500, headers: NO_STORE })
+    return serverError('album/guest-uploads', error.message, { albumId: access.album.id, publicMessage: 'Could not update setting' })
   }
 
   // Broadcast so a guest with the album already open loses (or regains) the upload zone without

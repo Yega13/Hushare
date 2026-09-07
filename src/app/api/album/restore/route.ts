@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { serverError } from '@/lib/server/respond'
 import { cookies } from 'next/headers'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { forbidCrossSiteRequest } from '@/lib/request-security'
@@ -74,8 +75,7 @@ export async function POST(req: Request) {
     .select('id')
 
   if (updateErr) {
-    console.error('[album/restore] update failed for album', album.id, ':', updateErr.message)
-    return NextResponse.json({ error: 'Could not restore the album' }, { status: 500, headers: NO_STORE })
+    return serverError('album/restore', updateErr.message, { albumId: album.id, publicMessage: 'Could not restore the album' })
   }
   // Zero rows means somebody else restored it first. That is a success from where the owner stands.
   if (!restored || restored.length === 0) {

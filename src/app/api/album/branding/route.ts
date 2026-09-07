@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { refuseAccess } from '@/lib/server/respond'
+import { refuseAccess, serverError } from '@/lib/server/respond'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { verifyOwnerViaCookieWithRateLimit } from '@/lib/album-owner-access'
 import { refuseBelowTier } from '@/lib/require-tier'
@@ -79,8 +79,7 @@ export async function POST(req: Request) {
     .eq('id', access.album.id)
 
   if (error) {
-    console.error('[album/branding] update failed:', error.message)
-    return NextResponse.json({ error: 'Could not save' }, { status: 500, headers: NO_STORE })
+    return serverError('album/branding', error.message, { albumId: access.album.id, publicMessage: 'Could not save' })
   }
 
   // Everyone looking at the album sees the change without reloading, same as every other setting.
