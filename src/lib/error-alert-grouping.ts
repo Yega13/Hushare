@@ -53,7 +53,9 @@ export const MAX_REPEATS_PER_ROW = 1000
 export function occurrencesOf(row: ErrorAlertRow): number {
   const ctx = row.context
   const n = ctx !== null && typeof ctx === 'object' && !Array.isArray(ctx) ? (ctx as { repeats?: unknown }).repeats : undefined
-  if (typeof n !== 'number' || !Number.isFinite(n) || n <= 0) return 1
+  // `< 1`, not `<= 0`: 0.5 passed the old check and floored to ZERO, the one value the doc above
+  // says this never returns. A row counted as nothing is a row an attacker can hide.
+  if (typeof n !== 'number' || !Number.isFinite(n) || n < 1) return 1
   return Math.min(Math.floor(n), MAX_REPEATS_PER_ROW)
 }
 

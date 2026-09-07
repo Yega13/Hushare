@@ -49,10 +49,12 @@ export async function getActiveSubscription(userId: string): Promise<Subscriptio
     console.error('[subscriptions] query failed:', error.message)
     return null
   }
-  // `tier` is plain text in the database -- no CHECK -- and the cast that used to sit on this query
-  // called it 'pro' | 'studio' by assertion. Established here instead: a row with any other value
-  // grants NOTHING (the safe direction for an entitlement) and is reported, because a paying user
-  // silently dropping to free is the failure this codebase keeps paying for.
+  // `tier` is CHECK-constrained to the same two values as albums.package_tier (both held to
+  // PACKAGE_TIERS by tests/schema-unions.test.ts against the live constraint), but the generated type
+  // can only call it `string`, and the cast that used to sit here asserted the union. Established
+  // here instead: a row with any other value grants NOTHING (the safe direction for an entitlement)
+  // and is reported -- reachable only if the CHECK is widened without this being updated, which the
+  // schema test fails on first.
   const active: Subscription[] = []
   for (const row of (data ?? []).filter(isSubActive)) {
     if (isOneOf(PACKAGE_TIERS, row.tier)) active.push({ ...row, tier: row.tier })

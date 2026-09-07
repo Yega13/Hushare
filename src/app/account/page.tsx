@@ -465,7 +465,9 @@ export default async function AccountPage({ searchParams }: Props) {
                 ))}
               </div>
 
-              {subscription ? (
+              {/* No portal exists for a plan granted by hand (no Polar customer), so no button to a
+                  dead end. Every admin comp is such a row. */}
+              {subscription?.polar_customer_id ? (
                 <form action="/api/portal" method="POST" className="mt-6">
                   <button
                     type="submit"

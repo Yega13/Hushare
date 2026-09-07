@@ -58,6 +58,8 @@ const checks = await readChecks()
 // The union this file asserts, against the column whose CHECK backs it.
 const MIRRORED: Array<{ column: string; ts: readonly string[] }> = [
   { column: 'albums.package_tier', ts: PACKAGE_TIERS },
+  // The same two words back a second column with its own CHECK. One union, two constraints, both held.
+  { column: 'subscriptions.tier', ts: PACKAGE_TIERS },
   { column: 'photos.media_type', ts: MEDIA_TYPES },
   { column: 'photos.storage_backend', ts: STORAGE_BACKENDS },
   // One TypeScript list, two database columns. If the two CHECKs ever diverge, exactly one of

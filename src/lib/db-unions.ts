@@ -18,7 +18,11 @@
 // the honest shape: they take what the database can actually return and refuse what the code cannot
 // handle (rule 19 — the uncertain branch does nothing).
 
-/** albums.package_tier — a one-off package can entitle an album above its owner's account. */
+/**
+ * The two paid tiers. Backs TWO CHECK-constrained columns with identical constraints:
+ * albums.package_tier (a one-off package can entitle an album above its owner's account) and
+ * subscriptions.tier (the account's plan). tests/schema-unions.test.ts holds this union to both.
+ */
 export const PACKAGE_TIERS = ['pro', 'studio'] as const
 export type PackageTier = (typeof PACKAGE_TIERS)[number]
 

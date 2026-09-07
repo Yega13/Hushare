@@ -144,9 +144,11 @@ Stated plainly, because a map that hides the swamps is not a map.
   `lib/server/respond.ts`; no route returns a 500 without a `reportServerError` in the same
   block (checked per site, 2026-09-07). The 4xx side is still mostly hand-written
   `NextResponse.json` -- consistent bodies, but nothing holds them to the `Refusal` vocabulary.
-- **About two dozen `.returns<T[]>()` casts remain** on list queries (`account/page.tsx`,
-  `lib/subscriptions.ts`, `lib/server/album-access.ts`, several crons). Each is a place the
-  compiler is told not to look.
+- **One `.returns<T[]>()` cast remains**, in `lookupOwnableAlbum`, because its select columns are
+  caller-supplied and no literal exists for the compiler to type from; the reason is written above
+  it. Two columns still carry a type the schema does not enforce (`subscriptions.tier` has no
+  CHECK; `status` is free text) and are narrowed by code at their boundary rather than by the
+  database.
 - **Lint is not a gate.** `npx eslint src` reports 76 errors and 20 warnings; CI runs only the one
   rule that takes a page down. The rest is unowned.
 - **The schema gates depend on a secret.** Migrations, `db:check` and the types drift check run

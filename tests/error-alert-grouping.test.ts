@@ -31,6 +31,8 @@ describe('how many failures one row represents', () => {
     expect(occurrencesOf({ context: 7 })).toBe(1)
     expect(occurrencesOf({ context: [{ repeats: 40 }] })).toBe(1)
     expect(occurrencesOf({ context: { repeats: '40' } })).toBe(1)
+    // 0.5 used to pass `> 0` and floor to ZERO -- the one value this must never return.
+    expect(occurrencesOf({ context: { repeats: 0.5 } })).toBe(1)
   })
 
   it('counts the repeats a coalesced row absorbed', () => {
