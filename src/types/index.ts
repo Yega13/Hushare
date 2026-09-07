@@ -158,7 +158,7 @@ export type Subscription = {
   id: string;
   user_id: string;
   polar_subscription_id: string;
-  polar_customer_id: string;
+  polar_customer_id: string | null;
   polar_product_id: string | null;
   tier: "pro" | "studio";
   status: string;

@@ -90,11 +90,11 @@ vi.mock('@/lib/supabase/admin', () => ({
     // returns an error from PostgREST, which fails open, which is the budget silently not applying.
     rpc: (name: string, args: unknown) => {
       cfg.rpcCalls.push({ name, args })
-      return {
-        returns: async () => (cfg.durationError
-          ? { data: null, error: { message: cfg.durationError } }
-          : { data: cfg.videoSecondsUsed, error: null }),
-      }
+      // Awaited directly now that the `.returns<>()` cast is gone: the rpc builder is a thenable.
+      const result = () => (cfg.durationError
+        ? { data: null, error: { message: cfg.durationError } }
+        : { data: cfg.videoSecondsUsed, error: null })
+      return { then: (res: (v: unknown) => unknown, rej?: (e: unknown) => unknown) => Promise.resolve(result()).then(res, rej) }
     },
   }),
 }))

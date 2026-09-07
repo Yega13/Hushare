@@ -26,9 +26,11 @@ vi.mock('@/lib/supabase/admin', () => ({
       chain.select = () => chain
       chain.or = () => chain
       chain.is = () => chain
-      chain.returns = async () => (queryError
+      // Awaited directly now that the `.returns<>()` cast is gone: a thenable chain.
+      const result = () => (queryError
         ? { data: null, error: { message: queryError } }
         : { data: rows, error: null })
+      chain.then = (res: (v: unknown) => unknown, rej?: (e: unknown) => unknown) => Promise.resolve(result()).then(res, rej)
       return chain
     },
   }),

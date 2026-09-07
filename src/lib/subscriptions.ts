@@ -1,6 +1,8 @@
 import { createAdminClient } from '@/lib/supabase/admin'
 import { isAccountAdmin } from '@/lib/auth'
 import type { Tier, Subscription } from '@/types'
+import { isOneOf, PACKAGE_TIERS } from '@/lib/db-unions'
+import { reportServerError } from '@/lib/report-server-error'
 
 // Renewal webhooks normally land within seconds, but a delayed or dropped one must never cut off
 // someone who is genuinely paying. A week of slack makes a false negative (locking out a paying
@@ -42,13 +44,20 @@ export async function getActiveSubscription(userId: string): Promise<Subscriptio
     .eq('user_id', userId)
     .order('created_at', { ascending: false })
     .limit(20)
-    .returns<Subscription[]>()
 
   if (error) {
     console.error('[subscriptions] query failed:', error.message)
     return null
   }
-  const active = (data ?? []).filter(isSubActive)
+  // `tier` is plain text in the database -- no CHECK -- and the cast that used to sit on this query
+  // called it 'pro' | 'studio' by assertion. Established here instead: a row with any other value
+  // grants NOTHING (the safe direction for an entitlement) and is reported, because a paying user
+  // silently dropping to free is the failure this codebase keeps paying for.
+  const active: Subscription[] = []
+  for (const row of (data ?? []).filter(isSubActive)) {
+    if (isOneOf(PACKAGE_TIERS, row.tier)) active.push({ ...row, tier: row.tier })
+    else reportServerError('subscriptions', 'active subscription row has a tier this code does not know; it grants nothing', { account: userId, context: { id: row.id, tier: row.tier } })
+  }
   if (active.length === 0) return null
   return active.find((s) => s.tier === 'studio') ?? active[0]
 }
@@ -62,12 +71,6 @@ export async function getUserTier(user: UserLike): Promise<Tier> {
   return sub?.tier ?? 'free'
 }
 
-type SubForTierCheck = {
-  tier: 'pro' | 'studio'
-  status: string
-  current_period_end: string | null
-  cancel_at_period_end: boolean
-}
 
 // Short-lived per-isolate cache for the tier lookup.
 //
@@ -143,7 +146,6 @@ async function computeUserTier(userId: string): Promise<{ tier: Tier; cacheable:
     .eq('user_id', userId)
     .order('created_at', { ascending: false })
     .limit(20)
-    .returns<SubForTierCheck[]>()
 
   if (subErr) console.error('[subscriptions] getUserTierById query failed:', subErr.message)
 
@@ -197,7 +199,6 @@ export async function getPaidRetentionUntil(userId: string | null | undefined): 
     .eq('user_id', userId)
     .order('created_at', { ascending: false })
     .limit(20)
-    .returns<{ current_period_end: string | null }[]>()
   if (error) {
     // On uncertainty, protect the album (return a far-future date) — never delete on a failed check.
     console.error('[subscriptions] getPaidRetentionUntil query failed:', error.message)

@@ -56,7 +56,6 @@ export async function POST(req: Request) {
     // bring it back. The rows are classified below instead of being filtered away here.
     .select('slug, custom_slug, user_id, retired_at, deleted_at')
     .or(`slug.in.(${slugs.join(',')}),custom_slug.in.(${slugs.join(',')})`)
-    .returns<{ slug: string; custom_slug: string | null; user_id: string | null; retired_at: string | null; deleted_at: string | null }[]>()
 
   if (error) {
     // On failure report everything as alive. Pruning on an error would delete the owner's only

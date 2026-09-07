@@ -8,7 +8,7 @@ import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { isAccountAdmin } from '@/lib/auth'
 import AdminRefreshButton from '@/components/AdminRefreshButton'
-import AdminErrorTabs, { type ErrorRow } from '@/components/AdminErrorTabs'
+import AdminErrorTabs from '@/components/AdminErrorTabs'
 import AdminTestAlertButton from '@/components/AdminTestAlertButton'
 import AdminDeleteAlbumButton from '@/components/AdminDeleteAlbumButton'
 import AdminSyncPolarButton from '@/components/AdminSyncPolarButton'
@@ -63,15 +63,6 @@ const EVENT_LABELS: Record<string, string> = {
   support_chat: 'Support chats',
 }
 
-type AlbumRow = {
-  id: string
-  slug: string
-  custom_slug: string | null
-  title: string
-  user_id: string | null
-  created_at: string
-  retired_at: string | null
-}
 
 async function getStreamUsage(): Promise<{ minutes: number; limit: number; videos: number } | null> {
   const acc = process.env.CLOUDFLARE_ACCOUNT_ID
@@ -147,7 +138,7 @@ export default async function AdminPage() {
     // had not happened.
     admin.from('subscriptions').select('id', { count: 'exact', head: true }).eq('status', 'active'),
     admin.from('albums').select('id, slug, custom_slug, title, user_id, created_at, retired_at')
-      .order('created_at', { ascending: false }).limit(300).returns<AlbumRow[]>(),
+      .order('created_at', { ascending: false }).limit(300),
     admin.from('subscriptions').select('user_id, tier, status, current_period_end, polar_product_id, created_at')
       .order('created_at', { ascending: false }).limit(200),
     getStreamUsage(),
@@ -166,8 +157,7 @@ export default async function AdminPage() {
     admin.from('error_events').select('id', { count: 'exact', head: true }).eq('level', 'error').is('resolved_at', null),
     admin.from('error_events').select('created_at, level, source, message, album_id, ua, context')
       .is('resolved_at', null)
-      .order('created_at', { ascending: false }).limit(200)
-      .returns<ErrorRow[]>(),
+      .order('created_at', { ascending: false }).limit(200),
     // Every message that has EVER been cleared. Membership separates "this came back after we
     // thought it was fixed" from "nobody has seen this before" — the one distinction the table
     // could not make, and the one worth acting on.

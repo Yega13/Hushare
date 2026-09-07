@@ -69,7 +69,6 @@ export async function POST(req: Request) {
     // sample is at least the most recent part of what is happening right now.
     .order('created_at', { ascending: false })
     .limit(SAMPLE_LIMIT)
-    .returns<{ album_id: string | null; message: string; source: string; ua: string | null; context: { repeats?: number } | null }[]>()
   if (error) {
     return serverError('cron/error-alert', error.message, { publicMessage: 'query failed' })
   }

@@ -169,7 +169,6 @@ export async function authorizeVideoUpload(
   // roughly what is in flight — the same bounded overshoot the item cap accepts.
   const { data: usedFromDb, error: videoSumErr } = await admin
     .rpc('album_video_seconds', { p_album_id: params.albumId })
-    .returns<number>()
 
   // A NUMBER WE CANNOT TRUST IS THE SAME EVENT AS A QUERY THAT FAILED. Postgres returns bigint,
   // which some drivers hand back as a string and some as null when the shape changes; a value that

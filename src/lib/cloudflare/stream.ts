@@ -277,7 +277,6 @@ export async function cleanupStaleStreamUploads(): Promise<{
         .from('photos')
         .select('stream_uid')
         .in('stream_uid', stale.map(x => x.uid))
-        .returns<{ stream_uid: string }[]>()
       const keep = new Set((known ?? []).map(r => r.stream_uid))
       if (keep.size > 0) {
         for (let i = stale.length - 1; i >= 0; i--) if (keep.has(stale[i].uid)) stale.splice(i, 1)

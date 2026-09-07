@@ -98,7 +98,6 @@ export async function indexAlbumBibsBatch(albumId: string, max: number = BATCH):
     .eq('media_type', 'image')
     .is('bib_numbers', null)
     .limit(cap)
-    .returns<PendingPhoto[]>()
   if (!pending || pending.length === 0) return 0
 
   let cursor = 0

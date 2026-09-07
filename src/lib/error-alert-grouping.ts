@@ -16,7 +16,8 @@
 export type ErrorAlertRow = {
   album_id?: string | null
   message?: string | null
-  context?: { repeats?: number } | null
+  // jsonb, so anything: a string, an array, an object with a string `repeats`. Read defensively below.
+  context?: unknown
 }
 
 /**
@@ -50,7 +51,8 @@ export const MAX_REPEATS_PER_ROW = 1000
  * definitely represents — never zero, which would let a malformed context hide an incident.
  */
 export function occurrencesOf(row: ErrorAlertRow): number {
-  const n = row.context?.repeats
+  const ctx = row.context
+  const n = ctx !== null && typeof ctx === 'object' && !Array.isArray(ctx) ? (ctx as { repeats?: unknown }).repeats : undefined
   if (typeof n !== 'number' || !Number.isFinite(n) || n <= 0) return 1
   return Math.min(Math.floor(n), MAX_REPEATS_PER_ROW)
 }

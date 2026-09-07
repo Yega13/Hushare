@@ -1,6 +1,7 @@
 import { redirect } from 'next/navigation'
 import AccountRenewals from './AccountRenewals'
 import { renewalNotices } from '@/lib/package-renewal'
+import { asPackageTier } from '@/lib/db-unions'
 import type { Metadata } from 'next'
 import Image from 'next/image'
 import Link from 'next/link'
@@ -71,31 +72,7 @@ type Props = {
   searchParams: Promise<{ welcome?: string; renew?: string }>
 }
 
-type AccountCollection = {
-  id: string
-  name: string
-  slug: string
-  description: string | null
-  created_at: string
-}
 
-type AccountAlbum = {
-  id: string
-  slug: string
-  custom_slug: string | null
-  title: string
-  cover_photo_id: string | null
-  created_at: string
-  /** Set when the owner deleted it. Still recoverable until cron/retire-albums empties the bin. */
-  deleted_at: string | null
-  // The owner_token is used to build the management link. Safe to include here: this is
-  // the signed-in user's OWN album, on their own authenticated dashboard page.
-  owner_token: string
-  // The package this album is on, if any — the account page is the renewal surface, because it is
-  // the only one a password or a reveal date cannot gate. See lib/package-renewal.
-  package_tier: 'pro' | 'studio' | null
-  package_expires_at: string | null
-}
 
 type AccountMediaRow = {
   id: string
@@ -228,14 +205,16 @@ export default async function AccountPage({ searchParams }: Props) {
       .from('collections')
       .select('id, name, slug, description, created_at')
       .eq('user_id', user.id)
-      .order('created_at', { ascending: false })
-      .returns<AccountCollection[]>(),
+      .order('created_at', { ascending: false }),
+    // owner_token builds the management link. Safe to select here: these are the signed-in user's
+    // OWN albums, on their own authenticated dashboard page. package_tier/package_expires_at are
+    // here because this page is the renewal surface -- the only one a password or a reveal date
+    // cannot gate (see lib/package-renewal).
     admin
       .from('albums')
       .select('id, slug, custom_slug, title, cover_photo_id, created_at, owner_token, package_tier, package_expires_at, deleted_at')
       .eq('user_id', user.id)
-      .order('created_at', { ascending: false })
-      .returns<AccountAlbum[]>(),
+      .order('created_at', { ascending: false }),
   ])
 
   if (collectionsResult.error) {
@@ -277,7 +256,8 @@ export default async function AccountPage({ searchParams }: Props) {
   }
 
   const collections = collectionsResult.data ?? []
-  const allAccountAlbums = albumsResult.data ?? []
+  // package_tier is CHECK-constrained text; the union is established here, not asserted by a cast.
+  const allAccountAlbums = (albumsResult.data ?? []).map((a) => ({ ...a, package_tier: asPackageTier(a.package_tier) }))
 
   // DELETED ALBUMS ARE SPLIT OUT, NOT FILTERED OUT.
   //
@@ -330,7 +310,6 @@ export default async function AccountPage({ searchParams }: Props) {
           .from('collection_albums')
           .select('collection_id, album_id')
           .in('collection_id', collectionIds)
-          .returns<Array<{ collection_id: string; album_id: string }>>()
       : Promise.resolve({ data: [] as Array<{ collection_id: string; album_id: string }>, error: null }),
     Promise.all(accountAlbums.map((a) => exactCount(headCount().eq('album_id', a.id)))),
     Promise.all(accountAlbums.map(async (a): Promise<CoverRow | null> => {
@@ -346,7 +325,7 @@ export default async function AccountPage({ searchParams }: Props) {
       const { data } = await admin.from('photos').select(mediaCols)
         .eq('album_id', a.id)
         .order('media_type', { ascending: true }).order('created_at', { ascending: true })
-        .limit(1).returns<CoverRow[]>()
+        .limit(1)
       return data?.[0] ?? null
     })),
     accountAlbumIds.length ? exactCount(headCount().in('album_id', accountAlbumIds).eq('media_type', 'image')) : Promise.resolve(0),

@@ -87,6 +87,10 @@ export const SLUG_CHARSET_RE = /^[a-z0-9-]+$/
 async function lookupOwnableAlbum<T extends AlbumOwnerBase>(cleanSlug: string, cols: string): Promise<T | null> {
   if (!SLUG_CHARSET_RE.test(cleanSlug)) return null
   const admin = createAdminClient()
+  // THE ONE `.returns<>()` THAT STAYS, and why: `cols` is a caller-supplied string, so the select
+  // literal the compiler would type this from does not exist at compile time. Every caller's T is
+  // its own promise about what it asked for; nothing here can check it. That is the honest shape
+  // of a dynamic-column lookup -- the alternative is a cast further down that hides the same fact.
   const { data: rows, error } = await admin
     .from('albums')
     .select(cols)
@@ -360,7 +364,6 @@ export async function lookupAlbumIncludingBinned(
     .select('id, slug, owner_token, deleted_at')
     .or(`slug.eq.${clean},custom_slug.eq.${clean}`)
     .limit(2)
-    .returns<{ id: string; slug: string; owner_token: string; deleted_at: string | null }[]>()
   if (error || !rows || rows.length === 0) return null
   return rows.find((r) => r.slug === clean) ?? rows[0]
 }

@@ -97,7 +97,6 @@ export async function indexAlbumFacesBatch(albumId: string, max: number = BATCH)
     .neq('media_type', 'video')
     .is('face_ids', null)
     .limit(cap)
-    .returns<PendingPhoto[]>()
   if (!pending || pending.length === 0) return 0
 
   // Only touch AWS once we know there is work — ensureCollection is a billable API call.

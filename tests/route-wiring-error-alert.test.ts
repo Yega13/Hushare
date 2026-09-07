@@ -61,9 +61,12 @@ vi.mock('@/lib/supabase/admin', () => ({
         // supposed to name, and the limit is what decides whether the count is a total or a floor.
         chain.gte = (_col: string, value: string) => { cfg.since = value; return chain }
         chain.limit = (n: number) => { cfg.sampleLimit = n; return chain }
-        chain.returns = async () => (cfg.queryError
+        // The chain is awaited directly now that the `.returns<>()` cast is gone: a thenable, so
+        // `await admin.from(...).select(...)...limit(n)` resolves to the scripted result.
+        const result = () => (cfg.queryError
           ? { data: null, error: { message: cfg.queryError } }
           : { data: cfg.rows, error: null })
+        chain.then = (res: (v: unknown) => unknown, rej?: (e: unknown) => unknown) => Promise.resolve(result()).then(res, rej)
         return chain
       }
       // system_state — the cooldown claim and the rollback.

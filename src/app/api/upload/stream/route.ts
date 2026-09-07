@@ -142,7 +142,6 @@ export async function POST(req: Request) {
       p_budget_seconds: auth.budgetSeconds,
       p_upload_url: uploadUrl,
     })
-    .returns<boolean>()
   if (pendingErr) {
     console.error('[stream] reserve_album_video failed:', pendingErr.message)
     reportServerError('stream', 'Failed to initiate video upload (502)')

@@ -15,13 +15,6 @@ const NO_STORE = { 'Cache-Control': 'no-store' }
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
 type AlbumForCollection = { id: string; owner_token: string; user_id: string | null }
-type CollectionSummary = {
-  id: string
-  name: string
-  slug: string
-  description: string | null
-  created_at: string
-}
 
 // GET /api/collections?slug=<albumSlug>
 // Lists the authenticated user's collections. If ?slug= is provided, each
@@ -59,7 +52,6 @@ export async function GET(req: Request) {
     .select('id, name, slug, description, created_at')
     .eq('user_id', user.id)
     .order('created_at', { ascending: false })
-    .returns<CollectionSummary[]>()
 
   if (error) {
     return serverError('collections', error.message, { publicMessage: 'Could not load collections' })
@@ -71,7 +63,6 @@ export async function GET(req: Request) {
         .from('collection_albums')
         .select('collection_id, album_id')
         .in('collection_id', collectionIds)
-        .returns<Array<{ collection_id: string; album_id: string }>>()
     : { data: [] as Array<{ collection_id: string; album_id: string }> }
 
   const shaped = (collections ?? []).map((c) => {

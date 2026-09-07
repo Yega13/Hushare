@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { refuseRateLimited, serverError } from '@/lib/server/respond'
+import { refuseRateLimited, serverError, toResponse } from '@/lib/server/respond'
 import { createClient } from '@/lib/supabase/server'
 import { getActiveSubscription } from '@/lib/subscriptions'
 import { createCustomerSession } from '@/lib/polar'
@@ -35,6 +35,13 @@ export async function POST(req: Request) {
       { error: 'No active subscription' },
       { status: 404, headers: NO_STORE },
     )
+  }
+
+  // A subscription granted by hand (admin comp) has no Polar customer behind it -- one live row
+  // today. The cast that used to sit on the query called this column `string`, so this branch did
+  // not exist and Polar would have been asked for a session for customer `null`.
+  if (!subscription.polar_customer_id) {
+    return toResponse({ kind: 'not_found', message: 'This plan was not set up through billing, so there is no billing portal to open.' })
   }
 
   let portalUrl: string

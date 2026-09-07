@@ -33,16 +33,6 @@ const NO_STORE = { 'Cache-Control': 'no-store' }
 // warning having been sent, so a backlog delays rather than skips.
 const BATCH_SIZE = 100
 
-type RetirementCandidate = {
-  id: string
-  slug: string
-  user_id: string | null
-  background_theme: string | null
-  logo_url: string | null
-  header_image: string | null
-  sponsor_logos: unknown
-  last_activity_at: string
-}
 
 export async function POST(req: Request) {
   // Fail-closed: a missing secret in production means anyone could trigger
@@ -94,7 +84,6 @@ export async function POST(req: Request) {
     .lt('deleted_at', binCutoff)
     .order('deleted_at', { ascending: true })
     .limit(BATCH_SIZE)
-    .returns<(RetirementCandidate & { deleted_at: string | null })[]>()
 
   if (binErr) {
     // Reported, not fatal: the inactivity pass below is independent and must still run.
@@ -148,7 +137,6 @@ export async function POST(req: Request) {
     .lt('last_notification_at', warnedBefore)
     .order('last_activity_at', { ascending: true })
     .limit(BATCH_SIZE)
-    .returns<RetirementCandidate[]>()
 
   if (error) {
     return serverError('cron/retire-albums', error.message, { publicMessage: 'Could not scan albums' })

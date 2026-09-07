@@ -150,7 +150,6 @@ export async function POST(req: Request) {
       .is('retired_at', null)
       .order('id', { ascending: true })
       .limit(200)
-      .returns<{ id: string; created_at: string }[]>()
 
     let expired = 0
     for (const album of albums ?? []) {
@@ -160,7 +159,6 @@ export async function POST(req: Request) {
         .eq('album_id', album.id)
         .gt('created_at', cutoff)
         .limit(1)
-        .returns<{ id: string }[]>()
       if (recent && recent.length > 0) continue
 
       // "No photo in 90 days" and "no photos yet" are the same query result and completely

@@ -78,9 +78,11 @@ vi.mock('@/lib/supabase/admin', () => ({
     // can refuse, so both halves are observable.
     rpc: (name: string, params: Record<string, unknown>) => {
       bookings.push({ name, params })
-      return { returns: async () => (cfg.bookingError
+      // Awaited directly now that the `.returns<>()` cast is gone: the rpc builder is a thenable.
+      const result = () => (cfg.bookingError
         ? { data: null, error: { message: cfg.bookingError } }
-        : { data: cfg.bookingOk, error: null }) }
+        : { data: cfg.bookingOk, error: null })
+      return { then: (res: (v: unknown) => unknown, rej?: (e: unknown) => unknown) => Promise.resolve(result()).then(res, rej) }
     },
   }),
 }))

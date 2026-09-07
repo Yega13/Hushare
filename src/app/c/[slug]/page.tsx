@@ -115,7 +115,6 @@ export default async function CollectionPage({ params }: Props) {
         .from('albums')
         .select('id, slug, custom_slug, title, cover_photo_id, created_at, owner_token, password_hash, reveal_at, retired_at')
         .in('id', albumIds)
-        .returns<AlbumSummary[]>()
     : { data: [] as AlbumSummary[], error: null }
 
   if (albumsError) {

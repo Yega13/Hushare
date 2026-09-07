@@ -25,6 +25,12 @@ describe('how many failures one row represents', () => {
     expect(occurrencesOf({})).toBe(1)
     expect(occurrencesOf({ context: null })).toBe(1)
     expect(occurrencesOf({ context: {} })).toBe(1)
+    // context is jsonb: a string, a number, an array, or an object with a string in `repeats` are all
+    // things the column can hold. The cast that used to promise `{ repeats?: number }` is gone.
+    expect(occurrencesOf({ context: 'not an object' })).toBe(1)
+    expect(occurrencesOf({ context: 7 })).toBe(1)
+    expect(occurrencesOf({ context: [{ repeats: 40 }] })).toBe(1)
+    expect(occurrencesOf({ context: { repeats: '40' } })).toBe(1)
   })
 
   it('counts the repeats a coalesced row absorbed', () => {
