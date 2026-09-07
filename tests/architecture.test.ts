@@ -319,7 +319,7 @@ describe('the big files do not get bigger', () => {
 // writes customer email addresses and customer-written titles into an operator's inbox.
 const UNTESTED_LEGACY = new Set([
   'access', 'album-backgrounds', 'analytics', 'auth',
-  'broadcast', 'cf-analytics', 'constants', 'country-names', 'engagement', 'exif',
+  'broadcast', 'cf-analytics', 'country-names', 'engagement', 'exif',
   'heic-worker', 'my-albums', 'polls', 'provision-user',
   'rekognition', 'report-server-error', 'slideshow-motion', 'useIsNarrow', 'utils',
 

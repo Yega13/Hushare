@@ -1,7 +1,8 @@
 import { describe, it, expect, beforeAll } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { r2KeyFromUrl, collectDeletionTargets, albumAssetKeys, ALBUM_ASSET_COLUMNS, type PhotoToDelete, withoutStillReferenced, keyFileName, keysReferencedBy, partitionDeletable } from '@/lib/album-delete'
+import { r2KeyFromUrl, collectDeletionTargets, albumAssetKeys, ALBUM_ASSET_COLUMNS, type PhotoToDelete, withoutStillReferenced, keyFileName, keysReferencedBy, partitionDeletable, createSweepCollector } from '@/lib/album-delete'
+import { MAX_BULK_DELETE } from '@/lib/constants'
 import { r2PublicUrl } from '@/lib/cloudflare/r2'
 
 // r2KeyFromUrl decides WHICH FILE GETS DELETED. Everything about album and photo deletion
@@ -445,6 +446,11 @@ describe('keysReferencedBy — what a SURVIVING row protects, whatever its backe
     expect(k.streamUids.size).toBe(0)
   })
 
+  it('protects a mirror if one is ever set -- "every key it could reference" includes the column nobody uses yet', () => {
+    const k = keysReferencedBy([{ storage_path: null, thumb_url: null, poster_url: null, stream_uid: 'u', mirror_url: `${HOST}/mirrors/A/u.mp4` }])
+    expect([...k.r2Keys]).toEqual(['mirrors/A/u.mp4'])
+  })
+
   it('protects a video uid AND its poster AND a storage_path if one is set -- the superset', () => {
     const k = keysReferencedBy([{ storage_path: 'albums/A/also.mp4', thumb_url: null, poster_url: `${HOST}/posters/A/u.jpg`, stream_uid: 'u' }])
     expect([...k.streamUids]).toEqual(['u'])
@@ -486,16 +492,59 @@ describe('partitionDeletable — a deletion must not reason about a backend it d
     expect(targets.streamUids.size).toBe(0)
   })
 
-  it('the deleting sweep skips unknown rows and reports them, and does not refuse the album', () => {
-    // Wiring, held by source: deleteAlbumAssetsAndRows partitions before collecting, reports the
-    // skipped rows once, and carries on. Refusing the whole album over a row only support can
-    // repair would leave an owner unable to delete their own album.
+  it('the deleting sweep feeds every page through the collector, reports what it skipped, and does not refuse the album', () => {
+    // Wiring, held by source: the decision is createSweepCollector (tested below); the sweep only
+    // pages. Refusing the whole album over a row only support can repair would leave an owner
+    // unable to delete their own album.
     const src = readFileSync(join(process.cwd(), 'src', 'lib', 'album-delete.ts'), 'utf8')
     const sweep = src.slice(src.indexOf('export async function deleteAlbumAssetsAndRows'))
-    expect(sweep.indexOf('partitionDeletable(')).toBeGreaterThan(0)
-    expect(sweep.indexOf('partitionDeletable(')).toBeLessThan(sweep.indexOf('collectDeletionTargets('))
-    expect(sweep).toMatch(/if \(skippedUnknown\.length > 0\) \{\s*\n\s*\/\/[^\n]*\n\s*reportServerError\('album-delete'/)
+    expect(sweep.includes('sweep.addPage(batch ?? [])')).toBe(true)
+    expect(sweep.includes('collectDeletionTargets('), 'the sweep decides for itself again instead of through the collector').toBe(false)
+    expect(sweep).toMatch(/if \(sweep\.skipped\.length > 0\) \{[\s\S]{0,600}?reportServerError\('album-delete', [^\n]*\{\s*\n\s*albumId: album\.id,\s*\n\s*context: \{ skipped: sweep\.skipped\.length, rows: sweep\.skipped\.slice\(0, 200\) \}/)
     expect(sweep.includes('.returns<'), 'the sweep asserts the row shape by cast again').toBe(false)
+  })
+})
+
+describe('createSweepCollector — the deleting sweep’s decision, without the database', () => {
+  const HOST = 'https://videos.hushare.space'
+  const r2 = (id: string) => ({ id, storage_backend: 'r2', storage_path: `albums/A/${id}.jpg`, thumb_url: `${HOST}/thumbs/A/${id}.jpg`, poster_url: null, stream_uid: null })
+  const vid = (id: string) => ({ id, storage_backend: 'stream', storage_path: null, thumb_url: null, poster_url: `${HOST}/posters/A/${id}.jpg`, stream_uid: `uid-${id}` })
+  const odd = (id: string) => ({ id, storage_backend: 'supabase', storage_path: `legacy/${id}.jpg`, thumb_url: `${HOST}/thumbs/A/${id}.jpg`, poster_url: null, stream_uid: null })
+
+  it('collects keys across pages exactly as collectDeletionTargets would, and skips nothing on clean data', () => {
+    const c = createSweepCollector()
+    c.addPage([r2('p1'), vid('v1')])
+    c.addPage([r2('p2')])
+    expect([...c.r2Keys].sort()).toEqual(['albums/A/p1.jpg', 'albums/A/p2.jpg', 'posters/A/v1.jpg', 'thumbs/A/p1.jpg', 'thumbs/A/p2.jpg'])
+    expect([...c.streamUids]).toEqual(['uid-v1'])
+    expect(c.skipped).toEqual([])
+  })
+
+  it('an unknown-backend row contributes NO key and is recorded WITH its paths -- the ids alone die in the cascade', () => {
+    const c = createSweepCollector()
+    c.addPage([r2('p1'), odd('x1')])
+    expect([...c.r2Keys].sort(), 'a key was derived from a row whose backend nobody understands').toEqual(['albums/A/p1.jpg', 'thumbs/A/p1.jpg'])
+    expect(c.skipped).toEqual([{ id: 'x1', storage_backend: 'supabase', storage_path: 'legacy/x1.jpg', thumb_url: `${HOST}/thumbs/A/x1.jpg`, poster_url: null, stream_uid: null }])
+  })
+
+  it('skipped rows accumulate across pages', () => {
+    const c = createSweepCollector()
+    c.addPage([odd('x1')]); c.addPage([odd('x2')])
+    expect(c.skipped.map((r) => r.id)).toEqual(['x1', 'x2'])
+  })
+})
+
+describe('MAX_BULK_DELETE is held to the URL it produces', () => {
+  it('keeps the PostgREST in.(...) URL under the 16 KB that Node’s fetch and Cloudflare allow', () => {
+    // 500 was written and never sent: the client chunked at 200. The first time 500 ids went out
+    // the URL was 19.6 KB and the route failed before deleting anything -- after the client had
+    // already removed every tile. Arithmetic, not a guess: a uuid is 36 chars plus its comma, and
+    // the rest of the URL (host, select list, album filter) is generously under 600 bytes.
+    const perId = 36 + 1
+    const overhead = 600
+    expect(MAX_BULK_DELETE * perId + overhead).toBeLessThan(16 * 1024)
+    // And not so low that a real clean-up is a hundred requests.
+    expect(MAX_BULK_DELETE).toBeGreaterThanOrEqual(200)
   })
 })
 

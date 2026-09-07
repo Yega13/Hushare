@@ -99,7 +99,7 @@ export type PhotoToDelete = {
 }
 
 /** A row as the survivor check needs it: what it references, whatever its backend says. */
-export type PhotoRef = Pick<PhotoToDelete, 'storage_path' | 'poster_url' | 'stream_uid' | 'thumb_url'>
+export type PhotoRef = Pick<PhotoToDelete, 'storage_path' | 'poster_url' | 'stream_uid' | 'thumb_url'> & { mirror_url?: string | null }
 
 /**
  * Split rows the database holds into the ones a deletion may reason about and the ones it may not.
@@ -263,7 +263,7 @@ export async function rowsReferencingKeys(
 
   // No storage_backend: a survivor protects everything it references whatever its backend says
   // (see keysReferencedBy), so the column is not needed and the row needs no narrowing or cast.
-  const cols = 'storage_path, thumb_url, poster_url, stream_uid'
+  const cols = 'storage_path, thumb_url, poster_url, stream_uid, mirror_url'
   const out: PhotoRef[] = []
   // Batched: the or-string grows with the number of names and PostgREST takes it in the URL.
   const PER_QUERY = 25
@@ -274,6 +274,7 @@ export async function rowsReferencingKeys(
       `thumb_url.like.*${n}*`,
       `poster_url.like.*${n}*`,
       `storage_path.like.*${n}*`,
+      `mirror_url.like.*${n}*`,
     ])
     const { data, error } = await admin
       .from('photos')
@@ -290,6 +291,47 @@ export async function rowsReferencingKeys(
     out.push(...(data ?? []))
   }
   return out
+}
+
+/** What the deleting sweep records about a row it will not reason about: enough to FIND the file. */
+export type SkippedRow = {
+  id: string
+  storage_backend: string
+  storage_path: string | null
+  thumb_url: string | null
+  poster_url: string | null
+  stream_uid: string | null
+}
+
+/**
+ * The deleting sweep's decision, page by page, with no database in it.
+ *
+ * Feed it every page of an album's photo rows; read the keys to destroy and the rows it refused
+ * to reason about. The refused rows keep their PATH columns, not just their ids: the album row is
+ * deleted moments after this runs and the photo rows cascade with it, so an id alone would be the
+ * only trace of a file nothing can find any more. A review found exactly that -- a report that
+ * promised "the operator can find the files" and carried primary keys of rows that no longer
+ * existed.
+ */
+export function createSweepCollector() {
+  const r2Keys = new Set<string>()
+  const streamUids = new Set<string>()
+  const skipped: SkippedRow[] = []
+  return {
+    r2Keys,
+    streamUids,
+    skipped,
+    addPage(rows: readonly SkippedRow[]): void {
+      const { deletable, unknown } = partitionDeletable(rows)
+      for (const u of unknown) {
+        const row = rows.find((r) => r.id === u.id)
+        if (row) skipped.push({ id: row.id, storage_backend: row.storage_backend, storage_path: row.storage_path, thumb_url: row.thumb_url, poster_url: row.poster_url, stream_uid: row.stream_uid })
+      }
+      const page = collectDeletionTargets(deletable, null)
+      for (const k of page.r2Keys) r2Keys.add(k)
+      for (const u of page.streamUids) streamUids.add(u)
+    },
+  }
 }
 
 /**
@@ -310,6 +352,10 @@ export function keysReferencedBy(rows: readonly PhotoRef[]): { r2Keys: Set<strin
     if (thumbKey) r2Keys.add(thumbKey)
     const posterKey = r2KeyFromUrl(row.poster_url)
     if (posterKey) r2Keys.add(posterKey)
+    // mirror_url is unused today (0 rows) and nothing targets a mirror key; protected anyway so
+    // "every key a row could reference" is true rather than nearly true.
+    const mirrorKey = r2KeyFromUrl(row.mirror_url ?? null)
+    if (mirrorKey) r2Keys.add(mirrorKey)
   }
   return { r2Keys, streamUids }
 }
@@ -333,9 +379,10 @@ export async function deleteAlbumAssetsAndRows(
   // Paginate in 1000-row batches — Supabase default page size is 1000; without this,
   // albums with >1000 photos silently leave orphaned R2 objects and Stream videos.
   const PAGE_SIZE = 1000
-  const r2Keys = new Set<string>()
-  const streamUids = new Set<string>()
-  const skippedUnknown: { id: string; storage_backend: string }[] = []
+  // The decision itself lives in createSweepCollector, where it can be tested without a database.
+  // Only the paging is here.
+  const sweep = createSweepCollector()
+  const { r2Keys, streamUids } = sweep
 
   let offset = 0
   while (true) {
@@ -362,17 +409,12 @@ export async function deleteAlbumAssetsAndRows(
       return { ok: false, error: 'Could not prepare album deletion' }
     }
 
-    // The decision itself lives in collectDeletionTargets, where it can be tested without a
-    // database. Only the paging is here. A row with a backend this code does not know is SKIPPED,
-    // not guessed at: its file stays in the bucket ($0.015/GB/month) rather than a key derived
-    // from an unknown scheme being destroyed, and the skip is reported so it is not invisible.
-    // The album deletion itself proceeds -- an owner should not be unable to delete their album
-    // over a row only support can repair.
-    const { deletable, unknown } = partitionDeletable(batch ?? [])
-    for (const u of unknown) skippedUnknown.push(u)
-    const page = collectDeletionTargets(deletable, null)
-    for (const k of page.r2Keys) r2Keys.add(k)
-    for (const u of page.streamUids) streamUids.add(u)
+    // A row with a backend this code does not know is SKIPPED, not guessed at: whatever file it
+    // points at is left where it is ($0.015/GB/month if it is in R2 at all) rather than a key
+    // derived from an unknown scheme being destroyed, and the skip is reported with the row's
+    // paths so it is findable. The album deletion itself proceeds -- an owner should not be
+    // unable to delete their album over a row only support can repair.
+    sweep.addPage(batch ?? [])
 
     if (!batch || batch.length < PAGE_SIZE) break
     offset += PAGE_SIZE
@@ -384,11 +426,14 @@ export async function deleteAlbumAssetsAndRows(
   // to this album stays in the bucket.
   for (const k of albumAssetKeys(album, album.id)) r2Keys.add(k)
 
-  if (skippedUnknown.length > 0) {
-    // Once per deletion, stable message, the rows in context: the operator can find the files.
-    reportServerError('album-delete', 'album deletion skipped rows with an unknown storage_backend; their files stay in the bucket', {
+  if (sweep.skipped.length > 0) {
+    // Once per deletion, stable message, EVERY skipped row's paths in context -- the album row and
+    // its photos are gone a few lines below, so this report is the only record of those files.
+    // Capped at 200 rows so one pathological album cannot write a megabyte of context; the count
+    // says how many there were in total.
+    reportServerError('album-delete', 'album deletion skipped rows with an unknown storage_backend; their files were not deleted', {
       albumId: album.id,
-      context: { skipped: skippedUnknown.length, sample: skippedUnknown.slice(0, 5) },
+      context: { skipped: sweep.skipped.length, rows: sweep.skipped.slice(0, 200) },
     })
   }
 

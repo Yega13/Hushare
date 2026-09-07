@@ -73,4 +73,11 @@ export const DOWNLOAD_ATTEMPTS = 3;
 // The most photos one bulk-delete request may carry. The route refuses more; the select-mode client
 // chunks its selection to exactly this. It was written twice -- 500 in the route, "server max is
 // 200" in a client comment beside a CHUNK of 200 -- and the two had already drifted (rule 13).
-export const MAX_BULK_DELETE = 500
+//
+// 300, MEASURED, not typed. The route's first query is `id=in.(<every uuid>)` in a PostgREST URL,
+// and PostgREST echoes that URL back in a Content-Location header. Node's fetch caps a response
+// header block at 16 KB, and Cloudflare documents 16 KB for a request URL: 500 ids made a 19.6 KB
+// URL that failed under `next dev` with "fetch failed" -- after the client had already removed
+// every tile optimistically. The client had only ever sent 200, so the route's 500 had never been
+// exercised. tests/deletion.test.ts holds this number to the arithmetic.
+export const MAX_BULK_DELETE = 300
