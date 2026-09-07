@@ -1,8 +1,8 @@
 {
   "@next/next/no-html-link-for-pages": 3,
   "@next/next/no-img-element": 4,
-  "react-hooks/exhaustive-deps": 6,
-  "react-hooks/immutability": 13,
+  "react-hooks/exhaustive-deps": 5,
+  "react-hooks/immutability": 10,
   "react-hooks/purity": 5,
   "react-hooks/refs": 20,
   "react-hooks/set-state-in-effect": 33

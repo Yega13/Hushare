@@ -172,7 +172,10 @@ const SIZE_BUDGET: Record<string, number> = {
   // -243 (2026-09-07): the files panel is owner-toolbar/FilesSection and the Article 9 consent
   // dialog is FaceConsentDialog; branding, face finder and bib search read the album instead of
   // mirrored state, and two raw fetches became api.ts requests.
-  'src/components/OwnerToolbar.tsx': 1071,
+  // -623 (2026-09-07): the media and slideshow panels and the one save pipeline behind them are
+  // owner-toolbar/MediaSettingsPanels, moved as a unit; closing Settings unmounts them, which IS the
+  // resync the toolbar's 14-setState effect used to perform (and could get stuck on).
+  'src/components/OwnerToolbar.tsx': 448,
   // +23 (2026-08-31): fallback-poll wiring for realtime REFUSAL — the cadence decision is in
   // lib/realtime-fallback.ts; the timer must live beside the channel it covers (rule 15).
   // +17 (2026-08-31, review finding): channel-identity guard + timer hygiene in the reconnect
