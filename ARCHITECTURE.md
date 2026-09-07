@@ -155,8 +155,10 @@ Stated plainly, because a map that hides the swamps is not a map.
   -- a rise fails the deploy, a fall must be recorded -- so the number can only go down. Paying it
   means rewriting render timing in UI that cannot be verified on a phone here (see memory:
   iPhone testing blocked); it is deliberately not done blind.
-- **The schema gates depend on a secret.** Migrations, `db:check` and the types drift check run
-  only when `SUPABASE_DB_URL` is set in CI; without it the deploy proceeds with a warning.
+- **The schema gates degrade to a warning without their secret.** Migrations, `db:check` and
+  the types drift check run when `SUPABASE_DB_URL` is set in CI -- it is (verified in the
+  2026-09-07 deploy log: "matches the live database") -- but a missing or rotated secret turns
+  all three into a `::warning` and the deploy proceeds.
 - **Mutation runs are on demand, not a gate.** `npm run mutate` reproduces every recorded result
   (114 mutations, about twelve minutes), but CI does not run it, so a test that quietly weakens is
   caught the next time somebody runs the set rather than at the push that weakened it. Only eight
