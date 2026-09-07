@@ -7,7 +7,7 @@ import { FEATURE_TIER } from '@/lib/plan-gates'
 import { packageExpired } from '@/lib/album-entitlements'
 import PackageSection from '@/components/owner-toolbar/PackageSection'
 import { useZipDownload } from '@/components/photo-grid/useZipDownload'
-import { Search, ChevronDown, Copy, Download, Images, Loader2, MonitorPlay, Move, Play, ScanFace, Settings, ShieldCheck, X } from 'lucide-react'
+import { Search, ChevronDown, Copy, Download, Images, Loader2, MonitorPlay, Move, Play, ScanFace, Settings, X } from 'lucide-react'
 import type { Album, Photo, Tier } from '@/types'
 import {
   DEFAULT_SLIDESHOW_INTERVAL_MS,
@@ -39,11 +39,9 @@ import CustomUrlSection from '@/components/owner-toolbar/CustomUrlSection'
 import PasswordSection from '@/components/owner-toolbar/PasswordSection'
 import CollectionsSection from '@/components/owner-toolbar/CollectionsSection'
 import DangerSection from '@/components/owner-toolbar/DangerSection'
+import GuestsSection from '@/components/owner-toolbar/GuestsSection'
 import ShareMenu from '@/components/owner-toolbar/ShareMenu'
 import {
-  saveGuestDownloadsRequest,
-  saveGuestUploadsRequest,
-  saveRequireApprovalRequest,
   savePhotoLayoutRequest,
   saveMediaSettingsRequest,
   type MediaSettingsChanges,
@@ -150,10 +148,7 @@ export default function OwnerToolbar({ album, photos, albumPhotoCount, ownerToke
 
   const { zipping, zipProgress, zipStatus, downloadZip } = useZipDownload(photos, album)
 
-  const [allowGuestDownloads, setAllowGuestDownloads] = useState(album.allow_guest_downloads !== false)
-  const [guestUploadsEnabled, setGuestUploadsEnabled] = useState(album.guest_uploads_enabled !== false)
   const [hideBranding, setHideBranding] = useState(!!album.hide_branding)
-  const [requireApproval, setRequireApproval] = useState(!!album.require_approval)
   const [faceFinderEnabled, setFaceFinderEnabled] = useState(!!album.face_finder_enabled)
   // Switching face search ON is the one control here that creates biometric data, so it is the one
   // control that asks first. Turning it OFF stays a single tap — nobody should have to read a
@@ -243,7 +238,7 @@ export default function OwnerToolbar({ album, photos, albumPhotoCount, ownerToke
     packagedLive,
     collectionsEnabled: album.collections_enabled === true,
     brandingLocked: !!album.branding_locked,
-    guestUploadsEnabled,
+    guestUploadsEnabled: album.guest_uploads_enabled !== false,
   })
   // The renewal email lands on /album?renew=1 — open straight onto the package section so the
   // person who clicked "Renew" in an email is one tap from paying, not spelunking a settings menu.
@@ -255,8 +250,6 @@ export default function OwnerToolbar({ album, photos, albumPhotoCount, ownerToke
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  // The moot-moderation COPY needs the reason, not just the look (lib/owner-rows owns the look).
-  const moderationIsMoot = !guestUploadsEnabled
   const radiusMax = Math.max(1, Math.round(mediaRadiusMax))
 
   useEffect(() => {
@@ -319,10 +312,7 @@ export default function OwnerToolbar({ album, photos, albumPhotoCount, ownerToke
       setSavedMediaRadius(album.media_radius ?? 16)
       setVideoAutoplay(!!album.video_autoplay)
       setPhotoLayout(album.photo_layout === 'justified' ? 'justified' : 'grid')
-      setAllowGuestDownloads(album.allow_guest_downloads !== false)
-      setGuestUploadsEnabled(album.guest_uploads_enabled !== false)
       setHideBranding(!!album.hide_branding)
-      setRequireApproval(!!album.require_approval)
       setFaceFinderEnabled(!!album.face_finder_enabled)
       setMediaFilter(album.media_filter ?? 'none')
       setSavedMediaFilter(album.media_filter ?? 'none')
@@ -1036,119 +1026,15 @@ export default function OwnerToolbar({ album, photos, albumPhotoCount, ownerToke
                 t={t}
               />
 
-              <section style={settingsSectionStyle}>
-                <button type="button" className="hush-motion" style={accordionButton} onClick={() => toggleSection('guests')}>
-                  <ShieldCheck className="w-4 h-4" style={{ color: '#7C5C3E' }} />
-                  <span style={sectionTitle}>{t('ot.guests')}</span>
-                  <ChevronDown
-                    className="ml-auto w-4 h-4 transition-transform"
-                    style={{ color: '#A89880', transform: openSection === 'guests' ? 'rotate(180deg)' : 'rotate(0deg)' }}
-                  />
-                </button>
-                {openSection === 'guests' && (
-                  <div className="px-4 pb-4 space-y-3">
-                    {/* WHO MAY ADD PHOTOS. The server has always enforced this — photos/create,
-                        presign, stream and image-relay all refuse when it is off — but nothing
-                        could SET it, so the only way to close an album to guests was an UPDATE
-                        against the database by hand. It sits first because it is the biggest
-                        switch here: everything else shapes what guests see, this decides whether
-                        they contribute at all. */}
-                    <label className="flex items-center justify-between gap-4 rounded-xl px-3 py-3" style={{ background: '#FDFAF5', border: '1px solid #DDD5C5', cursor: 'pointer' }}>
-                      <span>
-                        <span className="block text-sm font-semibold" style={{ color: '#630826' }}>{t('ot.allowUploads')}</span>
-                        <span className="block text-xs" style={{ color: '#7C5C3E' }}>{t('ot.allowUploadsSub')}</span>
-                      </span>
-                      <input
-                        type="checkbox"
-                        checked={guestUploadsEnabled}
-                        onChange={async (e) => {
-                          const next = e.target.checked
-                          setGuestUploadsEnabled(next)
-                          onAlbumUpdated({ guest_uploads_enabled: next })
-                          try {
-                            const result = await saveGuestUploadsRequest(album.slug, next)
-                            if (!result.ok) {
-                              showAppToast(result.error, 'error')
-                              setGuestUploadsEnabled(!next)
-                              onAlbumUpdated({ guest_uploads_enabled: !next })
-                            }
-                          } catch (e) {
-                            const message = e instanceof Error ? e.message : t('common.networkError')
-                            showAppToast(message, 'error')
-                            setGuestUploadsEnabled(!next)
-                            onAlbumUpdated({ guest_uploads_enabled: !next })
-                          }
-                        }}
-                        className="h-4 w-4"
-                      />
-                    </label>
-
-<label className="flex items-center justify-between gap-4 rounded-xl px-3 py-3" style={{ background: '#FDFAF5', border: '1px solid #DDD5C5', cursor: 'pointer' }}>
-                      <span>
-                        <span className="block text-sm font-semibold" style={{ color: '#630826' }}>{t('ot.allowDownloads')}</span>
-                        <span className="block text-xs" style={{ color: '#7C5C3E' }}>{t('ot.allowDownloadsSub')}</span>
-                      </span>
-                      <input
-                        type="checkbox"
-                        checked={allowGuestDownloads}
-                        onChange={async (e) => {
-                          const next = e.target.checked
-                          setAllowGuestDownloads(next)
-                          onAlbumUpdated({ allow_guest_downloads: next })
-                          try {
-                            const result = await saveGuestDownloadsRequest(album.slug, next)
-                            if (!result.ok) {
-                              showAppToast(result.error, 'error')
-                              setAllowGuestDownloads(!next)
-                              onAlbumUpdated({ allow_guest_downloads: !next })
-                            }
-                          } catch (e) {
-                            const message = e instanceof Error ? e.message : t('common.networkError')
-                            showAppToast(message, 'error')
-                            setAllowGuestDownloads(!next)
-                            onAlbumUpdated({ allow_guest_downloads: !next })
-                          }
-                        }}
-                        className="h-4 w-4"
-                      />
-                    </label>
-
-                    <label className="flex items-center justify-between gap-4 rounded-xl px-3 py-3" style={{ background: '#FDFAF5', border: '1px solid #DDD5C5', ...gatedRowStyle(rows.moderation.dimmed, !rows.moderation.show) }}>
-                      <span>
-                        <span className="block text-sm font-semibold" style={{ color: '#630826' }}>
-                          {t('ot.requireApproval')} <PlanBadge need={FEATURE_TIER.photoModeration} tier={userTier} />
-                        </span>
-                        <span className="block text-xs" style={{ color: '#7C5C3E' }}>
-                          {moderationIsMoot ? t('ot.requireApprovalMoot') : t('ot.requireApprovalSub')}
-                        </span>
-                      </span>
-                      <input
-                        type="checkbox"
-                        checked={requireApproval}
-                        onChange={async (e) => {
-                          const next = e.target.checked
-                          setRequireApproval(next)
-                          onAlbumUpdated({ require_approval: next })
-                          try {
-                            const result = await saveRequireApprovalRequest(album.slug, next)
-                            if (!result.ok) {
-                              showAppToast(result.error, 'error')
-                              setRequireApproval(!next)
-                              onAlbumUpdated({ require_approval: !next })
-                            }
-                          } catch (err) {
-                            showAppToast(err instanceof Error ? err.message : t('common.networkError'), 'error')
-                            setRequireApproval(!next)
-                            onAlbumUpdated({ require_approval: !next })
-                          }
-                        }}
-                        className="h-4 w-4"
-                        disabled={!rows.moderation.enabled}
-                      />
-                    </label>
-                  </div>
-                )}
-              </section>
+              {/* Guests -- three switches with no state of their own; the album is the optimistic store */}
+              <GuestsSection
+                album={album}
+                userTier={userTier}
+                moderation={rows.moderation}
+                open={openSection === 'guests'}
+                onToggle={() => toggleSection('guests')}
+                onAlbumUpdated={onAlbumUpdated}
+              />
 
               <section style={settingsSectionStyle}>
                 <button type="button" className="hush-motion" style={accordionButton} onClick={() => toggleSection('files')}>

@@ -175,9 +175,10 @@ describe('the owner toolbar reads the same table as the server, through lib/owne
       OwnerToolbar: toolbar,
       CustomUrlSection: readFileSync(join(process.cwd(), 'src', 'components', 'owner-toolbar', 'CustomUrlSection.tsx'), 'utf8'),
       CollectionsSection: readFileSync(join(process.cwd(), 'src', 'components', 'owner-toolbar', 'CollectionsSection.tsx'), 'utf8'),
+      GuestsSection: readFileSync(join(process.cwd(), 'src', 'components', 'owner-toolbar', 'GuestsSection.tsx'), 'utf8'),
     }
     const controls: Array<{ label: string; key: string; file: keyof typeof panels; window: number }> = [
-      { label: "t('ot.requireApproval')", key: 'moderation', file: 'OwnerToolbar', window: 1600 },
+      { label: "t('ot.requireApproval')", key: 'moderation', file: 'GuestsSection', window: 600 },
       { label: 'Remove Hushare branding', key: 'branding', file: 'OwnerToolbar', window: 1600 },
       { label: "t('ot.faceFinder')", key: 'faceFinder', file: 'OwnerToolbar', window: 1200 },
       { label: "t('ot.bibSearch')", key: 'bibSearch', file: 'OwnerToolbar', window: 2200 },
@@ -196,7 +197,10 @@ describe('the owner toolbar reads the same table as the server, through lib/owne
       } else {
         // A section receives its ONE row as the prop `row`, so it cannot read another's; what is
         // held is that it reads the row at all and never reaches for the toolbar's `rows`.
-        const reads = [...slice.matchAll(/\brow\.(show|dimmed|enabled)\b/g)].map((m) => m[1])
+        // A section names its one row prop `row`, or by the row's name (GuestsSection: `moderation`),
+        // and a JSX prop can sit before the label as easily as after it, so the window is both ways.
+        const around = src.slice(Math.max(0, at - c.window), at + c.window)
+        const reads = [...around.matchAll(/\b(?:row|moderation)\.(show|dimmed|enabled)\b/g)].map((m) => m[1])
         expect(reads.length, `${c.file}: the control ignores its row`).toBeGreaterThan(0)
         expect(slice.includes('rows.'), `${c.file}: a section must not read the toolbar's rows`).toBe(false)
       }
