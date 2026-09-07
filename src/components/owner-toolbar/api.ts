@@ -586,3 +586,17 @@ export async function saveDesktopGridColumns(
   return { ok: true, desktop_grid_columns: body.desktop_grid_columns }
 }
 
+
+export async function saveRevealRequest(
+  slug: string,
+  reveal_at: string | null,
+): Promise<{ ok: true; reveal_at: string | null } | { ok: false; error: string }> {
+  const res = await fetch('/api/album/reveal', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ slug, reveal_at }),
+  })
+  const body = await jsonBody<{ ok?: boolean; reveal_at?: string | null; error?: string }>(res)
+  if (!res.ok || !body.ok) return { ok: false, error: body.error ?? `Save failed (${res.status})` }
+  return { ok: true, reveal_at: body.reveal_at ?? null }
+}

@@ -6,7 +6,7 @@ import { ownerRows } from '@/lib/owner-rows'
 import { packageExpired } from '@/lib/album-entitlements'
 import PackageSection from '@/components/owner-toolbar/PackageSection'
 import { useZipDownload } from '@/components/photo-grid/useZipDownload'
-import { Search, ChevronDown, Clock, Copy, Download, FolderPlus, Images, Link2, Loader2, Lock, LockOpen, MonitorPlay, Move, Play, ScanFace, Settings, ShieldCheck, Trash2, X } from 'lucide-react'
+import { Search, ChevronDown, Copy, Download, FolderPlus, Images, Link2, Loader2, Lock, LockOpen, MonitorPlay, Move, Play, ScanFace, Settings, ShieldCheck, Trash2, X } from 'lucide-react'
 import type { Album, Photo, Tier } from '@/types'
 import {
   DEFAULT_SLIDESHOW_INTERVAL_MS,
@@ -34,7 +34,7 @@ import {
 import type { SlideshowMotion } from '@/types'
 import { showAppToast, storeAppToast } from '@/components/AppToast'
 import { BIN_DAYS } from '@/lib/album-bin'
-import RevealDatePicker from '@/components/RevealDatePicker'
+import RevealSection from '@/components/owner-toolbar/RevealSection'
 import ShareMenu from '@/components/owner-toolbar/ShareMenu'
 import {
   addAlbumToCollectionRequest,
@@ -109,14 +109,6 @@ function MotionSlider({ label, value, display, min, max, step, onChange }: {
   )
 }
 
-function toDatetimeLocal(iso: string | null): string {
-  if (!iso) return ''
-  const d = new Date(iso)
-  if (isNaN(d.getTime())) return ''
-  const pad = (n: number) => String(n).padStart(2, '0')
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
-}
-
 export default function OwnerToolbar({ album, photos, albumPhotoCount, ownerToken, userTier, purchasePending, mediaRadiusMax, onAlbumUpdated, onOpenSlideshow, arrangeMode, onToggleArrangeMode, onOpenDesigner }: Props) {
   const { t } = useT()
   const [copied, setCopied] = useState<'share' | 'owner' | null>(null)
@@ -178,11 +170,6 @@ export default function OwnerToolbar({ album, photos, albumPhotoCount, ownerToke
   // below must not stomp local state in that window — that stomp is how an unsaved phone-grid
   // value got replaced by the album prop and then persisted by the next unrelated save.
   const mediaEditPendingRef = useRef(false)
-
-  const [revealInput, setRevealInput] = useState(() => toDatetimeLocal(album.reveal_at ?? null))
-  const [revealSaving, setRevealSaving] = useState(false)
-  const [revealError, setRevealError] = useState('')
-  const [revealSaved, setRevealSaved] = useState(false)
 
   const { zipping, zipProgress, zipStatus, downloadZip } = useZipDownload(photos, album)
 
@@ -387,9 +374,6 @@ export default function OwnerToolbar({ album, photos, albumPhotoCount, ownerToke
         slideshow_animation: album.slideshow_animation,
       }))
       setMediaError('')
-      setRevealInput(toDatetimeLocal(album.reveal_at ?? null))
-      setRevealError('')
-      setRevealSaved(false)
       setOpenSection(null)
       setDeleteConfirm(false)
       setDeleteError('')
@@ -699,47 +683,6 @@ export default function OwnerToolbar({ album, photos, albumPhotoCount, ownerToke
       showAppToast(e instanceof Error ? e.message : t('common.networkError'), 'error')
     } finally {
       setRestoring(false)
-    }
-  }
-
-  async function saveReveal(action: 'set' | 'clear') {
-    setRevealError('')
-    setRevealSaved(false)
-    // Validate BEFORE setting revealSaving=true so an invalid date doesn't leave
-    // the button stuck in the "Saving…" state forever.
-    let reveal_at: string | null = null
-    if (action === 'set' && revealInput) {
-      const parsed = new Date(revealInput)
-      if (isNaN(parsed.getTime())) {
-        setRevealError('Invalid date')
-        return
-      }
-      reveal_at = parsed.toISOString()
-    }
-    setRevealSaving(true)
-    try {
-      const res = await fetch('/api/album/reveal', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ slug: album.slug, reveal_at }),
-      })
-      const result = (await res.json()) as { ok?: boolean; reveal_at?: string | null; error?: string }
-      if (!res.ok || !result.ok) {
-        const message = result.error ?? t('ot.revealSaveFail')
-        setRevealError(message)
-        showAppToast(message, 'error')
-        return
-      }
-      onAlbumUpdated({ reveal_at: result.reveal_at ?? null })
-      setRevealInput(toDatetimeLocal(result.reveal_at ?? null))
-      setRevealSaved(true)
-      showAppToast(action === 'clear' ? t('ot.revealCleared') : t('ot.revealSaved'))
-    } catch (e) {
-      const message = e instanceof Error ? e.message : t('common.networkError')
-      setRevealError(message)
-      showAppToast(message, 'error')
-    } finally {
-      setRevealSaving(false)
     }
   }
 
@@ -1665,107 +1608,18 @@ export default function OwnerToolbar({ album, photos, albumPhotoCount, ownerToke
                 )}
               </section>
 
-              {/* Delayed reveal */}
-              <section style={settingsSectionStyle}>
-                {(() => {
-                  const now = new Date()
-                  const revealIsFuture = !!(album.reveal_at && new Date(album.reveal_at) > now)
-                  return (
-                <button type="button" className="hush-motion" style={accordionButton} onClick={() => toggleSection('reveal')}>
-                  <Clock className="w-4 h-4" style={{ color: revealIsFuture ? '#630826' : '#7C5C3E' }} />
-                  <span style={sectionTitle}>{t('ot.delayedReveal')}</span>
-                  <PlanBadge need="pro" tier={userTier} />
-                  {revealIsFuture && (
-                    <span
-                      className="text-[10px] font-semibold uppercase tracking-wide px-1.5 py-0.5 rounded-full"
-                      style={{ background: 'rgba(99,8,38,0.10)', color: '#630826' }}
-                    >
-                      {t('ot.active')}
-                    </span>
-                  )}
-                  <ChevronDown
-                    className="ml-auto w-4 h-4 transition-transform"
-                    style={{ color: '#A89880', transform: openSection === 'reveal' ? 'rotate(180deg)' : 'rotate(0deg)' }}
-                  />
-                </button>
-                  )
-                })()}
-                {openSection === 'reveal' && (() => {
-                  const nowForPanel = new Date()
-                  return (
-                  <div className="px-4 pb-4 space-y-3">
-                    {album.reveal_at && (() => {
-                      const revealDate = new Date(album.reveal_at)
-                      const isFuture = revealDate > nowForPanel
-                      return (
-                        <div
-                          className="flex items-start gap-2.5 rounded-xl px-3 py-2.5"
-                          style={{
-                            background: isFuture ? 'rgba(99,8,38,0.07)' : 'rgba(139,111,78,0.09)',
-                            border: `1px solid ${isFuture ? 'rgba(99,8,38,0.18)' : 'rgba(139,111,78,0.22)'}`,
-                          }}
-                        >
-                          <Clock className="w-3.5 h-3.5 mt-0.5 shrink-0" style={{ color: isFuture ? '#630826' : '#8B6F4E' }} />
-                          <div>
-                            <p className="text-[11px] font-semibold leading-none mb-1" style={{ color: isFuture ? '#630826' : '#8B6F4E' }}>
-                              {isFuture ? t('ot.unlocksOn') : t('ot.alreadyRevealed')}
-                            </p>
-                            <p className="text-xs" style={{ color: '#5C4A3C' }}>
-                              {revealDate.toLocaleString([], {
-                                weekday: 'short',
-                                month: 'short',
-                                day: 'numeric',
-                                hour: '2-digit',
-                                minute: '2-digit',
-                              })}
-                            </p>
-                          </div>
-                        </div>
-                      )
-                    })()}
-
-                    <div>
-                      <p className="text-[11px] font-medium mb-1.5" style={{ color: '#8B6F4E' }}>
-                        {album.reveal_at ? t('ot.changeTime') : t('ot.unlockAt')}
-                      </p>
-                      <RevealDatePicker
-                        value={revealInput}
-                        onChange={(v) => { setRevealInput(v); setRevealSaved(false) }}
-                      />
-                    </div>
-
-                    {revealError && <p className="text-xs" style={{ color: '#C0392B' }}>{revealError}</p>}
-
-                    <div className="flex items-center gap-2">
-                      <button
-                        onClick={() => void saveReveal('set')}
-                        disabled={revealSaving || !revealInput}
-                        className="hush-press flex-1 text-sm font-semibold rounded-lg py-2 transition hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed"
-                        style={{ background: '#630826', color: '#FDFAF5' }}
-                      >
-                        {revealSaving ? t('ot.saving') : revealSaved ? `✓ ${t('ot.saved')}` : t('ot.save')}
-                      </button>
-                      {album.reveal_at && (
-                        <button
-                          onClick={() => void saveReveal('clear')}
-                          disabled={revealSaving}
-                          className="hush-press text-sm rounded-lg py-2 px-3 transition hover:opacity-80 disabled:opacity-50"
-                          style={{ background: 'transparent', color: '#8B6F4E', border: '1px solid #DDD5C5' }}
-                        >
-                          {t('ot.remove')}
-                        </button>
-                      )}
-                    </div>
-
-                    {!album.reveal_at && (
-                      <p className="text-[11px] leading-relaxed" style={{ color: '#A89880' }}>
-                        {t('ot.revealNote')}
-                      </p>
-                    )}
-                  </div>
-                  )
-                })()}
-              </section>
+              {/* Delayed reveal -- its rules are lib/reveal-input, its state its own */}
+              <RevealSection
+                // Keyed on the stored value: when another device changes the reveal, the panel
+                // remounts and reinitialises from the prop -- the resync the effect above used to do
+                // for it, without a setState in an effect.
+                key={album.reveal_at ?? ''}
+                album={album}
+                userTier={userTier}
+                open={openSection === 'reveal'}
+                onToggle={() => toggleSection('reveal')}
+                onAlbumUpdated={onAlbumUpdated}
+              />
 
               {/* Collections — hidden outright on a packaged album that is not entitled */}
               {rows.collections.show && (
