@@ -1,4 +1,5 @@
-// FAILS THE BUILD ON A CONDITIONALLY-CALLED REACT HOOK. Nothing else.
+// FAILS THE BUILD ON A CONDITIONALLY-CALLED REACT HOOK -- and, since 2026-09-07, on ANY lint
+// finding beyond the count frozen in scripts/lint-budget.json (see the ratchet at the bottom).
 //
 //   node scripts/check-hooks.mjs
 //
@@ -16,13 +17,19 @@
 //
 // WHY NOT JUST RUN `npm run lint` IN CI. Because it reports ~80 other react-hooks findings today
 // (set-state-in-effect, refs, exhaustive-deps), and a gate that fails on everything is a gate
-// somebody turns off. This is a ratchet in the same spirit as tests/architecture.test.ts: it fails
-// ONLY on the class that crashes a page for a customer, and the rest stays visible in `npm run lint`
-// as debt. Widen it deliberately, when the debt is paid — not by accident.
+// somebody turns off. So the blocking set is ONLY the class that crashes a page for a customer,
+// and the rest is a BUDGET: today's count per rule, which may only fall. That turns "visible as
+// debt" into "cannot grow" without asking anyone to pay 80 findings at once.
 //
 // Exit 1 with the offending file, line and message, so a failed deploy says what to fix.
 
 import { execFileSync } from 'node:child_process'
+import { readFileSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
+import { dirname, join } from 'node:path'
+
+// Newline via fromCharCode: this file needs no escape that could be mangled on the way to disk.
+const NL = String.fromCharCode(10)
 
 const BLOCKING = new Set(['react-hooks/rules-of-hooks'])
 
@@ -73,3 +80,45 @@ if (offences.length > 0) {
 }
 
 console.log(`[check-hooks] ✓ no conditionally-called hooks (${results.length} files scanned).`)
+
+// THE RATCHET FOR EVERYTHING ELSE. Every other rule's count is frozen in scripts/lint-budget.json
+// (measured 2026-09-07: 91 findings, 79 of them react-hooks rules inside the four largest
+// components). A count going UP fails the deploy -- new debt is not accepted quietly. A count going
+// DOWN also fails, until the budget is lowered to match: a reduction is recorded, never left as
+// slack for the next regression to hide in. Same discipline as SIZE_BUDGET in
+// tests/architecture.test.ts, for the same reason: a number that can only fall is the only kind that
+// actually holds.
+//
+// A rule missing from the budget is budgeted at ZERO: a new rule, or a first finding under an old
+// one, is a decision somebody makes in that file, not something that lands by accident.
+const budgetPath = join(dirname(fileURLToPath(import.meta.url)), 'lint-budget.json')
+const budget = JSON.parse(readFileSync(budgetPath, 'utf8'))
+
+const counts = {}
+for (const file of results) {
+  for (const m of file.messages) {
+    if (!m.ruleId || BLOCKING.has(m.ruleId)) continue
+    counts[m.ruleId] = (counts[m.ruleId] ?? 0) + 1
+  }
+}
+const rules = new Set([...Object.keys(budget), ...Object.keys(counts)])
+const over = []
+const under = []
+for (const rule of [...rules].sort()) {
+  const have = counts[rule] ?? 0
+  const allowed = budget[rule] ?? 0
+  if (have > allowed) over.push(`${rule}: ${have} (budget ${allowed})`)
+  else if (have < allowed) under.push(`${rule}: ${have} (budget ${allowed})`)
+}
+if (over.length) {
+  console.error(`[check-hooks] lint debt went UP:` + NL + '  ' + over.join(NL + '  '))
+  console.error('Fix the new finding, or raise the number in scripts/lint-budget.json in the same')
+  console.error('commit with a sentence saying why -- a deliberate line, not a file quietly growing.')
+  process.exit(1)
+}
+if (under.length) {
+  console.error(`[check-hooks] lint debt went DOWN and the budget was not lowered:` + NL + '  ' + under.join(NL + '  '))
+  console.error('Lower scripts/lint-budget.json to the new counts so the reduction is kept.')
+  process.exit(1)
+}
+console.log(`[check-hooks] ✓ lint debt within budget (${Object.values(counts).reduce((a, b) => a + b, 0)} findings across ${rules.size} rules).`)

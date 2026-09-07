@@ -23,7 +23,7 @@ const NO_STORE = { 'Cache-Control': 'no-store' }
 // IT NEVER RETURNS THE SECRET. Length, the first six characters, and whether it had surrounding
 // whitespace — enough to tell a truncated paste from a webhook secret from a genuinely revoked
 // token, and not enough to use. Admin-only, and a 404 to everyone else.
-export async function GET(req: Request) {
+export async function GET() {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!isAccountAdmin(user)) {

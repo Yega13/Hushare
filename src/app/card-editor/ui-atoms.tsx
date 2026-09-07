@@ -28,7 +28,7 @@ export function ColorSwatch({ value, onChange }: { value: string; onChange: (v: 
   )
 }
 
-export function NumInput({ label, value, onChange, min, max, step = 1, unit = '' }: { label: string; value: number; min?: number; max?: number; step?: number; unit?: string; onChange: (v: number) => void }) {
+export function NumInput({ label, value, onChange, min, max, unit = '' }: { label: string; value: number; min?: number; max?: number; step?: number; unit?: string; onChange: (v: number) => void }) {
   const [local, setLocal] = useState(String(Math.round(value * 10) / 10))
   useEffect(() => { setLocal(String(Math.round(value * 10) / 10)) }, [value])
   function commit(raw: string) {

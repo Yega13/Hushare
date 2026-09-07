@@ -30,7 +30,7 @@ interface Props {
 }
 
 function PropsPanel({
-  selected, bg, els, qrDataUrl, transforming,
+  selected, bg, els, transforming,
   push, updateEl, deleteEl, duplicateEl, moveLayer, alignEl,
   handleImgUpload, applyTemplate, setTransforming,
 }: Props) {

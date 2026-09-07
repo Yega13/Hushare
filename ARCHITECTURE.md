@@ -149,8 +149,12 @@ Stated plainly, because a map that hides the swamps is not a map.
   it. Two columns still carry a type the schema does not enforce (`subscriptions.tier` has no
   CHECK; `status` is free text) and are narrowed by code at their boundary rather than by the
   database.
-- **Lint is not a gate.** `npx eslint src` reports 76 errors and 20 warnings; CI runs only the one
-  rule that takes a page down. The rest is unowned.
+- **Lint debt is frozen, not paid.** `npx eslint src` reports 86 findings, 79 of them React-hooks
+  rules (`set-state-in-effect`, `refs`, `immutability`) inside the largest components. Since
+  2026-09-07 `scripts/check-hooks.mjs` holds every rule to the count in `scripts/lint-budget.json`
+  -- a rise fails the deploy, a fall must be recorded -- so the number can only go down. Paying it
+  means rewriting render timing in UI that cannot be verified on a phone here (see memory:
+  iPhone testing blocked); it is deliberately not done blind.
 - **The schema gates depend on a secret.** Migrations, `db:check` and the types drift check run
   only when `SUPABASE_DB_URL` is set in CI; without it the deploy proceeds with a warning.
 - **Mutation runs are on demand, not a gate.** `npm run mutate` reproduces every recorded result
