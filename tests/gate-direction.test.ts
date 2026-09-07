@@ -90,7 +90,7 @@ describe('every server-gated control shows which plan it needs', () => {
   it('badges every gated control in the owner toolbar', () => {
     // The toolbar is being split into panels under components/owner-toolbar/; a control lives in
     // exactly one of these files, and the badge must sit beside it wherever that is.
-    const source = ['components/OwnerToolbar.tsx', 'components/owner-toolbar/RevealSection.tsx', 'components/owner-toolbar/CustomUrlSection.tsx'].map(read).join(String.fromCharCode(10))
+    const source = ['components/OwnerToolbar.tsx', 'components/owner-toolbar/RevealSection.tsx', 'components/owner-toolbar/CustomUrlSection.tsx', 'components/owner-toolbar/CollectionsSection.tsx'].map(read).join(String.fromCharCode(10))
     // The EXACT call, not a prefix: `ot.customUrl` also matches `ot.customUrlCleared` in a toast
     // a thousand lines earlier, and the first draft of this test matched that and failed on code
     // that was perfectly correct.

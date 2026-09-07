@@ -174,13 +174,14 @@ describe('the owner toolbar reads the same table as the server, through lib/owne
     const panels = {
       OwnerToolbar: toolbar,
       CustomUrlSection: readFileSync(join(process.cwd(), 'src', 'components', 'owner-toolbar', 'CustomUrlSection.tsx'), 'utf8'),
+      CollectionsSection: readFileSync(join(process.cwd(), 'src', 'components', 'owner-toolbar', 'CollectionsSection.tsx'), 'utf8'),
     }
     const controls: Array<{ label: string; key: string; file: keyof typeof panels; window: number }> = [
       { label: "t('ot.requireApproval')", key: 'moderation', file: 'OwnerToolbar', window: 1600 },
       { label: 'Remove Hushare branding', key: 'branding', file: 'OwnerToolbar', window: 1600 },
       { label: "t('ot.faceFinder')", key: 'faceFinder', file: 'OwnerToolbar', window: 1200 },
       { label: "t('ot.bibSearch')", key: 'bibSearch', file: 'OwnerToolbar', window: 2200 },
-      { label: "t('ot.collections')", key: 'collections', file: 'OwnerToolbar', window: 1200 },
+      { label: "t('ot.collections')", key: 'collections', file: 'CollectionsSection', window: 1600 },
       { label: "t('ot.customUrlSub')", key: 'row', file: 'CustomUrlSection', window: 2400 },
     ]
     for (const c of controls) {

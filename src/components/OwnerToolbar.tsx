@@ -1,13 +1,13 @@
 'use client'
 
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useT } from '@/i18n/LocaleProvider'
 import { ownerRows } from '@/lib/owner-rows'
 import { FEATURE_TIER } from '@/lib/plan-gates'
 import { packageExpired } from '@/lib/album-entitlements'
 import PackageSection from '@/components/owner-toolbar/PackageSection'
 import { useZipDownload } from '@/components/photo-grid/useZipDownload'
-import { Search, ChevronDown, Copy, Download, FolderPlus, Images, Loader2, Lock, LockOpen, MonitorPlay, Move, Play, ScanFace, Settings, ShieldCheck, Trash2, X } from 'lucide-react'
+import { Search, ChevronDown, Copy, Download, Images, Loader2, MonitorPlay, Move, Play, ScanFace, Settings, ShieldCheck, Trash2, X } from 'lucide-react'
 import type { Album, Photo, Tier } from '@/types'
 import {
   DEFAULT_SLIDESHOW_INTERVAL_MS,
@@ -37,12 +37,12 @@ import { showAppToast, storeAppToast } from '@/components/AppToast'
 import { BIN_DAYS } from '@/lib/album-bin'
 import RevealSection from '@/components/owner-toolbar/RevealSection'
 import CustomUrlSection from '@/components/owner-toolbar/CustomUrlSection'
+import PasswordSection from '@/components/owner-toolbar/PasswordSection'
+import CollectionsSection from '@/components/owner-toolbar/CollectionsSection'
 import ShareMenu from '@/components/owner-toolbar/ShareMenu'
 import {
-  addAlbumToCollectionRequest,
   deleteAlbumRequest,
   restoreAlbumRequest,
-  fetchCollections,
   saveGuestDownloadsRequest,
   saveGuestUploadsRequest,
   saveRequireApprovalRequest,
@@ -50,11 +50,10 @@ import {
   saveMediaSettingsRequest,
   type MediaSettingsChanges,
   saveDesktopGridColumns,
-  savePasswordRequest,
   saveSlideshowMotionRequest,
 } from '@/components/owner-toolbar/api'
-import { accordionButton, btnBase, inputStyle, sectionTitle, settingsSectionStyle } from '@/components/owner-toolbar/styles'
-import type { CollectionSummary, SettingsSection } from '@/components/owner-toolbar/types'
+import { accordionButton, btnBase, sectionTitle, settingsSectionStyle } from '@/components/owner-toolbar/styles'
+import type { SettingsSection } from '@/components/owner-toolbar/types'
 import PlanBadge, { gatedRowStyle } from '@/components/PlanBadge'
 
 type Props = {
@@ -132,17 +131,10 @@ export default function OwnerToolbar({ album, photos, albumPhotoCount, ownerToke
   const [restoring, setRestoring] = useState(false)
   const [deleteError, setDeleteError] = useState('')
 
-  const [passwordInput, setPasswordInput] = useState('')
-  const [passwordInputKey, setPasswordInputKey] = useState(0)
-  const [passwordSaving, setPasswordSaving] = useState(false)
-  const [passwordError, setPasswordError] = useState('')
-  const [passwordSaved, setPasswordSaved] = useState(false)
+  // Bumped whenever the password panel opens or Settings opens: PasswordSection is keyed on it,
+  // so a partially-typed password is cleared at exactly those moments and nowhere else.
+  const [passwordEpoch, setPasswordEpoch] = useState(0)
 
-  const [collectionSaving, setCollectionSaving] = useState(false)
-  const [collectionError, setCollectionError] = useState('')
-  const [collectionUrl, setCollectionUrl] = useState('')
-  const [collections, setCollections] = useState<CollectionSummary[]>([])
-  const [collectionsLoading, setCollectionsLoading] = useState(false)
 
   const [mediaRadius, setMediaRadius] = useState(album.media_radius ?? 16)
   const [mediaRadiusDraft, setMediaRadiusDraft] = useState(String(album.media_radius ?? 16))
@@ -289,15 +281,6 @@ export default function OwnerToolbar({ album, photos, albumPhotoCount, ownerToke
     if (!mediaRadiusEditing) setMediaRadiusDraft(String(mediaRadius))
   }, [mediaRadius, mediaRadiusEditing])
 
-  const loadCollections = useCallback(async () => {
-    setCollectionsLoading(true)
-    try {
-      setCollections(await fetchCollections(album.slug))
-    } finally {
-      setCollectionsLoading(false)
-    }
-  }, [album.slug])
-
   useEffect(() => {
     function handleClick(e: MouseEvent) {
       const target = e.target as Node
@@ -336,10 +319,6 @@ export default function OwnerToolbar({ album, photos, albumPhotoCount, ownerToke
         // now, so nothing is pending.
         mediaEditPendingRef.current = false
       }
-      setPasswordError('')
-      setPasswordSaved(false)
-      setPasswordInput('')
-      setCollectionError('')
       // MID-EDIT, THE PROP LOSES. This resync exists so another device's changes appear, but
       // while an edit is pending here the album prop is by definition older than the owner's
       // intent — resetting from it clobbered the value they just chose, and the next save of
@@ -373,21 +352,12 @@ export default function OwnerToolbar({ album, photos, albumPhotoCount, ownerToke
     }
   }, [album.allow_guest_downloads, album.guest_uploads_enabled, album.custom_slug, album.media_filter, album.media_radius, album.mobile_grid_columns, album.desktop_grid_columns, album.reveal_at, album.slideshow_animation, album.slideshow_motion, album.slideshow_interval_ms, album.video_autoplay, showSettings])
 
-  useEffect(() => {
-    if (showSettings && rows.collections.enabled) void loadCollections()
-  }, [showSettings, rows.collections.enabled, loadCollections])
-
   function toggleSection(section: SettingsSection) {
     setOpenSection((current) => {
       const next = current === section ? null : section
       // Only clear password state when OPENING — not when closing — so the user doesn't
       // lose a partially-typed password if they accidentally close and reopen.
-      if (section === 'password' && next === 'password') {
-        setPasswordInput('')
-        setPasswordInputKey((key) => key + 1)
-        setPasswordError('')
-        setPasswordSaved(false)
-      }
+      if (section === 'password' && next === 'password') setPasswordEpoch((n) => n + 1)
       return next
     })
   }
@@ -402,32 +372,6 @@ export default function OwnerToolbar({ album, photos, albumPhotoCount, ownerToke
       setTimeout(() => setCopied(null), 2000)
     } catch {
       showAppToast(t('ot.copyFail'), 'error')
-    }
-  }
-
-  async function savePassword(action: 'set' | 'clear') {
-    setPasswordSaving(true)
-    setPasswordError('')
-    setPasswordSaved(false)
-    try {
-      const result = await savePasswordRequest(
-        album.slug,
-        action === 'clear' ? null : passwordInput,
-      )
-      if (!result.ok) {
-        setPasswordError(result.error)
-        showAppToast(result.error, 'error')
-        return
-      }
-      onAlbumUpdated({ password_protected: result.password_protected })
-      setPasswordSaved(true)
-      setPasswordInput('')
-    } catch (e) {
-      const message = e instanceof Error ? e.message : t('common.networkError')
-      setPasswordError(message)
-      showAppToast(message, 'error')
-    } finally {
-      setPasswordSaving(false)
     }
   }
 
@@ -584,29 +528,6 @@ export default function OwnerToolbar({ album, photos, albumPhotoCount, ownerToke
     scheduleAutoSave(mediaRadius, videoAutoplay, mediaFilter, mobileGridColumns, nextInterval, slideshowAnimation)
   }
 
-  async function addAlbumToCollection(collectionId: string) {
-    setCollectionSaving(true)
-    setCollectionError('')
-    setCollectionUrl('')
-    try {
-      const result = await addAlbumToCollectionRequest(album.slug, collectionId)
-      if (!result.ok) {
-        setCollectionError(result.error)
-        showAppToast(result.error, 'error')
-        return
-      }
-      setCollectionUrl(`${window.location.origin}/c/${result.slug}`)
-      await loadCollections()
-      showAppToast(t('ot.addedToCollection'))
-    } catch (e) {
-      const message = e instanceof Error ? e.message : t('common.networkError')
-      setCollectionError(message)
-      showAppToast(message, 'error')
-    } finally {
-      setCollectionSaving(false)
-    }
-  }
-
   async function deleteAlbum() {
     if (!deleteConfirm) {
       setDeleteConfirm(true)
@@ -735,11 +656,7 @@ export default function OwnerToolbar({ album, photos, albumPhotoCount, ownerToke
             onClick={() => {
               setShowSettings((s) => {
                 const next = !s
-                if (next) {
-                  setPasswordInput('')
-                  setPasswordError('')
-                  setPasswordSaved(false)
-                }
+                if (next) setPasswordEpoch((n) => n + 1)
                 return next
               })
               setShowShare(false)
@@ -1448,73 +1365,15 @@ export default function OwnerToolbar({ album, photos, albumPhotoCount, ownerToke
                 )}
               </section>
 
-              {/* Password */}
-              <section style={settingsSectionStyle}>
-                <button type="button" className="hush-motion" style={accordionButton} onClick={() => toggleSection('password')}>
-                  {album.password_protected ? (
-                    <Lock className="w-4 h-4" style={{ color: '#630826' }} />
-                  ) : (
-                    <LockOpen className="w-4 h-4" style={{ color: '#7C5C3E' }} />
-                  )}
-                  <span style={sectionTitle}>{t('ot.password')}</span>
-                  {/* No badge and no lock: password protection is free, and always has been —
-                      api/album/password has never carried a tier check. Charging for it in the UI
-                      while the server gave it away was the same contradiction the pricing page had. */}
-                  <ChevronDown
-                    className="ml-auto w-4 h-4 transition-transform" 
-                    style={{ color: '#A89880', transform: openSection === 'password' ? 'rotate(180deg)' : 'rotate(0deg)' }}
-                  />
-                </button>
-                {openSection === 'password' && (
-                  <div className="px-4 pb-4">
-                    <p className="text-xs mb-3" style={{ color: '#7C5C3E' }}>
-                      {t('ot.passwordSub')}
-                    </p>
-                    <input type="text" name="username" autoComplete="username" value={ownerUrl ?? ''} readOnly hidden />
-                    <input
-                      key={passwordInputKey}
-                      type={passwordInput ? 'password' : 'text'}
-                      value={passwordInput}
-                      onChange={(e) => setPasswordInput(e.target.value)}
-                      placeholder={album.password_protected ? t('ot.newPassword') : t('ot.passwordPlaceholder')}
-                      maxLength={128}
-                      disabled={false}
-                      autoComplete="new-password"
-                      autoCorrect="off"
-                      autoCapitalize="none"
-                      spellCheck={false}
-                      name={`hush-album-password-${album.id}`}
-                      className="w-full rounded-lg px-3 py-2 text-sm focus:outline-none disabled:cursor-not-allowed disabled:opacity-60"
-                      style={inputStyle}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter' && !passwordSaving && passwordInput) void savePassword('set')
-                      }}
-                    />
-                    {passwordError && <p className="text-xs mt-2" style={{ color: '#C0392B' }}>{passwordError}</p>}
-                    {passwordSaved && !passwordError && <p className="text-xs mt-2" style={{ color: '#630826' }}>{t('ot.saved')}</p>}
-                    <div className="flex items-center gap-2 mt-3">
-                      <button
-                        onClick={() => void savePassword('set')}
-                        disabled={passwordSaving || !passwordInput}
-                        className="hush-press flex-1 text-sm font-semibold rounded-lg py-2 transition hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed"
-                        style={{ background: '#630826', color: '#FDFAF5' }}
-                      >
-                        {passwordSaving ? t('ot.saving') : t('ot.save')}
-                      </button>
-                      {album.password_protected && (
-                        <button
-                          onClick={() => void savePassword('clear')}
-                          disabled={passwordSaving}
-                          className="hush-press text-sm rounded-lg py-2 px-3 transition hover:opacity-90 disabled:opacity-50"
-                          style={{ background: '#F5F0E8', color: '#7C5C3E', border: '1px solid #DDD5C5' }}
-                        >
-                          {t('ot.remove')}
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                )}
-              </section>
+              {/* Password -- its state is its own; the epoch key clears it when the panel or Settings opens */}
+              <PasswordSection
+                key={passwordEpoch}
+                album={album}
+                ownerUrl={ownerUrl}
+                open={openSection === 'password'}
+                onToggle={() => toggleSection('password')}
+                onAlbumUpdated={onAlbumUpdated}
+              />
 
               {/* Custom URL -- keyed on the stored value so another device's change remounts it */}
               <CustomUrlSection
@@ -1540,67 +1399,15 @@ export default function OwnerToolbar({ album, photos, albumPhotoCount, ownerToke
                 onAlbumUpdated={onAlbumUpdated}
               />
 
-              {/* Collections — hidden outright on a packaged album that is not entitled */}
+              {/* Collections -- hidden outright on a packaged album that is not entitled; its state is its own */}
               {rows.collections.show && (
-              <section style={settingsSectionStyle}>
-                <button type="button" className="hush-motion" style={accordionButton} onClick={() => toggleSection('collection')}>
-                  <FolderPlus className="w-4 h-4" style={{ color: rows.collections.dimmed ? '#A89880' : '#7C5C3E' }} />
-                  <span style={sectionTitle}>{t('ot.collections')}</span>
-                  <PlanBadge need={FEATURE_TIER.collections} tier={userTier} />
-                  <ChevronDown
-                    className="ml-auto w-4 h-4 transition-transform"
-                    style={{ color: '#A89880', transform: openSection === 'collection' ? 'rotate(180deg)' : 'rotate(0deg)' }}
-                  />
-                </button>
-                {openSection === 'collection' && (
-                  <div className="px-4 pb-4">
-                    <p className="text-xs mb-3" style={{ color: '#7C5C3E' }}>
-                      {t('ot.collectionsSub')}
-                    </p>
-
-                    {rows.collections.enabled && (
-                      <div className="mb-4 rounded-xl p-3" style={{ background: '#FDFAF5', border: '1px solid #E8E0D2' }}>
-                        <div className="mb-2 flex items-center justify-between gap-3">
-                          <span className="text-xs font-semibold uppercase tracking-[0.08em]" style={{ color: '#8B6F4E' }}>{t('ot.yourCollections')}</span>
-                          {collectionsLoading && <span className="text-xs" style={{ color: '#A89880' }}>{t('ot.loading')}</span>}
-                        </div>
-                        <div className="space-y-2">
-                          {collections.map((collection) => (
-                            <button
-                              key={collection.id}
-                              type="button"
-                              onClick={() => void addAlbumToCollection(collection.id)}
-                              disabled={collectionSaving || collection.contains_album}
-                              className="hush-press flex w-full items-center justify-between gap-3 rounded-lg px-3 py-2 text-left text-xs transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-70"
-                              style={{ background: '#FFFFFF', border: '1px solid #DDD5C5', color: '#630826' }}
-                            >
-                              <span className="min-w-0">
-                                <span className="block truncate font-semibold">{collection.name}</span>
-                                <span className="block truncate" style={{ color: '#8B6F4E' }}>
-                                  /c/{collection.slug} - {collection.album_count} album{collection.album_count === 1 ? '' : 's'}
-                                </span>
-                              </span>
-                              <span className="shrink-0 font-semibold" style={{ color: collection.contains_album ? '#630826' : '#7C5C3E' }}>
-                                {collection.contains_album ? t('ot.added') : t('ot.add')}
-                              </span>
-                            </button>
-                          ))}
-                          {!collectionsLoading && collections.length === 0 && (
-                            <p className="text-xs" style={{ color: '#8B6F4E' }}>{t('ot.noCollections')}</p>
-                          )}
-                        </div>
-                      </div>
-                    )}
-
-                    {collectionError && <p className="text-xs mt-2" style={{ color: '#C0392B' }}>{collectionError}</p>}
-                    {collectionUrl && (
-                      <p className="text-xs mt-2 break-all" style={{ color: '#630826' }}>
-                        Added: <a href={collectionUrl} className="underline">{collectionUrl}</a>
-                      </p>
-                    )}
-                  </div>
-                )}
-              </section>
+                <CollectionsSection
+                  album={album}
+                  userTier={userTier}
+                  row={rows.collections}
+                  open={openSection === 'collection'}
+                  onToggle={() => toggleSection('collection')}
+                />
               )}
 
               {/* Delete album */}
