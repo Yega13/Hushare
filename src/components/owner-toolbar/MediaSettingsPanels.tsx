@@ -14,6 +14,7 @@ import {
   type SlideshowAnimation,
 } from '@/lib/media-display'
 import { DESKTOP_COLUMN_CHOICES, resolveGridColumns } from '@/lib/grid-columns'
+import { clampMediaRadius, clampSlideshowInterval, parseMediaRadiusDraft } from '@/lib/media-input'
 import { confirmedMediaSettings, diffMediaSettings } from '@/lib/media-settings-diff'
 import {
   DEFAULT_SLIDESHOW_MOTION,
@@ -105,10 +106,6 @@ export default function MediaSettingsPanels({ album, photos, mediaRadiusMax, ope
   const [motionPreviewKey, setMotionPreviewKey] = useState(0)
   const motionSaveTimerRef = useRef<number | null>(null)
   const [mediaError, setMediaError] = useState('')
-  // True from the moment a slider edit is scheduled until its save settles. The resync effect
-  // below must not stomp local state in that window — that stomp is how an unsaved phone-grid
-  // value got replaced by the album prop and then persisted by the next unrelated save.
-  const mediaEditPendingRef = useRef(false)
 
   // A real photo from the album in the transition preview, so the owner judges the motion against
   // what they will actually be watching rather than a grey rectangle.
@@ -137,7 +134,6 @@ export default function MediaSettingsPanels({ album, photos, mediaRadiusMax, ope
     nextSlideshowAnimation = slideshowAnimation,
   ) {
     setMediaError('')
-    mediaEditPendingRef.current = true
     try {
       // Only what differs from the album's CONFIRMED values goes on the wire — the decision
       // lives in lib/media-settings-diff, where its tests hold the grid "merge" bug shut.
@@ -181,10 +177,6 @@ export default function MediaSettingsPanels({ album, photos, mediaRadiusMax, ope
       const message = e instanceof Error ? e.message : t('common.networkError')
       setMediaError(message)
       showAppToast(message, 'error')
-    } finally {
-      // Settled either way: the album prop now carries the truth (or the edit failed and the
-      // owner was told), so the resync effect may speak again.
-      mediaEditPendingRef.current = false
     }
   }
 
@@ -205,7 +197,6 @@ export default function MediaSettingsPanels({ album, photos, mediaRadiusMax, ope
     nextSlideshowIntervalMs: number,
     nextSlideshowAnimation: SlideshowAnimation,
   ) {
-    mediaEditPendingRef.current = true
     if (debouncedSaveRef.current !== null) {
       window.clearTimeout(debouncedSaveRef.current)
     }
@@ -223,22 +214,14 @@ export default function MediaSettingsPanels({ album, photos, mediaRadiusMax, ope
   }
 
   function applyMediaRadius(value: number) {
-    const nextRadius = Math.max(0, Math.min(radiusMax, Math.round(value)))
+    const nextRadius = clampMediaRadius(value, radiusMax)
     setMediaRadius(nextRadius)
     onAlbumUpdated({ media_radius: nextRadius }, { forceGlobalRadius: true })
     scheduleAutoSave(nextRadius, videoAutoplay, mediaFilter, mobileGridColumns, slideshowIntervalMs, slideshowAnimation)
   }
 
-  function parseMediaRadiusDraft(value: string): number | null {
-    const trimmed = value.trim()
-    if (!trimmed) return null
-    const parsed = Number(trimmed)
-    if (!Number.isFinite(parsed)) return null
-    return Math.max(0, Math.min(radiusMax, Math.round(parsed)))
-  }
-
   function commitMediaRadiusDraft() {
-    const nextRadius = parseMediaRadiusDraft(mediaRadiusDraft)
+    const nextRadius = parseMediaRadiusDraft(mediaRadiusDraft, radiusMax)
     if (nextRadius == null) {
       setMediaRadiusDraft(String(mediaRadius))
       return
@@ -250,7 +233,7 @@ export default function MediaSettingsPanels({ album, photos, mediaRadiusMax, ope
   function changeMediaRadiusDraft(value: string) {
     const digitsOnly = value.replace(/[^\d]/g, '')
     setMediaRadiusDraft(digitsOnly)
-    const nextRadius = parseMediaRadiusDraft(digitsOnly)
+    const nextRadius = parseMediaRadiusDraft(digitsOnly, radiusMax)
     if (nextRadius != null) applyMediaRadius(nextRadius)
   }
 
@@ -275,7 +258,7 @@ export default function MediaSettingsPanels({ album, photos, mediaRadiusMax, ope
   }, [])
 
   function applySlideshowInterval(value: number) {
-    const nextInterval = Math.max(MIN_SLIDESHOW_INTERVAL_MS, Math.min(MAX_SLIDESHOW_INTERVAL_MS, Math.round(value)))
+    const nextInterval = clampSlideshowInterval(value)
     setSlideshowIntervalMs(nextInterval)
     onAlbumUpdated({ slideshow_interval_ms: nextInterval })
     scheduleAutoSave(mediaRadius, videoAutoplay, mediaFilter, mobileGridColumns, nextInterval, slideshowAnimation)

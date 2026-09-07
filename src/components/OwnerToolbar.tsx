@@ -17,6 +17,7 @@ import DangerSection from '@/components/owner-toolbar/DangerSection'
 import GuestsSection from '@/components/owner-toolbar/GuestsSection'
 import FilesSection from '@/components/owner-toolbar/FilesSection'
 import MediaSettingsPanels from '@/components/owner-toolbar/MediaSettingsPanels'
+import { useZipDownload } from '@/components/photo-grid/useZipDownload'
 import ShareMenu from '@/components/owner-toolbar/ShareMenu'
 import { accordionButton, btnBase, sectionTitle, settingsSectionStyle } from '@/components/owner-toolbar/styles'
 import type { SettingsSection } from '@/components/owner-toolbar/types'
@@ -77,6 +78,12 @@ export default function OwnerToolbar({ album, photos, albumPhotoCount, ownerToke
   // component that stays mounted whether or not Settings or the accordion is open. The panel body
   // reports a landed deletion up; this reopens Settings on it and hands the days back down.
   const [deletedFor, setDeletedFor] = useState<number | null>(null)
+  // THE ZIP DOWNLOAD LIVES HERE, not in the Files panel that shows it. The panel unmounts when
+  // Settings closes; a download in progress does not stop for that, but its progress and its
+  // "already running" state would have -- a review traced it: tap outside at "Part 2 of 9", reopen,
+  // see an enabled "Download all", press it, and two full-album downloads run at once. This
+  // component never unmounts while the album is open.
+  const zip = useZipDownload(photos, album)
 
 
 
@@ -277,16 +284,14 @@ export default function OwnerToolbar({ album, photos, albumPhotoCount, ownerToke
             className="hush-press hush-owner-action"
             style={{ ...btnBase, padding: '6px 10px' }}
             onClick={() => {
-              setShowSettings((s) => {
-                const next = !s
-                if (next) {
-                  setPasswordEpoch((n) => n + 1)
-                  // A fresh open shows no section expanded; the resync effect used to do this on
-                  // close, alongside fourteen media resets that live in MediaSettingsPanels now.
-                  setOpenSection(null)
-                }
-                return next
-              })
+              const next = !showSettings
+              if (next) {
+                setPasswordEpoch((n) => n + 1)
+                // A fresh open shows no section expanded; the resync effect used to do this on
+                // close, alongside fourteen media resets that live in MediaSettingsPanels now.
+                setOpenSection(null)
+              }
+              setShowSettings(next)
               setShowShare(false)
             }}
             title={t('ot.settingsTitle')}
@@ -356,6 +361,7 @@ export default function OwnerToolbar({ album, photos, albumPhotoCount, ownerToke
                 album={album}
                 photos={photos}
                 albumPhotoCount={albumPhotoCount}
+                zip={zip}
                 userTier={userTier}
                 rows={rows}
                 open={openSection === 'files'}

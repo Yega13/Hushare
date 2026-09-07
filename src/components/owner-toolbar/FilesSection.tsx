@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import { createPortal } from 'react-dom'
 import { ChevronDown, Download, Loader2, ScanFace, Search } from 'lucide-react'
 import type { Album, Photo, Tier } from '@/types'
 import { FEATURE_TIER } from '@/lib/plan-gates'
@@ -10,7 +11,6 @@ import { saveBibSearchRequest, saveBrandingRequest, saveFaceFinderRequest } from
 import FaceConsentDialog from '@/components/owner-toolbar/FaceConsentDialog'
 import OptimisticToggle from '@/components/owner-toolbar/OptimisticToggle'
 import { accordionButton, sectionTitle, settingsSectionStyle } from '@/components/owner-toolbar/styles'
-import { useZipDownload } from '@/components/photo-grid/useZipDownload'
 import PlanBadge, { gatedRowStyle } from '@/components/PlanBadge'
 import { useT } from '@/i18n/LocaleProvider'
 
@@ -19,10 +19,14 @@ import { useT } from '@/i18n/LocaleProvider'
 // onAlbumUpdated; the face switch is the one that asks for consent before enabling (see
 // FaceConsentDialog), so it is the one that is not an OptimisticToggle.
 
+/** The zip download's state, owned by the toolbar so it survives Settings closing (see there). */
+export type ZipDownload = { zipping: boolean; zipProgress: number; zipStatus: string; downloadZip: () => void }
+
 type Props = {
   album: Album
   photos: Photo[]
   albumPhotoCount?: number
+  zip: ZipDownload
   userTier: Tier | null
   rows: Pick<OwnerRows, 'branding' | 'faceFinder' | 'bibSearch'>
   open: boolean
@@ -30,9 +34,9 @@ type Props = {
   onAlbumUpdated: (patch: Partial<Album>) => void
 }
 
-export default function FilesSection({ album, photos, albumPhotoCount, userTier, rows, open, onToggle, onAlbumUpdated }: Props) {
+export default function FilesSection({ album, photos, albumPhotoCount, zip, userTier, rows, open, onToggle, onAlbumUpdated }: Props) {
   const { t } = useT()
-  const { zipping, zipProgress, zipStatus, downloadZip } = useZipDownload(photos, album)
+  const { zipping, zipProgress, zipStatus, downloadZip } = zip
   const [faceConsentOpen, setFaceConsentOpen] = useState(false)
 
   async function applyFaceFinder(next: boolean) {
@@ -141,11 +145,17 @@ export default function FilesSection({ album, photos, albumPhotoCount, userTier,
         )}
       </section>
 
-      {faceConsentOpen && (
+      {/* PORTALLED. The Settings pop-over keeps a transform after its entrance animation, and a
+          transformed ancestor becomes the containing block for `position: fixed` -- so rendered
+          in place, the full-screen consent overlay was a 480px panel trapped inside the dropdown,
+          with the page behind it neither dimmed nor blocked. A review measured it in a headless
+          browser. document.body has no transform. */}
+      {faceConsentOpen && createPortal(
         <FaceConsentDialog
           onCancel={() => setFaceConsentOpen(false)}
           onConfirm={() => { setFaceConsentOpen(false); void applyFaceFinder(true) }}
-        />
+        />,
+        document.body,
       )}
     </>
   )

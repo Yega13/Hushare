@@ -64,9 +64,11 @@ export default function CustomUrlSection({ album, userTier, row, open, onToggle,
         return
       }
       onAlbumUpdated({ custom_slug: result.custom_slug })
+      // The input shows what was STORED -- lowercased by validateCustomSlug -- not what was typed,
+      // so the box agrees with the Share menu and a later remote clear finds it pristine.
+      setInput(result.custom_slug ?? '')
       setSaved(true)
       showAppToast(action === 'clear' ? t('ot.customUrlCleared') : t('ot.customUrlSaved'))
-      if (action === 'clear') setInput('')
     } catch (e) {
       const message = e instanceof Error ? e.message : t('common.networkError')
       setError(message)
