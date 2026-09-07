@@ -7,7 +7,7 @@ through OpenNext. Postgres (Supabase, through PostgREST) holds the rows; R2 hold
 byte; Cloudflare Stream holds video; Polar handles billing; Rekognition indexes faces.
 
 This document is the map: the layers, the invariants, where each fact lives, and what enforces
-each of those claims. Every number in it was measured on 2026-09-06 (`master`, commit de1acd7).
+each of those claims. Every number in it was measured on 2026-09-07 (`master`, commit 4b6772f).
 The last section is the honest list of what is still weak. AGENTS.md holds the rules and the
 incidents behind them; MISTAKES.md holds the record of getting them wrong.
 
@@ -22,7 +22,7 @@ src/lib/upload/**      5 modules                          the browser's upload m
 src/lib/supabase/**   client / server / admin factories   the only place a Supabase client is built.
 src/lib/cloudflare/** R2 and Stream adapters
 src/types/database.ts GENERATED from the live schema      never edited by hand.
-tests/**              95 files, 1,407 tests               the enforcement layer; runs before every deploy.
+tests/**              96 files, 1,441 tests               the enforcement layer; runs before every deploy.
 ```
 
 **The rule per layer.** A route handler or component performs I/O and calls a function in `lib`
@@ -80,7 +80,9 @@ An invariant that is only a sentence in a document is a hope. Each of these name
 | A nullable column is never treated as present without a check | `withNonNull()` in `lib/non-null.ts` (a tested predicate, not a cast) | `tsc` at the call site, the body's own test |
 | A photo row with an unexpected enum value is dropped and reported, never rendered as if valid | `narrowPhotoRows` / `summarizeDrops` in `lib/photo-row.ts`, called at the read boundary in `lib/server/album-access.ts` | one `reportServerError` per request, with the album and a sample |
 | A rate-limited response always says when to retry | `Refusal` union, `toResponse()` | compile error |
-| A hook below an early return cannot ship | `npm run check:hooks` in `deploy.yml` (`react-hooks/rules-of-hooks` only) | red deploy |
+| A hook below an early return cannot ship | `npm run check:hooks` in `deploy.yml` blocks on `react-hooks/rules-of-hooks` | red deploy |
+| Lint debt cannot grow | the same gate holds every other rule to `scripts/lint-budget.json`; a fall must be recorded | red deploy |
+| A 500 is never silent | every `status: 500` under `src/app/api` goes through `serverError()`, which reports first (per-site census: 0 silent) | the incident is in the panel before the customer writes in |
 | A test file that did not run is not a pass | `scripts/run-tests.mjs` compares files discovered with files reported; vitest alone exits 0 while dropping workers under load | red run |
 | No invisible character in source | `tests/source-hygiene.test.ts` scans by code point | red test |
 | A deletion that cannot decide does nothing | `r2KeyFromUrl` returns `null` rather than guessing; `collectDeletionTargets` is the only path to a delete | orphaned file ($0.015/GB/month) instead of a destroyed one |
