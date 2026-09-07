@@ -850,3 +850,16 @@ Reading every hunk caught it; nothing else would have.
 **Habit to build:** a codemod's output is reviewed line by line, every line, before tsc gets a
 say -- tsc cannot tell a wrong string from a right one. And a codemod that handles a case by
 string surgery on an expression is a case to hand-edit, not automate.
+
+### 57. "IT IS 0" -- A COUNT OF FILES, WRITTEN INTO A COMMIT MESSAGE AS A COUNT OF SITES
+
+The silent-500 commit said "ARCHITECTURE.md section 6 said 46 files; it is 0". The document was
+not in the commit, and the zero came from a census that asked "does this FILE mention the
+serializer anywhere?" -- so six files that reported at one site and stayed silent at nine others
+counted as done. The reviewer read every `status: 500` and found them. The same census, run the
+other way, then over-counted: the Polar webhook's bare responses all had a full report three lines
+above them and needed no change at all.
+
+**Habit to build:** a claim in a commit message is checked the way the reviewer will check it --
+per site, with the exact grep in the message -- and a claim about a file the commit does not touch
+is not made. Rule 23 applies to prose as much as to deploys.
