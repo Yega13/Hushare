@@ -26,9 +26,10 @@ type Props<K extends keyof Album> = {
   sub: ReactNode
   rowStyle?: React.CSSProperties
   className?: string
+  labelClassName?: string
 }
 
-export default function OptimisticToggle<K extends keyof Album>({ album, field, checked, save, onAlbumUpdated, disabled, label, sub, rowStyle, className }: Props<K>) {
+export default function OptimisticToggle<K extends keyof Album>({ album, field, checked, save, onAlbumUpdated, disabled, label, sub, rowStyle, className, labelClassName }: Props<K>) {
   const { t } = useT()
   const value = checked(album[field])
 
@@ -49,7 +50,7 @@ export default function OptimisticToggle<K extends keyof Album>({ album, field, 
   return (
     <label className={className ?? 'flex items-center justify-between gap-4 rounded-xl px-3 py-3'} style={{ background: '#FDFAF5', border: '1px solid #DDD5C5', cursor: 'pointer', ...rowStyle }}>
       <span>
-        <span className="block text-sm font-semibold" style={{ color: '#630826' }}>{label}</span>
+        <span className={labelClassName ?? 'block text-sm font-semibold'} style={{ color: '#630826' }}>{label}</span>
         <span className="block text-xs" style={{ color: '#7C5C3E' }}>{sub}</span>
       </span>
       <input

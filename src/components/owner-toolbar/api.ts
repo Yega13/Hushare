@@ -600,3 +600,53 @@ export async function saveRevealRequest(
   if (!res.ok || !body.ok) return { ok: false, error: body.error ?? `Save failed (${res.status})` }
   return { ok: true, reveal_at: body.reveal_at ?? null }
 }
+
+export async function saveBrandingRequest(
+  slug: string,
+  hideBranding: boolean,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const res = await fetch('/api/album/branding', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ slug, hide_branding: hideBranding }),
+  })
+  if (!res.ok) {
+    const body = await jsonBody<{ error?: string }>(res)
+    return { ok: false, error: body.error ?? 'Could not save' }
+  }
+  return { ok: true }
+}
+
+// The server refuses an enable without `consent`, so the dialog cannot be skipped by anyone
+// calling the endpoint directly. Turning it OFF sends no consent field, as before.
+export async function saveFaceFinderRequest(
+  slug: string,
+  enabled: boolean,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const res = await fetch('/api/album/face-finder', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ slug, enabled, consent: enabled ? true : undefined }),
+  })
+  if (!res.ok) {
+    const body = await jsonBody<{ error?: string }>(res)
+    return { ok: false, error: body.error ?? `Save failed (${res.status})` }
+  }
+  return { ok: true }
+}
+
+export async function saveBibSearchRequest(
+  slug: string,
+  enabled: boolean,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const res = await fetch('/api/album/bib-search', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ slug, enabled }),
+  })
+  if (!res.ok) {
+    const body = await jsonBody<{ error?: string }>(res)
+    return { ok: false, error: body.error ?? `Save failed (${res.status})` }
+  }
+  return { ok: true }
+}

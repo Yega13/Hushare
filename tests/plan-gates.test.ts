@@ -176,12 +176,13 @@ describe('the owner toolbar reads the same table as the server, through lib/owne
       CustomUrlSection: readFileSync(join(process.cwd(), 'src', 'components', 'owner-toolbar', 'CustomUrlSection.tsx'), 'utf8'),
       CollectionsSection: readFileSync(join(process.cwd(), 'src', 'components', 'owner-toolbar', 'CollectionsSection.tsx'), 'utf8'),
       GuestsSection: readFileSync(join(process.cwd(), 'src', 'components', 'owner-toolbar', 'GuestsSection.tsx'), 'utf8'),
+      FilesSection: readFileSync(join(process.cwd(), 'src', 'components', 'owner-toolbar', 'FilesSection.tsx'), 'utf8'),
     }
     const controls: Array<{ label: string; key: string; file: keyof typeof panels; window: number }> = [
       { label: "t('ot.requireApproval')", key: 'moderation', file: 'GuestsSection', window: 600 },
-      { label: 'Remove Hushare branding', key: 'branding', file: 'OwnerToolbar', window: 1600 },
-      { label: "t('ot.faceFinder')", key: 'faceFinder', file: 'OwnerToolbar', window: 1200 },
-      { label: "t('ot.bibSearch')", key: 'bibSearch', file: 'OwnerToolbar', window: 2200 },
+      { label: 'Remove Hushare branding', key: 'branding', file: 'FilesSection', window: 700 },
+      { label: "t('ot.faceFinder')", key: 'faceFinder', file: 'FilesSection', window: 700 },
+      { label: "t('ot.bibSearch')", key: 'bibSearch', file: 'FilesSection', window: 700 },
       { label: "t('ot.collections')", key: 'collections', file: 'CollectionsSection', window: 1600 },
       { label: "t('ot.customUrlSub')", key: 'row', file: 'CustomUrlSection', window: 2400 },
     ]
@@ -190,8 +191,18 @@ describe('the owner toolbar reads the same table as the server, through lib/owne
       const at = src.indexOf(c.label)
       expect(at, `${c.label} missing from ${c.file}`).toBeGreaterThan(-1)
       const slice = src.slice(at, at + c.window)
-      if (c.file === 'OwnerToolbar') {
-        const reads = [...slice.matchAll(/\brows\.([a-zA-Z]+)\./g)].map((m) => m[1])
+      if (c.file === 'OwnerToolbar' || c.file === 'FilesSection') {
+        // FilesSection receives three rows and reads rows.<key>., so it is held like the toolbar:
+        // every read in a control's ELEMENT must be that control's own row. The element runs from
+        // its opening tag (<OptimisticToggle or <label) to the next row's opening tag -- a
+        // character window would overlap the neighbour, the rows sit that close.
+        const near = c.file === 'OwnerToolbar' ? slice : (() => {
+          const start = Math.max(src.lastIndexOf('<OptimisticToggle', at), src.lastIndexOf('<label', at))
+          const nextStarts = [src.indexOf('<OptimisticToggle', at + 1), src.indexOf('<label', at + 1)].filter((i) => i > 0)
+          const end = nextStarts.length ? Math.min(...nextStarts) : src.length
+          return src.slice(start, end)
+        })()
+        const reads = [...near.matchAll(/\brows\.([a-zA-Z]+)\./g)].map((m) => m[1])
         expect(reads.length, `${c.key}: no row read near its label`).toBeGreaterThan(0)
         for (const read of reads) expect(read, `${c.key} control reads another row's answer`).toBe(c.key)
       } else {
@@ -225,10 +236,14 @@ describe('the owner toolbar reads the same table as the server, through lib/owne
     // A row that is greyed and badged but still clickable teaches the owner nothing — they flip it
     // and learn it is paid from the error toast, which is the experience the badge replaced.
     // "Remove Hushare branding" was exactly that: styled by the plan, disabled only by the lock.
-    const at = toolbar.indexOf('Remove Hushare branding')
+    // The row is an OptimisticToggle in FilesSection now; its `disabled` sits a few props above the
+    // label, so the check is on the element, not a forward window.
+    const files = readFileSync(join(process.cwd(), 'src', 'components', 'owner-toolbar', 'FilesSection.tsx'), 'utf8')
+    const at = files.indexOf('Remove Hushare branding')
     expect(at).toBeGreaterThan(-1)
-    const row = toolbar.slice(at, at + 1600)
-    expect(row.includes('disabled={!rows.branding.enabled}'), 'the branding toggle must be disabled by the same answer that dims it').toBe(true)
+    const element = files.slice(files.lastIndexOf('<OptimisticToggle', at), at)
+    expect(element.includes('disabled={!rows.branding.enabled}'), 'the branding toggle must be disabled by the same answer that dims it').toBe(true)
+    expect(element.includes('gatedRowStyle(rows.branding.dimmed, !rows.branding.show)'), 'and dimmed by it').toBe(true)
   })
 })
 

@@ -90,7 +90,7 @@ describe('every server-gated control shows which plan it needs', () => {
   it('badges every gated control in the owner toolbar', () => {
     // The toolbar is being split into panels under components/owner-toolbar/; a control lives in
     // exactly one of these files, and the badge must sit beside it wherever that is.
-    const source = ['components/OwnerToolbar.tsx', 'components/owner-toolbar/RevealSection.tsx', 'components/owner-toolbar/CustomUrlSection.tsx', 'components/owner-toolbar/CollectionsSection.tsx', 'components/owner-toolbar/GuestsSection.tsx'].map(read).join(String.fromCharCode(10))
+    const source = ['components/OwnerToolbar.tsx', 'components/owner-toolbar/RevealSection.tsx', 'components/owner-toolbar/CustomUrlSection.tsx', 'components/owner-toolbar/CollectionsSection.tsx', 'components/owner-toolbar/GuestsSection.tsx', 'components/owner-toolbar/FilesSection.tsx'].map(read).join(String.fromCharCode(10))
     // The EXACT call, not a prefix: `ot.customUrl` also matches `ot.customUrlCleared` in a toast
     // a thousand lines earlier, and the first draft of this test matched that and failed on code
     // that was perfectly correct.
@@ -107,7 +107,7 @@ describe('every server-gated control shows which plan it needs', () => {
   })
 
   it('badges branding removal, which had none', () => {
-    const source = read('components/OwnerToolbar.tsx')
+    const source = read('components/owner-toolbar/FilesSection.tsx')
     const at = source.indexOf('Remove Hushare branding')
     expect(at).toBeGreaterThan(-1)
     expect(
@@ -131,9 +131,11 @@ describe('every server-gated control shows which plan it needs', () => {
   it('uses ONE definition for how a gated control looks', () => {
     const badge = read('components/PlanBadge.tsx')
     expect(badge.includes('grayscale(1)'), 'gatedRowStyle must grey the whole row, icons included').toBe(true)
-    for (const rel of ['components/OwnerToolbar.tsx', 'components/AlbumDesigner.tsx']) {
+    // The gated rows moved out of the toolbar into panels; each panel file that has one must use it,
+    // and the toolbar itself must not have grown a hand-rolled dim in their absence.
+    for (const rel of ['components/owner-toolbar/FilesSection.tsx', 'components/owner-toolbar/GuestsSection.tsx', 'components/owner-toolbar/CustomUrlSection.tsx', 'components/AlbumDesigner.tsx', 'components/OwnerToolbar.tsx']) {
       const source = read(rel)
-      expect(source.includes('gatedRowStyle'), `${rel} must use the shared gated style`).toBe(true)
+      if (rel !== 'components/OwnerToolbar.tsx') expect(source.includes('gatedRowStyle'), `${rel} must use the shared gated style`).toBe(true)
       // The hand-rolled dims this replaced. Any of them coming back means the look has drifted again.
       expect(
         /opacity: \w+ \? 0\.6 : 1/.test(source),

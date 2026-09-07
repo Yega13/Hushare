@@ -6,8 +6,7 @@ import { ownerRows } from '@/lib/owner-rows'
 import { FEATURE_TIER } from '@/lib/plan-gates'
 import { packageExpired } from '@/lib/album-entitlements'
 import PackageSection from '@/components/owner-toolbar/PackageSection'
-import { useZipDownload } from '@/components/photo-grid/useZipDownload'
-import { Search, ChevronDown, Copy, Download, Images, Loader2, MonitorPlay, Move, Play, ScanFace, Settings, X } from 'lucide-react'
+import { ChevronDown, Copy, Images, MonitorPlay, Move, Play, Settings, X } from 'lucide-react'
 import type { Album, Photo, Tier } from '@/types'
 import {
   DEFAULT_SLIDESHOW_INTERVAL_MS,
@@ -40,6 +39,7 @@ import PasswordSection from '@/components/owner-toolbar/PasswordSection'
 import CollectionsSection from '@/components/owner-toolbar/CollectionsSection'
 import DangerSection from '@/components/owner-toolbar/DangerSection'
 import GuestsSection from '@/components/owner-toolbar/GuestsSection'
+import FilesSection from '@/components/owner-toolbar/FilesSection'
 import ShareMenu from '@/components/owner-toolbar/ShareMenu'
 import {
   savePhotoLayoutRequest,
@@ -50,7 +50,7 @@ import {
 } from '@/components/owner-toolbar/api'
 import { accordionButton, btnBase, sectionTitle, settingsSectionStyle } from '@/components/owner-toolbar/styles'
 import type { SettingsSection } from '@/components/owner-toolbar/types'
-import PlanBadge, { gatedRowStyle } from '@/components/PlanBadge'
+import PlanBadge from '@/components/PlanBadge'
 
 type Props = {
   album: Album
@@ -146,39 +146,6 @@ export default function OwnerToolbar({ album, photos, albumPhotoCount, ownerToke
   // value got replaced by the album prop and then persisted by the next unrelated save.
   const mediaEditPendingRef = useRef(false)
 
-  const { zipping, zipProgress, zipStatus, downloadZip } = useZipDownload(photos, album)
-
-  const [hideBranding, setHideBranding] = useState(!!album.hide_branding)
-  const [faceFinderEnabled, setFaceFinderEnabled] = useState(!!album.face_finder_enabled)
-  // Switching face search ON is the one control here that creates biometric data, so it is the one
-  // control that asks first. Turning it OFF stays a single tap — nobody should have to read a
-  // dialog to stop processing.
-  const [faceConsentOpen, setFaceConsentOpen] = useState(false)
-  const [consentCopied, setConsentCopied] = useState(false)
-
-  const applyFaceFinder = async (next: boolean) => {
-    setFaceFinderEnabled(next)
-    onAlbumUpdated({ face_finder_enabled: next })
-    try {
-      const res = await fetch('/api/album/face-finder', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        // The server refuses an enable without this, so the dialog cannot be skipped by anyone
-        // calling the endpoint directly.
-        body: JSON.stringify({ slug: album.slug, enabled: next, consent: next ? true : undefined }),
-      })
-      if (!res.ok) {
-        const body = await res.json().catch(() => ({})) as { error?: string }
-        throw new Error(body.error ?? `Save failed (${res.status})`)
-      }
-    } catch (err) {
-      showAppToast(err instanceof Error ? err.message : t('common.networkError'), 'error')
-      setFaceFinderEnabled(!next)
-      onAlbumUpdated({ face_finder_enabled: !next })
-    }
-  }
-
-  const [bibSearchEnabled, setBibSearchEnabled] = useState(!!album.bib_search_enabled)
 
   const shareRef = useRef<HTMLDivElement>(null)
   const settingsRef = useRef<HTMLDivElement>(null)
@@ -312,8 +279,6 @@ export default function OwnerToolbar({ album, photos, albumPhotoCount, ownerToke
       setSavedMediaRadius(album.media_radius ?? 16)
       setVideoAutoplay(!!album.video_autoplay)
       setPhotoLayout(album.photo_layout === 'justified' ? 'justified' : 'grid')
-      setHideBranding(!!album.hide_branding)
-      setFaceFinderEnabled(!!album.face_finder_enabled)
       setMediaFilter(album.media_filter ?? 'none')
       setSavedMediaFilter(album.media_filter ?? 'none')
       setMobileGridColumns(resolveGridColumns(album).mobile as MobileGridColumns)
@@ -1036,162 +1001,17 @@ export default function OwnerToolbar({ album, photos, albumPhotoCount, ownerToke
                 onAlbumUpdated={onAlbumUpdated}
               />
 
-              <section style={settingsSectionStyle}>
-                <button type="button" className="hush-motion" style={accordionButton} onClick={() => toggleSection('files')}>
-                  <Download className="w-4 h-4" style={{ color: '#7C5C3E' }} />
-                  <span style={sectionTitle}>{t('ot.files')}</span>
-                  <ChevronDown
-                    className="ml-auto w-4 h-4 transition-transform"
-                    style={{ color: '#A89880', transform: openSection === 'files' ? 'rotate(180deg)' : 'rotate(0deg)' }}
-                  />
-                </button>
-                {openSection === 'files' && (
-                  <div className="px-4 pb-4 space-y-3">
-                    <button
-                      className="w-full flex items-center justify-center gap-2 font-semibold rounded-xl py-3 text-sm transition hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed"
-                      style={{ background: '#630826', color: '#FDFAF5' }}
-                      disabled={zipping || photos.length === 0}
-                      onClick={downloadZip}
-                    >
-                      {zipping ? (
-                        <>
-                          <Loader2 className="w-4 h-4 animate-spin" />
-                          {zipStatus ? `${zipStatus} · ${zipProgress}%` : (zipProgress < 100 ? t('ot.downloading', { n: zipProgress }) : t('ot.creatingZip'))}
-                        </>
-                      ) : (
-                        <>
-                          <Download className="w-4 h-4" />
-                          {t('ot.downloadAll', { n: Math.max(albumPhotoCount ?? 0, photos.length) })}
-                        </>
-                      )}
-                    </button>
-
-
-                    {/* Pro+. The server is the authority — this only decides what the owner is
-                        shown, and a free owner toggling it gets the plan message back rather than a
-                        silent failure.
-
-                        A COLLABORATION ALBUM shows it fixed instead of letting the owner flip a
-                        switch that snaps back. The refusal would be handled correctly either way
-                        (the catch below reverts and toasts), but a control that undoes itself reads
-                        as a bug — and this owner is a partner, not someone to trip up. Same
-                        not-allowed/dimmed treatment the locked Collections row already uses. */}
-                    <label
-                      className="flex items-center justify-between gap-4 rounded-xl px-3 py-3"
-                      style={{ background: '#FDFAF5', border: '1px solid #DDD5C5', ...gatedRowStyle(rows.branding.dimmed, !rows.branding.show) }}
-                    >
-                      <span>
-                        <span className="flex items-center gap-2 text-sm font-semibold" style={{ color: '#630826' }}>
-                          Remove Hushare branding <PlanBadge need={FEATURE_TIER.hideBranding} tier={userTier} />
-                        </span>
-                        <span className="block text-xs" style={{ color: '#7C5C3E' }}>
-                          {album.branding_locked
-                            ? 'Kept on for this album as part of our collaboration.'
-                            : 'Hides our logo from this album’s header. Pro and Max.'}
-                        </span>
-                      </span>
-                      <input
-                        type="checkbox"
-                        checked={hideBranding}
-                        // The plan check as well as the lock: this row was dimmed and badged but
-                        // still clickable, so a free owner flipped it and learned it was paid from
-                        // the error — the experience the badge was added to replace.
-                        disabled={!rows.branding.enabled}
-                        onChange={async (e) => {
-                          const next = e.target.checked
-                          setHideBranding(next)
-                          onAlbumUpdated({ hide_branding: next })
-                          try {
-                            const res = await fetch('/api/album/branding', {
-                              method: 'POST',
-                              headers: { 'Content-Type': 'application/json' },
-                              body: JSON.stringify({ slug: album.slug, hide_branding: next }),
-                            })
-                            if (!res.ok) {
-                              const body = await res.json().catch(() => ({})) as { error?: string }
-                              showAppToast(body.error ?? 'Could not save', 'error')
-                              setHideBranding(!next)
-                              onAlbumUpdated({ hide_branding: !next })
-                            }
-                          } catch (err) {
-                            showAppToast(err instanceof Error ? err.message : t('common.networkError'), 'error')
-                            setHideBranding(!next)
-                            onAlbumUpdated({ hide_branding: !next })
-                          }
-                        }}
-                        className="h-4 w-4"
-                      />
-                    </label>
-
-                    <label
-                      className="flex items-center justify-between gap-4 rounded-xl px-3 py-3"
-                      style={{ background: '#FDFAF5', border: '1px solid #DDD5C5', ...gatedRowStyle(rows.faceFinder.dimmed, !rows.faceFinder.show) }}
-                    >
-                      <span>
-                        <span className="flex items-center gap-2 text-sm font-semibold" style={{ color: '#630826' }}>
-                          <ScanFace className="w-4 h-4" />
-                          {t('ot.faceFinder')}
-                          <PlanBadge need={FEATURE_TIER.faceFinder} tier={userTier} />
-                        </span>
-                        <span className="block text-xs" style={{ color: '#7C5C3E' }}>{t('ot.faceFinderSub')}</span>
-                      </span>
-                      <input
-                        type="checkbox"
-                        checked={faceFinderEnabled}
-                        disabled={!rows.faceFinder.enabled}
-                        onChange={(e) => {
-                          if (e.target.checked) { setConsentCopied(false); setFaceConsentOpen(true); return }
-                          void applyFaceFinder(false)
-                        }}
-                        className="h-4 w-4"
-                      />
-                    </label>
-
-                    {/* Bib search — the "this is a race" switch. Turning it on is what makes photos
-                        get read for bib numbers; leaving it off means this album never sends a
-                        single photo out for OCR. Free for everyone. */}
-                    <label
-                      className="mt-3 flex items-start justify-between gap-3 rounded-xl px-3 py-3 cursor-pointer"
-                      style={{ background: '#FFFFFF', border: '1px solid #E8E0D2' }}
-                    >
-                      <span>
-                        <span className="flex items-center gap-2 text-sm font-semibold" style={{ color: '#630826' }}>
-                          <Search className="w-4 h-4" />
-                          {t('ot.bibSearch')} <PlanBadge need={FEATURE_TIER.bibSearch} tier={userTier} />
-                        </span>
-                        <span className="block text-xs" style={{ color: '#7C5C3E' }}>{t('ot.bibSearchSub')}</span>
-                      </span>
-                      <input
-                        type="checkbox"
-                        checked={bibSearchEnabled}
-                        onChange={async (e) => {
-                          const next = e.target.checked
-                          setBibSearchEnabled(next)
-                          onAlbumUpdated({ bib_search_enabled: next })
-                          try {
-                            const res = await fetch('/api/album/bib-search', {
-                              method: 'POST',
-                              headers: { 'Content-Type': 'application/json' },
-                              body: JSON.stringify({ slug: album.slug, enabled: next }),
-                            })
-                            if (!res.ok) {
-                              const body = await res.json().catch(() => ({})) as { error?: string }
-                              throw new Error(body.error ?? `Save failed (${res.status})`)
-                            }
-                          } catch (err) {
-                            const message = err instanceof Error ? err.message : t('common.networkError')
-                            showAppToast(message, 'error')
-                            setBibSearchEnabled(!next)
-                            onAlbumUpdated({ bib_search_enabled: !next })
-                          }
-                        }}
-                        className="h-4 w-4"
-                        disabled={!rows.bibSearch.enabled}
-                      />
-                    </label>
-                  </div>
-                )}
-              </section>
+              {/* Files -- download, and the three switches that shape what is done with the files */}
+              <FilesSection
+                album={album}
+                photos={photos}
+                albumPhotoCount={albumPhotoCount}
+                userTier={userTier}
+                rows={rows}
+                open={openSection === 'files'}
+                onToggle={() => toggleSection('files')}
+                onAlbumUpdated={onAlbumUpdated}
+              />
 
               {/* Password -- its state is its own; the epoch key clears it when the panel or Settings opens */}
               <PasswordSection
@@ -1246,69 +1066,6 @@ export default function OwnerToolbar({ album, photos, albumPhotoCount, ownerToke
       </div>
     </div>
 
-    {/* Article 9 consent gate. The privacy policy and the terms both stated the owner confirms they
-        hold explicit consent, and until now the product never asked, so the confirmation those
-        documents relied on did not exist. This is that confirmation, at the only moment it means
-        anything: before a single face template is computed. */}
-    {faceConsentOpen && (
-      <div
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="face-consent-title"
-        onClick={() => setFaceConsentOpen(false)}
-        style={{ position: 'fixed', inset: 0, zIndex: 120, background: 'rgba(30,18,12,0.55)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}
-      >
-        <div
-          onClick={(e) => e.stopPropagation()}
-          style={{ background: '#FDFAF5', border: '1px solid #DDD5C5', borderRadius: 18, maxWidth: 520, width: '100%', maxHeight: '85vh', overflowY: 'auto', padding: 22, boxShadow: '0 18px 50px rgba(40,20,10,0.28)' }}
-        >
-          <h3 id="face-consent-title" className="text-lg font-semibold" style={{ color: '#630826' }}>
-            {t('ot.faceConsent.title')}
-          </h3>
-          <p className="mt-3 text-sm" style={{ color: '#5C4632', lineHeight: 1.6 }}>{t('ot.faceConsent.b1')}</p>
-          <p className="mt-3 text-sm" style={{ color: '#5C4632', lineHeight: 1.6 }}>{t('ot.faceConsent.b2')}</p>
-          <blockquote className="mt-3 text-sm italic" style={{ color: '#4A3626', background: '#F6F1E8', border: '1px solid #E8E0D0', borderRadius: 12, padding: '12px 14px', margin: 0, lineHeight: 1.6 }}>
-            {t('ot.faceConsent.wording')}
-          </blockquote>
-          <button
-            type="button"
-            onClick={async () => {
-              try {
-                await navigator.clipboard.writeText(t('ot.faceConsent.wording'))
-                setConsentCopied(true)
-              } catch { showAppToast(t('common.networkError'), 'error') }
-            }}
-            className="mt-2 text-xs font-semibold"
-            style={{ color: '#630826', background: 'none', border: 'none', padding: '4px 0', cursor: 'pointer', textDecoration: 'underline' }}
-          >
-            {consentCopied ? t('ot.faceConsent.copied') : t('ot.faceConsent.copy')}
-          </button>
-          <p className="mt-3 text-sm" style={{ color: '#5C4632', lineHeight: 1.6 }}>{t('ot.faceConsent.b3')}</p>
-          <p className="mt-3 text-sm font-semibold" style={{ color: '#7A2A1F', lineHeight: 1.6 }}>{t('ot.faceConsent.b4')}</p>
-          <a href="/privacy#face-search" target="_blank" rel="noopener noreferrer" className="mt-3 inline-block text-xs" style={{ color: '#630826' }}>
-            {t('ot.faceConsent.learn')}
-          </a>
-          <div className="mt-5 flex flex-col-reverse sm:flex-row gap-2 sm:justify-end">
-            <button
-              type="button"
-              onClick={() => setFaceConsentOpen(false)}
-              className="text-sm font-semibold rounded-xl px-4 py-2.5"
-              style={{ color: '#5C4632', background: '#F1EADD', border: '1px solid #DDD5C5', cursor: 'pointer' }}
-            >
-              {t('ot.faceConsent.cancel')}
-            </button>
-            <button
-              type="button"
-              onClick={() => { setFaceConsentOpen(false); void applyFaceFinder(true) }}
-              className="text-sm font-semibold rounded-xl px-4 py-2.5"
-              style={{ color: '#FDFAF5', background: '#630826', border: '1px solid #630826', cursor: 'pointer' }}
-            >
-              {t('ot.faceConsent.confirm')}
-            </button>
-          </div>
-        </div>
-      </div>
-    )}
     </>
   )
 }

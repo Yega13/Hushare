@@ -169,7 +169,10 @@ const SIZE_BUDGET: Record<string, number> = {
   // -114 (2026-09-07): the guests panel is owner-toolbar/GuestsSection; its three switches have no
   // state of their own (OptimisticToggle reads the album and writes back through onAlbumUpdated),
   // so three mirrored useStates and their resync lines left with it.
-  'src/components/OwnerToolbar.tsx': 1314,
+  // -243 (2026-09-07): the files panel is owner-toolbar/FilesSection and the Article 9 consent
+  // dialog is FaceConsentDialog; branding, face finder and bib search read the album instead of
+  // mirrored state, and two raw fetches became api.ts requests.
+  'src/components/OwnerToolbar.tsx': 1071,
   // +23 (2026-08-31): fallback-poll wiring for realtime REFUSAL — the cadence decision is in
   // lib/realtime-fallback.ts; the timer must live beside the channel it covers (rule 15).
   // +17 (2026-08-31, review finding): channel-identity guard + timer hygiene in the reconnect
