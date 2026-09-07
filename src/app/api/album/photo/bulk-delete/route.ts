@@ -79,8 +79,7 @@ export async function POST(req: Request) {
     .in('id', photo_ids as string[])
 
   if (fetchError) {
-    console.error('[photo/bulk-delete] fetch failed:', fetchError.message)
-    return NextResponse.json({ error: 'Could not fetch photos' }, { status: 500, headers: NO_STORE })
+    return serverError('album/photo/bulk-delete', fetchError.message, { albumId: access.album.id, publicMessage: 'Could not fetch photos' })
   }
 
   // A DELETION MUST NOT GUESS -- the same refusal as photo/delete, for the same reason:
@@ -138,8 +137,7 @@ export async function POST(req: Request) {
     .in('id', deletedIds)
 
   if (deleteError) {
-    console.error('[photo/bulk-delete] DB delete failed:', deleteError.message)
-    return NextResponse.json({ error: 'Could not delete photos' }, { status: 500, headers: NO_STORE })
+    return serverError('album/photo/bulk-delete', deleteError.message, { albumId: access.album.id, publicMessage: 'Could not delete photos' })
   }
 
   // Best-effort asset cleanup — non-fatal after DB rows are gone

@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { serverError } from '@/lib/server/respond'
 import { cookies } from 'next/headers'
 import { ALBUM_GATE_COLS, FACE_MATCH_PHOTO_COLS, gateAllowsContribution, signedInUserForGate } from '@/lib/server/album-access'
 import { timingSafeEqual } from '@/lib/timing-safe'
@@ -58,11 +59,9 @@ export async function POST(req: Request) {
     // Cloudflare's 503 HTML interstitial (which the client can't parse).
     const name = (err as { name?: string }).name ?? 'Unknown'
     const message = err instanceof Error ? err.message : String(err)
-    console.error('[face-search] unhandled:', name, message)
-    return NextResponse.json(
-      { error: `Face search failed (${name}). Please try again or contact support.` },
-      { status: 500, headers: NO_STORE },
-    )
+    return serverError('album/face-search', `unhandled: ${name}: ${message}`, {
+      publicMessage: `Face search failed (${name}). Please try again or contact support.`,
+    })
   }
 }
 
@@ -227,8 +226,7 @@ async function handlePost(req: Request) {
     if (photoError) {
       // An answer we cannot stand behind is worse than no answer: returning the ids alone would let
       // the client show a confident undercount. The guest gets "try again", which is true.
-      console.error('[album/face-search] match photo fetch failed:', photoError.message)
-      return NextResponse.json({ error: 'Could not load your photos. Please try again.' }, { status: 500, headers: NO_STORE })
+      return serverError('album/face-search', photoError.message, { albumId: album.id, publicMessage: 'Could not load your photos. Please try again.' })
     }
     photos = (data ?? []) as unknown as { id: string }[]
   }

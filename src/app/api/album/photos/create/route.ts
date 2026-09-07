@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { serverError } from '@/lib/server/respond'
 import { asPackageTier } from '@/lib/db-unions'
 import { reportServerError } from '@/lib/report-server-error'
 import { validatePhoto, type PhotoInput } from '@/lib/photo-input'
@@ -93,9 +94,7 @@ export async function POST(req: Request) {
     .replace(/^https?:\/\//, '')
     .replace(/\/+$/, '')
   if (!r2Host) {
-    console.error('[photos/create] R2_PUBLIC_HOST not set')
-    reportServerError('photos-create', 'Server configuration error (500)')
-    return NextResponse.json({ error: 'Server configuration error' }, { status: 500, headers: NO_STORE })
+    return serverError('photos-create', 'R2_PUBLIC_HOST not set', { publicMessage: 'Server configuration error' })
   }
 
   for (let i = 0; i < photos.length; i++) {
@@ -113,9 +112,7 @@ export async function POST(req: Request) {
     .maybeSingle()
 
   if (albumError) {
-    console.error('[photos/create] album lookup failed:', albumError.message)
-    reportServerError('photos-create', 'Service error (500)')
-    return NextResponse.json({ error: 'Service error' }, { status: 500, headers: NO_STORE })
+    return serverError('photos-create', `album lookup failed: ${albumError.message}`, { publicMessage: 'Service error' })
   }
   if (!album) {
     return NextResponse.json({ error: 'Album not found' }, { status: 404, headers: NO_STORE })
@@ -287,9 +284,7 @@ export async function POST(req: Request) {
   if (incomingUids.length > 0) {
     const { data, error } = await admin.from('photos').select('stream_uid').eq('album_id', albumId).in('stream_uid', incomingUids)
     if (error) {
-      console.error('[photos/create] stream dedup query failed:', error.message)
-      reportServerError('photos-create', 'Failed to process photos (500)')
-      return NextResponse.json({ error: 'Failed to process photos' }, { status: 500, headers: NO_STORE })
+      return serverError('photos-create', `stream dedup query failed: ${error.message}`, { albumId, publicMessage: 'Failed to process photos' })
     }
     // stream_uid is NULLABLE in the schema, so the typed client requires this narrowing. It is a
     // guard, NOT a bug fix, and the difference is worth stating because the first version of this
@@ -408,9 +403,7 @@ export async function POST(req: Request) {
       // See below: it is what the album is charged, instead of the client's second claim.
       .select('stream_uid, declared_duration_seconds')
     if (consumeErr) {
-      console.error('[photos/create] pending_stream_uploads consume failed:', consumeErr.message)
-      reportServerError('photos-create', 'Failed to process photos (500)')
-      return NextResponse.json({ error: 'Failed to process photos' }, { status: 500, headers: NO_STORE })
+      return serverError('photos-create', `pending_stream_uploads consume failed: ${consumeErr.message}`, { albumId, publicMessage: 'Failed to process photos' })
     }
     const verified = new Set((consumed ?? []).map((r: { stream_uid: string }) => r.stream_uid))
     // WHAT THE ALBUM IS ACTUALLY CHARGED, keyed by the uid it was approved under.
@@ -522,9 +515,7 @@ export async function POST(req: Request) {
       .upsert(r2Rows, { onConflict: 'album_id,storage_path', ignoreDuplicates: true })
       .select('id')
     if (error) {
-      console.error('[photos/create] r2 upsert failed:', error.message)
-      reportServerError('photos-create', 'Failed to save photos (500)')
-      return NextResponse.json({ error: 'Failed to save photos' }, { status: 500, headers: NO_STORE })
+      return serverError('photos-create', `r2 upsert failed: ${error.message}`, { albumId, publicMessage: 'Failed to save photos' })
     }
     insertedImages += (data ?? []).length
   }
@@ -535,9 +526,7 @@ export async function POST(req: Request) {
       .upsert(streamRows, { onConflict: 'album_id,stream_uid', ignoreDuplicates: true })
       .select('id')
     if (error) {
-      console.error('[photos/create] stream upsert failed:', error.message)
-      reportServerError('photos-create', 'Failed to save photos (500)')
-      return NextResponse.json({ error: 'Failed to save photos' }, { status: 500, headers: NO_STORE })
+      return serverError('photos-create', `stream upsert failed: ${error.message}`, { albumId, publicMessage: 'Failed to save photos' })
     }
     insertedVideos += (data ?? []).length
   }

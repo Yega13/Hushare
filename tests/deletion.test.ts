@@ -4,6 +4,7 @@ import { join } from 'node:path'
 import { r2KeyFromUrl, collectDeletionTargets, albumAssetKeys, ALBUM_ASSET_COLUMNS, type PhotoToDelete, withoutStillReferenced, keyFileName, keysReferencedBy, partitionDeletable, createSweepCollector } from '@/lib/album-delete'
 import { MAX_BULK_DELETE } from '@/lib/constants'
 import { r2PublicUrl } from '@/lib/cloudflare/r2'
+import { createClient } from '@supabase/supabase-js'
 
 // r2KeyFromUrl decides WHICH FILE GETS DELETED. Everything about album and photo deletion
 // eventually funnels through it: it takes a public URL off a database row and returns the storage
@@ -475,12 +476,13 @@ describe('keysReferencedBy — what a SURVIVING row protects, whatever its backe
 })
 
 describe('partitionDeletable — a deletion must not reason about a backend it does not know', () => {
-  const row = (id: string, storage_backend: string) => ({ id, storage_backend, storage_path: `albums/A/${id}.jpg`, thumb_url: null, poster_url: null, stream_uid: null })
+  const row = (id: string, storage_backend: string) => ({ id, storage_backend, storage_path: `albums/A/${id}.jpg`, url: null, thumb_url: null, poster_url: null, stream_uid: null })
 
   it('passes r2 and stream rows through, narrowed, and sets the others aside by id', () => {
     const { deletable, unknown } = partitionDeletable([row('a', 'r2'), row('b', 'supabase'), row('c', 'stream'), row('d', '')])
     expect(deletable.map((r) => r.id)).toEqual(['a', 'c'])
-    expect(unknown).toEqual([{ id: 'b', storage_backend: 'supabase' }, { id: 'd', storage_backend: '' }])
+    expect(unknown.map((r) => [r.id, r.storage_backend])).toEqual([['b', 'supabase'], ['d', '']])
+    expect(unknown[0], 'the unknown row must be returned whole -- its paths are the only trace of its file').toEqual(row('b', 'supabase'))
     // The deletable rows keep every column the deletion reads.
     expect(deletable[0].storage_path).toBe('albums/A/a.jpg')
   })
@@ -507,9 +509,10 @@ describe('partitionDeletable — a deletion must not reason about a backend it d
 
 describe('createSweepCollector — the deleting sweep’s decision, without the database', () => {
   const HOST = 'https://videos.hushare.space'
-  const r2 = (id: string) => ({ id, storage_backend: 'r2', storage_path: `albums/A/${id}.jpg`, thumb_url: `${HOST}/thumbs/A/${id}.jpg`, poster_url: null, stream_uid: null })
-  const vid = (id: string) => ({ id, storage_backend: 'stream', storage_path: null, thumb_url: null, poster_url: `${HOST}/posters/A/${id}.jpg`, stream_uid: `uid-${id}` })
-  const odd = (id: string) => ({ id, storage_backend: 'supabase', storage_path: `legacy/${id}.jpg`, thumb_url: `${HOST}/thumbs/A/${id}.jpg`, poster_url: null, stream_uid: null })
+  const r2 = (id: string) => ({ id, storage_backend: 'r2', storage_path: `albums/A/${id}.jpg`, url: `${HOST}/albums/A/${id}.jpg`, thumb_url: `${HOST}/thumbs/A/${id}.jpg`, poster_url: null, stream_uid: null })
+  const vid = (id: string) => ({ id, storage_backend: 'stream', storage_path: null, url: null, thumb_url: null, poster_url: `${HOST}/posters/A/${id}.jpg`, stream_uid: `uid-${id}` })
+  // A legacy row may carry nothing but url -- the column that names its file.
+  const odd = (id: string) => ({ id, storage_backend: 'supabase', storage_path: null, url: `https://ref.supabase.co/storage/v1/object/public/${id}.jpg`, thumb_url: `${HOST}/thumbs/A/${id}.jpg`, poster_url: null, stream_uid: null })
 
   it('collects keys across pages exactly as collectDeletionTargets would, and skips nothing on clean data', () => {
     const c = createSweepCollector()
@@ -524,7 +527,7 @@ describe('createSweepCollector — the deleting sweep’s decision, without the 
     const c = createSweepCollector()
     c.addPage([r2('p1'), odd('x1')])
     expect([...c.r2Keys].sort(), 'a key was derived from a row whose backend nobody understands').toEqual(['albums/A/p1.jpg', 'thumbs/A/p1.jpg'])
-    expect(c.skipped).toEqual([{ id: 'x1', storage_backend: 'supabase', storage_path: 'legacy/x1.jpg', thumb_url: `${HOST}/thumbs/A/x1.jpg`, poster_url: null, stream_uid: null }])
+    expect(c.skipped).toEqual([{ id: 'x1', storage_backend: 'supabase', storage_path: null, url: 'https://ref.supabase.co/storage/v1/object/public/x1.jpg', thumb_url: `${HOST}/thumbs/A/x1.jpg`, poster_url: null, stream_uid: null }])
   })
 
   it('skipped rows accumulate across pages', () => {
@@ -535,16 +538,29 @@ describe('createSweepCollector — the deleting sweep’s decision, without the 
 })
 
 describe('MAX_BULK_DELETE is held to the URL it produces', () => {
-  it('keeps the PostgREST in.(...) URL under the 16 KB that Node’s fetch and Cloudflare allow', () => {
+  it('keeps the route’s REAL PostgREST URL under the client library’s own limit', () => {
     // 500 was written and never sent: the client chunked at 200. The first time 500 ids went out
     // the URL was 19.6 KB and the route failed before deleting anything -- after the client had
-    // already removed every tile. Arithmetic, not a guess: a uuid is 36 chars plus its comma, and
-    // the rest of the URL (host, select list, album filter) is generously under 600 bytes.
-    const perId = 36 + 1
-    const overhead = 600
-    expect(MAX_BULK_DELETE * perId + overhead).toBeLessThan(16 * 1024)
+    // already removed every tile. A first version of this test re-derived the arithmetic (37 per
+    // id, 600 overhead) and was wrong in the unsafe direction: ids are percent-encoded to 39 bytes,
+    // and the test would have passed a value the measurement says fails. So: build the URL the
+    // route builds, through the same client, and hold it under the number the library itself
+    // carries (rule 17).
+    const client = createClient('https://yqngmyjquwemwogdyuwv.supabase.co', 'not-a-key')
+    const ids = Array.from({ length: MAX_BULK_DELETE }, (_, i) => `aaaaaaaa-bbbb-4ccc-8ddd-${String(i).padStart(12, '0')}`)
+    const builder = client
+      .from('photos')
+      .select('id, storage_backend, storage_path, thumb_url, poster_url, stream_uid, face_ids')
+      .eq('album_id', 'aaaaaaaa-bbbb-4ccc-8ddd-000000000000')
+      .in('id', ids)
+    // The select list here must be the route's, or this measures a different URL (rule 13).
+    const route = readFileSync(join(process.cwd(), 'src', 'app', 'api', 'album', 'photo', 'bulk-delete', 'route.ts'), 'utf8')
+    expect(route).toContain(".select('id, storage_backend, storage_path, thumb_url, poster_url, stream_uid, face_ids')")
+    const { url, urlLengthLimit } = builder as unknown as { url: URL; urlLengthLimit: number }
+    expect(urlLengthLimit, 'the library no longer carries the limit this test relies on').toBeGreaterThan(0)
+    expect(url.toString().length).toBeLessThanOrEqual(urlLengthLimit)
     // And not so low that a real clean-up is a hundred requests.
-    expect(MAX_BULK_DELETE).toBeGreaterThanOrEqual(200)
+    expect(MAX_BULK_DELETE).toBeGreaterThanOrEqual(100)
   })
 })
 

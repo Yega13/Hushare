@@ -140,9 +140,10 @@ Stated plainly, because a map that hides the swamps is not a map.
 - **Components are still where decisions hide.** 19,958 lines across 67 files; the three largest
   are `UploadZone.tsx` 2,242, `OwnerToolbar.tsx` 2,009, `AlbumPageClient.tsx` 1,789. The budget
   stops them growing; it does not make them small. Each extraction so far has found a real defect.
-- **Half the route handlers still answer 5xx by hand.** 42 of 90 route files import
-  `lib/server/respond.ts`; 46 files still contain a bare `status: 500`, most of which return a
-  generic error without reporting it — an incident nobody sees.
+- **Every 500 is reported now, but not every refusal is serialised.** 63 of 90 route files import
+  `lib/server/respond.ts`; no route returns a 500 without a `reportServerError` in the same
+  block (checked per site, 2026-09-07). The 4xx side is still mostly hand-written
+  `NextResponse.json` -- consistent bodies, but nothing holds them to the `Refusal` vocabulary.
 - **About two dozen `.returns<T[]>()` casts remain** on list queries (`account/page.tsx`,
   `lib/subscriptions.ts`, `lib/server/album-access.ts`, several crons). Each is a place the
   compiler is told not to look.

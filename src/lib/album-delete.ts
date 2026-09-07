@@ -112,12 +112,12 @@ export type PhotoRef = Pick<PhotoToDelete, 'storage_path' | 'poster_url' | 'stre
  */
 export function partitionDeletable<R extends { id: string; storage_backend: string }>(
   rows: readonly R[],
-): { deletable: (Omit<R, 'storage_backend'> & { storage_backend: StorageBackendValue })[]; unknown: { id: string; storage_backend: string }[] } {
+): { deletable: (Omit<R, 'storage_backend'> & { storage_backend: StorageBackendValue })[]; unknown: R[] } {
   const deletable: (Omit<R, 'storage_backend'> & { storage_backend: StorageBackendValue })[] = []
-  const unknown: { id: string; storage_backend: string }[] = []
+  const unknown: R[] = []
   for (const row of rows) {
     if (isOneOf(STORAGE_BACKENDS, row.storage_backend)) deletable.push({ ...row, storage_backend: row.storage_backend })
-    else unknown.push({ id: row.id, storage_backend: row.storage_backend })
+    else unknown.push(row)
   }
   return { deletable, unknown }
 }
@@ -298,6 +298,7 @@ export type SkippedRow = {
   id: string
   storage_backend: string
   storage_path: string | null
+  url: string | null
   thumb_url: string | null
   poster_url: string | null
   stream_uid: string | null
@@ -323,10 +324,8 @@ export function createSweepCollector() {
     skipped,
     addPage(rows: readonly SkippedRow[]): void {
       const { deletable, unknown } = partitionDeletable(rows)
-      for (const u of unknown) {
-        const row = rows.find((r) => r.id === u.id)
-        if (row) skipped.push({ id: row.id, storage_backend: row.storage_backend, storage_path: row.storage_path, thumb_url: row.thumb_url, poster_url: row.poster_url, stream_uid: row.stream_uid })
-      }
+      // Every column that could name the file, url included: a legacy row may carry nothing but url.
+      for (const row of unknown) skipped.push({ id: row.id, storage_backend: row.storage_backend, storage_path: row.storage_path, url: row.url, thumb_url: row.thumb_url, poster_url: row.poster_url, stream_uid: row.stream_uid })
       const page = collectDeletionTargets(deletable, null)
       for (const k of page.r2Keys) r2Keys.add(k)
       for (const u of page.streamUids) streamUids.add(u)
@@ -388,7 +387,7 @@ export async function deleteAlbumAssetsAndRows(
   while (true) {
     const { data: batch, error: photosError } = await admin
       .from('photos')
-      .select('id, storage_path, storage_backend, poster_url, stream_uid, thumb_url')
+      .select('id, storage_path, storage_backend, url, poster_url, stream_uid, thumb_url')
       .eq('album_id', album.id)
       // ORDERED, because .range() without it is not pagination — it is two independent queries.
       //

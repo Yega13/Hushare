@@ -817,3 +817,36 @@ ending. My own runner had the same hole until the reviewer named it.
 **Habit to build:** a mutation harness matches on normalised text and restores the original bytes;
 that is in `scripts/mutations/run.mjs` now. And after any `git checkout` of a file on this machine,
 `git ls-files --eol <file>` -- "clean" is not "identical".
+
+### 54. A REPORT THAT NAMED ROWS THE NEXT TEN LINES DELETED
+
+The deleting sweep skipped rows with an unknown backend and reported their ids so "the operator can
+find the files". The album row is deleted ten lines later and the photo rows cascade with it. A
+primary key of a row that no longer exists leads nowhere; the only thing that could have led to the
+file -- the row's path columns -- was in the batch and thrown away. I wrote the rule-19 "say so"
+half and made it say something useless.
+
+**Habit to build:** when a report is the last record of something, ask what the reader will still
+be able to look up when they read it. If the answer is "nothing", the report needs to carry the
+thing itself, not a pointer to it.
+
+### 55. I MOVED A CAP INTO ONE PLACE WITHOUT ASKING WHETHER THE CAP HAD EVER BEEN TRUE
+
+MAX_BULK_DELETE was 500 in the route and 200 in the client. I made it 500 in one place -- rule 13
+satisfied -- and the reviewer measured that 500 ids produce a 19.6 KB PostgREST URL that fails
+under Node's 16 KB header cap. The route's 500 had never been sent; the client's 200 was the number
+that worked. Deduplicating two copies of a fact is only right if the copy you keep is the true one.
+
+**Habit to build:** before unifying two disagreeing constants, find out which one reality has been
+running on. Then hold the survivor to a measurement in a test, not to the number someone typed.
+
+### 56. A CODEMOD'S "OBVIOUSLY RIGHT" TEMPLATE CASE PRODUCED FOUR LITERAL STRINGS
+
+The silent-500 codemod turned `console.error('[x] failed', album.id, ':', err.message)` into the
+detail `` `album.id : err.message` `` -- a template literal with no `${}`, so the panel would have
+received the words "album.id : err.message" forty times. tsc was green; the strings are valid.
+Reading every hunk caught it; nothing else would have.
+
+**Habit to build:** a codemod's output is reviewed line by line, every line, before tsc gets a
+say -- tsc cannot tell a wrong string from a right one. And a codemod that handles a case by
+string surgery on an expression is a case to hand-edit, not automate.

@@ -74,10 +74,12 @@ export const DOWNLOAD_ATTEMPTS = 3;
 // chunks its selection to exactly this. It was written twice -- 500 in the route, "server max is
 // 200" in a client comment beside a CHUNK of 200 -- and the two had already drifted (rule 13).
 //
-// 300, MEASURED, not typed. The route's first query is `id=in.(<every uuid>)` in a PostgREST URL,
-// and PostgREST echoes that URL back in a Content-Location header. Node's fetch caps a response
-// header block at 16 KB, and Cloudflare documents 16 KB for a request URL: 500 ids made a 19.6 KB
-// URL that failed under `next dev` with "fetch failed" -- after the client had already removed
-// every tile optimistically. The client had only ever sent 200, so the route's 500 had never been
-// exercised. tests/deletion.test.ts holds this number to the arithmetic.
-export const MAX_BULK_DELETE = 300
+// 190, MEASURED against the library, not typed. The route's first query puts every id into a
+// PostgREST URL (39 bytes each, percent-encoded). postgrest-js carries its own advisory limit,
+// urlLengthLimit = 8000, above which it warns that the request "may exceed server limits", and its
+// error hint names the hard one: "HTTP headers exceeded server limits (typically 16KB)" -- PostgREST
+// echoes the URL back in a header. 500 ids (19.6 KB) failed outright under Node; 200, the number the
+// client had always sent, is 8,006 bytes -- six over the advisory. 190 is 7,616 with room for the
+// select list to grow. tests/deletion.test.ts builds the REAL URL through the client and holds it
+// under the client's own limit, so a raise is measured rather than typed.
+export const MAX_BULK_DELETE = 190

@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { serverError } from '@/lib/server/respond'
 import { reportServerError } from '@/lib/report-server-error'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { timingSafeEqual } from '@/lib/timing-safe'
@@ -48,8 +49,7 @@ export async function GET(req: Request) {
     .maybeSingle()
 
   if (photoErr) {
-    reportServerError('download-photo', 'DB error (500)')
-    return NextResponse.json({ error: 'DB error' }, { status: 500, headers: NO_STORE })
+    return serverError('download-photo', photoErr.message, { publicMessage: 'DB error' })
   }
   if (!photo) {
     return NextResponse.json({ error: 'Not found' }, { status: 404, headers: NO_STORE })

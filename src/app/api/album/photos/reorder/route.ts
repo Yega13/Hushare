@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { refuseAccess } from '@/lib/server/respond'
+import { refuseAccess, serverError } from '@/lib/server/respond'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { verifyOwnerViaCookieWithRateLimit } from '@/lib/album-owner-access'
 import { forbidCrossSiteRequest } from '@/lib/request-security'
@@ -104,11 +104,11 @@ export async function POST(req: Request) {
 
   if (error) {
     console.error('[photos/reorder] RPC failed:', error.message)
-    reportServerError('photos-reorder', 'Could not save the new photo order', {
+    return serverError('photos-reorder', 'Could not save the new photo order', {
       albumId: access.album.id,
       context: { photoCount: ids.length, reason: error.message.slice(0, 200) },
+      publicMessage: 'Could not reorder photos',
     })
-    return NextResponse.json({ error: 'Could not reorder photos' }, { status: 500, headers: NO_STORE })
   }
 
   // Arranging photos by hand IS the album's order from now on. Without this the album keeps
@@ -119,11 +119,10 @@ export async function POST(req: Request) {
   if (orderErr) {
     // The sort values are already written, so the arrangement is not lost — it just will not be
     // honoured until this succeeds. Worth saying so rather than reporting a clean success.
-    console.error('[photos/reorder] could not switch album to manual order:', orderErr.message)
-    return NextResponse.json(
-      { error: 'Photos were reordered but the album could not be switched to manual order. Try again.' },
-      { status: 500, headers: NO_STORE },
-    )
+    return serverError('photos-reorder', `could not switch album to manual order: ${orderErr.message}`, {
+      albumId: access.album.id,
+      publicMessage: 'Photos were reordered but the album could not be switched to manual order. Try again.',
+    })
   }
 
   // Reordering is an UPDATE; viewers pick it up via broadcast rather than postgres_changes.

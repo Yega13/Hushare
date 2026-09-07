@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { serverError } from '@/lib/server/respond'
 import { withNonNull, nullDropReport } from '@/lib/non-null'
 import { reportServerError } from '@/lib/report-server-error'
 import { createAdminClient } from '@/lib/supabase/admin'
@@ -57,8 +58,7 @@ export async function POST(req: Request) {
     .limit(BATCH_SIZE)
 
   if (error) {
-    console.error('[notify-renewal] subscription lookup failed:', error.message)
-    return NextResponse.json({ error: 'Could not scan subscriptions' }, { status: 500, headers: NO_STORE })
+    return serverError('cron/notify-renewal', error.message, { publicMessage: 'Could not scan subscriptions' })
   }
 
   let notified = 0

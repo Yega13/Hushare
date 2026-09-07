@@ -185,11 +185,7 @@ export async function POST(req: Request) {
       )
 
     if (linkError) {
-      console.error('[collections] link failed:', linkError.message)
-      return NextResponse.json(
-        { error: 'Album could not be added to the collection' },
-        { status: 500, headers: NO_STORE },
-      )
+      return serverError('collections', `link failed: ${linkError.message}`, { publicMessage: 'Album could not be added to the collection' })
     }
   }
 
@@ -390,9 +386,8 @@ async function createCollection(
         ),
       }
     }
-    console.error('[collections] create failed:', error.message)
     return {
-      error: NextResponse.json({ error: 'Could not create collection' }, { status: 500, headers: NO_STORE }),
+      error: serverError('collections', `create failed: ${error.message}`, { publicMessage: 'Could not create collection' }),
     }
   }
 

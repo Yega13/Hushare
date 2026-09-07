@@ -119,8 +119,7 @@ export async function POST(req: Request) {
     .eq('album_id', access.album.id)
 
   if (deleteError) {
-    console.error('[photo/delete] DB delete failed:', deleteError.message)
-    return NextResponse.json({ error: 'Could not delete photo' }, { status: 500, headers: NO_STORE })
+    return serverError('album/photo/delete', deleteError.message, { albumId: access.album.id, publicMessage: 'Could not delete photo' })
   }
 
   // NOTHING THAT A SURVIVING ROW STILL POINTS AT.
