@@ -1,5 +1,7 @@
 // Direct Rekognition via fetch + AWS Sig V4 using Web Crypto.
 // No @aws-sdk/client-rekognition — it imports Node.js `fs` and crashes on Workers.
+import { acceptedBibs, type AcceptedBib, type DetectedWord } from '@/lib/bib-filter'
+
 const enc = new TextEncoder()
 
 function toHex(buf: ArrayBuffer): string {
@@ -207,7 +209,9 @@ export async function deleteCollection(albumId: string) {
 // problem as a race bib, and a different operation on the SAME signed endpoint the face features
 // already use. Returns the distinct numeric strings found, with their confidence, so a caller can
 // decide how strict to be. Bib numbers are 1–6 digits; longer runs are timestamps/sponsor text.
-export type DetectedBib = { number: string; confidence: number }
+/** What one photograph yielded. The shape is bib-filter's; the alias is kept because callers
+ *  and tests already name it. */
+export type DetectedBib = AcceptedBib
 
 export const REKOGNITION_IMAGE_BYTES_MAX = 5 * 1024 * 1024
 export const IMAGE_TOO_LARGE = 'rekognition-image-too-large'
@@ -234,23 +238,27 @@ export async function detectBibNumbers(imageUrl: string, minConfidence = 80): Pr
   const base64Image = uint8ToBase64(bytes)
 
   type TextResult = {
-    TextDetections?: Array<{ DetectedText?: string; Type?: string; Confidence?: number }>
+    // ParentId is the LINE a word belongs to, and discarding it was the whole defect: without it
+    // there is no way to tell a bib printed alone on a chest from one number in a sponsor's phone
+    // number. It has always been in the response (see API_TextDetection).
+    TextDetections?: Array<{ DetectedText?: string; Type?: string; Confidence?: number; ParentId?: number }>
   }
   const result = await rekognitionPost('DetectText', {
     Image: { Bytes: base64Image },
   }) as TextResult
 
-  const seen = new Map<string, number>()
-  for (const d of result.TextDetections ?? []) {
-    if (d.Type !== 'WORD') continue                       // LINE entries duplicate their words
-    const raw = (d.DetectedText ?? '').trim()
-    const conf = d.Confidence ?? 0
-    if (conf < minConfidence) continue
-    // Keep pure-digit tokens only. Strip a leading '#'/'N' that bibs sometimes print.
-    const cleaned = raw.replace(/^[#nN°]/, '')
-    if (!/^\d{1,6}$/.test(cleaned)) continue
-    const prev = seen.get(cleaned)
-    if (prev === undefined || conf > prev) seen.set(cleaned, conf)
-  }
-  return [...seen.entries()].map(([number, confidence]) => ({ number, confidence }))
+  // I/O ONLY FROM HERE. Which of these words counts as a bib is a decision, and it lives in
+  // lib/bib-filter with its tests and its mutation set (rule 14). This function's job is to get the
+  // bytes to AWS and hand back what came out.
+  //
+  // LINE entries are dropped: they duplicate their own words, so counting them would make every
+  // line look crowded and reject everything.
+  const words: DetectedWord[] = (result.TextDetections ?? [])
+    .filter((d) => d.Type === 'WORD')
+    .map((d) => ({
+      text: d.DetectedText ?? '',
+      confidence: d.Confidence ?? 0,
+      lineId: d.ParentId ?? null,
+    }))
+  return acceptedBibs(words, minConfidence)
 }

@@ -1,0 +1,1010 @@
+[
+ {
+  "name": "billboard phone number: three numbers share one line",
+  "note": "verified by eye: an advertising board printing a phone number",
+  "words": [
+   {
+    "text": "TEXT",
+    "confidence": 98.9,
+    "lineId": 0
+   },
+   {
+    "text": "TEXT",
+    "confidence": 94.1,
+    "lineId": 1
+   },
+   {
+    "text": "TEXT",
+    "confidence": 94.7,
+    "lineId": 2
+   },
+   {
+    "text": "TEXT",
+    "confidence": 70.7,
+    "lineId": 3
+   },
+   {
+    "text": "TEXT",
+    "confidence": 73.9,
+    "lineId": 4
+   },
+   {
+    "text": "MARATHON",
+    "confidence": 98.1,
+    "lineId": 5
+   },
+   {
+    "text": "TEXT",
+    "confidence": 98.6,
+    "lineId": 6
+   },
+   {
+    "text": "TEXT",
+    "confidence": 96.7,
+    "lineId": 6
+   },
+   {
+    "text": "TEXT",
+    "confidence": 98.8,
+    "lineId": 7
+   },
+   {
+    "text": "TEXT",
+    "confidence": 98.9,
+    "lineId": 7
+   },
+   {
+    "text": "TEXT",
+    "confidence": 97.2,
+    "lineId": 9
+   },
+   {
+    "text": "FINISH",
+    "confidence": 100,
+    "lineId": 10
+   },
+   {
+    "text": "TEXT",
+    "confidence": 96.8,
+    "lineId": 11
+   },
+   {
+    "text": "TEXT",
+    "confidence": 99,
+    "lineId": 12
+   },
+   {
+    "text": "TEXT",
+    "confidence": 99.1,
+    "lineId": 13
+   },
+   {
+    "text": "TEXT",
+    "confidence": 100,
+    "lineId": 14
+   },
+   {
+    "text": "TEXT",
+    "confidence": 81.6,
+    "lineId": 15
+   },
+   {
+    "text": "TEXT",
+    "confidence": 99,
+    "lineId": 16
+   },
+   {
+    "text": "TEXT",
+    "confidence": 90.1,
+    "lineId": 17
+   },
+   {
+    "text": "TEXT",
+    "confidence": 95.5,
+    "lineId": 18
+   },
+   {
+    "text": "010",
+    "confidence": 98.5,
+    "lineId": 19
+   },
+   {
+    "text": "100",
+    "confidence": 98.8,
+    "lineId": 19
+   },
+   {
+    "text": "101",
+    "confidence": 99.4,
+    "lineId": 19
+   },
+   {
+    "text": "TEXT",
+    "confidence": 91.2,
+    "lineId": 20
+   },
+   {
+    "text": "TEXT",
+    "confidence": 94.9,
+    "lineId": 21
+   },
+   {
+    "text": "TEXT",
+    "confidence": 97.7,
+    "lineId": 22
+   },
+   {
+    "text": "TEXT",
+    "confidence": 91.7,
+    "lineId": 22
+   },
+   {
+    "text": "TEXT",
+    "confidence": 99.9,
+    "lineId": 23
+   },
+   {
+    "text": "TEXT",
+    "confidence": 99.6,
+    "lineId": 24
+   },
+   {
+    "text": "TEXT",
+    "confidence": 92.7,
+    "lineId": 25
+   },
+   {
+    "text": "TEXT",
+    "confidence": 93,
+    "lineId": 25
+   },
+   {
+    "text": "TEXT",
+    "confidence": 98.6,
+    "lineId": 26
+   },
+   {
+    "text": "TEXT",
+    "confidence": 98.7,
+    "lineId": 27
+   },
+   {
+    "text": "TEXT",
+    "confidence": 99.6,
+    "lineId": 29
+   },
+   {
+    "text": "TEXT",
+    "confidence": 95.4,
+    "lineId": 30
+   },
+   {
+    "text": "TEXT",
+    "confidence": 93.5,
+    "lineId": 31
+   },
+   {
+    "text": "TEXT",
+    "confidence": 93.3,
+    "lineId": 32
+   },
+   {
+    "text": "TEXT",
+    "confidence": 97.4,
+    "lineId": 34
+   },
+   {
+    "text": "TEXT",
+    "confidence": 58.6,
+    "lineId": 35
+   },
+   {
+    "text": "1000",
+    "confidence": 96.1,
+    "lineId": 36
+   },
+   {
+    "text": "TEXT",
+    "confidence": 97.6,
+    "lineId": 37
+   },
+   {
+    "text": "TEXT",
+    "confidence": 89,
+    "lineId": 38
+   },
+   {
+    "text": "1001",
+    "confidence": 96.3,
+    "lineId": 39
+   },
+   {
+    "text": "TEXT",
+    "confidence": 63.3,
+    "lineId": 40
+   },
+   {
+    "text": "TEXT",
+    "confidence": 97.7,
+    "lineId": 41
+   },
+   {
+    "text": "TEXT",
+    "confidence": 84.6,
+    "lineId": 42
+   },
+   {
+    "text": "TEXT",
+    "confidence": 64,
+    "lineId": 43
+   },
+   {
+    "text": "TEXT",
+    "confidence": 51.5,
+    "lineId": 44
+   },
+   {
+    "text": "1",
+    "confidence": 77.4,
+    "lineId": 45
+   },
+   {
+    "text": "TEXT",
+    "confidence": 90,
+    "lineId": 45
+   },
+   {
+    "text": "TEXT",
+    "confidence": 99.4,
+    "lineId": 46
+   },
+   {
+    "text": "TEXT",
+    "confidence": 70.2,
+    "lineId": 47
+   },
+   {
+    "text": "TEXT",
+    "confidence": 95.4,
+    "lineId": 48
+   }
+  ]
+ },
+ {
+  "name": "event banner: a year merged with the date",
+  "note": "verified by eye: the finish arch",
+  "words": [
+   {
+    "text": "TEXT",
+    "confidence": 98.5,
+    "lineId": 0
+   },
+   {
+    "text": "TEXT",
+    "confidence": 54.2,
+    "lineId": 1
+   },
+   {
+    "text": "TEXT",
+    "confidence": 97.7,
+    "lineId": 2
+   },
+   {
+    "text": "TEXT",
+    "confidence": 98.5,
+    "lineId": 2
+   },
+   {
+    "text": "FINISH",
+    "confidence": 100,
+    "lineId": 3
+   },
+   {
+    "text": "TEXT",
+    "confidence": 53.2,
+    "lineId": 6
+   },
+   {
+    "text": "TEXT",
+    "confidence": 67,
+    "lineId": 7
+   },
+   {
+    "text": "TEXT",
+    "confidence": 98.5,
+    "lineId": 8
+   },
+   {
+    "text": "TEXT",
+    "confidence": 85.1,
+    "lineId": 9
+   },
+   {
+    "text": "HALF",
+    "confidence": 97.1,
+    "lineId": 10
+   },
+   {
+    "text": "MARATHON",
+    "confidence": 95.3,
+    "lineId": 10
+   },
+   {
+    "text": "10",
+    "confidence": 96.3,
+    "lineId": 11
+   },
+   {
+    "text": "AUGUST",
+    "confidence": 95.7,
+    "lineId": 11
+   },
+   {
+    "text": "1002",
+    "confidence": 94.2,
+    "lineId": 11
+   },
+   {
+    "text": "TEXT",
+    "confidence": 96.1,
+    "lineId": 12
+   },
+   {
+    "text": "TEXT",
+    "confidence": 96.9,
+    "lineId": 12
+   },
+   {
+    "text": "HALF",
+    "confidence": 94.2,
+    "lineId": 12
+   },
+   {
+    "text": "MARATHON",
+    "confidence": 96.4,
+    "lineId": 12
+   },
+   {
+    "text": "TEXT",
+    "confidence": 96,
+    "lineId": 13
+   },
+   {
+    "text": "TEXT",
+    "confidence": 93.7,
+    "lineId": 13
+   },
+   {
+    "text": "HALF",
+    "confidence": 81.7,
+    "lineId": 13
+   },
+   {
+    "text": "TEXT",
+    "confidence": 96.5,
+    "lineId": 14
+   },
+   {
+    "text": "TEXT",
+    "confidence": 90.7,
+    "lineId": 15
+   },
+   {
+    "text": "TEXT",
+    "confidence": 66.9,
+    "lineId": 16
+   },
+   {
+    "text": "TEXT",
+    "confidence": 57.6,
+    "lineId": 17
+   },
+   {
+    "text": "1003",
+    "confidence": 99.6,
+    "lineId": 20
+   },
+   {
+    "text": "TEXT",
+    "confidence": 94.8,
+    "lineId": 21
+   },
+   {
+    "text": "TEXT",
+    "confidence": 52.7,
+    "lineId": 21
+   },
+   {
+    "text": "TEXT",
+    "confidence": 74.6,
+    "lineId": 22
+   },
+   {
+    "text": "TEXT",
+    "confidence": 99.7,
+    "lineId": 24
+   },
+   {
+    "text": "TEXT",
+    "confidence": 98.5,
+    "lineId": 25
+   },
+   {
+    "text": "HALF",
+    "confidence": 98.4,
+    "lineId": 26
+   },
+   {
+    "text": "MARATHON",
+    "confidence": 97.2,
+    "lineId": 26
+   }
+  ]
+ },
+ {
+  "name": "event banner: a year ALONE on its own line",
+  "note": "the case no line rule can reach -- the owner exclusion list is for this",
+  "words": [
+   {
+    "text": "TEXT",
+    "confidence": 100,
+    "lineId": 0
+   },
+   {
+    "text": "TEXT",
+    "confidence": 96.4,
+    "lineId": 1
+   },
+   {
+    "text": "HALF",
+    "confidence": 99.4,
+    "lineId": 2
+   },
+   {
+    "text": "MARATHON",
+    "confidence": 98,
+    "lineId": 2
+   },
+   {
+    "text": "TEXT",
+    "confidence": 78.7,
+    "lineId": 3
+   },
+   {
+    "text": "TEXT",
+    "confidence": 97.5,
+    "lineId": 4
+   },
+   {
+    "text": "TEXT",
+    "confidence": 97.8,
+    "lineId": 5
+   },
+   {
+    "text": "FINISH",
+    "confidence": 100,
+    "lineId": 6
+   },
+   {
+    "text": "TEXT",
+    "confidence": 99.3,
+    "lineId": 7
+   },
+   {
+    "text": "TEXT",
+    "confidence": 99.4,
+    "lineId": 8
+   },
+   {
+    "text": "102",
+    "confidence": 99.3,
+    "lineId": 11
+   },
+   {
+    "text": "TEXT",
+    "confidence": 95.6,
+    "lineId": 12
+   },
+   {
+    "text": "TEXT",
+    "confidence": 98.4,
+    "lineId": 13
+   },
+   {
+    "text": "TEXT",
+    "confidence": 54.1,
+    "lineId": 14
+   },
+   {
+    "text": "1002",
+    "confidence": 99.6,
+    "lineId": 15
+   },
+   {
+    "text": "TEXT",
+    "confidence": 98.7,
+    "lineId": 17
+   },
+   {
+    "text": "1002",
+    "confidence": 99,
+    "lineId": 18
+   },
+   {
+    "text": "TEXT",
+    "confidence": 95.4,
+    "lineId": 19
+   },
+   {
+    "text": "1002",
+    "confidence": 99.1,
+    "lineId": 20
+   },
+   {
+    "text": "TEXT",
+    "confidence": 99.8,
+    "lineId": 21
+   },
+   {
+    "text": "TEXT",
+    "confidence": 91.7,
+    "lineId": 22
+   },
+   {
+    "text": "TEXT",
+    "confidence": 93.5,
+    "lineId": 23
+   },
+   {
+    "text": "TEXT",
+    "confidence": 99.7,
+    "lineId": 24
+   },
+   {
+    "text": "TEXT",
+    "confidence": 87,
+    "lineId": 25
+   },
+   {
+    "text": "TEXT",
+    "confidence": 99,
+    "lineId": 26
+   },
+   {
+    "text": "TEXT",
+    "confidence": 98.2,
+    "lineId": 26
+   },
+   {
+    "text": "TEXT",
+    "confidence": 95.1,
+    "lineId": 26
+   }
+  ]
+ },
+ {
+  "name": "a real bib alone on its line",
+  "note": "verified by eye: a runner",
+  "words": [
+   {
+    "text": "TEXT",
+    "confidence": 98.3,
+    "lineId": 0
+   },
+   {
+    "text": "TEXT",
+    "confidence": 97.5,
+    "lineId": 3
+   },
+   {
+    "text": "TEXT",
+    "confidence": 98.7,
+    "lineId": 3
+   },
+   {
+    "text": "TEXT",
+    "confidence": 99.7,
+    "lineId": 4
+   },
+   {
+    "text": "TEXT",
+    "confidence": 93.6,
+    "lineId": 5
+   },
+   {
+    "text": "TEXT",
+    "confidence": 97.1,
+    "lineId": 6
+   },
+   {
+    "text": "TEXT",
+    "confidence": 97.5,
+    "lineId": 7
+   },
+   {
+    "text": "TEXT",
+    "confidence": 98,
+    "lineId": 8
+   },
+   {
+    "text": "TEXT",
+    "confidence": 98.8,
+    "lineId": 9
+   },
+   {
+    "text": "TEXT",
+    "confidence": 91.1,
+    "lineId": 10
+   },
+   {
+    "text": "TEXT",
+    "confidence": 98.2,
+    "lineId": 11
+   },
+   {
+    "text": "HALF",
+    "confidence": 97.9,
+    "lineId": 11
+   },
+   {
+    "text": "MARATHON",
+    "confidence": 98.5,
+    "lineId": 11
+   },
+   {
+    "text": "1002",
+    "confidence": 98.9,
+    "lineId": 11
+   },
+   {
+    "text": "TEXT",
+    "confidence": 95,
+    "lineId": 12
+   },
+   {
+    "text": "TEXT",
+    "confidence": 99.1,
+    "lineId": 13
+   },
+   {
+    "text": "TEXT",
+    "confidence": 99.1,
+    "lineId": 15
+   },
+   {
+    "text": "TEXT",
+    "confidence": 99.1,
+    "lineId": 15
+   },
+   {
+    "text": "TEXT",
+    "confidence": 88.2,
+    "lineId": 16
+   },
+   {
+    "text": "TEXT",
+    "confidence": 98.7,
+    "lineId": 17
+   },
+   {
+    "text": "TEXT",
+    "confidence": 85.1,
+    "lineId": 18
+   },
+   {
+    "text": "TEXT",
+    "confidence": 98.4,
+    "lineId": 19
+   },
+   {
+    "text": "TEXT",
+    "confidence": 98.9,
+    "lineId": 20
+   },
+   {
+    "text": "1004",
+    "confidence": 97.8,
+    "lineId": 25
+   },
+   {
+    "text": "1005",
+    "confidence": 97.5,
+    "lineId": 26
+   },
+   {
+    "text": "1006",
+    "confidence": 97.5,
+    "lineId": 27
+   },
+   {
+    "text": "1007",
+    "confidence": 90,
+    "lineId": 28
+   },
+   {
+    "text": "TEXT",
+    "confidence": 95.7,
+    "lineId": 29
+   },
+   {
+    "text": "MARATHON",
+    "confidence": 87.9,
+    "lineId": 29
+   },
+   {
+    "text": "1008",
+    "confidence": 82.9,
+    "lineId": 30
+   },
+   {
+    "text": "103",
+    "confidence": 98.6,
+    "lineId": 31
+   },
+   {
+    "text": "11",
+    "confidence": 98.3,
+    "lineId": 32
+   },
+   {
+    "text": "1009",
+    "confidence": 94.1,
+    "lineId": 33
+   },
+   {
+    "text": "12",
+    "confidence": 94.6,
+    "lineId": 34
+   },
+   {
+    "text": "1010",
+    "confidence": 98.8,
+    "lineId": 35
+   },
+   {
+    "text": "TEXT",
+    "confidence": 98.1,
+    "lineId": 36
+   },
+   {
+    "text": "TEXT",
+    "confidence": 95.6,
+    "lineId": 37
+   },
+   {
+    "text": "1011",
+    "confidence": 96.8,
+    "lineId": 38
+   },
+   {
+    "text": "TEXT",
+    "confidence": 97.4,
+    "lineId": 39
+   },
+   {
+    "text": "TEXT",
+    "confidence": 81.4,
+    "lineId": 40
+   },
+   {
+    "text": "TEXT",
+    "confidence": 89.7,
+    "lineId": 40
+   },
+   {
+    "text": "TEXT",
+    "confidence": 97.2,
+    "lineId": 41
+   },
+   {
+    "text": "TEXT",
+    "confidence": 97.2,
+    "lineId": 42
+   },
+   {
+    "text": "HALF",
+    "confidence": 98.3,
+    "lineId": 43
+   },
+   {
+    "text": "TEXT",
+    "confidence": 99.1,
+    "lineId": 44
+   },
+   {
+    "text": "TEXT",
+    "confidence": 94.5,
+    "lineId": 46
+   }
+  ]
+ },
+ {
+  "name": "a real bib whose own printed event text merges its line",
+  "note": "verified by eye: the measured cost of this rule -- one tag in 456 candidates",
+  "words": [
+   {
+    "text": "TEXT",
+    "confidence": 52.1,
+    "lineId": 1
+   },
+   {
+    "text": "TEXT",
+    "confidence": 61.5,
+    "lineId": 4
+   },
+   {
+    "text": "104",
+    "confidence": 77.4,
+    "lineId": 6
+   },
+   {
+    "text": "13",
+    "confidence": 98.9,
+    "lineId": 8
+   },
+   {
+    "text": "TEXT",
+    "confidence": 73.3,
+    "lineId": 9
+   },
+   {
+    "text": "TEXT",
+    "confidence": 88.4,
+    "lineId": 10
+   },
+   {
+    "text": "TEXT",
+    "confidence": 63,
+    "lineId": 11
+   },
+   {
+    "text": "TEXT",
+    "confidence": 67.5,
+    "lineId": 12
+   },
+   {
+    "text": "TEXT",
+    "confidence": 90.9,
+    "lineId": 13
+   },
+   {
+    "text": "TEXT",
+    "confidence": 52.4,
+    "lineId": 14
+   },
+   {
+    "text": "0",
+    "confidence": 68.1,
+    "lineId": 14
+   },
+   {
+    "text": "TEXT",
+    "confidence": 53.1,
+    "lineId": 15
+   },
+   {
+    "text": "1003",
+    "confidence": 99.6,
+    "lineId": 16
+   },
+   {
+    "text": "TEXT",
+    "confidence": 100,
+    "lineId": 18
+   },
+   {
+    "text": "TEXT",
+    "confidence": 88.1,
+    "lineId": 19
+   },
+   {
+    "text": "TEXT",
+    "confidence": 99.2,
+    "lineId": 20
+   },
+   {
+    "text": "HALF",
+    "confidence": 99.3,
+    "lineId": 21
+   },
+   {
+    "text": "MARATHON",
+    "confidence": 99,
+    "lineId": 21
+   }
+  ]
+ },
+ {
+  "name": "a parked car licence plate",
+  "note": "verified by eye: a Mercedes in the background, second album",
+  "words": [
+   {
+    "text": "TEXT",
+    "confidence": 55.9,
+    "lineId": 0
+   },
+   {
+    "text": "FINISH",
+    "confidence": 99.4,
+    "lineId": 1
+   },
+   {
+    "text": "TEXT",
+    "confidence": 80.5,
+    "lineId": 2
+   },
+   {
+    "text": "15",
+    "confidence": 97.7,
+    "lineId": 4
+   },
+   {
+    "text": "TEXT",
+    "confidence": 98.3,
+    "lineId": 4
+   },
+   {
+    "text": "105",
+    "confidence": 99.3,
+    "lineId": 4
+   }
+  ]
+ },
+ {
+  "name": "zero-padded bibs from a different race",
+  "note": "second album numbers its runners 00xxx; the padding must survive into the fixture",
+  "words": [
+   {
+    "text": "00100",
+    "confidence": 97.5,
+    "lineId": 0
+   },
+   {
+    "text": "TEXT",
+    "confidence": 76.4,
+    "lineId": 1
+   }
+  ]
+ },
+ {
+  "name": "a photograph with no numbers at all",
+  "note": "the ordinary case -- about one photo in six on the big album",
+  "words": [
+   {
+    "text": "TEXT",
+    "confidence": 97.5,
+    "lineId": 1
+   },
+   {
+    "text": "TEXT",
+    "confidence": 84.4,
+    "lineId": 2
+   },
+   {
+    "text": "TEXT",
+    "confidence": 69.2,
+    "lineId": 4
+   },
+   {
+    "text": "TEXT",
+    "confidence": 100,
+    "lineId": 5
+   },
+   {
+    "text": "TEXT",
+    "confidence": 97.8,
+    "lineId": 6
+   },
+   {
+    "text": "HALF",
+    "confidence": 99.5,
+    "lineId": 7
+   },
+   {
+    "text": "MARATHON",
+    "confidence": 99.5,
+    "lineId": 7
+   }
+  ]
+ }
+]

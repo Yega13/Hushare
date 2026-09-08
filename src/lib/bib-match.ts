@@ -1,4 +1,5 @@
 import type { Photo } from '@/types'
+import { MAX_BIB_DIGITS } from '@/lib/bib-filter'
 
 export type BibRange = { min: number | null; max: number | null }
 
@@ -47,7 +48,9 @@ export function bibMatches(photo: Photo, query: string, range?: BibRange): boole
 // Returns null when there is nothing to search for (the guest cleared the box), and an empty array
 // when the query cannot match anything — a number outside the race's numbering, or longer than a
 // bib can be. Empty means "no photos", NOT "no filter", and callers must keep those apart.
-export const MAX_BIB_DIGITS = 6
+// Re-exported so existing importers keep working; the number itself belongs with the rule that
+// produces the digits, not with the rule that matches them (it was written down in both).
+export { MAX_BIB_DIGITS }
 
 export function bibSearchCandidates(query: string, range?: BibRange): string[] | null {
   const q = digitsOf(query)
