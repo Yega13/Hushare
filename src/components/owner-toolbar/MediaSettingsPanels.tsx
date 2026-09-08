@@ -10,12 +10,20 @@ import {
   MEDIA_DISPLAY_FILTER_OPTIONS,
   MOBILE_GRID_COLUMN_OPTIONS,
   type MediaDisplayFilter,
-  type MobileGridColumns,
-  type SlideshowAnimation,
 } from '@/lib/media-display'
 import { DESKTOP_COLUMN_CHOICES, resolveGridColumns } from '@/lib/grid-columns'
 import { clampMediaRadius, clampSlideshowInterval, parseMediaRadiusDraft } from '@/lib/media-input'
-import { confirmedMediaSettings, diffMediaSettings } from '@/lib/media-settings-diff'
+import {
+  adoptIncomingMedia,
+  confirmMediaSaved,
+  confirmedMediaSettings,
+  editMediaDraft,
+  initialMediaDraft,
+  planMediaSave,
+  revertMediaSave,
+  type MediaDraftState,
+  type MediaSettingsSnapshot,
+} from '@/lib/media-settings-diff'
 import {
   DEFAULT_SLIDESHOW_MOTION,
   MAX_SLIDESHOW_DURATION_MS,
@@ -88,18 +96,29 @@ type Props = {
 
 export default function MediaSettingsPanels({ album, photos, mediaRadiusMax, open, onToggle, onAlbumUpdated }: Props) {
   const { t } = useT()
-  const [mediaRadius, setMediaRadius] = useState(album.media_radius ?? 16)
-  const [mediaRadiusDraft, setMediaRadiusDraft] = useState(String(album.media_radius ?? 16))
+
+  // THE SIX DEBOUNCED SETTINGS live in one confirmed/draft pair (lib/media-settings-diff). `confirmed`
+  // is what the server last acknowledged; `draft` is what the owner sees. A save sends the diff of
+  // the two. They used to be six useStates diffed against the album prop -- which this component
+  // patches OPTIMISTICALLY the moment a slider moves, so the baseline moved before the save did,
+  // and a radius drag followed by an autoplay flip inside the debounce window dropped the radius.
+  const incoming = confirmedMediaSettings(album, DEFAULT_SLIDESHOW_INTERVAL_MS)
+  const [media, setMedia] = useState<MediaDraftState>(() => initialMediaDraft(incoming))
+  // WHEN THE ALBUM CHANGES UNDER US. Our own optimistic patch echoes back through the prop and is
+  // NOT a confirmation; a value from elsewhere (another device, a refetch) becomes confirmed and
+  // shows on a control the owner has not touched. Reconciled during render, the React shape for
+  // state derived from a prop; adoptIncomingMedia returns the same object when nothing moved.
+  const adopted = adoptIncomingMedia(media, incoming)
+  if (adopted !== media) setMedia(adopted)
+  // The debounced save fires later and must read the draft as it is THEN, not as it was when the
+  // timer was set; and two edits in one tick must compose. So edits advance this ref themselves.
+  const mediaRef = useRef(adopted)
+  useEffect(() => { mediaRef.current = media }, [media])
+
+  const [mediaRadiusDraft, setMediaRadiusDraft] = useState(String(adopted.draft.media_radius))
   const [mediaRadiusEditing, setMediaRadiusEditing] = useState(false)
-  const [savedMediaRadius, setSavedMediaRadius] = useState(album.media_radius ?? 16)
-  const [videoAutoplay, setVideoAutoplay] = useState(!!album.video_autoplay)
   const [photoLayout, setPhotoLayout] = useState<'grid' | 'justified'>(album.photo_layout === 'justified' ? 'justified' : 'grid')
-  const [mediaFilter, setMediaFilter] = useState<MediaDisplayFilter>(album.media_filter ?? 'none')
-  const [savedMediaFilter, setSavedMediaFilter] = useState<MediaDisplayFilter>(album.media_filter ?? 'none')
-  const [mobileGridColumns, setMobileGridColumns] = useState<MobileGridColumns>((resolveGridColumns(album).mobile) as MobileGridColumns)
   const [desktopGridColumns, setDesktopGridColumns] = useState<number>(resolveGridColumns(album).desktop)
-  const [slideshowIntervalMs, setSlideshowIntervalMs] = useState(album.slideshow_interval_ms ?? DEFAULT_SLIDESHOW_INTERVAL_MS)
-  const [slideshowAnimation, setSlideshowAnimation] = useState<SlideshowAnimation>(album.slideshow_animation ?? 'fade')
   // The composed transition. Seeded from the album's own motion, or derived from the legacy preset
   // for an album that has never been touched — either way there is one value to edit from here on.
   const [slideshowMotion, setSlideshowMotion] = useState<SlideshowMotion>(() => resolveSlideshowMotion(album))
@@ -107,117 +126,102 @@ export default function MediaSettingsPanels({ album, photos, mediaRadiusMax, ope
   const motionSaveTimerRef = useRef<number | null>(null)
   const [mediaError, setMediaError] = useState('')
 
+  const { media_radius: mediaRadius, video_autoplay: videoAutoplay, media_filter: mediaFilter,
+    mobile_grid_columns: mobileGridColumns, slideshow_interval_ms: slideshowIntervalMs } = adopted.draft
+
   // A real photo from the album in the transition preview, so the owner judges the motion against
   // what they will actually be watching rather than a grey rectangle.
   const motionPreviewThumb = photos.find((p) => p.media_type !== 'video')?.thumb_url
     ?? photos[0]?.poster_url ?? photos[0]?.thumb_url ?? ''
 
+  // The largest radius the grid can honour. A stored radius above it is clamped on the ALBUM by the
+  // toolbar (the honest subject), and arrives here through the prop like any other change.
   const radiusMax = Math.max(1, Math.round(mediaRadiusMax))
 
-  useEffect(() => {
-    if (mediaRadius > radiusMax) {
-      setMediaRadius(radiusMax)
-      onAlbumUpdated({ media_radius: radiusMax }, { forceGlobalRadius: true })
-    }
-  }, [mediaRadius, onAlbumUpdated, radiusMax])
-
-  useEffect(() => {
+  // The typed box mirrors the slider unless the owner is typing in it. Reconciled during render
+  // like the draft above (an effect here re-rendered once per slider step for nothing).
+  const [seenRadius, setSeenRadius] = useState(mediaRadius)
+  if (mediaRadius !== seenRadius) {
+    setSeenRadius(mediaRadius)
     if (!mediaRadiusEditing) setMediaRadiusDraft(String(mediaRadius))
-  }, [mediaRadius, mediaRadiusEditing])
+  }
 
-  async function saveMediaSettings(
-    nextRadius = mediaRadius,
-    nextAutoplay = videoAutoplay,
-    nextFilter = mediaFilter,
-    nextMobileGridColumns = mobileGridColumns,
-    nextSlideshowIntervalMs = slideshowIntervalMs,
-    nextSlideshowAnimation = slideshowAnimation,
-  ) {
+  // ONE SAVE, from the ref, so whatever is in the draft when it runs is what goes out. What it
+  // sends is remembered so the answer -- applied or failed -- is reconciled against THAT, not
+  // against a draft that may have moved on while the request was in flight.
+  async function saveMediaSettings() {
+    const plan = planMediaSave(mediaRef.current)
+    if (!plan) return
     setMediaError('')
+    const sent: MediaSettingsChanges = plan.changes
     try {
-      // Only what differs from the album's CONFIRMED values goes on the wire — the decision
-      // lives in lib/media-settings-diff, where its tests hold the grid "merge" bug shut.
-      const changes = diffMediaSettings(
-        confirmedMediaSettings(album, DEFAULT_SLIDESHOW_INTERVAL_MS),
-        {
-          media_radius: nextRadius,
-          video_autoplay: nextAutoplay,
-          media_filter: nextFilter,
-          mobile_grid_columns: nextMobileGridColumns,
-          slideshow_interval_ms: nextSlideshowIntervalMs,
-          slideshow_animation: nextSlideshowAnimation,
-        },
-      ) as MediaSettingsChanges
-
-      const resetRadiusOverrides = nextRadius !== savedMediaRadius
-      const resetFilterOverrides = nextFilter !== savedMediaFilter
-      if (Object.keys(changes).length === 0 && !resetRadiusOverrides && !resetFilterOverrides) {
-        return
-      }
-
-      const result = await saveMediaSettingsRequest(album.slug, changes, resetRadiusOverrides, resetFilterOverrides)
-      if (!result.ok) {
-        setMediaError(result.error)
-        showAppToast(result.error, 'error')
-        return
-      }
-      const a = result.applied
-      if (a.media_radius !== undefined) { setMediaRadius(a.media_radius); setSavedMediaRadius(a.media_radius) }
-      if (a.video_autoplay !== undefined) setVideoAutoplay(a.video_autoplay)
-      if (a.media_filter !== undefined) { setMediaFilter(a.media_filter); setSavedMediaFilter(a.media_filter) }
-      if (a.mobile_grid_columns !== undefined) setMobileGridColumns(a.mobile_grid_columns)
-      if (a.slideshow_interval_ms !== undefined) setSlideshowIntervalMs(a.slideshow_interval_ms)
-      if (a.slideshow_animation !== undefined) setSlideshowAnimation(a.slideshow_animation)
+      const result = await saveMediaSettingsRequest(album.slug, sent, plan.resetRadiusOverrides, plan.resetFilterOverrides)
+      if (!result.ok) throw new Error(result.error)
+      const next = confirmMediaSaved(mediaRef.current, sent, result.applied)
+      mediaRef.current = next
+      setMedia(next)
       // The album prop learns only the applied fields, so an untouched setting can never be
       // "updated" to a stale copy of itself.
-      if (Object.keys(a).length > 0) {
-        onAlbumUpdated(a, { forceGlobalRadius: false, resetRadiusOverrides, resetFilterOverrides })
+      if (Object.keys(result.applied).length > 0) {
+        onAlbumUpdated(result.applied, {
+          forceGlobalRadius: false,
+          resetRadiusOverrides: plan.resetRadiusOverrides,
+          resetFilterOverrides: plan.resetFilterOverrides,
+        })
       }
     } catch (e) {
       const message = e instanceof Error ? e.message : t('common.networkError')
       setMediaError(message)
       showAppToast(message, 'error')
+      // The grid goes back to the truth: a failed save used to leave the optimistic value in the
+      // album with the baseline already moved, so it was never sent again.
+      const reverted = revertMediaSave(mediaRef.current, sent)
+      mediaRef.current = reverted.state
+      setMedia(reverted.state)
+      if (Object.keys(reverted.patch).length > 0) onAlbumUpdated(reverted.patch)
     }
   }
 
-
-  // Debounced auto-save for slider controls. 500ms lets the user settle on a value.
+  // Debounced auto-save for slider controls. 500ms lets the user settle on a value. A pending save
+  // is FLUSHED on unmount, not dropped: closing Settings inside the window used to lose the edit
+  // while the album kept showing it.
   const debouncedSaveRef = useRef<number | null>(null)
   useEffect(() => () => {
     if (debouncedSaveRef.current !== null) {
       window.clearTimeout(debouncedSaveRef.current)
+      debouncedSaveRef.current = null
+      void saveMediaSettings()
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- unmount only; the save reads the ref
   }, [])
 
-  function scheduleAutoSave(
-    nextRadius: number,
-    nextAutoplay: boolean,
-    nextFilter: MediaDisplayFilter,
-    nextMobileGridColumns: MobileGridColumns,
-    nextSlideshowIntervalMs: number,
-    nextSlideshowAnimation: SlideshowAnimation,
+  /**
+   * Every control goes through here: the draft moves, the album is patched so the grid redraws
+   * now, and the save is either scheduled (a slider: dozens of values a second) or sent at once
+   * (a switch), cancelling any pending debounce so the two never race.
+   */
+  function editMedia(
+    patch: Partial<MediaSettingsSnapshot>,
+    when: 'debounce' | 'now',
+    options?: { forceGlobalRadius?: boolean },
   ) {
+    const next = editMediaDraft(mediaRef.current, patch)
+    mediaRef.current = next
+    setMedia(next)
+    onAlbumUpdated(patch, options)
     if (debouncedSaveRef.current !== null) {
       window.clearTimeout(debouncedSaveRef.current)
+      debouncedSaveRef.current = null
     }
+    if (when === 'now') { void saveMediaSettings(); return }
     debouncedSaveRef.current = window.setTimeout(() => {
       debouncedSaveRef.current = null
-      void saveMediaSettings(
-        nextRadius,
-        nextAutoplay,
-        nextFilter,
-        nextMobileGridColumns,
-        nextSlideshowIntervalMs,
-        nextSlideshowAnimation,
-      )
+      void saveMediaSettings()
     }, 500)
   }
 
   function applyMediaRadius(value: number) {
-    const nextRadius = clampMediaRadius(value, radiusMax)
-    setMediaRadius(nextRadius)
-    onAlbumUpdated({ media_radius: nextRadius }, { forceGlobalRadius: true })
-    scheduleAutoSave(nextRadius, videoAutoplay, mediaFilter, mobileGridColumns, slideshowIntervalMs, slideshowAnimation)
+    editMedia({ media_radius: clampMediaRadius(value, radiusMax) }, 'debounce', { forceGlobalRadius: true })
   }
 
   function commitMediaRadiusDraft() {
@@ -258,10 +262,7 @@ export default function MediaSettingsPanels({ album, photos, mediaRadiusMax, ope
   }, [])
 
   function applySlideshowInterval(value: number) {
-    const nextInterval = clampSlideshowInterval(value)
-    setSlideshowIntervalMs(nextInterval)
-    onAlbumUpdated({ slideshow_interval_ms: nextInterval })
-    scheduleAutoSave(mediaRadius, videoAutoplay, mediaFilter, mobileGridColumns, nextInterval, slideshowAnimation)
+    editMedia({ slideshow_interval_ms: clampSlideshowInterval(value) }, 'debounce')
   }
   return (
     <>
@@ -323,13 +324,7 @@ export default function MediaSettingsPanels({ album, photos, mediaRadiusMax, ope
               <input
                 type="checkbox"
                 checked={videoAutoplay}
-                onChange={(e) => {
-                  const nextAutoplay = e.target.checked
-                  setVideoAutoplay(nextAutoplay)
-                  onAlbumUpdated({ video_autoplay: nextAutoplay })
-                  if (debouncedSaveRef.current !== null) { window.clearTimeout(debouncedSaveRef.current); debouncedSaveRef.current = null }
-                  void saveMediaSettings(mediaRadius, nextAutoplay, mediaFilter, mobileGridColumns, slideshowIntervalMs, slideshowAnimation)
-                }}
+                onChange={(e) => editMedia({ video_autoplay: e.target.checked }, 'now')}
                 className="h-4 w-4"
               />
             </label>
@@ -338,13 +333,7 @@ export default function MediaSettingsPanels({ album, photos, mediaRadiusMax, ope
               <label className="mb-2 block text-xs font-medium" style={{ color: '#7C5C3E' }}>{t('ot.globalFilter')}</label>
               <select
                 value={mediaFilter}
-                onChange={(e) => {
-                  const nextFilter = e.target.value as MediaDisplayFilter
-                  setMediaFilter(nextFilter)
-                  onAlbumUpdated({ media_filter: nextFilter })
-                  if (debouncedSaveRef.current !== null) { window.clearTimeout(debouncedSaveRef.current); debouncedSaveRef.current = null }
-                  void saveMediaSettings(mediaRadius, videoAutoplay, nextFilter, mobileGridColumns, slideshowIntervalMs, slideshowAnimation)
-                }}
+                onChange={(e) => editMedia({ media_filter: e.target.value as MediaDisplayFilter }, 'now')}
                 className="w-full rounded-lg px-3 py-2 text-sm focus:outline-none"
                 style={{ background: '#FDFAF5', border: '1px solid #DDD5C5', color: '#630826' }}
               >
@@ -363,12 +352,7 @@ export default function MediaSettingsPanels({ album, photos, mediaRadiusMax, ope
                     <button
                       key={option.value}
                       type="button"
-                      onClick={() => {
-                        setMobileGridColumns(option.value)
-                        onAlbumUpdated({ mobile_grid_columns: option.value })
-                        if (debouncedSaveRef.current !== null) { window.clearTimeout(debouncedSaveRef.current); debouncedSaveRef.current = null }
-                        void saveMediaSettings(mediaRadius, videoAutoplay, mediaFilter, option.value, slideshowIntervalMs, slideshowAnimation)
-                      }}
+                      onClick={() => editMedia({ mobile_grid_columns: option.value }, 'now')}
                       className="hush-press rounded-lg py-2 text-sm font-semibold"
                       style={{
                         background: selected ? '#630826' : '#FDFAF5',

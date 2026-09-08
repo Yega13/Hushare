@@ -5,5 +5,5 @@
   "react-hooks/immutability": 10,
   "react-hooks/purity": 5,
   "react-hooks/refs": 20,
-  "react-hooks/set-state-in-effect": 33
+  "react-hooks/set-state-in-effect": 31
 }
