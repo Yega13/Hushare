@@ -78,6 +78,8 @@ export function diffMediaSettings(
 // two requests out, their answers can land in either order and the database can apply them in
 // either order, and no client-side reconciliation can see which. So `inFlight` records the one
 // request that is out, nothing is planned while it is, and the component re-plans when it lands.
+// That holds one panel instance; across instances (Settings closed and reopened mid-request) the
+// order on the wire is held by lib/inflight-gate.
 
 export type MediaDraftState = {
   /** What the server last acknowledged. Moves only on a successful save or a change from elsewhere. */
@@ -111,7 +113,10 @@ export function editMediaDraft(state: MediaDraftState, patch: Partial<MediaSetti
  *   - equals what is in flight: our own request's value, arriving through a side channel (a
  *     broadcast refetch) before our own answer, after the owner already moved the draft on. Also
  *     an echo: treating it as remote would call the draft "pristine" and wipe the owner's newer
- *     value. Our own answer, seconds away, is what confirms it.
+ *     value. Our own answer, seconds away, is what confirms it. Errs toward the owner's newer
+ *     value: if another device wrote the SAME value and our own request then fails, the revert
+ *     puts the draft back to the old confirmed value while the server holds the new one, until
+ *     the next refetch -- an identical value from two devices inside one failed round trip.
  *   - none of those: a change from elsewhere (another device, a refetch). It becomes confirmed; the
  *     draft follows only if it was pristine, so an edit in progress is never wiped -- and the next
  *     save will diff the edit against the new truth and send it, last writer wins WITH intent.
@@ -177,7 +182,11 @@ export function confirmMediaSaved(
     if (state.draft[k] === sent[k]) (draft as Record<string, unknown>)[k] = applied[k]
     ;(patch as Record<string, unknown>)[k] = draft[k]
   }
-  return { state: { confirmed: { ...state.confirmed, ...sent, ...applied }, draft, inFlight: null }, patch }
+  // Only the six fields this machine owns: the route may echo a desktop pin alongside them, which
+  // the component hands to the album and which must not become a stray key in `confirmed`.
+  const known: Partial<MediaSettingsSnapshot> = {}
+  for (const k of KEYS) if (k in applied) (known as Record<string, unknown>)[k] = applied[k]
+  return { state: { confirmed: { ...state.confirmed, ...sent, ...known }, draft, inFlight: null }, patch }
 }
 
 /**

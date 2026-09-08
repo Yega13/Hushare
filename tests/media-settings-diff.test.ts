@@ -239,6 +239,14 @@ describe('one request at a time', () => {
     expect(planMediaSave(r.state)).toBeNull()
   })
 
+  it('a field the route echoes that this machine does not own (the desktop pin) never enters confirmed', () => {
+    const b = beginMediaSave(editMediaDraft(initialMediaDraft(CONFIRMED), { mobile_grid_columns: 2 }))!
+    const r = confirmMediaSaved(b.state, { mobile_grid_columns: 2, desktop_grid_columns: 6 } as Parameters<typeof confirmMediaSaved>[1])
+    expect(Object.keys(r.state.confirmed).sort()).toEqual(Object.keys(CONFIRMED).sort())
+    expect(r.state.confirmed.mobile_grid_columns).toBe(2)
+    expect(r.patch).toEqual({ mobile_grid_columns: 2 })
+  })
+
   it('a successful save confirms what was applied and tells the album, and then there is nothing left to send', () => {
     const b = beginMediaSave(editMediaDraft(initialMediaDraft(CONFIRMED), { media_radius: 40, video_autoplay: true }))!
     const r = confirmMediaSaved(b.state, b.plan.changes)

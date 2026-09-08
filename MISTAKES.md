@@ -1006,3 +1006,65 @@ because it handles multi-line replacement conveniently, and paid three times.
 **Habit to build:** the Edit tool for any content containing a backslash, full stop. Python only for
 content that is pure ASCII prose with no escapes -- and even then, `assert count == 1` before every
 write, which is the only reason none of the three aborted scripts corrupted a file.
+
+### 74. I FIXED A RACE BY MAKING THE BASELINE IMMOVABLE, AND CREATED TWO NEW RACES INSIDE ONE ROUND TRIP
+
+The media panel diffed its draft against an album it had already patched optimistically, so a
+radius drag plus an autoplay flip inside the debounce dropped the radius. My fix: `confirmed` is
+what the server said and nothing else moves it. Correct -- and two reviewers then broke it in
+one round trip each, with a fetch mock that HOLDS requests open: flip ON then OFF before the ON
+answers, and the OFF planned as "no change" (draft equalled confirmed), the ON landed and confirmed
+`true`, and nothing ever re-planned: server ON, switch OFF, until some unrelated edit carried it.
+And with two requests out, a failed first one reverted a field the second had carried and the
+server had accepted, so the next edit quietly moved the server to a value the owner never chose.
+The old code did not have these because it diffed against the optimistic album -- the bug I had
+just removed was also what had been papering over them.
+
+I had tested the immediate-answer case only. Every one of my 8 component cases resolved fetch
+synchronously; not one made an edit while a request was out, which is the whole shape of a
+state machine with a network in the middle.
+
+**Habit to build:** a test rig for anything that talks to a server holds the request open by
+default and releases it by hand. "Edit, then answer arrives" is the ordinary case, not the
+exotic one -- a switch is clicked twice in under a second all the time. And when a fix makes a
+value immovable, list every place that used to move it and ask what each of those was quietly
+doing right.
+
+### 75. TWO REVIEW AGENTS STALLED ON THE SAME THING: THE COMMAND WITH NO OUTPUT FOR TEN MINUTES
+
+Both first-circle reviewers died to the 600-second watchdog. One had launched the full suite,
+the other the mutation runner (13 jsdom runs, one file each, no output between them). I had
+already run both and had the results; the agents re-derived them and never got to the review.
+The relaunched agents were told the results, told not to run those two commands, and told to read
+files by line range -- and both finished with real findings inside ten minutes.
+
+**Habit to build:** a review agent gets the expensive results handed to it and a list of the
+commands it must not run. Its budget is for thinking, not for reproducing what I already know.
+
+### 76. A SURVIVING MUTANT WAS THE CODE BEING DEAD, AGAIN (SEE 68)
+
+"An immediate save no longer cancels the pending debounce" survived the new component set. It
+was equivalent: with one request in flight at a time, the timer that fires during a request finds
+it out and does nothing, and the settle step sends whatever is left. The cancel had been the
+mechanism that stopped two requests racing; serialisation replaced it and I had left both in,
+with a comment still claiming the cancel was what prevented the race. The mutant was right; the
+cancel and the comment went.
+
+### 77. `git worktree remove --force` FOLLOWED THE JUNCTION AND DELETED THE REAL node_modules
+
+The throwaway review worktrees get a directory junction to the main checkout's node_modules so
+they need no install. Tearing one down, I ran `rmdir` on the junction first -- it printed "cannot
+find the path" and I read that as "already gone" -- then `git worktree remove --force`, which
+walks the tree and deletes everything it finds, including through the junction. The next reviewer
+reported "node_modules contains only an empty .vite-temp" and could not run a single test; the
+other session working in the same checkout lost its toolchain for the fifteen minutes `npm ci`
+took. Nothing tracked was touched; the lockfile made it recoverable.
+
+The mistake underneath: a "not found" from the cleanup step was treated as success (rule 23), and
+a recursive delete was pointed at a directory containing a link into something I cared about.
+
+**Habit to build:** before any recursive delete, list what is inside the target -- a junction or
+symlink there means STOP. Remove links with a command that fails loudly if it did nothing, and
+verify the link is gone before the recursive step. Or do not delete worktrees at all: `git
+worktree add` to a fresh path is cheap, and an old one can be pruned once the junction is
+confirmed gone.

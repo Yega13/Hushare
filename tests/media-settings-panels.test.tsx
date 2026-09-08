@@ -44,6 +44,7 @@ const resolveFail = (i: number) => act(async () => { sent[i].release(fail()); aw
 let setAlbumFromOutside: (patch: Partial<Album>) => void = () => {}
 /** Closing Settings: the toolbar unmounts the panel and keeps the album. */
 let hidePanels: () => void = () => {}
+let showPanels: () => void = () => {}
 const options: Array<Record<string, unknown> | undefined> = []
 function Harness({ open = 'media' }: { open?: 'media' | 'slideshow' }) {
   const [album, setAlbum] = useState<Album>(ALBUM)
@@ -51,6 +52,7 @@ function Harness({ open = 'media' }: { open?: 'media' | 'slideshow' }) {
   useEffect(() => {
     setAlbumFromOutside = (patch) => setAlbum((a) => ({ ...a, ...patch }))
     hidePanels = () => setShown(false)
+    showPanels = () => setShown(true)
   }, [])
   return (
     <LocaleProvider locale="en" dict={en}>
@@ -87,9 +89,15 @@ beforeEach(() => {
     })
   }))
 })
-afterEach(() => {
+afterEach(async () => {
   cleanup()
   vi.useRealTimers()
+  // The per-album wire gate (lib/inflight-gate) is module scope and keyed by slug: a request a
+  // hold-mode test left unanswered would hold the NEXT test's first request forever. Release
+  // everything (a second release is a no-op), let any settle-sent request auto-answer, and drain.
+  hold = false
+  for (const s of sent) s.release(echo(s.body))
+  await new Promise((r) => setTimeout(r, 0))
   vi.unstubAllGlobals()
 })
 
@@ -220,6 +228,33 @@ describe('MediaSettingsPanels -- what goes on the wire', () => {
     expect(options).toContainEqual({ forceGlobalRadius: false, resetRadiusOverrides: false, resetFilterOverrides: true })
   })
 
+  it('a FAILED desktop-columns save puts the album back where the server still is', async () => {
+    answer = fail
+    try {
+      render(<Harness />)
+      const desktopRow = screen.getByText(en['ot.gridDesktop']).nextElementSibling as HTMLElement
+      const click = (n: string) => fireEvent.click(Array.from(desktopRow.querySelectorAll('button')).find((b) => b.textContent === n) as HTMLElement)
+      click('4')
+      expect(screen.getByTestId('album-desktop').textContent).toBe('4')      // optimistic
+      await flush()
+      expect(screen.getByTestId('album-desktop').textContent).toBe('6')      // back to the server's value
+    } finally { answer = echo }
+  })
+
+  it('a slow desktop-columns failure does not write the old value over a newer click the server accepted', async () => {
+    hold = true
+    render(<Harness />)
+    const desktopRow = screen.getByText(en['ot.gridDesktop']).nextElementSibling as HTMLElement
+    const click = (n: string) => fireEvent.click(Array.from(desktopRow.querySelectorAll('button')).find((b) => b.textContent === n) as HTMLElement)
+    click('4')
+    click('5')
+    await flush()
+    expect(sent).toHaveLength(2)
+    await resolveOk(1)                                   // 5 accepted
+    await resolveFail(0)                                 // 4 refused, late
+    expect(screen.getByTestId('album-desktop').textContent).toBe('5')
+  })
+
   it('a phone-grid change on an album with no desktop choice: the album learns the desktop pin the route echoes', async () => {
     answer = (body) => ({ ...echo(body), json: { ...echo(body).json, desktop_grid_columns: 6 } })
     try {
@@ -305,6 +340,57 @@ describe('one request at a time -- the two sequences a review broke the first ve
     expect(sent).toHaveLength(2)
     expect(sent[1].body).toMatchObject({ media_radius: 16, reset_radius_overrides: true })
     await resolveOk(1)
+    await act(async () => { vi.advanceTimersByTime(1000) })
+    await flush()
+    expect(sent).toHaveLength(2)
+  })
+
+  it('close and REOPEN Settings inside one round trip: the reopened panel waits for the closed one\'s request', async () => {
+    // Without the per-album gate the reopened panel sent at once; the database applied OFF then
+    // ON, and when the slow ON answer landed the switch flipped itself back on.
+    hold = true
+    render(<Harness />)
+    fireEvent.click(autoplayBox())
+    await flush()
+    expect(sent).toHaveLength(1)
+    expect(sent[0].body).toMatchObject({ video_autoplay: true })
+    await act(async () => { hidePanels() })
+    await act(async () => { showPanels() })
+    expect(autoplayBox().checked).toBe(true)              // seeded from the optimistic album
+    fireEvent.click(autoplayBox())
+    await flush()
+    expect(sent).toHaveLength(1)                          // OFF is planned, not yet on the wire
+    expect(autoplayBox().checked).toBe(false)
+    expect(screen.getByTestId('album-autoplay').textContent).toBe('false')
+    await resolveOk(0)
+    expect(sent).toHaveLength(2)                          // now it goes, after ON landed
+    expect(sent[1].body).toMatchObject({ video_autoplay: false })
+    expect(autoplayBox().checked).toBe(false)
+    await resolveOk(1)
+    expect(screen.getByTestId('album-autoplay').textContent).toBe('false')
+    expect(autoplayBox().checked).toBe(false)
+    await act(async () => { vi.advanceTimersByTime(1000) })
+    await flush()
+    expect(sent).toHaveLength(2)
+  })
+
+  it('close and reopen inside one round trip, and the first request FAILS: everything ends OFF', async () => {
+    hold = true
+    render(<Harness />)
+    fireEvent.click(autoplayBox())
+    await flush()
+    await act(async () => { hidePanels() })
+    await act(async () => { showPanels() })
+    fireEvent.click(autoplayBox())
+    await flush()
+    expect(sent).toHaveLength(1)
+    await resolveFail(0)
+    expect(screen.getByTestId('album-autoplay').textContent).toBe('false')
+    expect(sent).toHaveLength(2)
+    expect(sent[1].body).toMatchObject({ video_autoplay: false })
+    await resolveOk(1)
+    expect(autoplayBox().checked).toBe(false)
+    expect(screen.getByTestId('album-autoplay').textContent).toBe('false')
     await act(async () => { vi.advanceTimersByTime(1000) })
     await flush()
     expect(sent).toHaveLength(2)
