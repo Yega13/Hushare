@@ -23,8 +23,12 @@ const ALBUM = {
   photo_layout: 'grid',
 } as unknown as Album
 
-type Sent = { body: Record<string, unknown> }
+type Answer = { status: number; json: Record<string, unknown> }
+type Sent = { body: Record<string, unknown>; release: (a: Answer) => void }
 const sent: Sent[] = []
+/** HOLD MODE: requests stay open until a test releases them, so answers can land in any order and
+ *  edits can be made while a request is out -- the shape both review findings had. */
+let hold = false
 /** What the route answers: by default it echoes back what it applied, exactly like the real one. */
 const echo = (body: Record<string, unknown>): { status: number; json: Record<string, unknown> } => {
   const applied = { ...body }
@@ -32,25 +36,35 @@ const echo = (body: Record<string, unknown>): { status: number; json: Record<str
   return { status: 200, json: applied }
 }
 let answer = echo
+const fail = (): Answer => ({ status: 500, json: { error: 'nope' } })
+const resolveOk = (i: number) => act(async () => { sent[i].release(echo(sent[i].body)); await Promise.resolve(); await Promise.resolve() })
+const resolveFail = (i: number) => act(async () => { sent[i].release(fail()); await Promise.resolve(); await Promise.resolve() })
 
 /** The parent as AlbumPageClient behaves: the patch is the next album. Exposed for the tests. */
 let setAlbumFromOutside: (patch: Partial<Album>) => void = () => {}
+/** Closing Settings: the toolbar unmounts the panel and keeps the album. */
+let hidePanels: () => void = () => {}
 const options: Array<Record<string, unknown> | undefined> = []
-function Harness() {
+function Harness({ open = 'media' }: { open?: 'media' | 'slideshow' }) {
   const [album, setAlbum] = useState<Album>(ALBUM)
-  useEffect(() => { setAlbumFromOutside = (patch) => setAlbum((a) => ({ ...a, ...patch })) }, [])
+  const [shown, setShown] = useState(true)
+  useEffect(() => {
+    setAlbumFromOutside = (patch) => setAlbum((a) => ({ ...a, ...patch }))
+    hidePanels = () => setShown(false)
+  }, [])
   return (
     <LocaleProvider locale="en" dict={en}>
       <div data-testid="album-radius">{album.media_radius}</div>
       <div data-testid="album-autoplay">{String(album.video_autoplay)}</div>
-      <MediaSettingsPanels
+      <div data-testid="album-desktop">{String(album.desktop_grid_columns)}</div>
+      {shown && <MediaSettingsPanels
         album={album}
         photos={[]}
         mediaRadiusMax={64}
-        open="media"
+        open={open}
         onToggle={() => {}}
         onAlbumUpdated={(patch, o) => { options.push(o); setAlbum((a) => ({ ...a, ...patch })) }}
-      />
+      />}
     </LocaleProvider>
   )
 }
@@ -63,11 +77,14 @@ beforeEach(() => {
   sent.length = 0
   options.length = 0
   vi.useFakeTimers()
-  vi.stubGlobal('fetch', vi.fn(async (_url: string, init?: RequestInit) => {
+  hold = false
+  vi.stubGlobal('fetch', vi.fn((_url: string, init?: RequestInit) => {
     const body = JSON.parse(String(init?.body)) as Record<string, unknown>
-    sent.push({ body })
-    const a = answer(body)
-    return new Response(JSON.stringify(a.json), { status: a.status, headers: { 'Content-Type': 'application/json' } })
+    return new Promise<Response>((resolve) => {
+      const release = (a: Answer) => resolve(new Response(JSON.stringify(a.json), { status: a.status, headers: { 'Content-Type': 'application/json' } }))
+      sent.push({ body, release })
+      if (!hold) release(answer(body))
+    })
   }))
 })
 afterEach(() => {
@@ -188,5 +205,137 @@ describe('MediaSettingsPanels -- what goes on the wire', () => {
     render(<Harness />)
     fireEvent.change(radiusSlider(), { target: { value: '40' } })
     expect(options[0]).toMatchObject({ forceGlobalRadius: true })
+  })
+
+  it('a successful save tells the parent which per-photo overrides the server cleared', async () => {
+    // The wire carried reset_radius_overrides and the server nulled every display_radius; if the
+    // parent is not told, the grid keeps drawing overrides the server just deleted.
+    render(<Harness />)
+    fireEvent.change(radiusSlider(), { target: { value: '40' } })
+    await act(async () => { vi.advanceTimersByTime(500) })
+    await flush()
+    expect(options).toContainEqual({ forceGlobalRadius: false, resetRadiusOverrides: true, resetFilterOverrides: false })
+    fireEvent.change(document.querySelector('select') as HTMLSelectElement, { target: { value: 'mono' } })
+    await flush()
+    expect(options).toContainEqual({ forceGlobalRadius: false, resetRadiusOverrides: false, resetFilterOverrides: true })
+  })
+
+  it('a phone-grid change on an album with no desktop choice: the album learns the desktop pin the route echoes', async () => {
+    answer = (body) => ({ ...echo(body), json: { ...echo(body).json, desktop_grid_columns: 6 } })
+    try {
+      render(<Harness />)
+      await act(async () => { setAlbumFromOutside({ desktop_grid_columns: null }) })
+      const phoneRow = screen.getByText(en['ot.gridPhone']).nextElementSibling as HTMLElement
+      fireEvent.click(Array.from(phoneRow.querySelectorAll('button')).find((b) => b.textContent === '2') as HTMLElement)
+      await flush()
+      expect(sent[0].body).toMatchObject({ mobile_grid_columns: 2 })
+      expect(sent[0].body).not.toHaveProperty('desktop_grid_columns')
+      expect(screen.getByTestId('album-desktop').textContent).toBe('6')
+      // ...and the desktop buttons show the pin, not the number they were seeded with.
+      const desktopRow = screen.getByText(en['ot.gridDesktop']).nextElementSibling as HTMLElement
+      const six = Array.from(desktopRow.querySelectorAll('button')).find((b) => b.textContent === '6') as HTMLElement
+      expect(six.style.background).toContain('99, 8, 38')
+    } finally { answer = echo }
+  })
+})
+
+describe('one request at a time -- the two sequences a review broke the first version with', () => {
+  it('flip ON then OFF inside one round trip: the OFF goes out when the ON lands, and the grid never shows ON again', async () => {
+    hold = true
+    render(<Harness />)
+    fireEvent.click(autoplayBox())
+    await flush()
+    expect(sent).toHaveLength(1)
+    expect(sent[0].body).toMatchObject({ video_autoplay: true })
+    fireEvent.click(autoplayBox())
+    await flush()
+    expect(sent).toHaveLength(1)                       // nothing planned while one is out
+    expect(autoplayBox().checked).toBe(false)
+    expect(screen.getByTestId('album-autoplay').textContent).toBe('false')
+    await resolveOk(0)
+    expect(screen.getByTestId('album-autoplay').textContent).toBe('false')   // not told ON for one RTT
+    expect(sent).toHaveLength(2)
+    expect(sent[1].body).toMatchObject({ video_autoplay: false })
+    await resolveOk(1)
+    await act(async () => { vi.advanceTimersByTime(1000) })
+    await flush()
+    expect(sent).toHaveLength(2)
+    expect(autoplayBox().checked).toBe(false)
+  })
+
+  it('the radius request fails after autoplay was flipped in flight: radius back to 16, the flip goes out alone, nothing stale later', async () => {
+    hold = true
+    render(<Harness />)
+    fireEvent.change(radiusSlider(), { target: { value: '40' } })
+    await act(async () => { vi.advanceTimersByTime(500) })
+    await flush()
+    expect(sent).toHaveLength(1)
+    expect(sent[0].body).toMatchObject({ media_radius: 40, reset_radius_overrides: true })
+    fireEvent.click(autoplayBox())
+    await flush()
+    expect(sent).toHaveLength(1)
+    await resolveFail(0)
+    expect(screen.getByTestId('album-radius').textContent).toBe('16')
+    expect(radiusSlider().value).toBe('16')
+    expect(screen.getByTestId('album-autoplay').textContent).toBe('true')
+    expect(sent).toHaveLength(2)
+    expect(sent[1].body).toMatchObject({ video_autoplay: true, reset_radius_overrides: false })
+    expect(sent[1].body).not.toHaveProperty('media_radius')
+    await resolveOk(1)
+    fireEvent.click(autoplayBox())
+    await flush()
+    expect(sent).toHaveLength(3)
+    expect(sent[2].body).toMatchObject({ video_autoplay: false, reset_radius_overrides: false })
+    expect(sent[2].body).not.toHaveProperty('media_radius')     // 16 is not quietly re-sent
+  })
+
+  it('slider 16 -> 40 -> 16 inside one round trip: the settle waits for the drag, then 16 is sent once with the reset', async () => {
+    hold = true
+    render(<Harness />)
+    fireEvent.change(radiusSlider(), { target: { value: '40' } })
+    await act(async () => { vi.advanceTimersByTime(500) })
+    await flush()
+    expect(sent).toHaveLength(1)
+    fireEvent.change(radiusSlider(), { target: { value: '16' } })      // timer pending again
+    await resolveOk(0)
+    expect(sent).toHaveLength(1)                                        // the settle deferred to the drag
+    expect(screen.getByTestId('album-radius').textContent).toBe('16')   // no jump to 40
+    await act(async () => { vi.advanceTimersByTime(500) })
+    await flush()
+    expect(sent).toHaveLength(2)
+    expect(sent[1].body).toMatchObject({ media_radius: 16, reset_radius_overrides: true })
+    await resolveOk(1)
+    await act(async () => { vi.advanceTimersByTime(1000) })
+    await flush()
+    expect(sent).toHaveLength(2)
+  })
+
+  it('closing Settings inside the motion debounce sends the motion the slideshow is already playing', async () => {
+    render(<Harness open="slideshow" />)
+    // The second range in the slideshow panel is the fade axis (the first is the interval, which
+    // goes through the media save; distance is hidden while the move is 'none', as it is for this
+    // album's 'fade' preset). Any axis would do: they share one timer. Fade starts at 100, so 0.
+    const slider = document.querySelectorAll('input[type="range"]')[1] as HTMLInputElement
+    fireEvent.change(slider, { target: { value: '0' } })
+    expect(sent).toHaveLength(0)
+    await act(async () => { hidePanels() })
+    await flush()
+    expect(sent).toHaveLength(1)
+    expect(sent[0].body).toHaveProperty('slideshow_motion')
+    expect((sent[0].body.slideshow_motion as Record<string, unknown>).fade).toBe(0)
+  })
+
+  it('closing Settings while a save is in flight: the answer still reaches the album and the edit made in flight is sent', async () => {
+    hold = true
+    render(<Harness />)
+    fireEvent.click(autoplayBox())
+    await flush()
+    fireEvent.change(radiusSlider(), { target: { value: '40' } })      // debounce pending
+    await act(async () => { hidePanels() })
+    expect(sent).toHaveLength(1)
+    await resolveOk(0)
+    expect(screen.getByTestId('album-autoplay').textContent).toBe('true')
+    expect(sent).toHaveLength(2)
+    expect(sent[1].body).toMatchObject({ media_radius: 40, reset_radius_overrides: true })
   })
 })

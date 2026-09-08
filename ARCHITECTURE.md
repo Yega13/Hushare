@@ -152,9 +152,9 @@ Stated plainly, because a map that hides the swamps is not a map.
   `NextResponse.json` -- consistent bodies, but nothing holds them to the `Refusal` vocabulary.
 - **One `.returns<T[]>()` cast remains**, in `lookupOwnableAlbum`, because its select columns are
   caller-supplied and no literal exists for the compiler to type from; the reason is written above
-  it. Two columns still carry a type the schema does not enforce (`subscriptions.tier` has no
-  CHECK; `status` is free text) and are narrowed by code at their boundary rather than by the
-  database.
+  it. `subscriptions.tier` IS held by the database (`subscriptions_tier_check`, read from
+  `pg_constraint` on 2026-09-07 after this map had claimed the opposite from an empty grep --
+  MISTAKES 58); `subscriptions.status` is still free text, narrowed by code at its boundary.
 - **Lint debt is frozen, not paid.** `npx eslint src` reports 86 findings, 79 of them React-hooks
   rules (`set-state-in-effect`, `refs`, `immutability`) inside the largest components. Since
   2026-09-07 `scripts/check-hooks.mjs` holds every rule to the count in `scripts/lint-budget.json`

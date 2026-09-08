@@ -80,6 +80,8 @@ export type MediaSettingsChanges = Partial<{
   slideshow_interval_ms: number
   slideshow_animation: SlideshowAnimation
 }>
+/** What the route says it wrote: the fields sent, plus a desktop pin it may add on its own. */
+export type MediaSettingsApplied = MediaSettingsChanges & { desktop_grid_columns?: number }
 
 // SENDS ONLY WHAT CHANGED — this used to thread seven positional settings and post all of them
 // from local state on every save. That made every save a write of every field, so a tab holding a
@@ -91,7 +93,7 @@ export async function saveMediaSettingsRequest(
   changes: MediaSettingsChanges,
   resetRadiusOverrides: boolean,
   resetFilterOverrides: boolean,
-): Promise<{ ok: true; applied: MediaSettingsChanges } | { ok: false; error: string }> {
+): Promise<{ ok: true; applied: MediaSettingsApplied } | { ok: false; error: string }> {
   const res = await fetch('/api/album/media-settings', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -102,13 +104,17 @@ export async function saveMediaSettingsRequest(
       reset_filter_overrides: resetFilterOverrides,
     }),
   })
-  const body = await jsonBody<{ error?: string } & MediaSettingsChanges>(res)
+  const body = await jsonBody<{ error?: string } & MediaSettingsApplied>(res)
   if (!res.ok) {
     return { ok: false, error: body.error ?? `Save failed (${res.status})` }
   }
   // The route echoes back exactly the fields it applied; undefined keys vanish in JSON, so what
-  // arrives is the applied subset and nothing else.
-  const applied: MediaSettingsChanges = {}
+  // arrives is the applied subset and nothing else. desktop_grid_columns is the one field that can
+  // come back WITHOUT being sent: a phone-grid change on an album that never chose a desktop
+  // number pins the desktop grid to what it was showing (the route's carry), and the album has to
+  // learn that or the desktop grid here follows the new phone number until the next refetch.
+  const applied: MediaSettingsApplied = {}
+  if (body.desktop_grid_columns !== undefined) applied.desktop_grid_columns = body.desktop_grid_columns
   if (body.media_radius !== undefined) applied.media_radius = body.media_radius
   if (body.video_autoplay !== undefined) applied.video_autoplay = body.video_autoplay
   if (body.media_filter !== undefined) applied.media_filter = body.media_filter

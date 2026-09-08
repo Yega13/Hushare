@@ -137,8 +137,10 @@ export default function OwnerToolbar({ album, photos, albumPhotoCount, ownerToke
   // Collections are the one ACCOUNT-scoped feature: userTier here is the ALBUM'S plan (package
   // included), but the collections API gates on the signed-in account — so the row reads the
   // account-level answer the server sent, or it unlocks on packaged albums and 403s on use.
-  // The grid measures the largest radius it can honour; a stored radius above it is clamped and
-  // written back. This ran off the panel's local slider state; the album is the honest subject.
+  // The grid measures the largest radius it can honour; a stored radius above it is clamped on the
+  // ALBUM IN THIS TAB ONLY -- never written to the server, on purpose: the limit is this device's
+  // tile width, and a phone must not shrink the radius every desktop shows. This ran off the
+  // panel's local slider state; the album is the honest subject.
   const radiusMax = Math.max(1, Math.round(mediaRadiusMax))
   useEffect(() => {
     if ((album.media_radius ?? 16) > radiusMax) onAlbumUpdated({ media_radius: radiusMax }, { forceGlobalRadius: true })

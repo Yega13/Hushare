@@ -69,16 +69,21 @@ describe('confirmedMediaSettings — must normalise exactly the way the UI initi
 // THE CONFIRMED / DRAFT MACHINE. A rendered-component review traced the baseline bug: the panel
 // diffed against an album it had ALREADY patched optimistically, so a radius drag followed by an
 // autoplay flip inside the debounce window sent the flip and dropped the radius -- while still
-// resetting every per-photo radius override for a value the server never got.
+// resetting every per-photo radius override for a value the server never got. A second review
+// broke the first machine inside one round trip (ON then OFF; a failed request reverting a field a
+// later one carried), which is why there is now exactly one request in flight.
 import {
-  adoptIncomingMedia, confirmMediaSaved, editMediaDraft, initialMediaDraft, planMediaSave, revertMediaSave,
+  adoptIncomingMedia, beginMediaSave, confirmMediaSaved, editMediaDraft, initialMediaDraft, planMediaSave, revertMediaSave,
 } from '../src/lib/media-settings-diff'
 
 const CONFIRMED = confirmedMediaSettings(ALBUM, INTERVAL_DEFAULT)
+const NO_RESET = { resetRadiusOverrides: false, resetFilterOverrides: false }
 
 describe('the media draft machine -- what a save sends is the draft against what the SERVER said', () => {
-  it('starts with nothing to save', () => {
-    expect(planMediaSave(initialMediaDraft(CONFIRMED))).toBeNull()
+  it('starts with nothing to save and nothing on the wire', () => {
+    const s = initialMediaDraft(CONFIRMED)
+    expect(planMediaSave(s)).toBeNull()
+    expect(s.inFlight).toBeNull()
   })
 
   it('THE TRACE: drag the radius, see it echo back through the album, flip autoplay -- both travel', () => {
@@ -131,75 +136,6 @@ describe('the media draft machine -- what a save sends is the draft against what
     expect(planMediaSave(s)).toEqual({ changes: { media_radius: 22 }, resetRadiusOverrides: true, resetFilterOverrides: false })
   })
 
-  it('a successful save confirms what was applied, and then there is nothing left to send', () => {
-    let s = initialMediaDraft(CONFIRMED)
-    s = editMediaDraft(s, { media_radius: 40, video_autoplay: true })
-    const plan = planMediaSave(s)!
-    s = confirmMediaSaved(s, plan.changes, plan.changes)
-    expect(s.confirmed).toEqual({ ...CONFIRMED, media_radius: 40, video_autoplay: true })
-    expect(planMediaSave(s)).toBeNull()
-  })
-
-  it('a save confirms only what it carried: an edit made DURING the request is still pending after it', () => {
-    let s = initialMediaDraft(CONFIRMED)
-    s = editMediaDraft(s, { media_radius: 40 })
-    const plan = planMediaSave(s)!
-    s = editMediaDraft(s, { video_autoplay: true })     // flipped while the request was in flight
-    s = confirmMediaSaved(s, plan.changes, plan.changes)
-    expect(planMediaSave(s)).toEqual({ changes: { video_autoplay: true }, resetRadiusOverrides: false, resetFilterOverrides: false })
-  })
-
-  it('the server may apply something other than what was asked (a clamp): the draft follows the server', () => {
-    let s = initialMediaDraft(CONFIRMED)
-    s = editMediaDraft(s, { media_radius: 999 })
-    const plan = planMediaSave(s)!
-    s = confirmMediaSaved(s, plan.changes, { media_radius: 64 })
-    expect(s.confirmed.media_radius).toBe(64)
-    expect(s.draft.media_radius).toBe(64)
-    expect(planMediaSave(s)).toBeNull()      // and 999 is NOT silently re-sent forever
-  })
-
-  it('a clamp from the server does not overwrite a field the owner moved again in flight', () => {
-    let s = initialMediaDraft(CONFIRMED)
-    s = editMediaDraft(s, { media_radius: 999 })
-    const plan = planMediaSave(s)!
-    s = editMediaDraft(s, { media_radius: 30 })         // dragged again before the answer came
-    s = confirmMediaSaved(s, plan.changes, { media_radius: 64 })
-    expect(s.confirmed.media_radius).toBe(64)
-    expect(s.draft.media_radius).toBe(30)
-    expect(planMediaSave(s)?.changes).toEqual({ media_radius: 30 })
-  })
-
-  it('a FAILED save puts every field it carried back to the truth, and says what the album must be told', () => {
-    let s = initialMediaDraft(CONFIRMED)
-    s = editMediaDraft(s, { video_autoplay: true })
-    const plan = planMediaSave(s)!
-    const r = revertMediaSave(s, plan.changes)
-    expect(r.state.draft.video_autoplay).toBe(false)
-    expect(r.patch).toEqual({ video_autoplay: false })
-    expect(planMediaSave(r.state)).toBeNull()
-  })
-
-  it('a failed save reverts ONLY the fields it carried', () => {
-    let s = initialMediaDraft(CONFIRMED)
-    s = editMediaDraft(s, { video_autoplay: true })
-    const plan = planMediaSave(s)!
-    s = editMediaDraft(s, { media_radius: 30 })          // a later edit, not part of the failed request
-    const r = revertMediaSave(s, plan.changes)
-    expect(r.state.draft).toEqual({ ...CONFIRMED, media_radius: 30 })
-    expect(r.patch).toEqual({ video_autoplay: false })
-  })
-
-  it('a failed save leaves alone a field the owner moved AGAIN while it was in flight', () => {
-    let s = initialMediaDraft(CONFIRMED)
-    s = editMediaDraft(s, { media_radius: 40 })
-    const plan = planMediaSave(s)!
-    s = editMediaDraft(s, { media_radius: 24 })          // that edit scheduled its own save
-    const r = revertMediaSave(s, plan.changes)
-    expect(r.state.draft.media_radius).toBe(24)
-    expect(r.patch).toEqual({})
-  })
-
   it('adopting an album that says nothing new returns the SAME state object (the render reconcile relies on it)', () => {
     const s0 = initialMediaDraft(CONFIRMED)
     expect(adoptIncomingMedia(s0, { ...CONFIRMED })).toBe(s0)
@@ -215,12 +151,155 @@ describe('the media draft machine -- what a save sends is the draft against what
     expect(planMediaSave(s)).toBeNull()
   })
 
-  it('editing never moves confirmed; confirming never moves the draft', () => {
+  it('editing never moves confirmed; confirming never moves confirmed away from what was sent', () => {
     const s0 = initialMediaDraft(CONFIRMED)
     const s1 = editMediaDraft(s0, { media_filter: 'mono' })
     expect(s1.confirmed).toBe(s0.confirmed)
-    const s2 = confirmMediaSaved(s1, { media_filter: 'mono' }, { media_filter: 'mono' })
-    expect(s2.draft).toEqual(s1.draft)
-    expect(s2.confirmed.media_filter).toBe('mono')
+    const b = beginMediaSave(s1)!
+    const r = confirmMediaSaved(b.state, { media_filter: 'mono' })
+    expect(r.state.draft).toEqual(s1.draft)
+    expect(r.state.confirmed.media_filter).toBe('mono')
+  })
+})
+
+describe('one request at a time', () => {
+  it('beginning a save records what is on the wire, and nothing else is planned until it lands', () => {
+    let s = editMediaDraft(initialMediaDraft(CONFIRMED), { video_autoplay: true })
+    const b = beginMediaSave(s)!
+    expect(b.plan.changes).toEqual({ video_autoplay: true })
+    expect(b.state.inFlight).toEqual({ video_autoplay: true })
+    s = editMediaDraft(b.state, { video_autoplay: false })
+    expect(planMediaSave(s)).toBeNull()
+    expect(beginMediaSave(s)).toBeNull()
+    expect(s.inFlight).toEqual({ video_autoplay: true })
+  })
+
+  it('ON then OFF inside one round trip: the OFF is what goes next, and the album is told OFF, not ON', () => {
+    // The first machine planned the OFF as "no change" (draft equalled confirmed) and never
+    // re-planned when the ON landed: server ON, grid autoplaying, switch saying OFF.
+    let s = editMediaDraft(initialMediaDraft(CONFIRMED), { video_autoplay: true })
+    const b = beginMediaSave(s)!
+    s = editMediaDraft(b.state, { video_autoplay: false })
+    const r = confirmMediaSaved(s, { video_autoplay: true })
+    expect(r.state.confirmed.video_autoplay).toBe(true)
+    expect(r.state.draft.video_autoplay).toBe(false)
+    expect(r.patch).toEqual({ video_autoplay: false })
+    expect(planMediaSave(r.state)).toEqual({ changes: { video_autoplay: false }, ...NO_RESET })
+  })
+
+  it('the slider dragged 16 -> 40 and back to 16 inside one round trip: 16 goes out, with the override reset', () => {
+    let s = editMediaDraft(initialMediaDraft(CONFIRMED), { media_radius: 40 })
+    const b = beginMediaSave(s)!
+    s = editMediaDraft(b.state, { media_radius: 16 })
+    const r = confirmMediaSaved(s, { media_radius: 40 })
+    expect(r.patch).toEqual({ media_radius: 16 })
+    expect(planMediaSave(r.state)).toEqual({ changes: { media_radius: 16 }, resetRadiusOverrides: true, resetFilterOverrides: false })
+  })
+
+  it('the only request fails: the radius reverts, and the flip made in flight goes next, alone', () => {
+    // With two requests out, a failed first one reverted a field the second carried and the
+    // server had accepted. There is no second one now.
+    let s = editMediaDraft(initialMediaDraft(CONFIRMED), { media_radius: 40 })
+    const b = beginMediaSave(s)!
+    s = editMediaDraft(b.state, { video_autoplay: true })
+    expect(beginMediaSave(s)).toBeNull()
+    const r = revertMediaSave(s)
+    expect(r.state.draft).toEqual({ ...CONFIRMED, video_autoplay: true })
+    expect(r.patch).toEqual({ media_radius: 16 })
+    expect(r.state.inFlight).toBeNull()
+    expect(planMediaSave(r.state)).toEqual({ changes: { video_autoplay: true }, ...NO_RESET })
+  })
+
+  it("the album's copy of our own in-flight value is an echo, not a change from elsewhere", () => {
+    let s = editMediaDraft(initialMediaDraft(CONFIRMED), { media_radius: 40 })
+    const b = beginMediaSave(s)!
+    s = editMediaDraft(b.state, { media_radius: 16 })
+    // A broadcast refetch brings the 40 the server already wrote, before our own answer.
+    expect(adoptIncomingMedia(s, { ...CONFIRMED, media_radius: 40 })).toBe(s)
+    const r = confirmMediaSaved(s, { media_radius: 40 })
+    expect(planMediaSave(r.state)?.changes).toEqual({ media_radius: 16 })
+  })
+
+  it('a change from elsewhere during a request neither opens a second request nor forgets the first', () => {
+    const b = beginMediaSave(editMediaDraft(initialMediaDraft(CONFIRMED), { media_radius: 40 }))!
+    const s = adoptIncomingMedia(b.state, { ...CONFIRMED, mobile_grid_columns: 5 })
+    expect(s.confirmed.mobile_grid_columns).toBe(5)
+    expect(s.draft.mobile_grid_columns).toBe(5)
+    expect(s.inFlight).toEqual({ media_radius: 40 })
+    expect(planMediaSave(s)).toBeNull()
+    expect(confirmMediaSaved(s, { media_radius: 40 }).state.draft.media_radius).toBe(40)
+  })
+
+  it('a 200 whose echo omits what was sent confirms what was sent -- it is not re-sent forever', () => {
+    const b = beginMediaSave(editMediaDraft(initialMediaDraft(CONFIRMED), { media_radius: 40 }))!
+    const r = confirmMediaSaved(b.state, {})
+    expect(r.state.confirmed.media_radius).toBe(40)
+    expect(r.state.draft.media_radius).toBe(40)
+    expect(r.patch).toEqual({})
+    expect(planMediaSave(r.state)).toBeNull()
+  })
+
+  it('a successful save confirms what was applied and tells the album, and then there is nothing left to send', () => {
+    const b = beginMediaSave(editMediaDraft(initialMediaDraft(CONFIRMED), { media_radius: 40, video_autoplay: true }))!
+    const r = confirmMediaSaved(b.state, b.plan.changes)
+    expect(r.state.confirmed).toEqual({ ...CONFIRMED, media_radius: 40, video_autoplay: true })
+    expect(r.patch).toEqual({ media_radius: 40, video_autoplay: true })
+    expect(r.state.inFlight).toBeNull()
+    expect(planMediaSave(r.state)).toBeNull()
+  })
+
+  it('a save confirms only what it carried: an edit made DURING the request is still pending after it', () => {
+    const b = beginMediaSave(editMediaDraft(initialMediaDraft(CONFIRMED), { media_radius: 40 }))!
+    const s = editMediaDraft(b.state, { video_autoplay: true })     // flipped while the request was in flight
+    const r = confirmMediaSaved(s, b.plan.changes)
+    expect(planMediaSave(r.state)).toEqual({ changes: { video_autoplay: true }, ...NO_RESET })
+  })
+
+  it('the server may apply something other than what was asked (a clamp): the draft follows the server', () => {
+    const b = beginMediaSave(editMediaDraft(initialMediaDraft(CONFIRMED), { media_radius: 999 }))!
+    const r = confirmMediaSaved(b.state, { media_radius: 64 })
+    expect(r.state.confirmed.media_radius).toBe(64)
+    expect(r.state.draft.media_radius).toBe(64)
+    expect(r.patch).toEqual({ media_radius: 64 })
+    expect(planMediaSave(r.state)).toBeNull()      // and 999 is NOT silently re-sent forever
+  })
+
+  it('a clamp on a field the owner moved again in flight settles in exactly one more request', () => {
+    let b = beginMediaSave(editMediaDraft(initialMediaDraft(CONFIRMED), { media_radius: 999 }))!
+    const s = editMediaDraft(b.state, { media_radius: 30 })      // dragged again before the answer came
+    let r = confirmMediaSaved(s, { media_radius: 64 })
+    expect(r.state.confirmed.media_radius).toBe(64)
+    expect(r.state.draft.media_radius).toBe(30)
+    expect(r.patch).toEqual({ media_radius: 30 })              // the album is told the OWNER's value
+    expect(planMediaSave(r.state)?.changes).toEqual({ media_radius: 30 })
+    b = beginMediaSave(r.state)!
+    r = confirmMediaSaved(b.state, { media_radius: 64 })
+    expect(r.state.draft.media_radius).toBe(64)
+    expect(planMediaSave(r.state)).toBeNull()
+  })
+
+  it('a FAILED save puts every field it carried back to the truth, and says what the album must be told', () => {
+    const b = beginMediaSave(editMediaDraft(initialMediaDraft(CONFIRMED), { video_autoplay: true }))!
+    const r = revertMediaSave(b.state)
+    expect(r.state.draft.video_autoplay).toBe(false)
+    expect(r.patch).toEqual({ video_autoplay: false })
+    expect(planMediaSave(r.state)).toBeNull()
+  })
+
+  it('a failed save reverts ONLY the fields it carried', () => {
+    const b = beginMediaSave(editMediaDraft(initialMediaDraft(CONFIRMED), { video_autoplay: true }))!
+    const s = editMediaDraft(b.state, { media_radius: 30 })          // a later edit, not part of the failed request
+    const r = revertMediaSave(s)
+    expect(r.state.draft).toEqual({ ...CONFIRMED, media_radius: 30 })
+    expect(r.patch).toEqual({ video_autoplay: false })
+  })
+
+  it('a failed save leaves alone a field the owner moved AGAIN while it was in flight, and that value goes next', () => {
+    const b = beginMediaSave(editMediaDraft(initialMediaDraft(CONFIRMED), { media_radius: 40 }))!
+    const s = editMediaDraft(b.state, { media_radius: 24 })
+    const r = revertMediaSave(s)
+    expect(r.state.draft.media_radius).toBe(24)
+    expect(r.patch).toEqual({})
+    expect(planMediaSave(r.state)?.changes).toEqual({ media_radius: 24 })
   })
 })

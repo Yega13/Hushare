@@ -19,7 +19,7 @@ import {
   confirmedMediaSettings,
   editMediaDraft,
   initialMediaDraft,
-  planMediaSave,
+  beginMediaSave,
   revertMediaSave,
   type MediaDraftState,
   type MediaSettingsSnapshot,
@@ -41,7 +41,6 @@ import {
   saveMediaSettingsRequest,
   savePhotoLayoutRequest,
   saveSlideshowMotionRequest,
-  type MediaSettingsChanges,
 } from '@/components/owner-toolbar/api'
 import { accordionButton, sectionTitle, settingsSectionStyle } from '@/components/owner-toolbar/styles'
 import { useT } from '@/i18n/LocaleProvider'
@@ -60,7 +59,8 @@ import { useT } from '@/i18n/LocaleProvider'
 // in flight, in which case it had to stand aside (the "mid-edit, the prop loses" rule, learned the
 // hard way). Closing Settings now unmounts this: the unmount cleanup cancels the pending timers
 // (as the effect did), the state simply ceases to exist, and reopening reinitialises from the
-// album prop. Another device's change lands the same way. There is no flag to get stuck.
+// album prop. Another device's change lands the same way. There is no flag to get stuck. A request
+// in flight at unmount finishes on the ref and settles the draft it left behind.
 
 function MotionSlider({ label, value, display, min, max, step, onChange }: {
   label: string; value: number; display: string; min: number; max: number; step: number
@@ -118,12 +118,17 @@ export default function MediaSettingsPanels({ album, photos, mediaRadiusMax, ope
   const [mediaRadiusDraft, setMediaRadiusDraft] = useState(String(adopted.draft.media_radius))
   const [mediaRadiusEditing, setMediaRadiusEditing] = useState(false)
   const [photoLayout, setPhotoLayout] = useState<'grid' | 'justified'>(album.photo_layout === 'justified' ? 'justified' : 'grid')
-  const [desktopGridColumns, setDesktopGridColumns] = useState<number>(resolveGridColumns(album).desktop)
+  // Read off the album, not copied into state: the click patches the album optimistically anyway,
+  // and a copy seeded once at mount kept showing the old number after the route pinned the
+  // desktop grid on a phone-grid change, or after another device chose one.
+  const desktopGridColumns = resolveGridColumns(album).desktop
   // The composed transition. Seeded from the album's own motion, or derived from the legacy preset
   // for an album that has never been touched — either way there is one value to edit from here on.
   const [slideshowMotion, setSlideshowMotion] = useState<SlideshowMotion>(() => resolveSlideshowMotion(album))
   const [motionPreviewKey, setMotionPreviewKey] = useState(0)
   const motionSaveTimerRef = useRef<number | null>(null)
+  /** The motion the pending timer would send, so closing Settings can send it instead of dropping it. */
+  const pendingMotionRef = useRef<SlideshowMotion | null>(null)
   const [mediaError, setMediaError] = useState('')
 
   const { media_radius: mediaRadius, video_autoplay: videoAutoplay, media_filter: mediaFilter,
@@ -146,24 +151,33 @@ export default function MediaSettingsPanels({ album, photos, mediaRadiusMax, ope
     if (!mediaRadiusEditing) setMediaRadiusDraft(String(mediaRadius))
   }
 
-  // ONE SAVE, from the ref, so whatever is in the draft when it runs is what goes out. What it
-  // sends is remembered so the answer -- applied or failed -- is reconciled against THAT, not
-  // against a draft that may have moved on while the request was in flight.
+  // ONE REQUEST AT A TIME, from the ref. beginMediaSave marks the plan in flight; while it is out
+  // every edit lands in the draft only (editMedia's save call and the debounce both find nothing to
+  // plan). When the answer lands -- applied or failed -- the state is reconciled against what THAT
+  // request carried, and the settle step sends whatever the owner did meanwhile. Two requests used
+  // to race: ON then OFF inside one round trip left the server ON with the switch saying OFF.
   async function saveMediaSettings() {
-    const plan = planMediaSave(mediaRef.current)
-    if (!plan) return
+    const begun = beginMediaSave(mediaRef.current)
+    if (!begun) return
+    mediaRef.current = begun.state
+    setMedia(begun.state)
     setMediaError('')
-    const sent: MediaSettingsChanges = plan.changes
+    const { plan } = begun
     try {
-      const result = await saveMediaSettingsRequest(album.slug, sent, plan.resetRadiusOverrides, plan.resetFilterOverrides)
+      const result = await saveMediaSettingsRequest(album.slug, plan.changes, plan.resetRadiusOverrides, plan.resetFilterOverrides)
       if (!result.ok) throw new Error(result.error)
-      const next = confirmMediaSaved(mediaRef.current, sent, result.applied)
-      mediaRef.current = next
-      setMedia(next)
-      // The album prop learns only the applied fields, so an untouched setting can never be
-      // "updated" to a stale copy of itself.
-      if (Object.keys(result.applied).length > 0) {
-        onAlbumUpdated(result.applied, {
+      const landed = confirmMediaSaved(mediaRef.current, result.applied)
+      mediaRef.current = landed.state
+      setMedia(landed.state)
+      // The album learns the draft of each applied field (the server's value unless the owner has
+      // moved on), and the parent is told which per-photo overrides the server has just cleared.
+      // A phone-grid change also pins the desktop grid on an album that never chose one (the
+      // route decides, and echoes it): the album must learn that too, or the desktop grid here
+      // follows the new phone number until the next refetch.
+      const patch: Partial<Album> = { ...landed.patch }
+      if (result.applied.desktop_grid_columns !== undefined) patch.desktop_grid_columns = result.applied.desktop_grid_columns
+      if (Object.keys(patch).length > 0 || plan.resetRadiusOverrides || plan.resetFilterOverrides) {
+        onAlbumUpdated(patch, {
           forceGlobalRadius: false,
           resetRadiusOverrides: plan.resetRadiusOverrides,
           resetFilterOverrides: plan.resetFilterOverrides,
@@ -175,11 +189,14 @@ export default function MediaSettingsPanels({ album, photos, mediaRadiusMax, ope
       showAppToast(message, 'error')
       // The grid goes back to the truth: a failed save used to leave the optimistic value in the
       // album with the baseline already moved, so it was never sent again.
-      const reverted = revertMediaSave(mediaRef.current, sent)
+      const reverted = revertMediaSave(mediaRef.current)
       mediaRef.current = reverted.state
       setMedia(reverted.state)
       if (Object.keys(reverted.patch).length > 0) onAlbumUpdated(reverted.patch)
     }
+    // SETTLE. An edit made while the request was out was not sent; it goes now -- unless a drag is
+    // still debouncing, in which case the timer sends the final value itself.
+    if (debouncedSaveRef.current === null) void saveMediaSettings()
   }
 
   // Debounced auto-save for slider controls. 500ms lets the user settle on a value. A pending save
@@ -198,7 +215,9 @@ export default function MediaSettingsPanels({ album, photos, mediaRadiusMax, ope
   /**
    * Every control goes through here: the draft moves, the album is patched so the grid redraws
    * now, and the save is either scheduled (a slider: dozens of values a second) or sent at once
-   * (a switch), cancelling any pending debounce so the two never race.
+   * (a switch). The two cannot race: one request is out at a time, and whichever of the timer and
+   * the immediate call finds it out does nothing -- the settle step sends what is left. So a
+   * pending debounce is left alone by an immediate save; it is only ever replaced by a new one.
    */
   function editMedia(
     patch: Partial<MediaSettingsSnapshot>,
@@ -209,11 +228,8 @@ export default function MediaSettingsPanels({ album, photos, mediaRadiusMax, ope
     mediaRef.current = next
     setMedia(next)
     onAlbumUpdated(patch, options)
-    if (debouncedSaveRef.current !== null) {
-      window.clearTimeout(debouncedSaveRef.current)
-      debouncedSaveRef.current = null
-    }
     if (when === 'now') { void saveMediaSettings(); return }
+    if (debouncedSaveRef.current !== null) window.clearTimeout(debouncedSaveRef.current)
     debouncedSaveRef.current = window.setTimeout(() => {
       debouncedSaveRef.current = null
       void saveMediaSettings()
@@ -250,15 +266,27 @@ export default function MediaSettingsPanels({ album, photos, mediaRadiusMax, ope
     setMotionPreviewKey((k) => k + 1)
     onAlbumUpdated({ slideshow_motion: next })
     if (motionSaveTimerRef.current !== null) window.clearTimeout(motionSaveTimerRef.current)
+    pendingMotionRef.current = next
     motionSaveTimerRef.current = window.setTimeout(() => {
       motionSaveTimerRef.current = null
+      pendingMotionRef.current = null
       void saveSlideshowMotionRequest(album.slug, next).then((r) => {
         if (!r.ok) showAppToast(r.error, 'error')
       })
     }, 500)
   }
+  // FLUSHED on unmount like the media save: closing Settings inside the window used to drop the
+  // motion the slideshow was already playing, until a reload put the old one back.
   useEffect(() => () => {
-    if (motionSaveTimerRef.current !== null) window.clearTimeout(motionSaveTimerRef.current)
+    if (motionSaveTimerRef.current === null) return
+    window.clearTimeout(motionSaveTimerRef.current)
+    motionSaveTimerRef.current = null
+    const pending = pendingMotionRef.current
+    pendingMotionRef.current = null
+    if (pending) void saveSlideshowMotionRequest(album.slug, pending).then((r) => {
+      if (!r.ok) showAppToast(r.error, 'error')
+    })
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- unmount only; the slug never changes while mounted
   }, [])
 
   function applySlideshowInterval(value: number) {
@@ -376,15 +404,13 @@ export default function MediaSettingsPanels({ album, photos, mediaRadiusMax, ope
                       onClick={() => {
                         // Saved on its own (see saveDesktopGridColumns): this value is
                         // independent of the seven the debounced media save carries.
-                        setDesktopGridColumns(value)
                         onAlbumUpdated({ desktop_grid_columns: value })
                         void saveDesktopGridColumns(album.slug, value).then((r) => {
                           if (!r.ok) {
                             setMediaError(r.error)
                             showAppToast(r.error, 'error')
-                            // Put the buttons back where the SERVER still is, rather than
-                            // leaving a selected column the album does not actually have.
-                            setDesktopGridColumns(resolveGridColumns(album).desktop)
+                            // Put the album (and so the buttons) back where the SERVER still
+                            // is, rather than leaving a selected column it does not have.
                             onAlbumUpdated({ desktop_grid_columns: album.desktop_grid_columns ?? null })
                           }
                         })
