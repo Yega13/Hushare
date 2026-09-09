@@ -123,10 +123,17 @@ export default function MediaSettingsPanels({ album, photos, mediaRadiusMax, ope
   // still is: comparing VALUES could not tell "my click is still the latest" from "a later click
   // chose the same number again", and reverted the owner's re-chosen value.
   const desktopClickRef = useRef(0)
-  // What the SERVER last said the desktop grid is: seeded from the album, moved by a successful
-  // save. A failed click reverts to this, not to whatever the album showed when it was clicked --
-  // two failures in a row used to revert to the first click's optimistic value.
+  // What the SERVER last said the desktop grid is. A failed click reverts to this, not to
+  // whatever the album showed when it was clicked -- two failures in a row used to revert to the
+  // first click's optimistic value. It follows the album whenever no desktop click is out (another
+  // device's change, or the pin the route adds on a phone-grid change, both arrive that way);
+  // while one is out the album carries that click's optimistic value, which is not the truth.
   const desktopServerRef = useRef<number | null>(album.desktop_grid_columns ?? null)
+  const desktopOutRef = useRef(0)
+  const albumDesktop = album.desktop_grid_columns ?? null
+  useEffect(() => {
+    if (desktopOutRef.current === 0) desktopServerRef.current = albumDesktop
+  }, [albumDesktop])
   // The debounced save fires later and must read the draft as it is THEN, not as it was when the
   // timer was set; and two edits in one tick must compose. So edits advance this ref themselves.
   const mediaRef = useRef(adopted)
@@ -428,8 +435,10 @@ export default function MediaSettingsPanels({ album, photos, mediaRadiusMax, ope
                         // Saved on its own (see saveDesktopGridColumns): this value is
                         // independent of the seven the debounced media save carries.
                         const click = ++desktopClickRef.current
+                        desktopOutRef.current += 1
                         onAlbumUpdated({ desktop_grid_columns: value })
                         void saveDesktopGridColumns(album.slug, value).then((r) => {
+                          desktopOutRef.current -= 1
                           if (r.ok) { desktopServerRef.current = r.desktop_grid_columns; return }
                           const message = r.network ? t('common.networkError') : r.error
                           setMediaError(message)

@@ -340,6 +340,68 @@ describe('MediaSettingsPanels -- what goes on the wire', () => {
     expect(toasts).toEqual([en['common.networkError']])
   })
 
+  it("a failed desktop click after ANOTHER DEVICE changed the desktop grid reverts to that device's value", async () => {
+    hold = true
+    render(<Harness />)
+    await act(async () => { setAlbumFromOutside({ desktop_grid_columns: 4 }) })     // broadcast refetch
+    const desktopRow = screen.getByText(en['ot.gridDesktop']).nextElementSibling as HTMLElement
+    fireEvent.click(Array.from(desktopRow.querySelectorAll('button')).find((b) => b.textContent === '5') as HTMLElement)
+    await flush()
+    await resolveFail(0)
+    expect(screen.getByTestId('album-desktop').textContent).toBe('4')
+  })
+
+  it('after a desktop click has SETTLED, the baseline follows the album again (a later remote change, then a failure)', async () => {
+    hold = true
+    render(<Harness />)
+    const desktopRow = screen.getByText(en['ot.gridDesktop']).nextElementSibling as HTMLElement
+    const click = (n: string) => fireEvent.click(Array.from(desktopRow.querySelectorAll('button')).find((b) => b.textContent === n) as HTMLElement)
+    click('4')
+    await flush()
+    await resolveOk(0)                                                              // settled: nothing out
+    await act(async () => { setAlbumFromOutside({ desktop_grid_columns: 5 }) })    // another device
+    click('3')
+    await flush()
+    await resolveFail(1)
+    expect(screen.getByTestId('album-desktop').textContent).toBe('5')
+  })
+
+  it('a failed desktop click after a phone-grid change reverts to the pin the route added, not to null', async () => {
+    // The common album: no desktop choice. The phone-grid save pins the desktop and echoes it.
+    answer = (body) => ({ ...echo(body), json: { ...echo(body).json, desktop_grid_columns: 3 } })
+    try {
+      render(<Harness />)
+      await act(async () => { setAlbumFromOutside({ desktop_grid_columns: null }) })
+      const phoneRow = screen.getByText(en['ot.gridPhone']).nextElementSibling as HTMLElement
+      fireEvent.click(Array.from(phoneRow.querySelectorAll('button')).find((b) => b.textContent === '2') as HTMLElement)
+      await flush()
+      expect(screen.getByTestId('album-desktop').textContent).toBe('3')
+      answer = fail
+      const desktopRow = screen.getByText(en['ot.gridDesktop']).nextElementSibling as HTMLElement
+      fireEvent.click(Array.from(desktopRow.querySelectorAll('button')).find((b) => b.textContent === '5') as HTMLElement)
+      await flush()
+      expect(screen.getByTestId('album-desktop').textContent).toBe('3')
+    } finally { answer = echo }
+  })
+
+  it('OFFLINE (a TypeError from fetch) on each of the three paths: the translated network line', async () => {
+    hold = true
+    render(<Harness open="slideshow" />)
+    // media path: the interval slider is the first range in the slideshow panel
+    const ranges = document.querySelectorAll('input[type="range"]')
+    fireEvent.change(ranges[0] as HTMLInputElement, { target: { value: '6000' } })
+    await act(async () => { vi.advanceTimersByTime(500) })
+    await flush()
+    await act(async () => { sent[0].reject(new TypeError('Failed to fetch')); await flush() })
+    expect(toasts).toEqual([en['common.networkError']])
+    // motion path
+    fireEvent.change(ranges[1] as HTMLInputElement, { target: { value: '0' } })
+    await act(async () => { vi.advanceTimersByTime(500) })
+    await flush()
+    await act(async () => { sent[1].reject(new TypeError('Failed to fetch')); await flush() })
+    expect(toasts).toEqual([en['common.networkError'], en['common.networkError']])
+  })
+
   it('two desktop failures in a row revert to what the SERVER has, not to the first click', async () => {
     // Click 4 (fails), click 5 (fails): the revert used to read the album at the second click,
     // which already showed the first click's optimistic 4. The server never left 6.
