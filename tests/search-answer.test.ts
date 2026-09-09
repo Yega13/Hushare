@@ -1,5 +1,8 @@
 import { describe, it, expect } from 'vitest'
-import { searchPhase, mayStateAbsence, attemptIsOver, indexKnownComplete, indexKnownIncomplete, type SearchPhase } from '@/lib/search-answer'
+import {
+  searchPhase, mayStateAbsence, attemptIsOver, indexKnownComplete, indexKnownIncomplete,
+  emptyStateTitleKey, emptyStateSubtitleKey, type SearchPhase,
+} from '@/lib/search-answer'
 
 // THE BUG THIS EXISTS FOR, stated as a test rather than a comment.
 //
@@ -12,9 +15,13 @@ import { searchPhase, mayStateAbsence, attemptIsOver, indexKnownComplete, indexK
 
 // answerIsEmpty/indexComplete default to the FINISHED album, so every pre-existing case below keeps
 // testing exactly what it tested before: a fully-read album where emptiness is a real answer.
+// excludedByAlbum defaults to false for the same reason: every case below is a number the album's
+// own range accepts, so the search actually runs. It was missing from this object entirely when the
+// field was added to searchPhase, which broke `tsc --noEmit` across nineteen call sites here while
+// every test still passed — vitest does not type-check, so nothing could notice from a green run.
 const base = {
   enabled: true, query: '3400', answeredQuery: null, failedQuery: null,
-  answerIsEmpty: true, indexComplete: true,
+  answerIsEmpty: true, indexComplete: true, excludedByAlbum: false,
 }
 
 describe('searchPhase — do we hold the answer to the question in the box?', () => {
@@ -66,6 +73,49 @@ describe('searchPhase — do we hold the answer to the question in the box?', ()
 
   it('is OFF when the album has no bib search, whatever else is set', () => {
     expect(searchPhase({ ...base, enabled: false, answeredQuery: '3400' })).toBe('off')
+  })
+})
+
+// THE PHASE THAT HAD NO TESTS AT ALL, found on 2026-09-08 by the exhaustiveness guard below.
+//
+// 'excluded' means the album's own bib range filtered the number out, so no search ever ran.
+// bibSearchCandidates returns an empty candidate list, the server short-circuits to zero rows, and
+// before this phase existed the client read that as a real answer — a number the ORGANISER excluded
+// was reported to the runner as "No photos with that number", definitively.
+//
+// It is reachable on any album whose range is wrong. bib_max typed as 300 for a race numbered to
+// 2200 tells every runner above 300 that they were not photographed.
+describe('searchPhase — a number the album itself refused is not an answer about the runner', () => {
+  const excluded = { ...base, excludedByAlbum: true }
+
+  it('is EXCLUDED when the album filtered the number out', () => {
+    expect(searchPhase(excluded)).toBe('excluded')
+  })
+
+  // Deliberately ahead of 'failed': nothing was sent, so a stale failure tag cannot be about this
+  // question, and offering "Try again" would invite a retry that is refused identically every time.
+  it('outranks a stale failure tag for the same question', () => {
+    expect(searchPhase({ ...excluded, failedQuery: '3400' })).toBe('excluded')
+  })
+
+  it('outranks a held answer for the same question', () => {
+    expect(searchPhase({ ...excluded, answeredQuery: '3400', answerIsEmpty: false })).toBe('excluded')
+  })
+
+  // 'off' still wins, because an empty box is not a refused number.
+  it('does not apply when there is no question in the box', () => {
+    expect(searchPhase({ ...excluded, query: '' })).toBe('off')
+  })
+
+  it('never licenses the grid to say nothing was found', () => {
+    expect(mayStateAbsence('excluded')).toBe(false)
+  })
+
+  // The attempt IS over, which is what lets the bar offer Face Finder instead of spinning forever.
+  // Conflating this with mayStateAbsence is the bug that left a runner on a spinner with no way
+  // forward, at a race, on the primary path.
+  it('counts as finished, so the escape hatch appears', () => {
+    expect(attemptIsOver('excluded')).toBe(true)
   })
 })
 
@@ -188,7 +238,10 @@ describe('the index predicates — what we KNOW, not what we assume', () => {
 // fifth member to SearchPhase would have left it green while testing nothing about the new state —
 // the exact shape of a test that cannot see what it claims to cover. The conditional type below
 // resolves to `never` the moment a phase is missing, so the assignment stops compiling.
-const ALL_PHASES = ['off', 'searching', 'failed', 'indexing', 'answered'] as const
+// 'excluded' was added to SearchPhase and NOT added here, and this guard fired exactly as designed.
+// Nobody saw it: `tsc --noEmit` was already failing on nineteen errors in this same file, so the one
+// real finding sat underneath the noise. A type-check that is always red reports nothing.
+const ALL_PHASES = ['off', 'searching', 'failed', 'indexing', 'excluded', 'answered'] as const
 type Uncovered = Exclude<SearchPhase, (typeof ALL_PHASES)[number]>
 type AllCovered = [Uncovered] extends [never] ? true : never
 const everyPhaseIsListed: AllCovered = true
@@ -223,12 +276,82 @@ describe('mayStateAbsence — the guard the grid asks', () => {
 // half-read album and pinned the label on "Searching…" with nothing left to re-fetch.
 //
 // A review caught it before it shipped. These assertions are the difference between the two.
-describe('attemptIsOver — are we still waiting, as opposed to may we claim absence?', () => {
-  it('covers every phase, and disagrees with mayStateAbsence on exactly one', () => {
+// THE SENTENCE AN EMPTY GRID PRINTS, which is the whole point of every phase above.
+//
+// This was a ternary chain inside PhotoGrid, and its SHAPE was the defect rather than its contents:
+// it named the safe phases and let everything else fall through to "No photos with that number".
+// So each new phase printed the forbidden negative on the day it was added, with tsc perfectly
+// happy, until somebody noticed. As a function over the union the default stops existing — a new
+// phase is a compile error here instead of a false sentence on a runner's screen.
+describe('emptyStateTitleKey — no phase may fall through to the negative', () => {
+  it('gives every phase a key, and only ANSWERED gets the negative', () => {
     expect(everyPhaseIsListed).toBe(true)
-    expect([...ALL_PHASES].filter(attemptIsOver)).toEqual(['indexing', 'answered'])
+    const negatives = [...ALL_PHASES].filter((p) => emptyStateTitleKey(p) === 'pg.noMatches')
+    expect(negatives, 'only a final answer may say "no photos with that number"').toEqual(['answered'])
+  })
+
+  it('says nothing negative about a number the album itself filtered out', () => {
+    // The live defect this phase exists for: an out-of-range number was reported as absent.
+    expect(emptyStateTitleKey('excluded')).toBe('bib.outOfRange')
+  })
+
+  it('says nothing negative while the album is still being read', () => {
+    expect(emptyStateTitleKey('indexing')).toBe('bib.searching')
+  })
+
+  it('keeps the two states that were already right', () => {
+    expect(emptyStateTitleKey('off')).toBe('pg.empty')
+    expect(emptyStateTitleKey('failed')).toBe('bib.failed')
+    expect(emptyStateTitleKey('searching')).toBe('bib.searching')
+  })
+
+  it('never returns an empty key for any phase', () => {
+    for (const p of ALL_PHASES) expect(emptyStateTitleKey(p).length, p).toBeGreaterThan(0)
+  })
+})
+
+describe('emptyStateSubtitleKey — only a final answer earns an instruction', () => {
+  it('offers advice on exactly two phases, and they are the two that hold an answer', () => {
+    const withAdvice = [...ALL_PHASES].filter((p) => emptyStateSubtitleKey(p) !== null)
+    // 'off' is a genuinely empty album ("be the first to upload"); 'answered' is a real negative.
+    expect(withAdvice).toEqual(['off', 'answered'])
+  })
+
+  it('does NOT tell a runner to try a different number when we never looked', () => {
+    // "Try a different number" under an excluded or half-indexed search sends someone away from a
+    // question that was never asked, or one about to succeed.
+    expect(emptyStateSubtitleKey('excluded')).toBeNull()
+    expect(emptyStateSubtitleKey('indexing')).toBeNull()
+    expect(emptyStateSubtitleKey('searching')).toBeNull()
+  })
+
+  it('does NOT blame the runner for our own failure', () => {
+    expect(emptyStateSubtitleKey('failed')).toBeNull()
+  })
+
+  it('still says both things it should', () => {
+    expect(emptyStateSubtitleKey('off')).toBe('pg.emptySub')
+    expect(emptyStateSubtitleKey('answered')).toBe('pg.noMatchesSub')
+  })
+
+  it('tracks mayStateAbsence rather than repeating it', () => {
+    // If these two ever disagree, one surface is claiming something the other refuses.
+    for (const p of ALL_PHASES) {
+      if (p === 'off') continue
+      expect(emptyStateSubtitleKey(p) !== null, p).toBe(mayStateAbsence(p))
+    }
+  })
+})
+
+describe('attemptIsOver — are we still waiting, as opposed to may we claim absence?', () => {
+  // 'excluded' joined 'indexing' here when it was added to the phase list: the request is over
+  // (nothing was ever sent) and yet absence may not be claimed, because the album's own range is
+  // what produced the emptiness, not the runner's photographs.
+  it('covers every phase, and disagrees with mayStateAbsence on exactly the two that are over without an answer', () => {
+    expect(everyPhaseIsListed).toBe(true)
+    expect([...ALL_PHASES].filter(attemptIsOver)).toEqual(['indexing', 'excluded', 'answered'])
     const disagree = [...ALL_PHASES].filter((p) => attemptIsOver(p) !== mayStateAbsence(p))
-    expect(disagree, 'if these ever agree everywhere, one of them is redundant').toEqual(['indexing'])
+    expect(disagree, 'if these ever agree everywhere, one of them is redundant').toEqual(['indexing', 'excluded'])
   })
 
   it('is TRUE while indexing — the escape hatch must be offered', () => {

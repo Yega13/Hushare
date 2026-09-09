@@ -354,6 +354,11 @@ export const en = {
   'bib.foundCapped': 'Showing the first {n} of {total} photos',
   'bib.searching': 'Searching…',
   'bib.failed': 'Could not search just now',
+  // NOT "no photos with that number". Nothing was searched: the number falls outside the range the
+  // organiser set for this race, so the only honest thing to say is that we did not look. Saying
+  // absence here is the negative AGENTS.md rule 20 forbids, and it is reachable on any album whose
+  // range is wrong — a maximum typed as 300 for a race numbered to 2200 says it to everyone above.
+  'bib.outOfRange': 'That number is outside the range set for this race.',
   'bib.retry': 'Try again',
   'bib.clear': 'Clear',
   'bib.stillIndexing': 'Still reading photos ({done} of {total}) — check back shortly.',

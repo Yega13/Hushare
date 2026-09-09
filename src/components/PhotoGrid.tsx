@@ -4,7 +4,7 @@ import React, { useState, useEffect, useLayoutEffect, useCallback, useMemo, useR
 import { morphPhoto, morphPhotoClosed, supportsViewTransitions } from '@/components/photo-grid/viewTransition'
 import { morphAllowed } from '@/lib/lightbox-plan'
 import { resolveGridColumns } from '@/lib/grid-columns'
-import { mayStateAbsence, type SearchPhase } from '@/lib/search-answer'
+import { emptyStateSubtitleKey, emptyStateTitleKey, type SearchPhase } from '@/lib/search-answer'
 import type { Album, Photo } from '@/types'
 import { DEFAULT_SLIDESHOW_INTERVAL_MS } from '@/lib/media-display'
 import { MEDIA_AUTHOR_MAX, MEDIA_CAPTION_MAX, SUPPRESS_CLICK_AFTER_REORDER_MS, BTT_UPDATE_EVENT } from '@/lib/constants'
@@ -589,17 +589,11 @@ export default function PhotoGrid({ album, photos, albumPhotoCount, isOwner, slu
               above it said "Searching…". Three states, one boolean. searchPhase is the fact, and
               the branch order below is load-bearing — see mayStateAbsence in lib/search-answer. */}
           <p className="text-lg" style={{ color: '#630826', fontFamily: 'var(--font-serif)', fontWeight: 700 }}>
-            {!filtered ? t('pg.empty')
-              : searchPhase === 'failed' ? t('bib.failed')
-              : mayStateAbsence(searchPhase) ? t('pg.noMatches')
-              : t('bib.searching')}
+            {t(emptyStateTitleKey(searchPhase))}
           </p>
-          {/* Only a FINAL answer earns an instruction. "Try a different number" under a search that
-              is still running sends someone away from a query about to succeed, and under a failed
-              one it blames them for our error. */}
-          {(!filtered || mayStateAbsence(searchPhase)) && (
+          {emptyStateSubtitleKey(searchPhase) !== null && (
             <p className="text-sm mt-2" style={{ color: '#5C4A3C' }}>
-              {filtered ? t('pg.noMatchesSub') : t('pg.emptySub')}
+              {t(emptyStateSubtitleKey(searchPhase) as string)}
             </p>
           )}
         </div>

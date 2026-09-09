@@ -339,6 +339,7 @@ export const ru: Partial<Record<DictKey, string>> = {
   'bib.foundCapped': 'Показаны первые {n} из {total} фото',
   'bib.searching': 'Ищем…',
   'bib.failed': 'Не удалось выполнить поиск',
+  'bib.outOfRange': 'Этот номер вне диапазона, заданного для этого забега.',
   'bib.retry': 'Повторить',
   'bib.clear': 'Очистить',
   'bib.stillIndexing': 'Фото ещё обрабатываются ({done} из {total}) — загляните чуть позже.',

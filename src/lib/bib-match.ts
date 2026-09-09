@@ -52,6 +52,24 @@ export function bibMatches(photo: Photo, query: string, range?: BibRange): boole
 // produces the digits, not with the rule that matches them (it was written down in both).
 export { MAX_BIB_DIGITS }
 
+/**
+ * Did the ALBUM's own settings refuse this number before any search ran?
+ *
+ * DERIVED FROM bibSearchCandidates, never re-implemented: an empty candidate list IS the refusal,
+ * and the comment above says so — "Empty means 'no photos', NOT 'no filter', and callers must keep
+ * those apart". They were kept apart at the query layer and then conflated at the MESSAGE layer:
+ * the server short-circuits to zero rows, the client tags that as a real answer, and a runner whose
+ * number the organiser had ranged out was told "No photos with that number", definitively, with a
+ * subtitle telling them to try a different one. Reachable on any album whose range is wrong — a
+ * bib_max of 300 on a race numbered to 2200 says it to everyone above 300.
+ *
+ * Null (nothing typed) is not a refusal.
+ */
+export function queryOutsideRange(query: string, range?: BibRange): boolean {
+  const candidates = bibSearchCandidates(query, range)
+  return candidates !== null && candidates.length === 0
+}
+
 export function bibSearchCandidates(query: string, range?: BibRange): string[] | null {
   const q = digitsOf(query)
   if (!q) return null

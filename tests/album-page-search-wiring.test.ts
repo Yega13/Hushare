@@ -71,6 +71,14 @@ describe('the album page actually feeds searchPhase real values', () => {
     ).toBe(true)
   })
 
+  it('passes a DERIVED excludedByAlbum, not a constant', () => {
+    // `excludedByAlbum: false` reinstates the live defect in one token: an out-of-range number goes
+    // back to being reported as "No photos with that number" about a search that never ran.
+    const value = valueOf(searchPhaseCall(), 'excludedByAlbum')
+    expect(LITERALS, `excludedByAlbum is hardcoded as ${value}`).not.toContain(value)
+    expect(value, 'it must be computed from the album range').toContain('(')
+  })
+
   it('passes a DERIVED answerIsEmpty, not a constant', () => {
     // The mirror mutation: `answerIsEmpty: false` also disables the gate, because the indexing
     // branch requires BOTH an empty answer and an incomplete index.

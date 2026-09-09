@@ -92,5 +92,43 @@ export default {
       from: '  return indexed < totalImages',
       to: '  return indexed >= totalImages',
     },
+    {
+      // The live defect: bibSearchCandidates returns an EMPTY list for an out-of-range number, the
+      // server short-circuits to zero rows, and without this branch the client reads that as a real
+      // answer and prints "No photos with that number" about a number nobody searched for.
+      name: 'the excluded branch is deleted — an out-of-range number states absence again',
+      from: "  if (input.excludedByAlbum) return 'excluded'",
+      to: '  if (false) return \'excluded\'',
+    },
+    {
+      name: 'excluded is checked AFTER a held answer, so it can never win',
+      from: "  if (input.excludedByAlbum) return 'excluded'",
+      to: '',
+    },
+    {
+      name: 'attemptIsOver drops excluded — the escape hatch disappears for a ranged-out number',
+      from: "  return phase === 'answered' || phase === 'indexing' || phase === 'excluded'",
+      to: "  return phase === 'answered' || phase === 'indexing'",
+    },
+    {
+      name: 'an excluded number is told "no photos with that number" — the forbidden negative',
+      from: "    case 'excluded': return 'bib.outOfRange'",
+      to: "    case 'excluded': return 'pg.noMatches'",
+    },
+    {
+      name: 'a half-read album is told the same',
+      from: "    case 'indexing': return 'bib.searching'",
+      to: "    case 'indexing': return 'pg.noMatches'",
+    },
+    {
+      name: 'the subtitle stops tracking mayStateAbsence and advises on every phase',
+      from: "  return mayStateAbsence(phase) ? 'pg.noMatchesSub' : null",
+      to: "  return 'pg.noMatchesSub'",
+    },
+    {
+      name: 'the empty album loses its own subtitle and inherits the search advice',
+      from: "  if (phase === 'off') return 'pg.emptySub'",
+      to: "  if (phase === 'off') return 'pg.noMatchesSub'",
+    },
   ],
 }

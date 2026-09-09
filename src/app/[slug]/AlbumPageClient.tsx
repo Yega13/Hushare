@@ -2,7 +2,9 @@
 
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, useMemo } from 'react'
 import { indexKnownComplete, searchPhase } from '@/lib/search-answer'
+import { queryOutsideRange } from '@/lib/bib-match'
 import { classifyResolve } from '@/lib/resolve-outcome'
+import { isRealLeavePop, leaveDestination } from '@/lib/leave-intent'
 import { partitionPending, pendingIdSet, publishedTotal as publishedCountOf, visiblePhotos as visiblePhotosOf } from '@/lib/grid-visibility'
 import { monotonicNow, elapsedSince, type Millis } from '@/lib/clock'
 import { createPortal } from 'react-dom'
@@ -526,6 +528,11 @@ export default function AlbumPageClient({ initialAlbum = null, initialPhotos, in
   // Read here, not at render, so searchPhase and the bar judge "fully read" from the SAME numbers.
   const totalImageCount = bibStats?.totalImages ?? photos.filter((p) => p.media_type !== 'video').length
   const bibIndexedCount = bibStats?.indexed ?? photos.filter((p) => p.media_type !== 'video' && p.bib_numbers != null).length
+  // The race's declared numbering, memoised for IDENTITY (it sits in visiblePhotos' deps). Read
+  // here because the phase depends on it: a number outside it is refused before any search runs.
+  const bibRange = useMemo(
+    () => ({ min: album?.bib_min ?? null, max: album?.bib_max ?? null }),
+    [album?.bib_min, album?.bib_max])
   const bibPhase = searchPhase({
     enabled: bibEnabled,
     query: bibDigits,
@@ -533,6 +540,7 @@ export default function AlbumPageClient({ initialAlbum = null, initialPhotos, in
     failedQuery: bibFailedQuery,
     answerIsEmpty: (bibResult?.total ?? 0) <= 0,
     indexComplete: indexKnownComplete(bibStats),
+    excludedByAlbum: queryOutsideRange(bibDigits, bibRange),
   })
 
   useEffect(() => {
@@ -1193,40 +1201,28 @@ export default function AlbumPageClient({ initialAlbum = null, initialPhotos, in
         ownerPromptShownRef.current = true
         setOwnerSavePromptOpen(true)
       }
-      // Ignore a back-press that merely closes the photo lightbox: PhotoGrid pushes its own entry
-      // ON TOP of ours, so closing it lands us back ON our entry (state.hushSave === true). A REAL
-      // leave pops OUR entry and lands on the album entry below (no hushSave) — only then do we fire.
-      // Ignore back-presses that only close the photo lightbox: whether OUR entry or the lightbox's
-      // entry is the one landed on, it's not a real leave. Only a pop onto the album's base entry
-      // (neither flag) fires the prompt.
+      // Which back-presses and which clicks are a REAL leave is lib/leave-intent (the lightbox's
+      // own history entry, and the hidden <a download> the zip button clicks, are its tests). A
+      // leave click is caught in the CAPTURE phase and stopImmediatePropagation'd so Next's <Link>
+      // never navigates; the destination is remembered so dismissing still takes them there. Once
+      // the modal has shown (ownerPromptShownRef) we stop interfering and every link works again.
       onPop = (e: PopStateEvent) => {
-        const s = e.state as { hushSave?: boolean; hushLightbox?: boolean } | null
-        if (s?.hushSave || s?.hushLightbox) return
-        trigger()
+        if (isRealLeavePop(e.state)) trigger()
       }
-      // Clicking an in-app link that LEAVES the album (the logo → home, or any nav to another path).
-      // Caught in the CAPTURE phase and stopImmediatePropagation'd so Next's <Link> never navigates;
-      // the destination is remembered so dismissing still takes them there. Once the modal has shown
-      // (ownerPromptShownRef), we stop interfering so every link works normally again.
       onClickCapture = (e: MouseEvent) => {
         if (ownerPromptShownRef.current) return
-        if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return
-        const anchor = (e.target as HTMLElement | null)?.closest?.('a')
-        const href = anchor?.getAttribute('href')
-        if (!anchor || !href) return
-        // A download trigger (downloadPhoto / QR / zip create a hidden <a download> and .click() it —
-        // that synthetic click bubbles here). It points at /api/... or a blob:, NOT a page the user is
-        // leaving to, so never intercept it or we'd cancel the download and pop the modal instead.
-        if (anchor.hasAttribute('download')) return
-        if (anchor.target && anchor.target !== '_self') return  // opens a new tab/window — not a leave
-        let dest: URL
-        try { dest = new URL(href, window.location.href) } catch { return }
-        // Only a real navigation to ANOTHER same-origin path counts (skip #hash, same-page, mailto/tel,
-        // and external sites we can't pop over anyway).
-        if (dest.origin !== window.location.origin || dest.pathname === window.location.pathname) return
+        const anchor = (e.target as HTMLElement | null)?.closest?.('a') ?? null
+        const dest = leaveDestination({
+          button: e.button, metaKey: e.metaKey, ctrlKey: e.ctrlKey, shiftKey: e.shiftKey, altKey: e.altKey,
+          defaultPrevented: e.defaultPrevented,
+          href: anchor?.getAttribute('href') ?? null,
+          download: anchor?.hasAttribute('download') ?? false,
+          target: anchor?.getAttribute('target') ?? null,
+        }, window.location)
+        if (!dest) return
         e.preventDefault()
         e.stopImmediatePropagation()
-        pendingLeaveHrefRef.current = dest.href
+        pendingLeaveHrefRef.current = dest
         trigger()
       }
       window.addEventListener('popstate', onPop)
@@ -1372,12 +1368,6 @@ export default function AlbumPageClient({ initialAlbum = null, initialPhotos, in
   // Bib search narrows the SAME grid rather than opening a separate results view. Filtering is
   // client-side over photos already loaded, so typing is instant and costs no requests. When the
   // album isn't a race album (or the box is empty) this is the untouched photo list.
-  // Memoised for IDENTITY: this object sits in visiblePhotos' deps, and a fresh {} every render
-  // rebuilt the filtered array during an active bib search — which re-rendered every tile and
-  // re-packed the masonry on the product's flagship flow, on race albums, mid-search.
-  const bibRange = useMemo(
-    () => ({ min: album?.bib_min ?? null, max: album?.bib_max ?? null }),
-    [album?.bib_min, album?.bib_max])
   // The server's answer for THIS query wins; the local filter covers the moment before it lands
   // and the case where the request failed. bibResult is tagged with the query it answers, so a
   // stale response for an earlier number can never be shown against a newer one.

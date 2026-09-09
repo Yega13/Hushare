@@ -223,12 +223,17 @@ const SIZE_BUDGET: Record<string, number> = {
   // between the request going out and the owner's next edit read as "safe to commit" and the
   // response overwrote the newer edit -- the phone/desktop clobber, in the module built to stop it.
   // A forward step expired a tombstone early and a racing refetch re-admitted a deleted photo.
+  // +1 (2026-09-08): one import and one argument. searchPhase gained `excludedByAlbum`, so a
+  // number the ORGANISER ranged out stops being reported to the runner as "No photos with that
+  // number" — the server short-circuits an out-of-range query to zero rows and the client read
+  // that as a real answer. Paid for in the same commit by PhotoGrid dropping 6 lines above; the
+  // comment on bibRange was cut to two lines to keep this to the two lines that are code.
   // -45 (2026-09-09): what a resolve answer MEANS (lib/resolve-outcome, the 404-before-body-flags
   // order held by a test) and which photos the grid shows (lib/grid-visibility, the review-queue
   // split and the bib re-admission) left as pure functions with mutation sets. A reduction, locked in.
   // -23 (2026-09-09): the SSR freshness seed and the delta-row merge moved to lib/album-freshness
   // (initialFreshness, mergeDelta) with a mutation set. A reduction, locked in.
-  'src/app/[slug]/AlbumPageClient.tsx': 1721,
+  'src/app/[slug]/AlbumPageClient.tsx': 1722,
   'src/app/card-editor/CardEditorClient.tsx': 873,
   // +1 (2026-08-31): pass collectionTotal to the lightbox counter.
   // +2 (2026-08-31): morphAllowed gate on open and close.
@@ -256,7 +261,13 @@ const SIZE_BUDGET: Record<string, number> = {
   // +1 (2026-09-06, review finding): the delete toast says the server's reason -- "Too many
   // requests", "Photo not found in this album" -- instead of only the status code. The route had
   // been writing a publicMessage nothing read. useSelectMode's bulk toast carries it too now.
-  'src/components/PhotoGrid.tsx': 865,
+  // -6 (2026-09-08): the empty-state copy decision moved to lib/search-answer as
+  // emptyStateTitleKey/emptyStateSubtitleKey. It was a ternary chain here that named the safe
+  // phases and let everything else fall through to "No photos with that number", so each new
+  // phase printed the forbidden negative on the day it was added. As a function the default is
+  // the safe one, a new phase is a compile error rather than a false sentence on a runner's
+  // screen, and this file got smaller for it. A reduction, locked in.
+  'src/components/PhotoGrid.tsx': 859,
   'src/components/AlbumDesigner.tsx': 774,
   // +3 net (2026-08-31): deleted the duplicate ±1 prefetch loop, added strip windowing wired
   // to lib/lightbox-plan.ts.

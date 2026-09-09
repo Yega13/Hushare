@@ -37,6 +37,21 @@ export type SearchPhase =
    * 'answered' has earned the right to say "no photos with that number".
    */
   | 'indexing'
+  /**
+   * The album's own settings filtered this number out, so no search was performed at all.
+   *
+   * Today that means a number outside the race's declared bib range. bibSearchCandidates returns
+   * an EMPTY candidate list for one, the server short-circuits to zero rows, and the client used to
+   * read that as a real answer — so a number the ORGANISER excluded was reported to the runner as
+   * "No photos with that number", definitively, with a subtitle telling them to try another. The
+   * file that computes it warns about exactly this: "Empty means 'no photos', NOT 'no filter', and
+   * callers must keep those apart." They were kept apart at the query layer and conflated at the
+   * message layer.
+   *
+   * It is reachable on any album whose range is wrong: bib_max typed as 300 for a race numbered to
+   * 2200 tells every runner above 300 that they were not photographed.
+   */
+  | 'excluded'
   /** We hold the final answer to the question currently in the box. */
   | 'answered'
 
@@ -120,8 +135,14 @@ export function searchPhase(input: {
   answerIsEmpty: boolean
   /** Has the whole album been read? See indexComplete — pass its result, do not re-derive it. */
   indexComplete: boolean
+  /** Did the album's own settings refuse this number before any search ran? See queryOutsideRange. */
+  excludedByAlbum: boolean
 }): SearchPhase {
   if (!input.enabled || !input.query) return 'off'
+  // BEFORE 'failed', deliberately. This describes the QUESTION, not an attempt: nothing was sent,
+  // so a stale failure tag cannot be about it, and offering "Try again" would invite a retry that
+  // is refused identically every time.
+  if (input.excludedByAlbum) return 'excluded'
   // FAILURE IS CHECKED BEFORE A HELD ANSWER, deliberately, and this order carries a PRECONDITION:
   // a failure tag must describe the LATEST attempt for that question. Given that, a result still in
   // hand is older than the failure, and presenting it as the answer would state something we no
@@ -191,5 +212,41 @@ export function mayStateAbsence(phase: SearchPhase): boolean {
  * be over without licensing a negative, and 'indexing' is exactly that phase.
  */
 export function attemptIsOver(phase: SearchPhase): boolean {
-  return phase === 'answered' || phase === 'indexing'
+  return phase === 'answered' || phase === 'indexing' || phase === 'excluded'
+}
+
+/**
+ * WHICH SENTENCE AN EMPTY GRID IS ALLOWED TO PRINT.
+ *
+ * This lived in PhotoGrid as a chain of ternaries, and its shape was the trap rather than its
+ * contents: it named the safe phases and let everything else fall through to the negative, so each
+ * new phase printed "No photos with that number" on the day it was added until somebody noticed.
+ *
+ * As a function the default is the safe one and a new phase costs a compile error here instead of a
+ * false statement on a runner's screen. It also puts every user-visible claim about absence in one
+ * place, next to the predicate that governs it.
+ */
+export function emptyStateTitleKey(phase: SearchPhase): string {
+  switch (phase) {
+    case 'off': return 'pg.empty'
+    case 'failed': return 'bib.failed'
+    case 'excluded': return 'bib.outOfRange'
+    case 'answered': return 'pg.noMatches'
+    // 'searching' and 'indexing' both mean "we do not hold an answer". The bar above the grid
+    // carries the precise reason, including the "(1,200 of 5,000)" progress.
+    case 'searching':
+    case 'indexing': return 'bib.searching'
+  }
+}
+
+/**
+ * The advice line under it, or null when none has been earned.
+ *
+ * Only a FINAL answer gets an instruction. "Try a different number" under a search still running
+ * sends someone away from a query about to succeed; under a failure it blames them for our error;
+ * and under an excluded number it is advice about the wrong problem.
+ */
+export function emptyStateSubtitleKey(phase: SearchPhase): string | null {
+  if (phase === 'off') return 'pg.emptySub'
+  return mayStateAbsence(phase) ? 'pg.noMatchesSub' : null
 }

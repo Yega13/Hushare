@@ -133,6 +133,10 @@ export default function BibSearchBar({ query, onQueryChange, matchCount, totalMa
                    "Still reading photos (x of y)" note directly below states it accurately, so
                    this says nothing rather than saying something wrong. */
                 : answerIsFinal ? t('bib.none')
+                /* Refused by the album's own range, so nothing was searched. Saying so beats both
+                   the negative and silence: it tells the runner the number cannot be in this race
+                   as the organiser described it, and the Face Finder offer below still stands. */
+                : phase === 'excluded' ? t('bib.outOfRange')
                 : ''}
             </span>
           ) : (
