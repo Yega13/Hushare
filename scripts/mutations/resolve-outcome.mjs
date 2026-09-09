@@ -1,0 +1,28 @@
+// Mutation set for src/lib/resolve-outcome.ts -- run with: node scripts/mutations/run.mjs resolve-outcome
+export default {
+  file: 'src/lib/resolve-outcome.ts',
+  test: 'tests/resolve-outcome.test.ts',
+  mutations: [
+  { name: 'a 404 is no longer not-found (the infinite password prompt returns)',
+    from: "  if (status === 404) return { kind: 'not-found' }\n", to: "" },
+  { name: 'the 404 check runs AFTER the body flags',
+    from: "  if (status === 404) return { kind: 'not-found' }\n  // Anything else the server refused is transient: the page offers a retry, not a gate.\n  if (!ok) return { kind: 'error' }\n  const json = (typeof body === 'object' && body !== null ? body : {}) as Record<string, unknown>\n",
+    to: "  const json = (typeof body === 'object' && body !== null ? body : {}) as Record<string, unknown>\n  if (json.password_required === true) { const gate = gateFields(json); if (gate) return { kind: 'password', ...gate } }\n  if (status === 404) return { kind: 'not-found' }\n  if (!ok) return { kind: 'error' }\n" },
+  { name: 'a refused status with an album body is taken as the album',
+    from: "  if (!ok) return { kind: 'error' }\n", to: "" },
+  { name: 'a gate missing its title is still a gate',
+    from: "  if (typeof body.slug !== 'string' || typeof body.title !== 'string') return null\n  return { slug: body.slug, title: body.title }",
+    to: "  return { slug: String(body.slug), title: String(body.title) }" },
+  { name: 'locked without a reveal time is a reveal gate',
+    from: "  if (json.locked === true && typeof json.reveal_at === 'string' && json.reveal_at) {",
+    to: "  if (json.locked === true) {" },
+  { name: 'a reveal gate missing its name passes',
+    from: "    return gate ? { kind: 'reveal', revealAt: json.reveal_at, ...gate } : { kind: 'error' }",
+    to: "    return { kind: 'reveal', revealAt: json.reveal_at, slug: String(json.slug), title: String(json.title) }" },
+  { name: 'a numeric id is an album',
+    from: "  if (typeof json.id !== 'string') return { kind: 'error' }", to: "  if (json.id == null) return { kind: 'error' }" },
+  { name: 'a non-object body throws instead of being an error',
+    from: "  const json = (typeof body === 'object' && body !== null ? body : {}) as Record<string, unknown>",
+    to: "  const json = body as Record<string, unknown>" },
+  ],
+}

@@ -2,6 +2,8 @@
 
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, useMemo } from 'react'
 import { indexKnownComplete, searchPhase } from '@/lib/search-answer'
+import { classifyResolve } from '@/lib/resolve-outcome'
+import { partitionPending, pendingIdSet, publishedTotal as publishedCountOf, visiblePhotos as visiblePhotosOf } from '@/lib/grid-visibility'
 import { monotonicNow, elapsedSince, type Millis } from '@/lib/clock'
 import { createPortal } from 'react-dom'
 import { useParams, notFound } from 'next/navigation'
@@ -26,7 +28,7 @@ import SignInPrompt from '@/components/SignInPrompt'
 import PendingReview from '@/components/PendingReview'
 import RenewPackagePrompt from '@/components/RenewPackagePrompt'
 import PackageThanksBanner from '@/components/PackageThanksBanner'
-import BibSearchBar, { bibMatches } from '@/components/BibSearchBar'
+import BibSearchBar from '@/components/BibSearchBar'
 import { fontStack, isImageBackground, getBackgroundImageUrl, getBackgroundColorStyle, resolveHeaderImageUrl, resolveHeaderVideo } from '@/lib/album-design'
 import { retryImport } from '@/lib/lazy-retry'
 
@@ -64,10 +66,6 @@ type Props = {
 
 // Full album view server-renders the first window; a BIG album (> first window) loads its tail on
 // demand. Small albums (every album today) load fully in the first window — pagination never engages.
-// A single frozen empty list. An inline [] is a new array every render, which would defeat the
-// memos below the moment an album has nothing awaiting review — i.e. almost always.
-const EMPTY_PHOTOS: Photo[] = []
-
 const ALBUM_FIRST_WINDOW = 500 // must match ALBUM_PAGE_SIZE in lib/server/album-access.ts
 // Above this many new photos a delta stops being cheaper than just taking the window again, and
 // the merge has more chances to be wrong. 100 rows is roughly 85 KB against the window's 424 KB.
@@ -736,48 +734,20 @@ export default function AlbumPageClient({ initialAlbum = null, initialPhotos, in
       const json = await res.json().catch(() => ({})) as Record<string, unknown>
       if (isCancelled()) return
 
-      // Real not-found (album deleted or never existed) — checked BEFORE body flags so that
-      // a security-minded API returning 404+password_required cannot create an infinite gate
-      // loop where the user is prompted for a password that can never succeed
-      if (res.status === 404) {
-        setIsNotFound(true)
-        return
-      }
-
-      // Transient server error
-      if (!res.ok) {
-        setNetworkError(true)
-        return
-      }
-
-      // Password gate — 200 with password_required flag
-      if (json.password_required === true) {
-        if (typeof json.slug !== 'string' || typeof json.title !== 'string') {
-          setNetworkError(true)
-          return
-        }
-        setPasswordGate({ slug: json.slug, title: json.title })
-        return
-      }
-
-      // Reveal gate — 200 with locked flag + reveal_at
-      if (json.locked === true && json.reveal_at) {
-        if (typeof json.slug !== 'string' || typeof json.title !== 'string' || typeof json.reveal_at !== 'string') {
-          setNetworkError(true)
-          return
-        }
-        setRevealGate({ revealAt: json.reveal_at, slug: json.slug, title: json.title })
-        return
-      }
-
-      // Malformed full-album response (gate responses handled above legitimately have no id)
-      if (typeof json.id !== 'string') {
-        setNetworkError(true)
-        return
+      // What the answer means -- not-found before any body flag, gates, malformed, or the album
+      // -- is decided in lib/resolve-outcome, where the ORDER is held by a test (a 404 that also
+      // says password_required used to be an infinite prompt). Only the setState is here.
+      const outcome = classifyResolve(res.status, res.ok, json)
+      switch (outcome.kind) {
+        case 'not-found': setIsNotFound(true); return
+        case 'error': setNetworkError(true); return
+        case 'password': setPasswordGate({ slug: outcome.slug, title: outcome.title }); return
+        case 'reveal': setRevealGate({ revealAt: outcome.revealAt, slug: outcome.slug, title: outcome.title }); return
+        case 'album': break
       }
 
       // Full album — resolve strips owner_token, password_hash, user_id, retired_at
-      const data = json as unknown as Album
+      const data = outcome.album
 
       // Auth check and photo fetch in parallel. Both results are guarded below by
       // isCancelled() so a superseded call never commits state to the new album.
@@ -1447,34 +1417,19 @@ export default function AlbumPageClient({ initialAlbum = null, initialPhotos, in
   // approval is off there is no queue, and a hidden photo stays where it always was — in the grid
   // with its badge, owner-only. Distinguishing them properly needs a column of its own; until
   // there is one, the album's own setting is the honest signal for which meaning applies.
-  // These three feed the grid's identity, so they are memoised together — see visiblePhotos below.
-  // Without it an owner with photos awaiting review rebuilt the whole list on every parent render.
-  const pendingPhotos = useMemo(
-    () => (effectiveIsOwner && album?.require_approval ? photos.filter((p) => p.hidden) : EMPTY_PHOTOS),
-    [effectiveIsOwner, album?.require_approval, photos])
-  const publishedPhotos = useMemo(
-    () => (pendingPhotos.length > 0 ? photos.filter((p) => !p.hidden) : photos),
-    [pendingPhotos, photos])
-  const pendingIds = useMemo(
-    () => (pendingPhotos.length > 0 ? new Set(pendingPhotos.map((p) => p.id)) : null),
-    [pendingPhotos])
-  // MEMOISED because this array's IDENTITY is what decides whether the grid re-renders.
-  //
-  // In the plain case it is `photos` itself and identity holds for free. But with a bib search
-  // running, or for an owner whose review queue is non-empty, the .filter() built a fresh array on
-  // every parent render — which invalidates both the masonry pack and the tile list's memo, on
-  // exactly the two albums where that costs most (a race album mid-search, an event album mid-upload).
-  const visiblePhotos = useMemo(() => (
-    album?.bib_search_enabled && bibDigits
-      // The SERVER returns hidden rows to an owner, so a bib search re-admitted the very photos the
-      // review strip just took out of the grid — the same photo in both places, the one below
-      // reading as already published.
-      ? (bibServerAnswered
-          ? (pendingIds ? bibServerPhotos.filter((p) => !pendingIds.has(p.id)) : bibServerPhotos)
-          : publishedPhotos.filter((p) => bibMatches(p, bibQuery, bibRange)))
-      : publishedPhotos
-  ), [album?.bib_search_enabled, bibDigits, bibServerAnswered, bibServerPhotos, pendingIds,
-      publishedPhotos, bibQuery, bibRange])
+  // The split itself, and what the grid draws with a bib search running, are lib/grid-visibility
+  // (both bugs above are its tests). MEMOISED because these arrays' IDENTITY is what decides
+  // whether the grid re-renders: in the plain case published IS photos and visible IS published,
+  // and a fresh array on every parent render repacked the masonry on every realtime ping.
+  const requireApproval = album?.require_approval === true
+  const { pending: pendingPhotos, published: publishedPhotos } = useMemo(
+    () => partitionPending(photos, { isOwner: effectiveIsOwner, requireApproval }),
+    [effectiveIsOwner, requireApproval, photos])
+  const pendingIds = useMemo(() => pendingIdSet(pendingPhotos), [pendingPhotos])
+  const visiblePhotos = useMemo(() => visiblePhotosOf({
+    published: publishedPhotos, pendingIds, bibEnabled, query: bibDigits,
+    serverAnswered: bibServerAnswered, serverPhotos: bibServerPhotos, range: bibRange,
+  }), [bibEnabled, bibDigits, bibServerAnswered, bibServerPhotos, pendingIds, publishedPhotos, bibRange])
 
   const holdingForOwnerCheck = shouldHoldForOwnerCheck({
     ownerHashPresent, ownerTokenReady, ownerCheckTimedOut,
@@ -1584,7 +1539,7 @@ export default function AlbumPageClient({ initialAlbum = null, initialPhotos, in
   // `total` counts hidden rows for an owner (the server does not filter them from the count), and
   // since pending photos left the grid it no longer describes what is on screen: the lightbox
   // read "1 / 10" over seven photos and wrapped at seven.
-  const publishedTotal = Math.max(0, total - pendingPhotos.length)
+  const publishedTotal = publishedCountOf(total, pendingPhotos.length)
   const headerVideo = resolveHeaderVideo(album, photos)
 
   return (

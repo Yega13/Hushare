@@ -223,7 +223,10 @@ const SIZE_BUDGET: Record<string, number> = {
   // between the request going out and the owner's next edit read as "safe to commit" and the
   // response overwrote the newer edit -- the phone/desktop clobber, in the module built to stop it.
   // A forward step expired a tombstone early and a racing refetch re-admitted a deleted photo.
-  'src/app/[slug]/AlbumPageClient.tsx': 1789,
+  // -45 (2026-09-09): what a resolve answer MEANS (lib/resolve-outcome, the 404-before-body-flags
+  // order held by a test) and which photos the grid shows (lib/grid-visibility, the review-queue
+  // split and the bib re-admission) left as pure functions with mutation sets. A reduction, locked in.
+  'src/app/[slug]/AlbumPageClient.tsx': 1744,
   'src/app/card-editor/CardEditorClient.tsx': 873,
   // +1 (2026-08-31): pass collectionTotal to the lightbox counter.
   // +2 (2026-08-31): morphAllowed gate on open and close.
