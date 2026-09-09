@@ -237,7 +237,10 @@ const SIZE_BUDGET: Record<string, number> = {
   // hidden <a download> case among its tests). A reduction, locked in.
   // -18 (2026-09-09): the owner-link reader (three copies, one now) and the owner-login retry
   // verdict moved to lib/owner-login with a mutation set. A reduction, locked in.
-  'src/app/[slug]/AlbumPageClient.tsx': 1693,
+  // -70 (2026-09-10): the photos channel's three timers and their rules (reconnect backoff with
+  // jitter, the fallback poll armed once, the debounced and rate-limited-force refetch) are
+  // lib/realtime-supervisor, 16 tests, 16 mutations. The effect keeps the socket. Locked in.
+  'src/app/[slug]/AlbumPageClient.tsx': 1623,
   'src/app/card-editor/CardEditorClient.tsx': 873,
   // +1 (2026-08-31): pass collectionTotal to the lightbox counter.
   // +2 (2026-08-31): morphAllowed gate on open and close.

@@ -16,8 +16,8 @@ import { createClient } from '@/lib/supabase/client'
 import { shouldHoldForOwnerCheck } from '@/lib/owner-view'
 import { applyPhotoWindow, mergePreservingExtras, shouldApplyRefresh } from '@/lib/photo-window'
 import { createSettingsSync, shouldCommitSettings } from '@/lib/settings-sync'
-import { fallbackPollDelay } from '@/lib/realtime-fallback'
-import { albumChanged, deltaRowsNeeded, forcedRefreshAllowed, initialFreshness, mergeDelta, type AlbumFreshness } from '@/lib/album-freshness'
+import { createChannelSupervisor } from '@/lib/realtime-supervisor'
+import { albumChanged, deltaRowsNeeded, initialFreshness, mergeDelta, type AlbumFreshness } from '@/lib/album-freshness'
 import type { Album, Photo, Tier } from '@/types'
 import AlbumSkeleton from '@/components/AlbumSkeleton'
 import PasswordGate from '@/components/PasswordGate'
@@ -895,29 +895,33 @@ export default function AlbumPageClient({ initialAlbum = null, initialPhotos, in
   // INSERTs (guest uploads — the high-frequency, bursty event) arrive via Supabase BROADCAST:
   // photos/create sends a contentless "changed" ping and we DEBOUNCE-refetch. This replaced the
   // postgres_changes INSERT listener, which dropped ~93% of events to 150 viewers under a burst.
-  // DELETE/UPDATE (rare owner actions) stay on postgres_changes for instant, per-row feedback.
+  //
+  // DELETE and UPDATE used to arrive on postgres_changes for instant per-row feedback. They no
+  // longer do, and this is a SECURITY fix rather than a refactor: Supabase only delivers
+  // postgres_changes to a client that can SELECT the table under RLS, so supporting it meant
+  // granting anon SELECT on `photos`. The anon key ships in the page source, so that grant let
+  // anyone enumerate every photo on the platform — 2,951 rows with working URLs — without knowing
+  // a single album link. The grant is gone; delete/reorder/settings now emit the same contentless
+  // `changed` broadcast that uploads already used. Do not reintroduce postgres_changes here
+  // without a way to scope table reads to one album.
+  //
+  // WHAT HAPPENS ON EACH EVENT -- the jittered reconnect backoff, the fallback poll armed once
+  // while the channel is down, the debounced and rate-limited-force refetch -- is
+  // lib/realtime-supervisor, where every one of its timer rules is a test (each was a shipped
+  // bug: reconnect loops accumulating per drop, a second poll per retry, a room of phones
+  // reconnecting on the same tick). This effect owns the socket and the channel identity guard.
   useEffect(() => {
     if (!album?.id) return
     const albumId = album.id
     let active = true
-    let retryCount = 0
-    let retryTimer: ReturnType<typeof setTimeout> | null = null
-    let refetchTimer: ReturnType<typeof setTimeout> | null = null
-    // Session-scoped stamp for the forced-refresh bound above. Per effect, so a reconnect does not
-    // hand an attacker a fresh allowance on every socket flap.
-    let lastForcedRefreshAt: number | null = null
     let currentChannel: RealtimeChannel | null = null
-    // Fallback poll — runs ONLY while the channel is down. The backoff below handles drops;
-    // this handles REFUSAL (venue networks that block websockets, or the realtime service at
-    // its concurrent-connection cap on a heavy day). Without it those clients retry forever,
-    // never reach SUBSCRIBED, never refetch — and the page silently freezes at first load.
-    // Cadence and jitter are owned by lib/realtime-fallback.ts.
-    let pollTimer: ReturnType<typeof setTimeout> | null = null
-    function pollWhileDown() {
-      if (!active) return
-      void refreshIfChanged(albumId, r => { if (active) applyWindowRefresh(r) })
-      pollTimer = setTimeout(pollWhileDown, fallbackPollDelay())
-    }
+
+    const supervisor = createChannelSupervisor({
+      connect: () => connect(),
+      refresh: ({ force }) => { void refreshIfChanged(albumId, r => { if (active) applyWindowRefresh(r) }, { force }) },
+      now: () => Date.now(),
+      debounceMs: REFETCH_DEBOUNCE_MS,
+    })
 
     function connect() {
       if (!active) return
@@ -935,101 +939,27 @@ export default function AlbumPageClient({ initialAlbum = null, initialPhotos, in
       const ch = supabase
         // Channel name IS the broadcast topic the server sends to (`album:<id>`).
         .channel(`album:${albumId}`)
-        .on('broadcast', { event: 'changed' }, () => {
-          if (!active) return
-          // Debounce: a burst of uploads sends many pings — collapse them into one refetch so
-          // 50 uploads in 2s cost ~1 refetch, not 50 list rebuilds.
-          //
-          // 2.5s, not 500ms. THE THING THAT BREAKS AT A VENUE IS REQUEST COUNT, not bytes. This
-          // route allows 600/min per cf-connecting-ip and 300 guests on one venue WiFi share a
-          // single public IP, so they share one bucket. At 500ms each guest could issue up to 120
-          // requests a minute; at 2.5s it is 24. That is the difference between 300 guests fitting
-          // inside the ceiling and every screen in the room getting a 429 at once.
-          //
-          // The cost is that a new photo can take up to 2.5s to appear instead of 0.5s. Nobody
-          // watching an album notices two seconds; everybody notices the album refusing to load.
-          // JITTERED. Every viewer receives the broadcast within milliseconds of every other, so a
-          // fixed delay makes 400 phones fetch in the same instant — the one hot path here that
-          // had no jitter, while the reconnect backoff and the fallback poll both explain why
-          // they do. The probe in refreshIfChanged means most of those wake-ups cost ~40 bytes.
-          if (refetchTimer) clearTimeout(refetchTimer)
-          refetchTimer = setTimeout(() => {
-            // force: a broadcast means something DID change, and a reorder changes neither of the
-            // two fields the probe compares. Skipping on "counts look the same" left every other
-            // viewer on the old order until the next upload.
-            //
-            // RATE-LIMITED, because anyone holding the album link can publish this broadcast with
-            // the public anon key, and an unbounded force turns one forged message into a
-            // full-window fetch on every connected phone. See forcedRefreshAllowed.
-            const force = forcedRefreshAllowed(lastForcedRefreshAt, Date.now())
-            if (force) lastForcedRefreshAt = Date.now()
-            void refreshIfChanged(albumId, r => { if (active) applyWindowRefresh(r) }, { force })
-          }, Math.round(REFETCH_DEBOUNCE_MS * (0.75 + Math.random() * 0.5)))
-        })
-        // DELETE and UPDATE used to arrive on postgres_changes for instant per-row feedback. They
-        // no longer do, and this is a SECURITY fix rather than a refactor: Supabase only delivers
-        // postgres_changes to a client that can SELECT the table under RLS, so supporting it meant
-        // granting anon SELECT on `photos`. The anon key ships in the page source, so that grant let
-        // anyone enumerate every photo on the platform — 2,951 rows with working URLs — without
-        // knowing a single album link. The grant is gone; delete/reorder/settings now emit the same
-        // contentless `changed` broadcast that uploads already used, and the debounced refetch above
-        // applies them. Costs a sub-second delay on the owner's own action. Do not reintroduce
-        // postgres_changes here without a way to scope table reads to one album.
+        .on('broadcast', { event: 'changed' }, () => { if (active) supervisor.onChanged() })
 
       // Assigned BEFORE subscribe so the identity guard below can never mistake this channel's
       // own first status event for a stale echo, however promptly the callback fires.
       currentChannel = ch
       ch.subscribe(status => {
-          // The identity check is load-bearing: a channel replaced by a newer connect() still
-          // fires CLOSED (and stray errors) into THIS callback. Without the check, a dead
-          // channel's echo re-arms retry/poll timers that belong to its successor.
-          if (!active || ch !== currentChannel) return
-          if (status === 'SUBSCRIBED') {
-            // Always refetch on subscribe: closes the race window between the initial
-            // fetchPhotos call and when the channel becomes SUBSCRIBED. Photos uploaded
-            // in that gap would be missed if we only refetch on reconnect.
-            // The `active` guard on the .then() prevents updating state after cleanup.
-            void refreshIfChanged(albumId, r => { if (active) applyWindowRefresh(r) })
-            retryCount = 0
-            // Realtime is back — the broadcast channel is the fresh-data path again.
-            if (pollTimer) { clearTimeout(pollTimer); pollTimer = null }
-          } else if (
-            status === 'CHANNEL_ERROR' ||
-            status === 'TIMED_OUT' ||
-            status === 'CLOSED'
-          ) {
-            // Exponential backoff: 2s, 4s, 8s, 16s, capped at 30s — with FULL jitter.
-            //
-            // Without the jitter every phone in the room reconnects on the same tick. A venue
-            // access point does not drop one guest, it drops all of them at once, so 300 clients
-            // see CHANNEL_ERROR in the same instant, all wait exactly 2000ms, and all come back
-            // together — and each one refetches the whole album on SUBSCRIBED. That is one
-            // synchronised burst against the origin at the moment the network is least able to
-            // carry it, and if the burst itself fails they retry in lockstep at 4s, then 8s.
-            //
-            // Spreading each wait across half its nominal value turns one spike into a 1-30s
-            // smear. Same reasoning, and the same 0.5 + random() form, as the upload retry path.
-            const delay = Math.min(2000 * Math.pow(2, retryCount), 30_000) * (0.5 + Math.random() * 0.5)
-            retryCount++
-            // Clear before reassigning: CHANNEL_ERROR and TIMED_OUT can both arrive for one
-            // failed join, and an overwritten-but-live timer is one extra reconnect loop. Each.
-            if (retryTimer) clearTimeout(retryTimer)
-            retryTimer = setTimeout(connect, delay)
-            // First failure arms the fallback poll; `if (!pollTimer)` keeps reconnect attempts
-            // from stacking a second loop. First poll waits a full jittered interval — the
-            // initial page load already fetched, so there is nothing to catch up on yet.
-            if (!pollTimer) pollTimer = setTimeout(pollWhileDown, fallbackPollDelay())
-          }
-        })
+        // The identity check is load-bearing: a channel replaced by a newer connect() still
+        // fires CLOSED (and stray errors) into THIS callback. Without the check, a dead
+        // channel's echo re-arms retry/poll timers that belong to its successor.
+        if (!active || ch !== currentChannel) return
+        if (status === 'SUBSCRIBED' || status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') {
+          supervisor.onStatus(status)
+        }
+      })
     }
 
     connect()
 
     return () => {
       active = false
-      if (retryTimer) clearTimeout(retryTimer)
-      if (refetchTimer) clearTimeout(refetchTimer)
-      if (pollTimer) clearTimeout(pollTimer)
+      supervisor.dispose()
       if (currentChannel) supabase.removeChannel(currentChannel)
     }
   }, [album?.id, supabase, refreshIfChanged, applyWindowRefresh])
