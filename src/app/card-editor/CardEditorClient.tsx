@@ -221,7 +221,7 @@ export default function CardEditorClient() {
       } catch { /* quota exceeded */ }
     }, 600)
     return () => clearTimeout(t)
-  }, [els, bg])  // eslint-disable-line
+  }, [els, bg])
 
   // Load images
   useEffect(() => {

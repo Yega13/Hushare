@@ -98,7 +98,6 @@ export default function PasswordGate({ slug, title, onUnlocked }: Props) {
             autoCorrect="off"
             autoCapitalize="none"
             spellCheck={false}
-            // eslint-disable-next-line jsx-a11y/no-autofocus
             autoFocus
             placeholder={t('passwordGate.placeholder')}
             maxLength={128}

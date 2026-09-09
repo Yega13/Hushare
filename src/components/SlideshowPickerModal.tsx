@@ -111,7 +111,6 @@ export default function SlideshowPickerModal({
                 onClick={() => onToggle(photo.id)}
               >
                 {thumbSrc ? (
-                  // eslint-disable-next-line @next/next/no-img-element
                   // lazy + async, exactly as PhotoTile does it. Without them, opening this picker
                   // fired one image request PER PHOTO at once — 4,566 requests and 4,566 decodes
                   // from a single tap.

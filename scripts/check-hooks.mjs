@@ -97,8 +97,11 @@ const budget = JSON.parse(readFileSync(budgetPath, 'utf8'))
 const counts = {}
 for (const file of results) {
   for (const m of file.messages) {
-    if (!m.ruleId || BLOCKING.has(m.ruleId)) continue
-    counts[m.ruleId] = (counts[m.ruleId] ?? 0) + 1
+    if (BLOCKING.has(m.ruleId)) continue
+    // A finding with no rule is an unused eslint-disable directive: a comment claiming a
+    // problem that is no longer there. Four of those sat outside the ratchet for weeks.
+    const rule = m.ruleId ?? 'unused-disable-directive'
+    counts[rule] = (counts[rule] ?? 0) + 1
   }
 }
 const rules = new Set([...Object.keys(budget), ...Object.keys(counts)])

@@ -183,7 +183,6 @@ const PhotoTile = React.memo(function PhotoTile({
           />
         ) : videoThumbSrc ? (
           // Legacy fallback for R2 videos (should not occur in new system).
-          // eslint-disable-next-line jsx-a11y/media-has-caption
           <video
             src={videoThumbSrc}
             preload="metadata"
