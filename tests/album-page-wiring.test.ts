@@ -87,6 +87,8 @@ describe('AlbumPageClient wires the freshness seed and the delta merge from the 
   it('delta rows merge into the previous list in the album order the ref carries', () => {
     const call = singleCall(src(), 'mergeDelta(')
     expect(call).toMatch(/mergeDelta\(\s*prev\s*,\s*fresh\.photos\s*,\s*albumOrderRef\.current\s*\)/)
+    // ...and its result is what the state becomes, not computed and dropped.
+    expect(src()).toMatch(/setPhotos\(prev => mergeDelta\(/)
   })
 })
 
@@ -102,5 +104,25 @@ describe('AlbumPageClient wires the leave-intent decisions from the real event',
       expect(call, pair).toContain(pair)
     }
     expect(call).toMatch(/\},\s*window\.location\s*\)$/)
+  })
+  it('the anchor is the closest <a>, and a leave is STOPPED before Next navigates (rule 15: the enforcement)', () => {
+    const text = src()
+    expect(text).toMatch(/const anchor = \(e\.target as HTMLElement \| null\)\?\.closest\?\.\('a'\) \?\? null/)
+    expect(text).toMatch(/if \(!dest\) return\s+e\.preventDefault\(\)\s+e\.stopImmediatePropagation\(\)\s+pendingLeaveHrefRef\.current = dest\s+trigger\(\)/)
+  })
+})
+
+describe('AlbumPageClient reads the owner link through one reader and verifies it through the loop', () => {
+  it('every owner-token read goes through ownerTokenFromHash(window.location.hash); no ad-hoc parse remains', () => {
+    const text = src()
+    expect(text.match(/ownerTokenFromHash\(window\.location\.hash\)/g)?.length).toBe(3)
+    expect(text).not.toMatch(/get\('owner'\)/)
+  })
+  it('the owner-login call goes through verifyOwnerToken with the real slug, token and the loop signal', () => {
+    const call = singleCall(src(), 'verifyOwnerToken(')
+    expect(call).toMatch(/fetch\('\/api\/album\/owner-login'/)
+    expect(call).toMatch(/owner_token:\s*token\b/)
+    expect(call).toMatch(/\bslug\b/)
+    expect(call).toMatch(/\bsignal,?\s*\}\)/)
   })
 })

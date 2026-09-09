@@ -21,6 +21,8 @@ export default {
     from: "  if (dest.origin !== current.origin || dest.pathname === current.pathname) return null", to: "  if (dest.pathname === current.pathname) return null" },
   { name: 'a same-page link is a leave',
     from: "  if (dest.origin !== current.origin || dest.pathname === current.pathname) return null", to: "  if (dest.origin !== current.origin) return null" },
+  { name: 'a sub-path of the current page is not a leave',
+    from: "  if (dest.origin !== current.origin || dest.pathname === current.pathname) return null", to: "  if (dest.origin !== current.origin || dest.pathname.startsWith(current.pathname)) return null" },
   { name: 'an unparseable href throws instead of being ignored',
     from: "  try { dest = new URL(click.href, current.href) } catch { return null }", to: "  dest = new URL(click.href, current.href)" },
   ],

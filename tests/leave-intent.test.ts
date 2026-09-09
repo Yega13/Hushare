@@ -25,6 +25,7 @@ describe('leaveDestination', () => {
   it('a plain left click on an in-app link to another path is a leave, resolved to an absolute URL', () => {
     expect(leaveDestination(click(), PAGE)).toBe('https://hushare.space/')
     expect(leaveDestination(click({ href: '/account?x=1' }), PAGE)).toBe('https://hushare.space/account?x=1')
+    expect(leaveDestination(click({ href: '/race/anything' }), PAGE)).toBe('https://hushare.space/race/anything')
   })
   it('a DOWNLOAD link is never a leave (the hidden <a download> the zip button clicks)', () => {
     expect(leaveDestination(click({ href: '/api/album/zip', download: true }), PAGE)).toBeNull()

@@ -141,6 +141,11 @@ describe('initialFreshness -- only when the window is known to hold the newest p
   it('a hand-arranged album past the window seeds nothing', () => {
     expect(initialFreshness(WINDOW, 5000, 'manual')).toBeNull()
   })
+  it('ONE row past the window is already past it (the boundary a reviewer found untested)', () => {
+    expect(initialFreshness(WINDOW, WINDOW.length + 1, 'oldest')).toBeNull()
+    expect(initialFreshness(WINDOW, WINDOW.length + 1, 'manual')).toBeNull()
+    expect(initialFreshness(WINDOW, WINDOW.length, 'manual')).not.toBeNull()
+  })
   it('below the window size every ordering holds the whole album, so all of them seed', () => {
     for (const order of ['oldest', 'manual', undefined] as const) {
       expect(initialFreshness(WINDOW, 3, order)).toEqual({ total: 3, latest: '2026-09-03' })

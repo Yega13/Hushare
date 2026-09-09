@@ -235,7 +235,9 @@ const SIZE_BUDGET: Record<string, number> = {
   // (initialFreshness, mergeDelta) with a mutation set. A reduction, locked in.
   // -11 (2026-09-09): which back-presses and clicks are a real leave (lib/leave-intent, the
   // hidden <a download> case among its tests). A reduction, locked in.
-  'src/app/[slug]/AlbumPageClient.tsx': 1710,
+  // -18 (2026-09-09): the owner-link reader (three copies, one now) and the owner-login retry
+  // verdict moved to lib/owner-login with a mutation set. A reduction, locked in.
+  'src/app/[slug]/AlbumPageClient.tsx': 1693,
   'src/app/card-editor/CardEditorClient.tsx': 873,
   // +1 (2026-08-31): pass collectionTotal to the lightbox counter.
   // +2 (2026-08-31): morphAllowed gate on open and close.

@@ -2,8 +2,10 @@
 
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, useMemo } from 'react'
 import { indexKnownComplete, searchPhase } from '@/lib/search-answer'
+import { queryOutsideRange } from '@/lib/bib-match'
 import { classifyResolve } from '@/lib/resolve-outcome'
 import { isRealLeavePop, leaveDestination } from '@/lib/leave-intent'
+import { ownerTokenFromHash, verifyOwnerToken } from '@/lib/owner-login'
 import { partitionPending, pendingIdSet, publishedTotal as publishedCountOf, visiblePhotos as visiblePhotosOf } from '@/lib/grid-visibility'
 import { monotonicNow, elapsedSince, type Millis } from '@/lib/clock'
 import { createPortal } from 'react-dom'
@@ -223,8 +225,7 @@ export default function AlbumPageClient({ initialAlbum = null, initialPhotos, in
   const [ownerHashPresent, setOwnerHashPresent] = useState(false)
   const useIsomorphicLayoutEffect = typeof window !== 'undefined' ? useLayoutEffect : useEffect
   useIsomorphicLayoutEffect(() => {
-    const raw = window.location.hash.startsWith('#') ? window.location.hash.slice(1) : window.location.hash
-    if (new URLSearchParams(raw).get('owner')) setOwnerHashPresent(true)
+    if (ownerTokenFromHash(window.location.hash)) setOwnerHashPresent(true)
     // NOTE: an earlier attempt at killing the "album is protected" flash held `loading` true here
     // for a gated album opened on an owner link, so the skeleton showed instead of the gate until
     // the owner check resolved. On production that never resolved and the album never opened at
@@ -527,6 +528,11 @@ export default function AlbumPageClient({ initialAlbum = null, initialPhotos, in
   // Read here, not at render, so searchPhase and the bar judge "fully read" from the SAME numbers.
   const totalImageCount = bibStats?.totalImages ?? photos.filter((p) => p.media_type !== 'video').length
   const bibIndexedCount = bibStats?.indexed ?? photos.filter((p) => p.media_type !== 'video' && p.bib_numbers != null).length
+  // The race's declared numbering, memoised for IDENTITY (it sits in visiblePhotos' deps). Read
+  // here because the phase depends on it: a number outside it is refused before any search runs.
+  const bibRange = useMemo(
+    () => ({ min: album?.bib_min ?? null, max: album?.bib_max ?? null }),
+    [album?.bib_min, album?.bib_max])
   const bibPhase = searchPhase({
     enabled: bibEnabled,
     query: bibDigits,
@@ -534,6 +540,7 @@ export default function AlbumPageClient({ initialAlbum = null, initialPhotos, in
     failedQuery: bibFailedQuery,
     answerIsEmpty: (bibResult?.total ?? 0) <= 0,
     indexComplete: indexKnownComplete(bibStats),
+    excludedByAlbum: queryOutsideRange(bibDigits, bibRange),
   })
 
   useEffect(() => {
@@ -747,7 +754,7 @@ export default function AlbumPageClient({ initialAlbum = null, initialPhotos, in
       // Remember this album on the device whenever we're on its owner link, so the owner can
       // always get back to management view (read the token fresh from the hash — it's kept there).
       if (ownerTokenFromUrlRef.current) {
-        const tok = new URLSearchParams(window.location.hash.replace(/^#/, '')).get('owner')
+        const tok = ownerTokenFromHash(window.location.hash)
         if (tok) rememberOwnedAlbum(data.slug, tok, data.title)
       }
     } catch {
@@ -815,10 +822,7 @@ export default function AlbumPageClient({ initialAlbum = null, initialPhotos, in
 
     let cancelled = false
 
-    const rawHash = window.location.hash.startsWith('#')
-      ? window.location.hash.slice(1)
-      : window.location.hash
-    const token = new URLSearchParams(rawHash).get('owner')
+    const token = ownerTokenFromHash(window.location.hash)
 
     if (!token) {
       setOwnerTokenReady(true)
@@ -839,31 +843,16 @@ export default function AlbumPageClient({ initialAlbum = null, initialPhotos, in
 
     void (async () => {
       // owner-login sets the hushare_owner_<albumId> cookie (7 days) that flips this load into
-      // owner view. Retry once on a TRANSIENT failure (network/timeout/429/5xx): a single blip
-      // used to silently drop the owner to guest view — the reported "sometimes owner, sometimes
-      // guest" flakiness. A definitive 403/404 (wrong token / album gone) is not retried. If the
-      // cookie was already set on a prior visit, a failure here is harmless — auth still sees it.
-      let ownerLoginOk = false
-      for (let attempt = 0; attempt < 2; attempt++) {
-        // 10s timeout per attempt: if owner-login hangs, fall through rather than block the page.
-        const ac = new AbortController()
-        const timeoutId = setTimeout(() => ac.abort(), 10_000)
-        try {
-          const res = await fetch('/api/album/owner-login', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ slug, owner_token: token }),
-            signal: ac.signal,
-          })
-          clearTimeout(timeoutId)
-          if (res.ok) { ownerLoginOk = true; break }  // token verified — authoritative proof of ownership
-          if (res.status === 403 || res.status === 404) break  // definitively not owner / album gone
-          // 429 / 5xx — fall through to retry
-        } catch {
-          clearTimeout(timeoutId)  // network error or timeout — fall through to retry
-        }
-        if (attempt === 0) await new Promise(r => setTimeout(r, 600))
-      }
+      // owner view. Which answers are definitive and which get one more try -- a single blip used
+      // to drop the owner to guest view, the "sometimes owner, sometimes guest" flakiness -- is
+      // lib/owner-login, with the per-attempt timeout so a hung call never blocks the page. If the
+      // cookie was already set on a prior visit, a failure here is harmless: auth still sees it.
+      const ownerLoginOk = await verifyOwnerToken((signal) => fetch('/api/album/owner-login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ slug, owner_token: token }),
+        signal,
+      }))
       if (cancelled) return
       // owner-login verified the 256-bit owner_token against this album, so its success is
       // authoritative proof of ownership — establish owner view directly here rather than relying
@@ -1361,12 +1350,6 @@ export default function AlbumPageClient({ initialAlbum = null, initialPhotos, in
   // Bib search narrows the SAME grid rather than opening a separate results view. Filtering is
   // client-side over photos already loaded, so typing is instant and costs no requests. When the
   // album isn't a race album (or the box is empty) this is the untouched photo list.
-  // Memoised for IDENTITY: this object sits in visiblePhotos' deps, and a fresh {} every render
-  // rebuilt the filtered array during an active bib search — which re-rendered every tile and
-  // re-packed the masonry on the product's flagship flow, on race albums, mid-search.
-  const bibRange = useMemo(
-    () => ({ min: album?.bib_min ?? null, max: album?.bib_max ?? null }),
-    [album?.bib_min, album?.bib_max])
   // The server's answer for THIS query wins; the local filter covers the moment before it lands
   // and the case where the request failed. bibResult is tagged with the query it answers, so a
   // stale response for an earlier number can never be shown against a newer one.

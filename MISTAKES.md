@@ -1110,3 +1110,21 @@ correctly first time both times I gave up on the shell.
 
 **Habit to build:** any file content with a backslash goes through the Write or Edit tool. No
 exceptions for "it's just one line". MISTAKES 48, 66, 72 said this already.
+
+### 81. I BUILT A COMMIT FROM "HEAD PLUS MY PATCH" AND HEAD HAD MOVED
+
+To keep the other session's uncommitted hunks out of my commits, I stage AlbumPageClient as a
+blob: take HEAD's copy, apply my patch to it, hash it, put it in the index. Between reading HEAD
+and committing, the other session committed feab547 on the same file. My blob was built from the
+older HEAD, so my commit silently REMOVED their three hunks -- the import, the memo, and the
+`excludedByAlbum` argument that stops a runner being told "No photos with that number" about a
+search that never ran. HEAD no longer type-checked; the deploy gate would have caught it, but a
+reviewer caught it first, and a well-meaning "make the field optional" fix would have shipped
+the bug back to production with a green build. Worse: their commit had swallowed my leave-intent
+edits from the shared working tree, so my commit's diff showed my own work as context. Two
+sessions, one file, no rebase.
+
+**Habit to build:** the blob trick is only safe when HEAD is re-read in the SAME command that
+hashes the blob, and the commit follows immediately. And after any commit on a shared file,
+`git diff HEAD~1 HEAD --stat` must show only the files I meant to touch with only the lines I
+meant to change -- a removed line I did not write is somebody else's work leaving.

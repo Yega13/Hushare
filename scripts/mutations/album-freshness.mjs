@@ -9,6 +9,8 @@ export default {
     from: "  if (order !== 'newest' && photos.length < total) return null\n", to: "" },
   { name: 'only newest-first ever seeds (small albums re-fetch for nothing)',
     from: "  if (order !== 'newest' && photos.length < total) return null\n", to: "  if (order !== 'newest') return null\n" },
+  { name: 'the boundary is off by one (an album one row past the window seeds from its oldest rows)',
+    from: "  if (order !== 'newest' && photos.length < total) return null\n", to: "  if (order !== 'newest' && photos.length + 1 < total) return null\n" },
   { name: 'latest is the first row, not the max',
     from: "    latest: photos.reduce<string | null>((max, p) => (!max || p.created_at > max ? p.created_at : max), null),",
     to: "    latest: photos[0]?.created_at ?? null," },
