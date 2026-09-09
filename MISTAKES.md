@@ -1068,3 +1068,45 @@ symlink there means STOP. Remove links with a command that fails loudly if it di
 verify the link is gone before the recursive step. Or do not delete worktrees at all: `git
 worktree add` to a fresh path is cheap, and an old one can be pruned once the junction is
 confirmed gone.
+
+### 78. I ADDED A TIMEOUT SO A SAVE COULD NOT BE SILENT, AND MADE TWO SAVES SILENT
+
+The per-album wire gate held forever on a dead connection, so I bounded every media-settings
+request with `AbortSignal.timeout`. A timeout is a REJECTION. The media saver's caller had a
+try/catch; the desktop-columns and slideshow-motion savers, which I had just routed through the
+same bounded POST in the same commit, were called with `.then((r) => { if (!r.ok) ... })` and no
+catch. A timed-out desktop click: no toast, no revert, the buttons stuck on a value the server
+never had, and one unhandled-rejection entry in the admin panel per click. The commit message said
+"no toast and no error line" was the problem being fixed.
+
+And the branch that turns a failure into words -- `e instanceof Error ? e.message :
+t('common.networkError')` -- never reached the translated line for a timeout, because a
+DOMException IS an Error. Armenian and Russian owners would have read the browser's own English.
+
+**Habit to build:** when a change makes a function able to reject where it could not before, grep
+every caller for a catch before committing, and write the test that rejects the promise -- the
+one that took the reviewer ten minutes and me none. "instanceof Error" is not "an error the user
+can read".
+
+### 79. THE "BOUNDED" TEST WAS SATISFIED BY A SIGNAL THAT NEVER FIRES
+
+My test for the timeout asserted `signal instanceof AbortSignal`. A reviewer replaced the timeout
+with `new AbortController().signal` -- an abort that never comes, the exact failure the mutation
+set names "unbounded" -- and the suite stayed green. The set's own "unbounded" mutant was killed
+only because it DELETED the property. The test now spies on `AbortSignal.timeout`, asserts the
+number it was called with, asserts the request carries that very signal, and asserts a queued
+request does not start its clock until it leaves.
+
+**Habit to build:** a test of a bound asserts the bound -- the number and the mechanism -- not the
+type of the thing carrying it. And a mutation that deletes a line proves less than one that
+replaces it with a plausible wrong line.
+
+### 80. RULE 24 AGAIN, FROM PYTHON IN A BASH HEREDOC, WHILE WRITING THE FILE THAT SAYS NOT TO
+
+Twice in one evening a `\n` inside a mutation-set string became a real newline on disk -- once
+through a python script pasted into a quoted heredoc, once through a python `-` heredoc. The file
+that broke (`scripts/mutations/*.mjs`) exists to hold escaped strings. The Write tool wrote it
+correctly first time both times I gave up on the shell.
+
+**Habit to build:** any file content with a backslash goes through the Write or Edit tool. No
+exceptions for "it's just one line". MISTAKES 48, 66, 72 said this already.

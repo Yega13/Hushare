@@ -3,6 +3,8 @@ import { describe, it, expect, afterEach, beforeEach, vi } from 'vitest'
 import { render, screen, cleanup, fireEvent, act, within } from '@testing-library/react'
 import { useEffect, useState } from 'react'
 import MediaSettingsPanels from '@/components/owner-toolbar/MediaSettingsPanels'
+import { MEDIA_SAVE_TIMEOUT_MS } from '@/components/owner-toolbar/api'
+import { APP_TOAST_EVENT } from '@/components/AppToast'
 import { LocaleProvider } from '@/i18n/LocaleProvider'
 import { en } from '@/i18n/dictionaries/en'
 import type { Album } from '@/types'
@@ -24,7 +26,7 @@ const ALBUM = {
 } as unknown as Album
 
 type Answer = { status: number; json: Record<string, unknown> }
-type Sent = { body: Record<string, unknown>; release: (a: Answer) => void; signal: AbortSignal | null | undefined }
+type Sent = { body: Record<string, unknown>; release: (a: Answer) => void; reject: (e: unknown) => void; signal: AbortSignal | null | undefined }
 const sent: Sent[] = []
 /** HOLD MODE: requests stay open until a test releases them, so answers can land in any order and
  *  edits can be made while a request is out -- the shape both review findings had. */
@@ -39,6 +41,12 @@ let answer = echo
 const fail = (): Answer => ({ status: 500, json: { error: 'nope' } })
 const resolveOk = (i: number) => act(async () => { sent[i].release(echo(sent[i].body)); await Promise.resolve(); await Promise.resolve() })
 const resolveFail = (i: number) => act(async () => { sent[i].release(fail()); await Promise.resolve(); await Promise.resolve() })
+/** The browser gave up: what AbortSignal.timeout makes fetch reject with -- a DOMException named
+ *  TimeoutError that IS an instanceof Error in every browser. jsdom's DOMException is not, which
+ *  would make "instanceof Error ? e.message" look fine here while showing raw text to owners. */
+const timeOut = (i: number) => act(async () => { sent[i].reject(Object.assign(new Error('The operation was aborted due to timeout'), { name: 'TimeoutError' })); await Promise.resolve(); await Promise.resolve(); await Promise.resolve() })
+const toasts: string[] = []
+const onToast = (e: Event) => { toasts.push(String((e as CustomEvent<{ message: string }>).detail.message)) }
 
 /** The parent as AlbumPageClient behaves: the patch is the next album. Exposed for the tests. */
 let setAlbumFromOutside: (patch: Partial<Album>) => void = () => {}
@@ -77,19 +85,22 @@ const flush = () => act(async () => { await Promise.resolve(); await Promise.res
 
 beforeEach(() => {
   sent.length = 0
+  toasts.length = 0
+  window.addEventListener(APP_TOAST_EVENT, onToast)
   options.length = 0
   vi.useFakeTimers()
   hold = false
   vi.stubGlobal('fetch', vi.fn((_url: string, init?: RequestInit) => {
     const body = JSON.parse(String(init?.body)) as Record<string, unknown>
-    return new Promise<Response>((resolve) => {
+    return new Promise<Response>((resolve, reject) => {
       const release = (a: Answer) => resolve(new Response(JSON.stringify(a.json), { status: a.status, headers: { 'Content-Type': 'application/json' } }))
-      sent.push({ body, release, signal: init?.signal })
+      sent.push({ body, release, reject, signal: init?.signal })
       if (!hold) release(answer(body))
     })
   }))
 })
 afterEach(async () => {
+  window.removeEventListener(APP_TOAST_EVENT, onToast)
   cleanup()
   vi.useRealTimers()
   // The per-album wire gate (lib/inflight-gate) is module scope and keyed by slug: a request a
@@ -272,11 +283,83 @@ describe('MediaSettingsPanels -- what goes on the wire', () => {
     expect(screen.getByTestId('album-desktop').textContent).toBe('4')
   })
 
-  it('every settings write is bounded: the request carries an abort signal', async () => {
+  it('every settings write is bounded: the signal on the request is a timeout of MEDIA_SAVE_TIMEOUT_MS, created when the request LEAVES', async () => {
+    // A signal that never fires satisfied "instanceof AbortSignal"; this pins the timeout itself.
+    const spy = vi.spyOn(AbortSignal, 'timeout')
+    try {
+      hold = true
+      render(<Harness />)
+      fireEvent.click(autoplayBox())
+      await flush()
+      expect(spy).toHaveBeenCalledTimes(1)
+      expect(spy).toHaveBeenCalledWith(MEDIA_SAVE_TIMEOUT_MS)
+      expect(sent[0].signal).toBe(spy.mock.results[0].value)
+      // A request queued behind it must not start its clock until it goes out.
+      const desktopRow = screen.getByText(en['ot.gridDesktop']).nextElementSibling as HTMLElement
+      fireEvent.click(Array.from(desktopRow.querySelectorAll('button')).find((b) => b.textContent === '4') as HTMLElement)
+      await flush()
+      expect(spy).toHaveBeenCalledTimes(1)
+      await resolveOk(0)
+      expect(spy).toHaveBeenCalledTimes(2)
+      expect(sent[1].signal).toBe(spy.mock.results[1].value)
+    } finally { spy.mockRestore() }
+  })
+
+  it('a timed-out media save: the translated network line, not the browser text, and the switch goes back', async () => {
+    hold = true
     render(<Harness />)
     fireEvent.click(autoplayBox())
     await flush()
-    expect(sent[0].signal).toBeInstanceOf(AbortSignal)
+    await timeOut(0)
+    expect(toasts).toEqual([en['common.networkError']])
+    expect(autoplayBox().checked).toBe(false)
+    expect(screen.getByTestId('album-autoplay').textContent).toBe('false')
+  })
+
+  it('a timed-out DESKTOP save is not silent: a toast, and the buttons go back', async () => {
+    // It rejected past the caller's .then: no toast, no revert, an unhandled rejection in the panel.
+    hold = true
+    render(<Harness />)
+    const desktopRow = screen.getByText(en['ot.gridDesktop']).nextElementSibling as HTMLElement
+    fireEvent.click(Array.from(desktopRow.querySelectorAll('button')).find((b) => b.textContent === '4') as HTMLElement)
+    await flush()
+    await timeOut(0)
+    expect(toasts).toEqual([en['common.networkError']])
+    expect(screen.getByTestId('album-desktop').textContent).toBe('6')
+  })
+
+  it('a timed-out MOTION save is not silent either', async () => {
+    hold = true
+    render(<Harness open="slideshow" />)
+    const slider = document.querySelectorAll('input[type="range"]')[1] as HTMLInputElement
+    fireEvent.change(slider, { target: { value: '0' } })
+    await act(async () => { vi.advanceTimersByTime(500) })
+    await flush()
+    expect(sent).toHaveLength(1)
+    await timeOut(0)
+    expect(toasts).toEqual([en['common.networkError']])
+  })
+
+  it('two desktop failures in a row revert to what the SERVER has, not to the first click', async () => {
+    // Click 4 (fails), click 5 (fails): the revert used to read the album at the second click,
+    // which already showed the first click's optimistic 4. The server never left 6.
+    hold = true
+    render(<Harness />)
+    const desktopRow = screen.getByText(en['ot.gridDesktop']).nextElementSibling as HTMLElement
+    const click = (n: string) => fireEvent.click(Array.from(desktopRow.querySelectorAll('button')).find((b) => b.textContent === n) as HTMLElement)
+    click('4'); click('5')
+    await flush()
+    await resolveFail(0)
+    await resolveFail(1)
+    expect(screen.getByTestId('album-desktop').textContent).toBe('6')
+    // ...and a success moves that baseline, so a later failure reverts to the new truth.
+    click('3')
+    await flush()
+    await resolveOk(2)
+    click('4')
+    await flush()
+    await resolveFail(3)
+    expect(screen.getByTestId('album-desktop').textContent).toBe('3')
   })
 
   it('the wire is held PER ALBUM: another album\'s request leaves at once', async () => {

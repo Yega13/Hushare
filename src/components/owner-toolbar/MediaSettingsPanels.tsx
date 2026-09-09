@@ -37,6 +37,7 @@ import {
 } from '@/lib/slideshow-motion'
 import { showAppToast } from '@/components/AppToast'
 import {
+  isNetworkFailure,
   saveDesktopGridColumns,
   saveMediaSettingsRequest,
   savePhotoLayoutRequest,
@@ -122,6 +123,10 @@ export default function MediaSettingsPanels({ album, photos, mediaRadiusMax, ope
   // still is: comparing VALUES could not tell "my click is still the latest" from "a later click
   // chose the same number again", and reverted the owner's re-chosen value.
   const desktopClickRef = useRef(0)
+  // What the SERVER last said the desktop grid is: seeded from the album, moved by a successful
+  // save. A failed click reverts to this, not to whatever the album showed when it was clicked --
+  // two failures in a row used to revert to the first click's optimistic value.
+  const desktopServerRef = useRef<number | null>(album.desktop_grid_columns ?? null)
   // The debounced save fires later and must read the draft as it is THEN, not as it was when the
   // timer was set; and two edits in one tick must compose. So edits advance this ref themselves.
   const mediaRef = useRef(adopted)
@@ -200,7 +205,9 @@ export default function MediaSettingsPanels({ album, photos, mediaRadiusMax, ope
         })
       }
     } catch (e) {
-      const message = e instanceof Error ? e.message : t('common.networkError')
+      // A timeout is a DOMException, which IS an Error: without the first branch the owner saw
+      // the browser's own English text instead of the translated line (lib/network-failure).
+      const message = isNetworkFailure(e) ? t('common.networkError') : e instanceof Error ? e.message : t('common.networkError')
       setMediaError(message)
       showAppToast(message, 'error')
       // The grid goes back to the truth: a failed save used to leave the optimistic value in the
@@ -287,7 +294,7 @@ export default function MediaSettingsPanels({ album, photos, mediaRadiusMax, ope
       motionSaveTimerRef.current = null
       pendingMotionRef.current = null
       void saveSlideshowMotionRequest(album.slug, next).then((r) => {
-        if (!r.ok) showAppToast(r.error, 'error')
+        if (!r.ok) showAppToast(r.network ? t('common.networkError') : r.error, 'error')
       })
     }, 500)
   }
@@ -300,7 +307,7 @@ export default function MediaSettingsPanels({ album, photos, mediaRadiusMax, ope
     const pending = pendingMotionRef.current
     pendingMotionRef.current = null
     if (pending) void saveSlideshowMotionRequest(album.slug, pending).then((r) => {
-      if (!r.ok) showAppToast(r.error, 'error')
+      if (!r.ok) showAppToast(r.network ? t('common.networkError') : r.error, 'error')
     })
   // eslint-disable-next-line react-hooks/exhaustive-deps -- unmount only; the slug never changes while mounted
   }, [])
@@ -420,21 +427,20 @@ export default function MediaSettingsPanels({ album, photos, mediaRadiusMax, ope
                       onClick={() => {
                         // Saved on its own (see saveDesktopGridColumns): this value is
                         // independent of the seven the debounced media save carries.
-                        const before = album.desktop_grid_columns ?? null
                         const click = ++desktopClickRef.current
                         onAlbumUpdated({ desktop_grid_columns: value })
                         void saveDesktopGridColumns(album.slug, value).then((r) => {
-                          if (!r.ok) {
-                            setMediaError(r.error)
-                            showAppToast(r.error, 'error')
-                            // Put the album (and so the buttons) back where the SERVER still
-                            // is, rather than leaving a selected column it does not have --
-                            // unless a later click has already moved on, in which case that
-                            // click's own answer decides (a slow failure used to write the
-                            // old value over a newer, accepted one).
-                            if (desktopClickRef.current === click) {
-                              onAlbumUpdated({ desktop_grid_columns: before })
-                            }
+                          if (r.ok) { desktopServerRef.current = r.desktop_grid_columns; return }
+                          const message = r.network ? t('common.networkError') : r.error
+                          setMediaError(message)
+                          showAppToast(message, 'error')
+                          // Put the album (and so the buttons) back where the SERVER still
+                          // is, rather than leaving a selected column it does not have --
+                          // unless a later click has already moved on, in which case that
+                          // click's own answer decides (a slow failure used to write the
+                          // old value over a newer, accepted one).
+                          if (desktopClickRef.current === click) {
+                            onAlbumUpdated({ desktop_grid_columns: desktopServerRef.current })
                           }
                         })
                       }}

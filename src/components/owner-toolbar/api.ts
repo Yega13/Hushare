@@ -3,6 +3,7 @@ import type { MediaDisplayFilter, MobileGridColumns, SlideshowAnimation } from '
 import type { SponsorLogo, SlideshowMotion } from '@/types'
 import { readFileRobust } from '@/lib/file-read'
 import { afterInFlight } from '@/lib/inflight-gate'
+import { isNetworkFailure } from '@/lib/network-failure'
 import { IMMUTABLE_CACHE_CONTROL } from '@/lib/media'
 
 async function jsonBody<T>(res: Response): Promise<T> {
@@ -81,6 +82,18 @@ export type MediaSettingsChanges = Partial<{
   slideshow_interval_ms: number
   slideshow_animation: SlideshowAnimation
 }>
+/**
+ * A save that did not get an answer: the fetch rejected (dead connection, or the 15 s bound below).
+ * `network: true` tells the caller to show its translated network line rather than the browser's
+ * own text. The media saver lets the rejection through to its caller's catch, which reverts the
+ * draft; the two savers below turn it into this, because their callers only ever read `ok`.
+ */
+export type NetworkRefusal = { ok: false; error: string; network: true }
+function networkRefusal(e: unknown): NetworkRefusal {
+  return { ok: false, error: e instanceof Error ? e.message : String(e), network: true }
+}
+export { isNetworkFailure }
+
 /** What the route says it wrote: the fields sent, plus a desktop pin it may add on its own. */
 export type MediaSettingsApplied = MediaSettingsChanges & { desktop_grid_columns?: number }
 
@@ -102,6 +115,10 @@ export const MEDIA_SAVE_TIMEOUT_MS = 15_000
  * (lib/inflight-gate) -- across panel instances, which is why this is not in the component.
  */
 async function postMediaSettings(slug: string, fields: Record<string, unknown>): Promise<Response> {
+  // The bound starts when the request LEAVES, inside the run: a request queued behind a slow one
+  // must not time out before it was ever sent. So on a dead network the album's wire is held for
+  // one bound per queued request -- the motion sliders queue one per pause in a drag -- which is
+  // long, but bounded by what the owner did, and every one of them is answered with a toast.
   return afterInFlight(slug, () => fetch('/api/album/media-settings', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -497,8 +514,15 @@ export async function saveGuestUploadsRequest(
 export async function saveSlideshowMotionRequest(
   slug: string,
   motion: SlideshowMotion | null,
-): Promise<{ ok: true } | { ok: false; error: string }> {
-  const res = await postMediaSettings(slug, { slideshow_motion: motion })
+): Promise<{ ok: true } | { ok: false; error: string; network?: true }> {
+  let res: Response
+  try {
+    res = await postMediaSettings(slug, { slideshow_motion: motion })
+  } catch (e) {
+    // A timed-out or unreachable save used to reject past the caller's .then: no toast, and an
+    // unhandled rejection in the admin panel.
+    return networkRefusal(e)
+  }
   const body = await jsonBody<{ error?: string }>(res)
   if (!res.ok) return { ok: false, error: body.error ?? `Save failed (${res.status})` }
   return { ok: true }
@@ -597,8 +621,13 @@ export async function startPackageCheckoutRequest(
 export async function saveDesktopGridColumns(
   slug: string,
   desktopGridColumns: number,
-): Promise<{ ok: true; desktop_grid_columns: number } | { ok: false; error: string }> {
-  const res = await postMediaSettings(slug, { desktop_grid_columns: desktopGridColumns })
+): Promise<{ ok: true; desktop_grid_columns: number } | { ok: false; error: string; network?: true }> {
+  let res: Response
+  try {
+    res = await postMediaSettings(slug, { desktop_grid_columns: desktopGridColumns })
+  } catch (e) {
+    return networkRefusal(e)   // see saveSlideshowMotionRequest
+  }
   const body = await jsonBody<{ error?: string; desktop_grid_columns?: number }>(res)
   if (!res.ok || body.desktop_grid_columns == null) {
     return { ok: false, error: body.error ?? `Save failed (${res.status})` }
