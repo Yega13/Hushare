@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, afterEach, beforeEach, vi } from 'vitest'
-import { render, screen, cleanup, fireEvent, act } from '@testing-library/react'
+import { render, screen, cleanup, fireEvent, act, within } from '@testing-library/react'
 import { useEffect, useState } from 'react'
 import MediaSettingsPanels from '@/components/owner-toolbar/MediaSettingsPanels'
 import { LocaleProvider } from '@/i18n/LocaleProvider'
@@ -24,7 +24,7 @@ const ALBUM = {
 } as unknown as Album
 
 type Answer = { status: number; json: Record<string, unknown> }
-type Sent = { body: Record<string, unknown>; release: (a: Answer) => void }
+type Sent = { body: Record<string, unknown>; release: (a: Answer) => void; signal: AbortSignal | null | undefined }
 const sent: Sent[] = []
 /** HOLD MODE: requests stay open until a test releases them, so answers can land in any order and
  *  edits can be made while a request is out -- the shape both review findings had. */
@@ -46,8 +46,8 @@ let setAlbumFromOutside: (patch: Partial<Album>) => void = () => {}
 let hidePanels: () => void = () => {}
 let showPanels: () => void = () => {}
 const options: Array<Record<string, unknown> | undefined> = []
-function Harness({ open = 'media' }: { open?: 'media' | 'slideshow' }) {
-  const [album, setAlbum] = useState<Album>(ALBUM)
+function Harness({ open = 'media', slug = 'race' }: { open?: 'media' | 'slideshow'; slug?: string }) {
+  const [album, setAlbum] = useState<Album>({ ...ALBUM, slug } as Album)
   const [shown, setShown] = useState(true)
   useEffect(() => {
     setAlbumFromOutside = (patch) => setAlbum((a) => ({ ...a, ...patch }))
@@ -84,7 +84,7 @@ beforeEach(() => {
     const body = JSON.parse(String(init?.body)) as Record<string, unknown>
     return new Promise<Response>((resolve) => {
       const release = (a: Answer) => resolve(new Response(JSON.stringify(a.json), { status: a.status, headers: { 'Content-Type': 'application/json' } }))
-      sent.push({ body, release })
+      sent.push({ body, release, signal: init?.signal })
       if (!hold) release(answer(body))
     })
   }))
@@ -241,7 +241,7 @@ describe('MediaSettingsPanels -- what goes on the wire', () => {
     } finally { answer = echo }
   })
 
-  it('a slow desktop-columns failure does not write the old value over a newer click the server accepted', async () => {
+  it('a desktop-columns failure does not write the old value over a newer click', async () => {
     hold = true
     render(<Harness />)
     const desktopRow = screen.getByText(en['ot.gridDesktop']).nextElementSibling as HTMLElement
@@ -249,10 +249,47 @@ describe('MediaSettingsPanels -- what goes on the wire', () => {
     click('4')
     click('5')
     await flush()
-    expect(sent).toHaveLength(2)
-    await resolveOk(1)                                   // 5 accepted
-    await resolveFail(0)                                 // 4 refused, late
+    expect(sent).toHaveLength(1)                         // the desktop save waits for the album's wire too
+    await resolveFail(0)                                 // 4 refused; 5 is the latest click, so no revert
     expect(screen.getByTestId('album-desktop').textContent).toBe('5')
+    expect(sent).toHaveLength(2)
+    await resolveOk(1)
+    expect(screen.getByTestId('album-desktop').textContent).toBe('5')
+  })
+
+  it('a desktop value chosen AGAIN after an intervening click survives the first request failing late', async () => {
+    // Comparing values could not tell "my click is still the latest" from "a later click chose
+    // the same number": click 4, 5, 4 -- the first 4 fails -- and the owner's re-chosen 4 was reverted.
+    hold = true
+    render(<Harness />)
+    const desktopRow = screen.getByText(en['ot.gridDesktop']).nextElementSibling as HTMLElement
+    const click = (n: string) => fireEvent.click(Array.from(desktopRow.querySelectorAll('button')).find((b) => b.textContent === n) as HTMLElement)
+    click('4'); click('5'); click('4')
+    await flush()
+    await resolveFail(0)
+    expect(screen.getByTestId('album-desktop').textContent).toBe('4')
+    await resolveOk(1); await resolveOk(2)
+    expect(screen.getByTestId('album-desktop').textContent).toBe('4')
+  })
+
+  it('every settings write is bounded: the request carries an abort signal', async () => {
+    render(<Harness />)
+    fireEvent.click(autoplayBox())
+    await flush()
+    expect(sent[0].signal).toBeInstanceOf(AbortSignal)
+  })
+
+  it('the wire is held PER ALBUM: another album\'s request leaves at once', async () => {
+    hold = true
+    const a = render(<Harness slug="race" />)
+    const b = render(<Harness slug="other" />)
+    fireEvent.click(within(a.container).getByLabelText(en['ot.videoAutoplay'], { exact: false }))
+    await flush()
+    expect(sent).toHaveLength(1)
+    fireEvent.click(within(b.container).getByLabelText(en['ot.videoAutoplay'], { exact: false }))
+    await flush()
+    expect(sent).toHaveLength(2)
+    expect(sent[1].body).toMatchObject({ slug: 'other', video_autoplay: true })
   })
 
   it('a phone-grid change on an album with no desktop choice: the album learns the desktop pin the route echoes', async () => {

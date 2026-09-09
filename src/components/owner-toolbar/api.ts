@@ -2,6 +2,7 @@ import type { CollectionSummary } from '@/components/owner-toolbar/types'
 import type { MediaDisplayFilter, MobileGridColumns, SlideshowAnimation } from '@/lib/media-display'
 import type { SponsorLogo, SlideshowMotion } from '@/types'
 import { readFileRobust } from '@/lib/file-read'
+import { afterInFlight } from '@/lib/inflight-gate'
 import { IMMUTABLE_CACHE_CONTROL } from '@/lib/media'
 
 async function jsonBody<T>(res: Response): Promise<T> {
@@ -83,6 +84,32 @@ export type MediaSettingsChanges = Partial<{
 /** What the route says it wrote: the fields sent, plus a desktop pin it may add on its own. */
 export type MediaSettingsApplied = MediaSettingsChanges & { desktop_grid_columns?: number }
 
+/**
+ * How long one settings write may stay out before it is given up on. A bare fetch on a dead
+ * connection waits for the operating system to give up, and while it waits the album's wire
+ * (below) is held: every later edit sits in a draft with no request, no toast and no error line,
+ * and closing Settings no longer helps. Rule 25: a wait that hides an outcome is bounded. The
+ * cost of the bound is the one the gate exists to remove -- a request abandoned here may still
+ * reach the database after the next one -- so it is long enough that only a dead network hits it.
+ */
+export const MEDIA_SAVE_TIMEOUT_MS = 15_000
+
+/**
+ * EVERY write to /api/album/media-settings goes through here: the three savers (media settings,
+ * desktop columns, slideshow motion) all update the same album row, and the route READS that row
+ * on a phone-grid change to pin the desktop grid. Two of them on the wire at once can land in
+ * either order, so a request for an album waits for every earlier request for that album
+ * (lib/inflight-gate) -- across panel instances, which is why this is not in the component.
+ */
+async function postMediaSettings(slug: string, fields: Record<string, unknown>): Promise<Response> {
+  return afterInFlight(slug, () => fetch('/api/album/media-settings', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ slug, ...fields }),
+    signal: AbortSignal.timeout(MEDIA_SAVE_TIMEOUT_MS),
+  }))
+}
+
 // SENDS ONLY WHAT CHANGED — this used to thread seven positional settings and post all of them
 // from local state on every save. That made every save a write of every field, so a tab holding a
 // stale phone-grid value silently re-wrote it whenever the owner dragged the RADIUS: set desktop
@@ -94,15 +121,10 @@ export async function saveMediaSettingsRequest(
   resetRadiusOverrides: boolean,
   resetFilterOverrides: boolean,
 ): Promise<{ ok: true; applied: MediaSettingsApplied } | { ok: false; error: string }> {
-  const res = await fetch('/api/album/media-settings', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      slug,
-      ...changes,
-      reset_radius_overrides: resetRadiusOverrides,
-      reset_filter_overrides: resetFilterOverrides,
-    }),
+  const res = await postMediaSettings(slug, {
+    ...changes,
+    reset_radius_overrides: resetRadiusOverrides,
+    reset_filter_overrides: resetFilterOverrides,
   })
   const body = await jsonBody<{ error?: string } & MediaSettingsApplied>(res)
   if (!res.ok) {
@@ -476,11 +498,7 @@ export async function saveSlideshowMotionRequest(
   slug: string,
   motion: SlideshowMotion | null,
 ): Promise<{ ok: true } | { ok: false; error: string }> {
-  const res = await fetch('/api/album/media-settings', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ slug, slideshow_motion: motion }),
-  })
+  const res = await postMediaSettings(slug, { slideshow_motion: motion })
   const body = await jsonBody<{ error?: string }>(res)
   if (!res.ok) return { ok: false, error: body.error ?? `Save failed (${res.status})` }
   return { ok: true }
@@ -580,11 +598,7 @@ export async function saveDesktopGridColumns(
   slug: string,
   desktopGridColumns: number,
 ): Promise<{ ok: true; desktop_grid_columns: number } | { ok: false; error: string }> {
-  const res = await fetch('/api/album/media-settings', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ slug, desktop_grid_columns: desktopGridColumns }),
-  })
+  const res = await postMediaSettings(slug, { desktop_grid_columns: desktopGridColumns })
   const body = await jsonBody<{ error?: string; desktop_grid_columns?: number }>(res)
   if (!res.ok || body.desktop_grid_columns == null) {
     return { ok: false, error: body.error ?? `Save failed (${res.status})` }

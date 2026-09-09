@@ -12,7 +12,6 @@ import {
   type MediaDisplayFilter,
 } from '@/lib/media-display'
 import { DESKTOP_COLUMN_CHOICES, resolveGridColumns } from '@/lib/grid-columns'
-import { afterInFlight } from '@/lib/inflight-gate'
 import { clampMediaRadius, clampSlideshowInterval, parseMediaRadiusDraft } from '@/lib/media-input'
 import {
   adoptIncomingMedia,
@@ -62,13 +61,14 @@ import { useT } from '@/i18n/LocaleProvider'
 // (as the effect did), the state simply ceases to exist, and reopening reinitialises from the
 // album prop. Another device's change lands the same way. There is no flag to get stuck. A request
 // in flight at unmount finishes on the ref and settles the draft it left behind -- and holds the
-// wire for this album (lib/inflight-gate) until it lands, so the request a reopened panel sends
-// goes out after it: a reviewer closed and reopened Settings inside one round trip and the second
-// request overtook the first. Two residuals, written down rather than fixed: the grid shows the
-// closed panel's value for one round trip after it lands (the new panel's draft is unknown to it),
-// and if BOTH requests fail the reopened panel's baseline is the optimistic value until the next
-// refetch or edit -- two failures in a row, two toasts, and it errs toward showing what the owner
-// last chose.
+// wire for this album (api.ts postMediaSettings, lib/inflight-gate) until it lands, so the request
+// a reopened panel sends goes out after it: a reviewer closed and reopened Settings inside one
+// round trip and the second request overtook the first. Two residuals, written down rather than
+// fixed: as each closed panel's request lands, its value shows for one round trip on the grid AND
+// on the open panel's controls (the open panel reads it as a change from elsewhere; with two
+// closed panels queued the slider steps through each of their values once); and if EVERY request
+// fails the open panel's baseline is the optimistic value until the next refetch or edit -- one
+// toast per failure, erring toward showing what the owner last chose.
 
 function MotionSlider({ label, value, display, min, max, step, onChange }: {
   label: string; value: number; display: string; min: number; max: number; step: number
@@ -118,9 +118,10 @@ export default function MediaSettingsPanels({ album, photos, mediaRadiusMax, ope
   // state derived from a prop; adoptIncomingMedia returns the same object when nothing moved.
   const adopted = adoptIncomingMedia(media, incoming)
   if (adopted !== media) setMedia(adopted)
-  // The album as it is NOW, for an answer that lands after later clicks have moved it.
-  const albumRef = useRef(album)
-  useEffect(() => { albumRef.current = album }, [album])
+  // Which desktop-columns click is the latest. A failed answer reverts the album only if its click
+  // still is: comparing VALUES could not tell "my click is still the latest" from "a later click
+  // chose the same number again", and reverted the owner's re-chosen value.
+  const desktopClickRef = useRef(0)
   // The debounced save fires later and must read the draft as it is THEN, not as it was when the
   // timer was set; and two edits in one tick must compose. So edits advance this ref themselves.
   const mediaRef = useRef(adopted)
@@ -162,7 +163,7 @@ export default function MediaSettingsPanels({ album, photos, mediaRadiusMax, ope
     if (!mediaRadiusEditing) setMediaRadiusDraft(String(mediaRadius))
   }
 
-  // ONE REQUEST AT A TIME, from the ref -- per instance here, per album in lib/inflight-gate.
+  // ONE REQUEST AT A TIME, from the ref -- per instance here, per album in api.ts (lib/inflight-gate).
   // beginMediaSave marks the plan in flight; while it is out
   // every edit lands in the draft only (editMedia's save call and the debounce both find nothing to
   // plan). When the answer lands -- applied or failed -- the state is reconciled against what THAT
@@ -176,9 +177,10 @@ export default function MediaSettingsPanels({ album, photos, mediaRadiusMax, ope
     setMediaError('')
     const { plan } = begun
     try {
-      // The body is what beginMediaSave recorded, not re-planned when the gate opens: the answer
-      // is reconciled against inFlight, so the two must be the same object.
-      const result = await afterInFlight(album.slug, () => saveMediaSettingsRequest(album.slug, plan.changes, plan.resetRadiusOverrides, plan.resetFilterOverrides))
+      // The body is what beginMediaSave recorded, not re-planned when the album's wire frees up
+      // (api.ts holds it, one request per album): the answer is reconciled against inFlight, so
+      // the two must be the same object.
+      const result = await saveMediaSettingsRequest(album.slug, plan.changes, plan.resetRadiusOverrides, plan.resetFilterOverrides)
       if (!result.ok) throw new Error(result.error)
       const landed = confirmMediaSaved(mediaRef.current, result.applied)
       mediaRef.current = landed.state
@@ -419,6 +421,7 @@ export default function MediaSettingsPanels({ album, photos, mediaRadiusMax, ope
                         // Saved on its own (see saveDesktopGridColumns): this value is
                         // independent of the seven the debounced media save carries.
                         const before = album.desktop_grid_columns ?? null
+                        const click = ++desktopClickRef.current
                         onAlbumUpdated({ desktop_grid_columns: value })
                         void saveDesktopGridColumns(album.slug, value).then((r) => {
                           if (!r.ok) {
@@ -429,7 +432,7 @@ export default function MediaSettingsPanels({ album, photos, mediaRadiusMax, ope
                             // unless a later click has already moved on, in which case that
                             // click's own answer decides (a slow failure used to write the
                             // old value over a newer, accepted one).
-                            if ((albumRef.current.desktop_grid_columns ?? null) === value) {
+                            if (desktopClickRef.current === click) {
                               onAlbumUpdated({ desktop_grid_columns: before })
                             }
                           }

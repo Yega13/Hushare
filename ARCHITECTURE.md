@@ -144,8 +144,12 @@ Stated plainly, because a map that hides the swamps is not a map.
   its ten panels are components under `components/owner-toolbar/`, each owning its own state, and
   the decisions they make -- what each plan-gated row looks like (`lib/owner-rows`), the reveal
   rules (`lib/reveal-input`), the two-tap delete (`lib/delete-flow`) -- are tested modules with
-  mutation sets. The media/slideshow save pipeline moved as a unit and is not yet decomposed. The
-  budget stops the other two growing; it does not make them small.
+  mutation sets. The media/slideshow save pipeline is on a confirmed/draft machine
+  (`lib/media-settings-diff`, one request in flight per panel; `lib/inflight-gate`, one per album
+  across panel instances) driven by a real-component test with a held-request fetch rig -- three
+  review circles on 2026-09-08 each broke the previous version inside one round trip, which is
+  what that rig now holds. The budget stops the other two files growing; it does not make them
+  small.
 - **Every 500 is reported now, but not every refusal is serialised.** 63 of 90 route files import
   `lib/server/respond.ts`; no route returns a 500 without a `reportServerError` in the same
   block (checked per site, 2026-09-07). The 4xx side is still mostly hand-written
@@ -166,9 +170,10 @@ Stated plainly, because a map that hides the swamps is not a map.
   2026-09-07 deploy log: "matches the live database") -- but a missing or rotated secret turns
   all three into a `::warning` and the deploy proceeds.
 - **Mutation runs are on demand, not a gate.** `npm run mutate` reproduces every recorded result
-  (114 mutations, about twelve minutes), but CI does not run it, so a test that quietly weakens is
-  caught the next time somebody runs the set rather than at the push that weakened it. Only eight
-  modules have sets; the older `lib` modules were tested before the practice existed.
+  (275 mutations across twenty sets on 2026-09-09; the component sets run jsdom once per mutant,
+  so the whole run is closer to half an hour than ten minutes), but CI does not run it, so a test that quietly weakens is caught the next time
+  somebody runs the set rather than at the push that weakened it. The older `lib` modules were
+  tested before the practice existed and have no sets.
 - **A restore has not been rehearsed on record.** `scripts/restore-db.mjs` exists (insert-only,
   dry-run by default) and the nightly backup is verified to upload; no run of a restore against a
   real dump is recorded anywhere in the repository.

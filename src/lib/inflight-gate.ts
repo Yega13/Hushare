@@ -8,9 +8,11 @@
 // belongs to the resource, the album row, not to whoever holds a copy of it. So a request for an
 // album waits here for every earlier request for that album to settle, resolved or rejected.
 //
-// Errs toward NOT writing: a request that never settles holds the album's wire for the page's
-// lifetime. That is the same stall a single instance's `inFlight` would have, and the opposite
-// failure -- two writes landing in either order -- is the one nothing on the client can see.
+// Errs toward NOT writing: while a request is out, later edits wait. A request that never
+// settled would hold the key for the page's lifetime -- worse than one instance's `inFlight`,
+// which a reopened panel escaped -- so the caller bounds every request it puts through here
+// (owner-toolbar/api.ts, MEDIA_SAVE_TIMEOUT_MS); the opposite failure, two writes landing in
+// either order, is the one nothing on the client can see.
 
 const tails = new Map<string, Promise<void>>()
 
