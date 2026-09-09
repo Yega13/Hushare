@@ -14,7 +14,7 @@ import { shouldHoldForOwnerCheck } from '@/lib/owner-view'
 import { applyPhotoWindow, mergePreservingExtras, shouldApplyRefresh } from '@/lib/photo-window'
 import { createSettingsSync, shouldCommitSettings } from '@/lib/settings-sync'
 import { fallbackPollDelay } from '@/lib/realtime-fallback'
-import { albumChanged, deltaRowsNeeded, forcedRefreshAllowed, type AlbumFreshness } from '@/lib/album-freshness'
+import { albumChanged, deltaRowsNeeded, forcedRefreshAllowed, initialFreshness, mergeDelta, type AlbumFreshness } from '@/lib/album-freshness'
 import type { Album, Photo, Tier } from '@/types'
 import AlbumSkeleton from '@/components/AlbumSkeleton'
 import PasswordGate from '@/components/PasswordGate'
@@ -102,7 +102,7 @@ export default function AlbumPageClient({ initialAlbum = null, initialPhotos, in
   const photosLenRef = useRef(photos.length); photosLenRef.current = photos.length
   const totalRef = useRef(total); totalRef.current = total
   const albumIdRef = useRef<string | null>(initialAlbum?.id ?? null); albumIdRef.current = album?.id ?? null
-  const albumOrderRef = useRef<string | undefined>(initialAlbum?.photo_order); albumOrderRef.current = album?.photo_order
+  const albumOrderRef = useRef<Album['photo_order']>(initialAlbum?.photo_order); albumOrderRef.current = album?.photo_order
 
   // Loading gates — not loading when the server already provided album or gate state.
   const [loading, setLoading] = useState(!initialAlbum && !initialGate)
@@ -347,24 +347,11 @@ export default function AlbumPageClient({ initialAlbum = null, initialPhotos, in
   // subscribes then finds nothing changed and skips, instead of pulling the same ~228 KB a second
   // time one second after load. At 400 arrivals that duplicate alone was ~90 MB and 400 heavy
   // queries in the arrival window.
+  // ONLY when the server-rendered window is known to contain the newest photo -- which depends
+  // on the album's order and the window size; lib/album-freshness decides (the oldest-first
+  // album past the window used to seed from its 500 OLDEST rows and re-fetch on the first probe).
   const seenFreshnessRef = useRef<AlbumFreshness | null>(
-    // ONLY when the server-rendered window is known to contain the newest photo.
-    //
-    // initialPhotos is the first WINDOW (500), ordered by the album's own photo_order. On a
-    // newest-first album that window holds the newest row, so its max created_at is the album's.
-    // On an oldest-first or hand-arranged album past 500 photos it is the 500 OLDEST rows, whose
-    // max is nowhere near — seeding from it guaranteed a mismatch on the very first probe and
-    // pulled the whole window anyway, which is precisely the duplicate fetch the seed exists to
-    // avoid. Below the window size every ordering holds the whole album, so any of them is safe.
-    initialPhotos && typeof initialTotal === 'number' &&
-    (album?.photo_order === 'newest' || initialPhotos.length >= initialTotal)
-      ? {
-          total: initialTotal,
-          // max, not [0] — even a newest-first window must not assume the array's own order.
-          latest: initialPhotos.reduce<string | null>(
-            (max, p) => (!max || p.created_at > max ? p.created_at : max), null),
-        }
-      : null,
+    initialFreshness(initialPhotos, initialTotal, album?.photo_order),
   )
 
   const probeAlbum = useCallback(async (albumId: string): Promise<AlbumFreshness | null> => {
@@ -402,18 +389,8 @@ export default function AlbumPageClient({ initialAlbum = null, initialPhotos, in
   // window path does not need this because the server returns it already ordered.
   const applyDelta = useCallback((fresh: { photos: Photo[]; total: number }) => {
     setTotal(fresh.total)
-    setPhotos(prev => {
-      const have = new Set(prev.map(p => p.id))
-      const added = fresh.photos.filter(p => !have.has(p.id))
-      if (added.length === 0) return prev
-      const merged = [...added, ...prev]
-      if (albumOrderRef.current === 'oldest') {
-        merged.sort((a, b) => a.created_at.localeCompare(b.created_at) || a.id.localeCompare(b.id))
-      } else if (albumOrderRef.current !== 'manual') {
-        merged.sort((a, b) => b.created_at.localeCompare(a.created_at) || b.id.localeCompare(a.id))
-      }
-      return merged
-    })
+    // The join and the ordering are lib/album-freshness (same array back when nothing is new).
+    setPhotos(prev => mergeDelta(prev, fresh.photos, albumOrderRef.current))
   }, [])
 
   // Refresh the window, asking the cheap question first EXCEPT when we were told something

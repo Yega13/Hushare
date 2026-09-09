@@ -226,7 +226,9 @@ const SIZE_BUDGET: Record<string, number> = {
   // -45 (2026-09-09): what a resolve answer MEANS (lib/resolve-outcome, the 404-before-body-flags
   // order held by a test) and which photos the grid shows (lib/grid-visibility, the review-queue
   // split and the bib re-admission) left as pure functions with mutation sets. A reduction, locked in.
-  'src/app/[slug]/AlbumPageClient.tsx': 1744,
+  // -23 (2026-09-09): the SSR freshness seed and the delta-row merge moved to lib/album-freshness
+  // (initialFreshness, mergeDelta) with a mutation set. A reduction, locked in.
+  'src/app/[slug]/AlbumPageClient.tsx': 1721,
   'src/app/card-editor/CardEditorClient.tsx': 873,
   // +1 (2026-08-31): pass collectionTotal to the lightbox counter.
   // +2 (2026-08-31): morphAllowed gate on open and close.

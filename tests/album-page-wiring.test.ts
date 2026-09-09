@@ -78,3 +78,14 @@ describe('AlbumPageClient wires the grid visibility from the real state', () => 
     expect(src()).toMatch(/publishedCountOf\(\s*total\s*,\s*pendingPhotos\.length\s*\)/)
   })
 })
+
+describe('AlbumPageClient wires the freshness seed and the delta merge from the real inputs', () => {
+  it('the seed reads the SSR window, its total, and the album order', () => {
+    const call = singleCall(src(), 'initialFreshness(')
+    expect(call).toMatch(/initialFreshness\(\s*initialPhotos\s*,\s*initialTotal\s*,\s*album\?\.photo_order\s*\)/)
+  })
+  it('delta rows merge into the previous list in the album order the ref carries', () => {
+    const call = singleCall(src(), 'mergeDelta(')
+    expect(call).toMatch(/mergeDelta\(\s*prev\s*,\s*fresh\.photos\s*,\s*albumOrderRef\.current\s*\)/)
+  })
+})

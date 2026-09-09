@@ -124,3 +124,58 @@ describe('how often a broadcast may force a full-window fetch', () => {
     expect(forcedRefreshAllowed(Number.POSITIVE_INFINITY, 1_000_000)).toBe(true)
   })
 })
+
+// WHAT THE SERVER-RENDERED WINDOW MAY SEED, and how delta rows join the list.
+import { initialFreshness, mergeDelta } from '../src/lib/album-freshness'
+
+const row = (id: string, created_at: string) => ({ id, created_at })
+const WINDOW = [row('b', '2026-09-02'), row('c', '2026-09-03'), row('a', '2026-09-01')]   // deliberately unordered
+
+describe('initialFreshness -- only when the window is known to hold the newest photo', () => {
+  it('a newest-first album seeds from the window even past its size, with max not [0]', () => {
+    expect(initialFreshness(WINDOW, 5000, 'newest')).toEqual({ total: 5000, latest: '2026-09-03' })
+  })
+  it('an oldest-first album PAST the window seeds nothing (the 500 oldest rows prove nothing)', () => {
+    expect(initialFreshness(WINDOW, 5000, 'oldest')).toBeNull()
+  })
+  it('a hand-arranged album past the window seeds nothing', () => {
+    expect(initialFreshness(WINDOW, 5000, 'manual')).toBeNull()
+  })
+  it('below the window size every ordering holds the whole album, so all of them seed', () => {
+    for (const order of ['oldest', 'manual', undefined] as const) {
+      expect(initialFreshness(WINDOW, 3, order)).toEqual({ total: 3, latest: '2026-09-03' })
+    }
+  })
+  it('no window or no total seeds nothing; an empty album seeds a null latest', () => {
+    expect(initialFreshness(null, 3, 'newest')).toBeNull()
+    expect(initialFreshness(WINDOW, undefined, 'newest')).toBeNull()
+    expect(initialFreshness([], 0, 'newest')).toEqual({ total: 0, latest: null })
+  })
+})
+
+describe('mergeDelta -- delta rows join in the album order', () => {
+  const prev = [row('c', '2026-09-03'), row('a', '2026-09-01')]
+  it('nothing new returns the SAME array (the grid must not re-pack)', () => {
+    expect(mergeDelta(prev, [row('a', '2026-09-01')], 'newest')).toBe(prev)
+    expect(mergeDelta(prev, [], 'newest')).toBe(prev)
+  })
+  it('newest-first: a new row sorts by created_at descending, ties by id descending', () => {
+    const out = mergeDelta(prev, [row('b', '2026-09-02'), row('d', '2026-09-03')], 'newest')
+    expect(out.map((p) => p.id)).toEqual(['d', 'c', 'b', 'a'])
+  })
+  it('the default order is newest-first too', () => {
+    expect(mergeDelta(prev, [row('b', '2026-09-02')], undefined).map((p) => p.id)).toEqual(['c', 'b', 'a'])
+  })
+  it('oldest-first sorts ascending, ties by id ascending', () => {
+    const out = mergeDelta([row('a', '2026-09-01')], [row('c', '2026-09-03'), row('b', '2026-09-03')], 'oldest')
+    expect(out.map((p) => p.id)).toEqual(['a', 'b', 'c'])
+  })
+  it('a hand-arranged album keeps its arrangement: new rows go in front, nothing is sorted', () => {
+    const arranged = [row('z', '2026-09-01'), row('y', '2026-09-03')]
+    expect(mergeDelta(arranged, [row('n', '2026-09-02')], 'manual').map((p) => p.id)).toEqual(['n', 'z', 'y'])
+  })
+  it('a row already present is not added twice even if its copy differs', () => {
+    const out = mergeDelta(prev, [row('c', '2026-09-09')], 'newest')
+    expect(out).toBe(prev)
+  })
+})

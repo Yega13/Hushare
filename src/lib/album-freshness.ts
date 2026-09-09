@@ -110,3 +110,48 @@ export function deltaRowsNeeded(
   if (!probe.latest || !seen.latest || probe.latest <= seen.latest) return null
   return grew
 }
+
+// WHAT THE SERVER-RENDERED WINDOW MAY SEED, and how delta rows join the list. Both sat inline in
+// AlbumPageClient; both carry a documented bug.
+//
+// The first window (500 rows) is ordered by the album's own photo_order. On a newest-first album
+// it holds the newest row, so its max created_at is the album's. On an oldest-first or
+// hand-arranged album PAST the window it is the 500 oldest rows, whose max is nowhere near --
+// seeding from it guaranteed a mismatch on the very first probe and pulled the whole window
+// anyway, which is precisely the duplicate fetch the seed exists to avoid (about 90 MB across 400
+// arrivals, measured). Below the window size every ordering holds the whole album.
+
+export type PhotoOrder = 'newest' | 'oldest' | 'manual' | undefined
+
+/** The freshness the SSR window proves, or null when it proves nothing. */
+export function initialFreshness(
+  photos: ReadonlyArray<{ created_at: string }> | null | undefined,
+  total: number | undefined,
+  order: PhotoOrder,
+): AlbumFreshness | null {
+  if (!photos || typeof total !== 'number') return null
+  if (order !== 'newest' && photos.length < total) return null
+  return {
+    total,
+    // max, not [0]: even a newest-first window must not assume the array's own order.
+    latest: photos.reduce<string | null>((max, p) => (!max || p.created_at > max ? p.created_at : max), null),
+  }
+}
+
+/**
+ * Delta rows joined to what the viewer has, in the album's order. Rows already present are
+ * dropped by id; when nothing is new the SAME array comes back, so the grid does not re-pack. A
+ * hand-arranged album keeps its arrangement: new rows go to the front and nothing is sorted.
+ */
+export function mergeDelta<P extends { id: string; created_at: string }>(prev: P[], incoming: P[], order: PhotoOrder): P[] {
+  const have = new Set(prev.map((p) => p.id))
+  const added = incoming.filter((p) => !have.has(p.id))
+  if (added.length === 0) return prev
+  const merged = [...added, ...prev]
+  if (order === 'oldest') {
+    merged.sort((a, b) => a.created_at.localeCompare(b.created_at) || a.id.localeCompare(b.id))
+  } else if (order !== 'manual') {
+    merged.sort((a, b) => b.created_at.localeCompare(a.created_at) || b.id.localeCompare(a.id))
+  }
+  return merged
+}
