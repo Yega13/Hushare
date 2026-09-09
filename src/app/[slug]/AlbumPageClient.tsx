@@ -1001,15 +1001,9 @@ export default function AlbumPageClient({ initialAlbum = null, initialPhotos, in
 
     const sync = createSettingsSync({
       quietMs: SELF_EDIT_QUIET_MS,
-      // JITTERED. For a guest `lastLocalEditAt` is 0, so settings-sync answers "refetch" the
-      // instant the broadcast lands — with no debounce and no spread. Every viewer receives that
-      // broadcast within milliseconds of every other, so one owner nudging a Designer slider threw
-      // a thousand simultaneous requests at a 900/minute ceiling and a share of the room got 429s.
-      // Every other hot path in this file carries this reasoning; this one was missed.
-      refetch: () => {
-        const delay = Math.round(700 * (0.5 + Math.random() * 1.5))
-        window.setTimeout(refetchSettings, delay)
-      },
+      // The spread that stops a room of guests fetching in the same instant is settings-sync's
+      // (refetchJitterMs): it owns the timer, so the jitter is a test and not four lines here.
+      refetch: refetchSettings,
       markOwed: () => { settingsRefetchOwedRef.current = true },
     })
 

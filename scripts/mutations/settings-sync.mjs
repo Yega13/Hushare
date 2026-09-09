@@ -1,0 +1,24 @@
+// Mutation set for src/lib/settings-sync.ts -- run with: node scripts/mutations/run.mjs settings-sync
+export default {
+  file: 'src/lib/settings-sync.ts',
+  test: 'tests/settings-sync.test.ts',
+  mutations: [
+  { name: 'the refetch jitter is gone (a room of guests fetches in the same instant)',
+    from: "  return Math.round(REFETCH_JITTER_BASE_MS * (0.5 + rand() * 1.5))", to: "  return REFETCH_JITTER_BASE_MS" },
+  { name: 'the refetch jitter can be zero',
+    from: "  return Math.round(REFETCH_JITTER_BASE_MS * (0.5 + rand() * 1.5))", to: "  return Math.round(REFETCH_JITTER_BASE_MS * rand() * 2)" },
+  { name: 'a real refetch fires at once, unjittered, beside the queued echo',
+    from: "      cancelPending()\n      pending = timers.set(() => { pending = null; config.refetch() }, refetchJitterMs(rand))",
+    to: "      config.refetch()" },
+  { name: 'a real refetch does not replace the queued echo (two fetches)',
+    from: "      cancelPending()\n      pending = timers.set(() => { pending = null; config.refetch() }, refetchJitterMs(rand))",
+    to: "      timers.set(() => { config.refetch() }, refetchJitterMs(rand))" },
+  { name: 'a scheduled fetch stacks instead of replacing (one fetch per slider step)',
+    from: "        cancelPending()\n        pending = timers.set(() => { pending = null; config.refetch() }, action.delayMs)",
+    to: "        pending = timers.set(() => { pending = null; config.refetch() }, action.delayMs)" },
+  { name: 'dispose leaves the queued fetch to fire into an unmounted page',
+    from: "    dispose: cancelPending,", to: "    dispose: () => {}," },
+  { name: 'the Designer being open no longer owes the refetch',
+    from: "      if (action.kind === 'owe') { config.markOwed(); return }\n", to: "" },
+  ],
+}

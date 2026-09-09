@@ -146,3 +146,11 @@ describe('AlbumPageClient hands the photos channel to the supervisor and keeps o
     expect(text).not.toMatch(/retryTimer|pollTimer|refetchTimer|fallbackPollDelay|forcedRefreshAllowed/)
   })
 })
+
+describe('AlbumPageClient hands settings-sync the refetch itself; the jitter is the module\'s', () => {
+  it('refetch is refetchSettings, with no timer or random source at the call site', () => {
+    const call = singleCall(src(), 'createSettingsSync(')
+    expect(call).toMatch(/refetch:\s*refetchSettings\s*,/)
+    expect(call).not.toMatch(/setTimeout|Math\.random/)
+  })
+})

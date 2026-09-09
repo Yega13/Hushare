@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { onSettingsBroadcast, shouldCommitSettings, createSettingsSync, type Timers } from '@/lib/settings-sync'
+import { onSettingsBroadcast, shouldCommitSettings, createSettingsSync, refetchJitterMs, type Timers } from '@/lib/settings-sync'
 import type { Millis } from '@/lib/clock'
 
 // The stamps compared by settings-sync are Millis -- monotonic readings -- so a wall-clock number
@@ -127,13 +127,13 @@ describe('a backwards clock cannot postpone the refresh forever', () => {
 describe('a dragged slider produces one refetch, not one per broadcast', () => {
   function fakeTimers() {
     let seq = 0
-    const live = new Map<number, () => void>()
+    const live = new Map<number, { fn: () => void; ms: number }>()
     const timers: Timers = {
-      set(fn) { const id = ++seq; live.set(id, fn); return id },
+      set(fn, ms) { const id = ++seq; live.set(id, { fn, ms }); return id },
       clear(id) { live.delete(id) },
     }
-    const runAll = () => { const fns = [...live.values()]; live.clear(); fns.forEach((f) => f()) }
-    return { timers, runAll, pending: () => live.size }
+    const runAll = () => { const fns = [...live.values()].map((t) => t.fn); live.clear(); fns.forEach((f) => f()) }
+    return { timers, runAll, pending: () => live.size, delays: () => [...live.values()].map((t) => t.ms) }
   }
 
   it('collapses a burst of broadcasts into a single trailing fetch', () => {
@@ -153,10 +153,30 @@ describe('a dragged slider produces one refetch, not one per broadcast', () => {
     const sync = createSettingsSync({ quietMs: QUIET, refetch: () => { fetches++ }, markOwed: () => {}, timers })
     sync.onBroadcast({ designerOpen: false, now: at(NOW), lastLocalEditAt: at(NOW) })
     sync.onBroadcast({ designerOpen: false, now: at(NOW), lastLocalEditAt: at(NOW - 999_999) })
-    expect(fetches, 'the real one fetches immediately').toBe(1)
-    expect(pending(), 'and the queued echo is dropped, not left to fire again').toBe(0)
+    expect(fetches, 'nothing has fetched yet: the real one waits its jitter').toBe(0)
+    expect(pending(), 'and the queued echo is dropped, not left beside it').toBe(1)
     runAll()
     expect(fetches).toBe(1)
+  })
+
+  it("a guest's refetch is JITTERED, and a burst of broadcasts is one fetch per viewer", () => {
+    // Every viewer hears the broadcast in the same millisecond; without the spread a room of
+    // guests fetched together and a share of them got 429s.
+    const { timers, runAll, pending, delays } = fakeTimers()
+    let fetches = 0
+    const sync = createSettingsSync({ quietMs: QUIET, refetch: () => { fetches++ }, markOwed: () => {}, timers, rand: () => 0.5 })
+    for (let i = 0; i < 5; i++) sync.onBroadcast({ designerOpen: false, now: at(NOW + i), lastLocalEditAt: at(0) })
+    expect(pending()).toBe(1)
+    expect(delays()).toEqual([Math.round(700 * (0.5 + 0.5 * 1.5))])
+    runAll()
+    expect(fetches).toBe(1)
+  })
+
+  it('the jitter ALWAYS spreads with the real random source (two viewers differ)', () => {
+    const seen = new Set<number>()
+    for (let i = 0; i < 25; i++) seen.add(refetchJitterMs())
+    expect(seen.size).toBeGreaterThan(1)
+    for (const d of seen) { expect(d).toBeGreaterThanOrEqual(350); expect(d).toBeLessThanOrEqual(1400) }
   })
 
   it('drops a queued fetch when the page goes away', () => {

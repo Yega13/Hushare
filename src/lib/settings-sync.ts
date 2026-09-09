@@ -103,6 +103,21 @@ const realTimers: Timers = {
   clear: (id) => window.clearTimeout(id),
 }
 
+export const REFETCH_JITTER_BASE_MS = 700
+
+/**
+ * How long a viewer waits before a refetch the decision above answered "now". For a guest
+ * lastLocalEditAt is 0, so every broadcast is "refetch", the instant it lands -- and every viewer
+ * receives it within milliseconds of every other. One owner nudging a Designer slider threw a
+ * thousand simultaneous requests at a 900-a-minute ceiling and a share of the room got 429s.
+ * Spread across 0.5x to 2x of the base, so a room fetches over a second and a half, not at once.
+ * This sat in the component as four untested lines: rule 16's first example was a jitter test
+ * that only proved the parameter worked, and this one had no test at all.
+ */
+export function refetchJitterMs(rand: () => number = Math.random): number {
+  return Math.round(REFETCH_JITTER_BASE_MS * (0.5 + rand() * 1.5))
+}
+
 /**
  * The decision above, WITH the cancellation that enforces it.
  *
@@ -123,8 +138,10 @@ export function createSettingsSync(config: {
   /** The Designer is open — remember that a refetch is owed once it closes. */
   markOwed: () => void
   timers?: Timers
+  rand?: () => number
 }) {
   const timers = config.timers ?? realTimers
+  const rand = config.rand ?? Math.random
   let pending: number | null = null
 
   const cancelPending = () => {
@@ -144,9 +161,10 @@ export function createSettingsSync(config: {
         return
       }
       // A real refetch supersedes anything queued: the queued one existed only to wait out an echo
-      // that is now over.
+      // that is now over. It goes out after the jitter, and a later broadcast inside that window
+      // replaces it -- a burst from the owner is one fetch per viewer, not one per step.
       cancelPending()
-      config.refetch()
+      pending = timers.set(() => { pending = null; config.refetch() }, refetchJitterMs(rand))
     },
     /** Drop any queued fetch — the album page is going away. */
     dispose: cancelPending,
