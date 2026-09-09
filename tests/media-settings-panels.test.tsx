@@ -366,6 +366,22 @@ describe('MediaSettingsPanels -- what goes on the wire', () => {
     expect(screen.getByTestId('album-desktop').textContent).toBe('5')
   })
 
+  it('after a desktop click has FAILED, the baseline still follows the album (a remote change, then another failure)', async () => {
+    // A failed click counted back in only on success would freeze the baseline after one failure.
+    hold = true
+    render(<Harness />)
+    const desktopRow = screen.getByText(en['ot.gridDesktop']).nextElementSibling as HTMLElement
+    const click = (n: string) => fireEvent.click(Array.from(desktopRow.querySelectorAll('button')).find((b) => b.textContent === n) as HTMLElement)
+    click('4')
+    await flush()
+    await resolveFail(0)
+    await act(async () => { setAlbumFromOutside({ desktop_grid_columns: 5 }) })
+    click('3')
+    await flush()
+    await resolveFail(1)
+    expect(screen.getByTestId('album-desktop').textContent).toBe('5')
+  })
+
   it('a failed desktop click after a phone-grid change reverts to the pin the route added, not to null', async () => {
     // The common album: no desktop choice. The phone-grid save pins the desktop and echoes it.
     answer = (body) => ({ ...echo(body), json: { ...echo(body).json, desktop_grid_columns: 3 } })
