@@ -487,7 +487,9 @@ describe('a new decision module arrives with its tests', () => {
 // So the list is derived from the code instead of remembered. This is the same shape as the cron
 // literal check below: a hand-kept list beside a mechanical one, held together by a test.
 describe('the pre-deploy schema check knows every function the code calls', () => {
-  it('lists every .rpc() name in REQUIRED_FUNCTIONS', () => {
+  // 30 s: this reads every file under src (386 on 2026-09-09). The default 5 s is for catching a
+  // hang, and a cold checkout on a slow disk crossed it three times in one day with nothing wrong.
+  it('lists every .rpc() name in REQUIRED_FUNCTIONS', { timeout: 30_000 }, () => {
     const checkDb = readFileSync(join(process.cwd(), 'scripts', 'check-db.mjs'), 'utf8')
     const listed = new Set(
       (checkDb.match(/const REQUIRED_FUNCTIONS = \[([\s\S]*?)\]/) ?? ['', ''])[1]

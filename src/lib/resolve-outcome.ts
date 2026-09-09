@@ -32,9 +32,12 @@ export function classifyResolve(status: number, ok: boolean, body: unknown): Res
     const gate = gateFields(json)
     return gate ? { kind: 'password', ...gate } : { kind: 'error' }
   }
-  // Reveal gate: 200 with locked + a reveal time. locked without a time falls through to the
-  // album check below, which refuses it for having no id.
-  if (json.locked === true && typeof json.reveal_at === 'string' && json.reveal_at) {
+  // Reveal gate: 200 with locked + a reveal time. A time that is not a string is a malformed
+  // answer (a reviewer found the first version of this quietly rendering such a body as the
+  // album). locked with NO time falls through to the album check, which refuses it for having no
+  // id -- the route never sends that shape; this is the inline code's behaviour kept exactly.
+  if (json.locked === true && json.reveal_at) {
+    if (typeof json.reveal_at !== 'string') return { kind: 'error' }
     const gate = gateFields(json)
     return gate ? { kind: 'reveal', revealAt: json.reveal_at, ...gate } : { kind: 'error' }
   }

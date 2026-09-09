@@ -36,6 +36,14 @@ describe('classifyResolve -- the gates', () => {
     expect(classifyResolve(200, true, { locked: true, ...GATE })).toEqual({ kind: 'error' })
     expect(classifyResolve(200, true, { locked: true, reveal_at: '', ...GATE })).toEqual({ kind: 'error' })
   })
+  it('a reveal time that is not a string is a malformed answer, even with an album id beside it', () => {
+    expect(classifyResolve(200, true, { locked: true, reveal_at: 123, id: 'a1', ...GATE })).toEqual({ kind: 'error' })
+    expect(classifyResolve(200, true, { locked: true, reveal_at: {}, id: 'a1', ...GATE })).toEqual({ kind: 'error' })
+  })
+  it('the flags are literal true, not merely truthy (the route sends booleans)', () => {
+    expect(classifyResolve(200, true, { password_required: 'true', id: 'a1' }).kind).toBe('album')
+    expect(classifyResolve(200, true, { locked: 1, reveal_at: '2026-10-01T00:00:00Z', id: 'a1' }).kind).toBe('album')
+  })
   it('a reveal gate missing its name is an error', () => {
     expect(classifyResolve(200, true, { locked: true, reveal_at: '2026-10-01T00:00:00Z', slug: 'race' })).toEqual({ kind: 'error' })
   })

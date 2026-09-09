@@ -11,8 +11,11 @@ import { stripJsComments } from './helpers/source-text'
 // decides whether it runs". A call site passing `true` for `res.ok`, or `[]` for the photos, is
 // green in every module test and wrong on every album.
 //
-// As in album-page-search-wiring.test.ts: names are not pinned, derivation is. Each argument must
-// be a property read or a call, never a literal. Comments are stripped first.
+// UNLIKE album-page-search-wiring.test.ts, the NAMES are pinned here. A reviewer showed eight
+// wrong call sites -- the Response object for the body, `isOwner` for `effectiveIsOwner`, `null`
+// for the pending ids, `photos` for the published list -- that a shape-only check let through,
+// each an identifier and each a defect on every album. When every wrong name is equally "derived",
+// the name is the contract. Comments are stripped first.
 
 const SOURCE = join(process.cwd(), 'src', 'app', '[slug]', 'AlbumPageClient.tsx')
 const src = () => stripJsComments(readFileSync(SOURCE, 'utf8'))
@@ -33,8 +36,7 @@ function singleCall(text: string, marker: string): string {
 describe('AlbumPageClient wires the resolve outcome from the real response', () => {
   it('classifyResolve gets the status, the ok flag, and the parsed body -- no literals', () => {
     const call = singleCall(src(), 'classifyResolve(')
-    expect(call).toMatch(/classifyResolve\(\s*res\.status\s*,\s*res\.ok\s*,\s*\w+\s*\)/)
-    expect(call).not.toMatch(/\b(true|false|\d{3})\b/)
+    expect(call).toMatch(/classifyResolve\(\s*res\.status\s*,\s*res\.ok\s*,\s*json\s*\)/)
   })
   it('every outcome kind is handled, and only the album kind falls through', () => {
     const text = src()
@@ -44,24 +46,33 @@ describe('AlbumPageClient wires the resolve outcome from the real response', () 
     // The gate cases must set the gate the outcome carries, not something else.
     expect(text).toMatch(/case 'password':\s*setPasswordGate\(\{\s*slug:\s*outcome\.slug/)
     expect(text).toMatch(/case 'reveal':\s*setRevealGate\(\{\s*revealAt:\s*outcome\.revealAt/)
+    expect(text).toMatch(/case 'not-found':\s*setIsNotFound\(true\)/)
+    expect(text).toMatch(/case 'error':\s*setNetworkError\(true\)/)
+    // The album case must fall through to the album, not return before it loads.
+    expect(text).toMatch(/case 'album':\s*break/)
+    expect(text).toMatch(/const data = outcome\.album/)
   })
 })
 
 describe('AlbumPageClient wires the grid visibility from the real state', () => {
   it('partitionPending gets the photos and a DERIVED owner flag and approval flag', () => {
     const call = singleCall(src(), 'partitionPending(')
-    expect(call).toMatch(/partitionPending\(\s*photos\s*,\s*\{\s*isOwner:\s*\w+\s*,\s*requireApproval:?\s*\w*\s*\}\s*\)/)
-    expect(call).not.toMatch(/\b(true|false)\b/)
+    // effectiveIsOwner, not isOwner: the owner-token-in-URL gate the file defends at length.
+    expect(call).toMatch(/partitionPending\(\s*photos\s*,\s*\{\s*isOwner:\s*effectiveIsOwner\s*,\s*requireApproval\s*\}\s*\)/)
   })
   it('the requireApproval flag is read from the album, not assumed', () => {
     expect(src()).toMatch(/const requireApproval = album\?\.require_approval === true/)
   })
   it('visiblePhotos gets the server answer flag and the server rows, derived', () => {
     const call = singleCall(src(), 'visiblePhotosOf(')
-    for (const key of ['published:', 'pendingIds', 'bibEnabled', 'query:', 'serverAnswered:', 'serverPhotos:', 'range:']) {
-      expect(call, `${key} is missing from the visiblePhotos input`).toContain(key)
-    }
-    expect(call).not.toMatch(/\b(true|false)\b|\[\]/)
+    expect(call).toMatch(/published:\s*publishedPhotos\b/)
+    expect(call).toMatch(/\bpendingIds\s*[,}]/)          // shorthand: the memoised set, not overridden
+    expect(call).toMatch(/\bbibEnabled\s*[,}]/)
+    expect(call).toMatch(/query:\s*bibDigits\b/)
+    expect(call).toMatch(/serverAnswered:\s*bibServerAnswered\b/)
+    expect(call).toMatch(/serverPhotos:\s*bibServerPhotos\b/)
+    expect(call).toMatch(/range:\s*bibRange\b/)
+    expect(call).not.toMatch(/\bnull\b|\b(true|false)\b|\[\]/)
   })
   it('the published count the guest-facing label uses comes from the module', () => {
     expect(src()).toMatch(/publishedCountOf\(\s*total\s*,\s*pendingPhotos\.length\s*\)/)
