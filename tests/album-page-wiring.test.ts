@@ -89,3 +89,18 @@ describe('AlbumPageClient wires the freshness seed and the delta merge from the 
     expect(call).toMatch(/mergeDelta\(\s*prev\s*,\s*fresh\.photos\s*,\s*albumOrderRef\.current\s*\)/)
   })
 })
+
+describe('AlbumPageClient wires the leave-intent decisions from the real event', () => {
+  it('a back press asks isRealLeavePop with the history state', () => {
+    expect(src()).toMatch(/if \(isRealLeavePop\(e\.state\)\) trigger\(\)/)
+  })
+  it('a click hands leaveDestination every predicate from the event and the anchor, and the real location', () => {
+    const call = singleCall(src(), 'leaveDestination(')
+    for (const pair of ['button: e.button', 'metaKey: e.metaKey', 'ctrlKey: e.ctrlKey', 'shiftKey: e.shiftKey', 'altKey: e.altKey',
+      'defaultPrevented: e.defaultPrevented', "href: anchor?.getAttribute('href') ?? null", "download: anchor?.hasAttribute('download') ?? false",
+      "target: anchor?.getAttribute('target') ?? null"]) {
+      expect(call, pair).toContain(pair)
+    }
+    expect(call).toMatch(/\},\s*window\.location\s*\)$/)
+  })
+})

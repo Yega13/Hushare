@@ -1,0 +1,27 @@
+// Mutation set for src/lib/leave-intent.ts -- run with: node scripts/mutations/run.mjs leave-intent
+export default {
+  file: 'src/lib/leave-intent.ts',
+  test: 'tests/leave-intent.test.ts',
+  mutations: [
+  { name: 'landing back on our own entry fires the prompt',
+    from: "  return !s.hushSave && !s.hushLightbox", to: "  return !s.hushLightbox" },
+  { name: 'closing the lightbox fires the prompt',
+    from: "  return !s.hushSave && !s.hushLightbox", to: "  return !s.hushSave" },
+  { name: 'a download link is intercepted (the download is cancelled and the modal pops)',
+    from: "  if (click.download) return null\n", to: "" },
+  { name: 'a click something already handled is intercepted',
+    from: "  if (click.defaultPrevented || click.button !== 0) return null", to: "  if (click.button !== 0) return null" },
+  { name: 'a middle click is a leave',
+    from: "  if (click.defaultPrevented || click.button !== 0) return null", to: "  if (click.defaultPrevented) return null" },
+  { name: 'a ctrl-click (new tab) is a leave',
+    from: "  if (click.metaKey || click.ctrlKey || click.shiftKey || click.altKey) return null", to: "  if (click.metaKey || click.shiftKey || click.altKey) return null" },
+  { name: 'a link that opens in a new tab is a leave',
+    from: "  if (click.target && click.target !== '_self') return null\n", to: "" },
+  { name: 'a foreign site is a leave',
+    from: "  if (dest.origin !== current.origin || dest.pathname === current.pathname) return null", to: "  if (dest.pathname === current.pathname) return null" },
+  { name: 'a same-page link is a leave',
+    from: "  if (dest.origin !== current.origin || dest.pathname === current.pathname) return null", to: "  if (dest.origin !== current.origin) return null" },
+  { name: 'an unparseable href throws instead of being ignored',
+    from: "  try { dest = new URL(click.href, current.href) } catch { return null }", to: "  dest = new URL(click.href, current.href)" },
+  ],
+}

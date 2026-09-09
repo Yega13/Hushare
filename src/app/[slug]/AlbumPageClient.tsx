@@ -2,7 +2,6 @@
 
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, useMemo } from 'react'
 import { indexKnownComplete, searchPhase } from '@/lib/search-answer'
-import { queryOutsideRange } from '@/lib/bib-match'
 import { classifyResolve } from '@/lib/resolve-outcome'
 import { isRealLeavePop, leaveDestination } from '@/lib/leave-intent'
 import { partitionPending, pendingIdSet, publishedTotal as publishedCountOf, visiblePhotos as visiblePhotosOf } from '@/lib/grid-visibility'
@@ -528,11 +527,6 @@ export default function AlbumPageClient({ initialAlbum = null, initialPhotos, in
   // Read here, not at render, so searchPhase and the bar judge "fully read" from the SAME numbers.
   const totalImageCount = bibStats?.totalImages ?? photos.filter((p) => p.media_type !== 'video').length
   const bibIndexedCount = bibStats?.indexed ?? photos.filter((p) => p.media_type !== 'video' && p.bib_numbers != null).length
-  // The race's declared numbering, memoised for IDENTITY (it sits in visiblePhotos' deps). Read
-  // here because the phase depends on it: a number outside it is refused before any search runs.
-  const bibRange = useMemo(
-    () => ({ min: album?.bib_min ?? null, max: album?.bib_max ?? null }),
-    [album?.bib_min, album?.bib_max])
   const bibPhase = searchPhase({
     enabled: bibEnabled,
     query: bibDigits,
@@ -540,7 +534,6 @@ export default function AlbumPageClient({ initialAlbum = null, initialPhotos, in
     failedQuery: bibFailedQuery,
     answerIsEmpty: (bibResult?.total ?? 0) <= 0,
     indexComplete: indexKnownComplete(bibStats),
-    excludedByAlbum: queryOutsideRange(bibDigits, bibRange),
   })
 
   useEffect(() => {
@@ -1368,6 +1361,12 @@ export default function AlbumPageClient({ initialAlbum = null, initialPhotos, in
   // Bib search narrows the SAME grid rather than opening a separate results view. Filtering is
   // client-side over photos already loaded, so typing is instant and costs no requests. When the
   // album isn't a race album (or the box is empty) this is the untouched photo list.
+  // Memoised for IDENTITY: this object sits in visiblePhotos' deps, and a fresh {} every render
+  // rebuilt the filtered array during an active bib search — which re-rendered every tile and
+  // re-packed the masonry on the product's flagship flow, on race albums, mid-search.
+  const bibRange = useMemo(
+    () => ({ min: album?.bib_min ?? null, max: album?.bib_max ?? null }),
+    [album?.bib_min, album?.bib_max])
   // The server's answer for THIS query wins; the local filter covers the moment before it lands
   // and the case where the request failed. bibResult is tagged with the query it answers, so a
   // stale response for an earlier number can never be shown against a newer one.
