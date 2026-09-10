@@ -13,6 +13,7 @@ describe('bibRequestPlan', () => {
     expect(p.delayMs).toBe(BIB_TYPING_DEBOUNCE_MS)
     expect(p.url).toBe(`/api/album/photos?albumId=a1&bib=945&limit=${BIB_RESULT_LIMIT}`)
     expect(BIB_RESULT_LIMIT).toBe(300)
+    expect(BIB_TYPING_DEBOUNCE_MS, 'the debounce itself, not the code against itself (rule 17)').toBe(300)
   })
   it('an empty box asks for the index stats only, at once, and never for rows', () => {
     const p = bibRequestPlan('a1', '')

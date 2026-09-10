@@ -171,8 +171,13 @@ describe('AlbumPageClient runs the upload refresh through delayed-once, and canc
     expect(run).toMatch(/mergePreservingExtras\(prev, r\.photos\)/)
     expect(run).toMatch(/if \(!shouldApplyRefresh\(r\)\) return/)
   })
-  it('cancelled on a slug change, on retry, and on unmount -- and nowhere is a bare timer left', () => {
+  it('cancelled on a slug change, on retry, and on unmount -- each in its place, and nowhere is a bare timer left', () => {
     const text = src()
+    // A count could not tell which exit lost its cancel (a reviewer deleted the slug-change one
+    // and doubled another). Each site is pinned by what surrounds it.
+    expect(text, 'slug change: cancel sits between the generation bump and the first-run bookkeeping in Effect 1').toMatch(/fetchGenRef\.current\+\+\s+uploadRefresh\.cancel\(\)\s+const isFirstRun = firstEffectRunRef\.current/)
+    expect(text, 'retry: cancel before the generation bump').toMatch(/uploadRefresh\.cancel\(\)\s+fetchGenRef\.current\+\+/)
+    expect(text, 'unmount: the cleanup is the cancel').toMatch(/useEffect\(\(\) => \(\) => uploadRefresh\.cancel\(\), \[uploadRefresh\]\)/)
     expect(text.match(/uploadRefresh\.cancel\(\)/g)?.length).toBe(3)
     expect(text).not.toMatch(/uploadRefetchTimerRef/)
   })

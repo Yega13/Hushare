@@ -7,6 +7,8 @@ export default {
     from: "&limit=${BIB_RESULT_LIMIT}`, delayMs: BIB_TYPING_DEBOUNCE_MS, kind: 'search' }", to: "`, delayMs: BIB_TYPING_DEBOUNCE_MS, kind: 'search' }" },
   { name: 'the search is not debounced (one request per keystroke)',
     from: "&limit=${BIB_RESULT_LIMIT}`, delayMs: BIB_TYPING_DEBOUNCE_MS, kind: 'search' }", to: "&limit=${BIB_RESULT_LIMIT}`, delayMs: 0, kind: 'search' }" },
+  { name: 'the debounce constant is zero (one request per keystroke, with the plan test still green)',
+    from: "export const BIB_TYPING_DEBOUNCE_MS = 300", to: "export const BIB_TYPING_DEBOUNCE_MS = 0" },
   { name: 'the stats request is debounced',
     from: "  return { url: `${base}&bibStats=1&statsOnly=1`, delayMs: 0, kind: 'stats' }", to: "  return { url: `${base}&bibStats=1&statsOnly=1`, delayMs: BIB_TYPING_DEBOUNCE_MS, kind: 'stats' }" },
   { name: 'the stats request also asks for rows',

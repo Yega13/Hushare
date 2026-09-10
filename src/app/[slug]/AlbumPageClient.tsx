@@ -79,8 +79,6 @@ const ALBUM_DELTA_MAX = 100
 // How long to collapse a burst of realtime pings into one refetch. See the note at the debounce.
 const REFETCH_DEBOUNCE_MS = 2500
 const LOAD_MORE_PAGE = 500
-// Most photos one bib number can sensibly return. A runner is in tens of photos; a junk OCR reading
-// off a banner ("2026") can hit thousands, and that is the request this bounds.
 
 // How long after one of THIS tab's own album edits a settings-broadcast refetch is treated as an
 // echo of that edit rather than news from somewhere else. Every owner mutation broadcasts, and the
