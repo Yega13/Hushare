@@ -699,3 +699,41 @@ export async function saveBibSearchRequest(
   }
   return { ok: true }
 }
+
+// THE OWNER'S SIGNAGE LIST. GET offers the album's most-seen numbers with their photo counts,
+// already ranked and already filtered of what is excluded -- lib/bib-exclusions owns that decision
+// and has tests, so nothing here re-sorts or re-filters.
+export type BibExclusionsView = {
+  candidates: Array<{ number: string; photos: number }>
+  excluded: string[]
+}
+
+export async function fetchBibExclusions(slug: string): Promise<BibExclusionsView | null> {
+  try {
+    const res = await fetch(`/api/album/bib-exclusions?slug=${encodeURIComponent(slug)}`)
+    if (!res.ok) return null
+    return await res.json() as BibExclusionsView
+  } catch {
+    // Null is "could not ask", NOT "this album has no signage". The panel must tell those apart:
+    // an empty list is a claim about the album and a failure is not (rule 20).
+    return null
+  }
+}
+
+// THE WHOLE LIST, NEVER A DELTA. The route replaces rather than merges, so posting one number
+// would drop every other exclusion the owner has made.
+export async function saveBibExclusionsRequest(
+  slug: string,
+  excluded: string[],
+): Promise<{ ok: true; excluded: string[] } | { ok: false; error: string }> {
+  const res = await fetch('/api/album/bib-exclusions', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ slug, excluded }),
+  })
+  const body = await jsonBody<{ error?: string; excluded?: string[] }>(res)
+  if (!res.ok) return { ok: false, error: body.error ?? `Save failed (${res.status})` }
+  // The SERVER's normalised list, not what was posted: it canonicalises 02026 to 2026, and the
+  // panel has to show what was actually stored or the next save sends back a stale set.
+  return { ok: true, excluded: body.excluded ?? excluded }
+}

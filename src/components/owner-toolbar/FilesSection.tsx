@@ -8,6 +8,7 @@ import { FEATURE_TIER } from '@/lib/plan-gates'
 import type { OwnerRows } from '@/lib/owner-rows'
 import { showAppToast } from '@/components/AppToast'
 import { saveBibSearchRequest, saveBrandingRequest, saveFaceFinderRequest } from '@/components/owner-toolbar/api'
+import BibExclusionsSection from '@/components/owner-toolbar/BibExclusionsSection'
 import FaceConsentDialog from '@/components/owner-toolbar/FaceConsentDialog'
 import OptimisticToggle from '@/components/owner-toolbar/OptimisticToggle'
 import { accordionButton, sectionTitle, settingsSectionStyle } from '@/components/owner-toolbar/styles'
@@ -141,6 +142,9 @@ export default function FilesSection({ album, photos, albumPhotoCount, zip, user
               label={<><Search className="w-4 h-4" />{t('ot.bibSearch')} <PlanBadge need={FEATURE_TIER.bibSearch} tier={userTier} /></>}
               sub={t('ot.bibSearchSub')}
             />
+            {/* Only once the album is a race album: the list is built from numbers OCR has already
+                read, so before the switch is on there is nothing to offer. */}
+            {album.bib_search_enabled && <BibExclusionsSection album={album} />}
           </div>
         )}
       </section>
