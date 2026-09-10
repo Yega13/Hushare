@@ -1,0 +1,115 @@
+// THE NUMBERS THAT ARE NOT RUNNERS, DECIDED BY A PERSON.
+//
+// lib/bib-filter removes 96.3% of the noise by refusing any number that shares its OCR line, which
+// is what a sponsor's phone number and a dated banner look like. What it cannot reach is a number
+// printed ALONE: the year across a finish arch is typographically identical to a bib on a chest,
+// and on the one measured race it survived on about 75 photos. Low integers survive too -- podium
+// boards, kilometre markers, price signs -- and those are the numbers a runner is most likely to
+// type. Every race has both.
+//
+// NO AUTOMATIC RULE MAY REMOVE THESE, and that is measured rather than assumed. Frequency looks
+// like the answer and is not: on the smaller of the two albums the banner year "2026" and the real
+// bib "00663" each appeared on exactly 4 of 69 photos. The migration that added the bib range wrote
+// this down before either of us tried it -- "Frequency does NOT separate them... A 'seen too often'
+// rule deletes real runners" -- and a later measurement confirmed it, because a threshold safe on a
+// 4,566-photo album sits below the entire real-bib population on a 69-photo one. A real bib appears
+// on 1-4 photos whatever the album size; any album-relative floor scales with the album.
+//
+// So frequency NOMINATES and a human confirms. The owner recognises the year on their own arch in
+// one glance, which is a question they can answer -- unlike "what is your bib range?", which the one
+// real organiser answered with 1-3000 for a race whose numbers run 153-2176.
+//
+// APPLIED AT SEARCH TIME, never at indexing. Correcting the list then re-filters every photograph
+// at once, with no re-OCR, no AWS bill, and no window in which the album answers "no photos" while
+// it is being rebuilt. That is the same choice the bib range already made, for the same reason.
+
+/** One number and how many photographs of this album it was read on. */
+export type NumberTally = { number: string; photos: number }
+
+/**
+ * How many photographs a number must appear on before it is worth asking about.
+ *
+ * A floor on the QUESTION, not on the answer: nothing is removed by it. Its only job is to keep a
+ * list of one-off misreads out of a panel a person has to scan. Deliberately low, because on a
+ * small album a banner appears only a handful of times -- the 69-photo race had its year on 4.
+ */
+export const CANDIDATE_MIN_PHOTOS = 2
+
+/** How many to offer at once. */
+export const CANDIDATE_MAX = 20
+
+/**
+ * The numbers to put in front of the owner, most-seen first.
+ *
+ * TOP-20 RATHER THAN TOP-5, from a real finding: the five loudest numbers on the measured album
+ * were the arch year and one billboard's phone number, and immediately behind them sat 2020 (76
+ * photos), 202 (67) and 2028 (41) -- banner misreads that a shorter list would leave behind while
+ * the owner believed they had cleared the noise.
+ *
+ * Numbers already excluded are not offered again; the panel shows those separately so they can be
+ * put back.
+ */
+export function exclusionCandidates(
+  tallies: readonly NumberTally[],
+  excluded: readonly string[] = [],
+  max: number = CANDIDATE_MAX,
+): NumberTally[] {
+  const already = new Set(excluded.map(numericKey).filter((k): k is string => k !== null))
+  return tallies
+    .filter((t) => Number.isFinite(t.photos) && t.photos >= CANDIDATE_MIN_PHOTOS)
+    .filter((t) => {
+      const key = numericKey(t.number)
+      return key !== null && !already.has(key)
+    })
+    .slice()
+    // Most-seen first; ties by the number itself so the list does not reshuffle between renders.
+    .sort((a, b) => b.photos - a.photos || a.number.localeCompare(b.number))
+    .slice(0, Math.max(0, Math.floor(max)))
+}
+
+/**
+ * The comparable form of a number, or null if it is not one.
+ *
+ * BY VALUE, NOT BY TEXT, and this is the whole reason the function exists. Bib numbers are stored
+ * as OCR read them, leading zeros and all: the same runner is "00945" on one photograph and "945"
+ * on another. An owner excluding "2026" from a list means the value, so a stored "02026" has to go
+ * with it. bibMatches already compares this way; matching exclusions any other way would leave the
+ * two halves of one feature disagreeing about what a number is.
+ */
+export function numericKey(n: string): string | null {
+  const digits = n.trim().replace(/^[#nN°]/, '')
+  if (!/^[0-9]{1,6}$/.test(digits)) return null
+  return String(Number(digits))
+}
+
+/**
+ * Has the owner marked this number as something other than a runner?
+ *
+ * Errs toward NOT excluded: an unparseable stored value or an unparseable entry in the list is
+ * ignored rather than treated as a match, because a wrong exclusion hides a runner's photographs
+ * from them and they will never know to complain (rule 19).
+ */
+export function isExcludedNumber(candidate: string, excluded: readonly string[]): boolean {
+  if (excluded.length === 0) return false
+  const key = numericKey(candidate)
+  if (key === null) return false
+  for (const e of excluded) if (numericKey(e) === key) return true
+  return false
+}
+
+/** The album's stored list, cleaned: comparable, de-duplicated, and bounded. */
+export const MAX_EXCLUSIONS = 200
+
+export function normalizeExclusions(input: readonly unknown[]): string[] {
+  const out: string[] = []
+  const seen = new Set<string>()
+  for (const raw of input) {
+    if (typeof raw !== 'string') continue
+    const key = numericKey(raw)
+    if (key === null || seen.has(key)) continue
+    seen.add(key)
+    out.push(key)
+    if (out.length >= MAX_EXCLUSIONS) break
+  }
+  return out
+}

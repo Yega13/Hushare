@@ -1,7 +1,22 @@
 import type { Photo } from '@/types'
 import { MAX_BIB_DIGITS } from '@/lib/bib-filter'
+import { isExcludedNumber } from '@/lib/bib-exclusions'
 
-export type BibRange = { min: number | null; max: number | null }
+/**
+ * The album's own settings that decide which numbers can match at all.
+ *
+ * `excluded` rides in here rather than becoming a fourth argument because `bibMatches` is imported
+ * by lib/grid-visibility, and widening a shared signature to carry one feature's fact is how a
+ * refactor ends up touching files that have nothing to do with it. The name stays BibRange for the
+ * same reason -- it is the album's matching settings, and the range was simply the first of them.
+ */
+export type BibRange = {
+  min: number | null
+  max: number | null
+  /** Numbers the OWNER marked as signage rather than runners. Compared by value — see
+   *  lib/bib-exclusions, which owns what "the same number" means. */
+  excluded?: readonly string[]
+}
 
 // ONE DEFINITION OF "THIS BIB MATCHES", used by the phone and by the database.
 //
@@ -34,6 +49,10 @@ export function bibMatches(photo: Photo, query: string, range?: BibRange): boole
     if (!Number.isFinite(n)) return false
     if (range?.min != null && n < range.min) return false
     if (range?.max != null && n > range.max) return false
+    // The owner said this number is not a runner. Checked on the STORED value, so a banner year
+    // sitting on 1,145 photographs stops answering even though those rows still carry it — no
+    // re-index, no re-OCR, and it takes effect the moment the list is saved.
+    if (range?.excluded && isExcludedNumber(b, range.excluded)) return false
     return n === wanted
   })
 }
@@ -81,6 +100,13 @@ export function bibSearchCandidates(query: string, range?: BibRange): string[] |
   // Not just a length check: String(Number('1'.repeat(22))) is "1e+21", which is short enough to
   // pass one. Digits only, so nothing but a real number ever reaches the query.
   if (bare.length > MAX_BIB_DIGITS || !/^[0-9]+$/.test(bare)) return []
+  // Excluded numbers are refused at the QUERY too, not only in the stored values, so the server
+  // never runs the lookup and searchPhase reports 'excluded' rather than a real empty answer. Both
+  // halves of the same fact: the phone filters what it holds, the database answers for the album.
+  //
+  // AFTER the shape checks, so isExcludedNumber is only ever asked about something bib-shaped —
+  // it returns false for anything else, and a guard that cannot fire reads as one that can.
+  if (range?.excluded && isExcludedNumber(bare, range.excluded)) return []
   const out: string[] = []
   for (let width = bare.length; width <= MAX_BIB_DIGITS; width++) out.push(bare.padStart(width, '0'))
   return out
