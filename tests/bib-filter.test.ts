@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { stripJsComments } from './helpers/source-text'
 import { acceptedBibs, bibDigitsOf, MAX_BIB_DIGITS, MIN_BIB_CONFIDENCE, type DetectedWord } from '@/lib/bib-filter'
 
 // WHAT THIS GUARDS, in one sentence: a runner searching 44 was handed 485 photographs of a
@@ -244,9 +245,13 @@ describe('the OCR path actually hands the filter real line identity', () => {
   const SOURCE = join(process.cwd(), 'src', 'lib', 'rekognition.ts')
   // Comments stripped: three guards in this suite have been defeated by prose in the file they
   // were searching (MISTAKES 21), and the comment above detectBibNumbers names ParentId.
-  const source = () => readFileSync(SOURCE, 'utf8')
-    .replace(/\/\*[\s\S]*?\*\//g, ' ')
-    .replace(/(^|[^:])\/\/[^\n]*/g, '$1')
+  //
+  // THROUGH THE SHARED HELPER, not a local copy. This carried its own inline
+  // `.replace(/\/\*[\s\S]*?\*\//g, ' ')` pair — the same two regexes helpers/source-text has since
+  // replaced with a real scanner, because a `/*` inside a line comment made the first one eat
+  // everything up to the next `*/`, hundreds of lines away. A guard reading a file through that
+  // sees a fraction of it and passes for the wrong reason. One copy, in one place (rule 13).
+  const source = () => stripJsComments(readFileSync(SOURCE, 'utf8'))
 
   it('maps ParentId into lineId, not a constant', () => {
     const m = /lineId:\s*([^\n,]+)/.exec(source())

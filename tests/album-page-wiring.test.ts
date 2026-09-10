@@ -11,11 +11,16 @@ import { stripJsComments } from './helpers/source-text'
 // decides whether it runs". A call site passing `true` for `res.ok`, or `[]` for the photos, is
 // green in every module test and wrong on every album.
 //
-// UNLIKE album-page-search-wiring.test.ts, the NAMES are pinned here. A reviewer showed eight
-// wrong call sites -- the Response object for the body, `isOwner` for `effectiveIsOwner`, `null`
-// for the pending ids, `photos` for the published list -- that a shape-only check let through,
-// each an identifier and each a defect on every album. When every wrong name is equally "derived",
-// the name is the contract. Comments are stripped first.
+// THE NAMES ARE PINNED HERE, not just the shapes. A reviewer showed eight wrong call sites -- the
+// Response object for the body, `isOwner` for `effectiveIsOwner`, `null` for the pending ids,
+// `photos` for the published list -- that a shape-only check let through, each an identifier and
+// each a defect on every album. When every wrong name is equally "derived", the name is the
+// contract. Comments are stripped first.
+//
+// album-page-search-wiring.test.ts was a second file pinning this same call site in the weaker
+// style, and it is merged in at the bottom and deleted: one call site, one file of pins. Its
+// checks were re-proved against the stricter style on the way in -- `total` swapped for
+// `photos.length`, and `bibQuery` for `bibDigits`, both of which the shape-only version passed.
 
 const SOURCE = join(process.cwd(), 'src', 'app', '[slug]', 'AlbumPageClient.tsx')
 const src = () => stripJsComments(readFileSync(SOURCE, 'utf8'))
@@ -199,5 +204,63 @@ describe('AlbumPageClient asks and answers a bib search through lib/bib-request'
   })
   it('a failure is tagged through bibFailureTag, after the cancelled and aborted cases', () => {
     expect(src()).toMatch(/if \(cancelled \|\| \(err as \{ name\?: string \}\)\?\.name === 'AbortError'\) return\s+const tag = bibFailureTag\(bibDigits\)\s+if \(tag\) setBibFailedQuery\(tag\)/)
+  })
+})
+
+// MERGED IN FROM tests/album-page-search-wiring.test.ts, which is deleted.
+//
+// One call site, one file of pins. The shape-only style that file used is not carried over: it
+// asserted "not a literal, and contains a paren", which passes for
+// `queryOutsideRange(bibQuery, bibRange)` -- the wrong variable, a defect on every album -- exactly
+// the class the header above describes. The names are the contract here too.
+//
+// What these guard, measured rather than assumed: `indexComplete: true` at this call site passed
+// all 38 tests that existed when searchPhase gained its indexing state, and reinstates the whole
+// defect in one token. So does `excludedByAlbum: false`. MISTAKES entry 10, for the fifth and
+// sixth time.
+describe('AlbumPageClient asks searchPhase the question with the real state', () => {
+  it('the phase is built from the typed digits and the answer that is tagged with them', () => {
+    const call = singleCall(src(), 'searchPhase(')
+    expect(call).toMatch(/enabled:\s*bibEnabled\b/)
+    expect(call).toMatch(/query:\s*bibDigits\b/)
+    // The HELD answer's own query, not the typed one -- that is what makes a stale reply for an
+    // earlier number unable to describe the current one.
+    expect(call).toMatch(/answeredQuery:\s*bibResult\?\.query\s*\?\?\s*null/)
+    expect(call).toMatch(/failedQuery:\s*bibFailedQuery\b/)
+  })
+
+  it('emptiness is read from the server TOTAL, not from the rows it returned', () => {
+    // A capped search sends fewer photos than it matched, so `photos.length` is not the same
+    // question. Both are "derived", which is why the name is pinned rather than the shape.
+    const call = singleCall(src(), 'searchPhase(')
+    expect(call).toMatch(/answerIsEmpty:\s*\(bibResult\?\.total\s*\?\?\s*0\)\s*<=\s*0/)
+  })
+
+  it('the index gate reads the SERVER stats and never the loaded-window fallback', () => {
+    // bibIndexedCount/totalImageCount fall back to counting the loaded window, and albums default
+    // to oldest-first -- so that window is the photos OCR finished first and reads as fully
+    // indexed. Feeding them here licenses "No photos with that number" on a half-read album.
+    const call = singleCall(src(), 'searchPhase(')
+    expect(call).toMatch(/indexComplete:\s*indexKnownComplete\(bibStats\)/)
+    for (const fallback of ['bibIndexedCount', 'totalImageCount']) {
+      expect(call, `the gate must not read ${fallback}`).not.toContain(fallback)
+    }
+  })
+
+  it('the range refusal is asked about the typed digits and the album range', () => {
+    const call = singleCall(src(), 'searchPhase(')
+    expect(call).toMatch(/excludedByAlbum:\s*queryOutsideRange\(bibDigits,\s*bibRange\)/)
+  })
+
+  it('the phase reaches BOTH surfaces, and the counts the bar shows are derived once', () => {
+    // The bug this whole module exists for was the bar and the grid disagreeing about one
+    // question. They disagree again the moment either stops receiving the phase.
+    const text = src()
+    expect(text, 'the grid must receive the phase').toMatch(/searchPhase=\{bibPhase\}/)
+    expect(text, 'the bar must receive the phase').toMatch(/phase=\{bibPhase\}/)
+    for (const name of ['bibIndexedCount', 'totalImageCount']) {
+      expect((text.match(new RegExp(`const ${name}\\s*=`, 'g')) ?? []).length, `${name} derived once`).toBe(1)
+      expect(text, `the bar must receive ${name}`).toContain(`={${name}}`)
+    }
   })
 })
