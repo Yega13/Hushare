@@ -1163,3 +1163,20 @@ had been committed in between, so "HEAD's copy" was older than the working tree,
 carried their hunks away. What actually held the correct union was the file on disk. The safe
 rule is not a cleverer blob; it is: build from the working tree, then LIST what the diff removes
 and name whose each removed line is before committing.
+
+### 85. A COMMENT STRIPPER THAT COULD NOT READ COMMENTS, AND EVERY GUARD BELOW ONE LINE WENT BLIND
+
+`stripJsComments` was two regexes: remove `/* ... */`, then remove `// ...`. UploadZone contains
+the line comment `// accept="video/*" — avoids silently accepting .avi/.mkv`. The block-comment
+pass runs FIRST, so that `/*` opened a block that ran to the next `*/` hundreds of lines away, and
+everything between them was deleted before any guard could search it. I found it only because a
+new call-site pin failed on a line I could see in the file with my own eyes.
+
+Seven test files use this helper, including the guard that decides which lib modules count as
+tested. Any pin below that line in UploadZone was asserting against text that had been erased --
+green, and reading nothing. It is the same failure the helper itself was written to fix (its own
+header lists three), one level down: the tool that scopes the grep was not scoped itself.
+
+**Habit to build:** a stripper is a scanner, not a pipeline of regexes -- one pass that knows
+whether it is inside a string, a template, a line comment or a block comment. And when a pin fails
+on a line that is plainly there, suspect the reader before the file.

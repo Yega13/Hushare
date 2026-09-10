@@ -22,12 +22,52 @@
 /**
  * JavaScript/TypeScript source with comments removed.
  *
- * The `[^:]` guard before `//` keeps `https://` inside a string literal from being treated as the
- * start of a comment. A URL later in such a line still gets clipped; nothing that uses this searches
- * for one.
+ * A SCANNER, not two regexes. The regex version stripped block comments first, so a `/*` inside a
+ * LINE comment (UploadZone has one: "video/* — avoids ...") opened a block that ran to the next
+ * closing marker hundreds of lines later, and every call-site pin below it was reading nothing. Found on
+ * 2026-09-10 when a pin on a line that plainly existed failed. The scanner walks the file once,
+ * knows which of a string, a template, a line comment or a block comment it is inside, and only
+ * ever REMOVES comment text. Regex literals are not tracked: a `//` or `/*` inside one would be
+ * misread, and none in this codebase carries either.
  */
 export function stripJsComments(src: string): string {
-  return src.replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/(^|[^:])\/\/[^\n]*/g, '$1')
+  let out = ''
+  let i = 0
+  const n = src.length
+  while (i < n) {
+    const c = src[i]
+    const next = src[i + 1]
+    if (c === '"' || c === "'" || c === '`') {
+      // A string or template: copied verbatim, escapes honoured, up to the matching quote.
+      const quote = c
+      let j = i + 1
+      while (j < n && src[j] !== quote) {
+        if (src[j] === '\\') j++
+        else if (quote !== '`' && src[j] === '\n') break   // an unterminated plain string ends at the line
+        j++
+      }
+      out += src.slice(i, j + 1)
+      i = j + 1
+      continue
+    }
+    if (c === '/' && next === '/') {
+      // A line comment: dropped up to (not including) the newline.
+      let j = i
+      while (j < n && src[j] !== '\n') j++
+      i = j
+      continue
+    }
+    if (c === '/' && next === '*') {
+      // A block comment: replaced by one space, so tokens either side stay apart.
+      const end = src.indexOf('*/', i + 2)
+      out += ' '
+      i = end === -1 ? n : end + 2
+      continue
+    }
+    out += c
+    i++
+  }
+  return out
 }
 
 /**

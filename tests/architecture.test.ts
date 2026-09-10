@@ -133,7 +133,10 @@ const SIZE_BUDGET: Record<string, number> = {
   // each behind its own test file and a mutation run (89 tests, 70 mutations killed). The budget
   // drops to the new size, not to "the new size plus room": the ratchet only holds when every
   // line above it has to be paid for (see memory: ratchet-is-not-holding).
-  'src/components/UploadZone.tsx': 2242,
+  // -122 (2026-09-10): what a failed upload MEANS (park for the network, or fail with Retry, and
+  // the sentence the guest reads) is lib/upload/failure with a mutation set; the file-read test
+  // imports its classifiers instead of the copies it had kept. Locked in.
+  'src/components/UploadZone.tsx': 2120,
   // +3 on 2026-08-30: the branding toggle gained a real plan check (it was dimmed but still
   // clickable), and Face Finder and bib search stopped riding on the collections flag. Three
   // lines of reasoning for three gates that were wrong. Deliberate.

@@ -4,6 +4,10 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createStallWatch, settleWithin } from '@/lib/clock'
 import { Semaphore } from '@/lib/upload/semaphore'
 import { readJson, HttpError } from '@/lib/upload/http'
+import {
+  VideoUploadError, errText, friendlyUploadError, isDeterministicTusError, isRecoverableNetworkFailure, tusHttpStatus,
+  type VideoResume,
+} from '@/lib/upload/failure'
 import { reportClientEvent } from '@/lib/upload/report'
 import { reachability } from '@/lib/upload/reachability'
 import { fetchWithRetry, putImageWithRelay, FETCH_DEADLINE_SAVE_MS } from '@/lib/upload/retry'
@@ -37,7 +41,7 @@ setFallbackDecodeReporter((reason) => {
     message: `Decoded without EXIF orientation — a photo may be stored rotated (${reason})`,
   })
 })
-import { snapshotFileRobust, readFileRobust, isFileReadFailure } from '@/lib/file-read'
+import { snapshotFileRobust, readFileRobust } from '@/lib/file-read'
 import { trackUploadStep } from '@/lib/engagement'
 import { showAppToast } from '@/components/AppToast'
 import { useT } from '@/i18n/LocaleProvider'
@@ -583,52 +587,6 @@ async function processImageInner(file: File, capBytes: number, maxDim: number): 
 }
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-// Everything needed to RESUME a failed video upload instead of restarting it: the tus
-// uploadUrl lets tus-js-client HEAD the server for the last confirmed offset and continue
-// from there (a 100MB video that died at 80% resumes at 80%). Poster/duration/dimensions are
-// carried along so none of that work is redone either.
-type VideoResume = {
-  uploadUrl: string
-  streamUid: string
-  iframeUrl: string
-  thumbnailUrl: string | null
-  posterUrl: string | null
-  durationSeconds: number
-  videoWidth: number | null
-  videoHeight: number | null
-  // Set once this file has proven the direct-to-Cloudflare path is network-blocked, so a manual
-  // Retry click resumes via the relay directly instead of re-attempting the doomed direct path first.
-  viaRelay?: boolean
-}
-
-// Thrown when a video's TUS phase fails after the Stream session was already created —
-// carries the resume state so the Retry button continues instead of starting over, plus the
-// real HTTP status (or null for a pure network drop) so the message can name the actual cause.
-class VideoUploadError extends Error {
-  constructor(
-    message: string,
-    public readonly resume: VideoResume | null,
-    public readonly httpStatus: number | null,
-  ) {
-    super(message)
-  }
-}
-
-// tus-js-client's DetailedError hides the real cause inside a stringified blob. Pull out the
-// HTTP status of the failing request: a number means the server rejected it (4xx = the video
-// is bad/too long/too large; 5xx = transient server error); null means no response arrived at
-// all (a genuine network drop — the "response code: n/a" case).
-/** The text of a thrown upload error, for the classifiers in lib/upload-policy. */
-function errText(e: unknown): string {
-  return e instanceof Error ? e.message : String(e)
-}
-
-function tusHttpStatus(e: unknown): number | null {
-  const resp = (e as { originalResponse?: { getStatus?: () => number } | null })?.originalResponse
-  const status = resp?.getStatus?.() ?? 0
-  return status > 0 ? status : null
-}
-
 type FileEntry = {
   id: string
   file: File
@@ -857,15 +815,6 @@ async function uploadPosterToR2(albumId: string, blob: Blob, signal?: AbortSigna
     blob, () => {}, signal,
   )
   return result.publicUrl
-}
-
-// A TUS error with a 4xx response is a final server verdict (expired/invalid upload URL,
-// bad request) — retrying the same URL cannot succeed. Everything else (network drop, stall,
-// 5xx) is transient. Used for tus-js-client's OWN internal onShouldRetry, and for deciding whether
-// a RESUMED upload's session itself is stale/expired (needs a fresh Stream init).
-function isDeterministicTusError(e: unknown): boolean {
-  const status = tusHttpStatus(e)
-  return status !== null && status >= 400 && status < 500
 }
 
 // The OUTER recovery loop's more permissive view — which attempts are final and which are worth
@@ -1167,77 +1116,6 @@ async function saveUploadedRows(albumId: string, rows: PhotoRow[]): Promise<{ wa
   }
   const data = await res.json().catch(() => ({})) as { warning?: string; rejected?: string[] }
   return { warning: data.warning, rejected: data.rejected }
-}
-
-// Did this file fail because the NETWORK went away, rather than because anything about the file or
-// the server was wrong? Only those are worth parking and resuming on our own: the connection coming
-// back is a real, observable event that changes the answer, whereas a 413 or an unsupported codec
-// will fail identically forever and must stay a plain error with a manual Retry.
-//
-// Deliberately allow-list, not deny-list: an unrecognised failure stays an error. Parking something
-// that can never succeed would leave a tile claiming it is waiting for a network that was never the
-// problem — strictly worse than showing the real error straight away.
-function isRecoverableNetworkFailure(e: unknown): boolean {
-  // A deliberate cancel, and a server that answered (even badly), are both out of scope.
-  if (e instanceof DOMException && e.name === 'AbortError') return false
-  if (e instanceof HttpError) return false
-  // Videos: httpStatus null means no HTTP response ever arrived on ANY attempt, direct or relayed
-  // — the same signal runTusWithRecovery uses to decide the network itself is the problem.
-  if (e instanceof VideoUploadError) return e.httpStatus === null
-  const raw = e instanceof Error ? e.message : String(e)
-  // Refusals the product made on purpose are never network failures, whatever else they contain.
-  if (/^(File too large|Unsupported)/i.test(raw)) return false
-  // A file the DEVICE would not hand over. It earns the same treatment as a dropped connection --
-  // park it, try once more -- for an entirely different reason: a freshly captured or cloud-backed
-  // photo is very often readable a moment after it is not, and that second attempt is what saves
-  // it. Until 2026-08-22 these arrived as a bare "Failed to fetch" and matched the regex below BY
-  // ACCIDENT, so the behaviour here is unchanged on purpose; what changed is that it is now a
-  // decision rather than a coincidence, and the message no longer blames the network for it.
-  if (isFileReadFailure(e)) return true
-  return /failed to fetch|load failed|network request failed|networkerror|network error during upload|couldn't upload after trying multiple connection methods|couldn't reach the server|upload stalled/i.test(raw)
-}
-
-// tus failures stringify their entire request/response internals — a wall of text that
-// overflows a phone screen and tells the user nothing. Map known failure shapes to short,
-// actionable messages that still NAME the real cause (HTTP status), so a failure screenshot is
-// actually diagnostic instead of a generic "connection dropped".
-function friendlyUploadError(e: unknown): string {
-  const raw = e instanceof Error ? e.message : 'Upload failed'
-
-  // Stale/unreadable picked-file reference: the OS invalidated the file before we could read it.
-  // Android reports NotReadableError ("could not be read… permission problems"); iOS/WebKit reports
-  // the same underlying failure as NotFoundError ("The object can not be found here.") or a decode
-  // SyntaxError ("The string did not match the expected pattern."). All map to the same user action.
-  if (/could not be read|NotReadableError|NotFoundError|permission problems|object can not be found|did not match the expected pattern|InvalidStateError/i.test(raw)) {
-    return 'Could not read this file from your device. Please remove it and add it again.'
-  }
-
-  // Network fetch failed — the presign/save request never reached the server. This message only
-  // shows AFTER the retry loop is exhausted, so a persistent failure here usually means the network
-  // itself is blocking us (restrictive venue Wi-Fi, a VPN, or an ad-blocker) rather than a one-off
-  // blip. Point the user at the actions that actually recover it. "Failed to fetch" (Chrome),
-  // "Load failed" (Safari), "NetworkError" — all the same class.
-  if (/failed to fetch|load failed|network request failed|networkerror/i.test(raw)) {
-    return "Couldn't reach the server after several tries. Switch networks (e.g. mobile data), or turn off any VPN or ad-blocker, then tap Retry."
-  }
-
-  // Video (tus) failures: distinguish a real server rejection from a pure network failure.
-  const status = e instanceof VideoUploadError ? e.httpStatus : tusHttpStatus(e)
-  if (status !== null) {
-    if (status === 413) return 'This video is too large to upload.'
-    if (status >= 400 && status < 500) return `This video was rejected by the server (HTTP ${status}) — it may be too long or an unsupported format.`
-    return `Video server error (HTTP ${status}). Tap Retry — it continues where it left off.`
-  }
-  // status === null → no HTTP response ever arrived on ANY attempt. Since runTusWithRecovery already
-  // falls back to the same-origin relay after the first such failure, a user-visible failure here
-  // means BOTH the direct path AND the relay failed — a much rarer, more serious case (true
-  // connectivity loss) than a single blocked domain, so the message no longer suggests "your
-  // network may be blocking it" specifically.
-  if (e instanceof VideoUploadError || /^tus:|stalled/i.test(raw)) {
-    return "Couldn't upload after trying multiple connection methods. Check that you're connected to the internet, then tap Retry."
-  }
-
-  return raw.length > 160 ? `${raw.slice(0, 157)}…` : raw
 }
 
 // Rows are written to the DB in small batches moments after each file finishes uploading —

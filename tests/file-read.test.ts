@@ -5,15 +5,10 @@ import { readFileRobust, isFileReadFailure } from '@/lib/file-read'
 // the message text alone — which recovery the uploader attempts. Both of those were wrong for weeks
 // because the wording said "fetch", so the invariants are pinned here rather than trusted.
 
-// The exact expression UploadZone uses to decide "the network went away — park this and wait for it
-// to come back". A file-read failure matching this is the original defect: it made a dead file
-// reference wait on a connection that was never the problem.
-const NETWORK_CLASSIFIER = /failed to fetch|load failed|network request failed|networkerror|network error during upload|couldn't upload after trying multiple connection methods|couldn't reach the server|upload stalled/i
-
-// The expression friendlyUploadError uses to produce "Could not read this file from your device.
-// Please remove it and add it again." — the correct, actionable message, which was unreachable
-// while these errors were phrased as network failures.
-const READ_CLASSIFIER = /could not be read|NotReadableError|NotFoundError|permission problems|object can not be found|did not match the expected pattern|InvalidStateError/i
+// The classifiers themselves, imported from lib/upload/failure rather than copied: a copy of a
+// regex stays green while the real one drifts (rule 17), and both of these were copies until
+// 2026-09-10.
+import { NETWORK_FAILURE_TEXT as NETWORK_CLASSIFIER, FILE_READ_FAILURE_TEXT as READ_CLASSIFIER } from '@/lib/upload/failure'
 
 // A file whose bytes are gone: arrayBuffer() rejects the way Android's content provider does. The
 // two later fallbacks (FileReader, blob: URL) are absent in this environment and fail on their own,
