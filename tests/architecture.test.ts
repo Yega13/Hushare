@@ -148,7 +148,12 @@ const SIZE_BUDGET: Record<string, number> = {
   // never race, the server's refused-uid list honoured so a video is never ticked green unwritten,
   // and the rows handed back on a failure so bytes in R2 are never orphaned -- is
   // lib/upload/row-saver with 12 tests and 14 mutations. Locked in.
-  'src/components/UploadZone.tsx': 2063,
+  // -24 (2026-09-10): how many videos go up at once is lib/upload/video-lane now. The rule that
+  // widens the lane on a clean streak and collapses it on a real failure was inline, and so was the
+  // distinction it depends on -- a guest tapping cancel, or a video the product refused on purpose,
+  // counted as the network failing and made every remaining video upload serially for the rest of
+  // the session. 14 tests, 14 module mutations and 7 wiring mutations, all killed.
+  'src/components/UploadZone.tsx': 2039,
   // +3 on 2026-08-30: the branding toggle gained a real plan check (it was dimmed but still
   // clickable), and Face Finder and bib search stopped riding on the collections flag. Three
   // lines of reasoning for three gates that were wrong. Deliberate.

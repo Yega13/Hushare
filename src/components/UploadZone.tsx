@@ -10,6 +10,7 @@ import {
 } from '@/lib/upload/failure'
 import { freshEntryFor, mergeWall, queuePendingRows, retryMode, shouldPark, wallFor } from '@/lib/upload/retry-plan'
 import { createRowSaver } from '@/lib/upload/row-saver'
+import { createVideoLane, videoOutcomeOf } from '@/lib/upload/video-lane'
 import { reportClientEvent } from '@/lib/upload/report'
 import { reachability } from '@/lib/upload/reachability'
 import { fetchWithRetry, putImageWithRelay, FETCH_DEADLINE_SAVE_MS } from '@/lib/upload/retry'
@@ -54,8 +55,6 @@ import {
   VIDEO_CONCURRENCY_START,
   VIDEO_CONCURRENCY_MAX_MOBILE,
   VIDEO_CONCURRENCY_MAX_DESKTOP,
-  VIDEO_WIDEN_AFTER_CLEAN,
-  VIDEO_SOLO_LANE_BYTES,
   STREAM_CHUNK_SIZE_BYTES,
 } from '@/lib/constants'
 
@@ -1197,32 +1196,10 @@ export default function UploadZone({ album, onPhotosUploaded, isOwner }: Props) 
   // Separate, tighter semaphore for VIDEOS — keeps large sustained TUS streams from saturating a
   // weak uplink. Photos and videos run in independent lanes. Its capacity is ADAPTIVE (see below).
   const videoSemRef = useRef<Semaphore | null>(null)
-  // Adaptive-concurrency state for the video lane (persists across batches for the whole session):
-  //   videoCeilingRef — the highest capacity we'll try; drops to 1 permanently once the network fails.
-  //   videoStreakRef  — clean video uploads in a row since the last widen/reset.
-  const videoCeilingRef = useRef(videoMax)
-  const videoStreakRef = useRef(0)
-
-  // Called after every video upload settles. Fail-safe: only widens on a proven clean streak, and
-  // snaps back to strictly-serial (and stops probing) the moment the network drops one. The worst
-  // this can ever do is behave exactly like a fixed capacity of 1.
-  const noteVideoOutcome = useCallback((ok: boolean) => {
-    const vs = videoSemRef.current
-    if (!vs) return
-    if (ok) {
-      videoStreakRef.current += 1
-      if (videoStreakRef.current >= VIDEO_WIDEN_AFTER_CLEAN && vs.capacity < videoCeilingRef.current) {
-        vs.setCapacity(vs.capacity + 1)
-        videoStreakRef.current = 0
-      }
-    } else {
-      videoStreakRef.current = 0
-      if (vs.capacity > 1) {
-        vs.setCapacity(1)
-        videoCeilingRef.current = 1 // network showed it can't sustain >1 — don't probe again this session
-      }
-    }
-  }, [])
+  // The adaptive video lane, for the whole session: it widens only on a proven clean streak and
+  // collapses to serial the moment the NETWORK drops one. lib/upload/video-lane owns both the rule
+  // and the semaphore it acts on, and knows that a cancel or a deliberate refusal is neither.
+  const videoLaneRef = useRef<ReturnType<typeof createVideoLane> | null>(null)
 
   // Counter instead of boolean: multiple concurrent batches each increment on start and
   // decrement on finish — isUploading stays true until the last batch completes
@@ -1279,6 +1256,8 @@ export default function UploadZone({ album, onPhotosUploaded, isOwner }: Props) 
     const sem = semRef.current
     if (!videoSemRef.current) videoSemRef.current = new Semaphore(VIDEO_CONCURRENCY_START)
     const videoSem = videoSemRef.current
+    if (!videoLaneRef.current) videoLaneRef.current = createVideoLane(videoSem, videoMax)
+    const videoLane = videoLaneRef.current
 
     // Incremental saver: each file's row is written within ~1.2s of its upload finishing.
     // A tile flips to 'done' only once its row is actually IN the database — before that a
@@ -1345,7 +1324,7 @@ export default function UploadZone({ album, onPhotosUploaded, isOwner }: Props) 
         const gate = kind === 'video' ? videoSem : sem
         // Size-aware lane: a big video takes the WHOLE video lane (uploads solo, no bandwidth
         // competition); short clips and all images weigh 1 and overlap.
-        const weight = kind === 'video' && entry.file.size >= VIDEO_SOLO_LANE_BYTES ? videoSem.capacity : 1
+        const weight = kind === 'video' ? videoLane.weightFor(entry.file.size) : 1
         const release = await gate.acquire(weight)
         try {
           patchEntry(entry.id, { status: 'uploading', progress: 0 })
@@ -1366,7 +1345,7 @@ export default function UploadZone({ album, onPhotosUploaded, isOwner }: Props) 
           // Bytes are in storage; the saver flips this tile to 'done' when the row commits.
           patchEntry(entry.id, { progress: 100, videoResume: undefined })
           saver.add(row, entry.id)
-          if (kind === 'video') noteVideoOutcome(true) // clean video → adaptive lane may widen
+          if (kind === 'video') videoLane.note('clean')   // the lane may widen on a proven streak
         } catch (e) {
           const msg = friendlyUploadError(e)
           // Park a network failure instead of killing it — but only once per file. On 2026-08-18 at
@@ -1383,18 +1362,10 @@ export default function UploadZone({ album, onPhotosUploaded, isOwner }: Props) 
             // instead of restarting from zero.
             ...(e instanceof VideoUploadError && e.resume ? { videoResume: e.resume } : {}),
           })
-          // A refusal is not a failure. Too-large and unsupported-type mean the product looked at
-          // the file and correctly declined it — the same class of event as hitting the album cap,
-          // which is already logged at warn. Logged as errors they sat in the admin Errors tab
-          // implying something was broken: a 103 MB video refused twice on 2026-08-18 was two of
-          // the four "errors" outstanding, and nothing was wrong.
-          const expectedRejection = e instanceof Error && isExpectedRefusal(e.message)
-          // Adaptive lane: a genuine upload failure (not a user cancel, not a pre-upload reject)
-          // means the network can't take the current concurrency — snap back to serial and stop
-          // probing. Same distinction as above, so it is now made once.
-          if (kind === 'video' && !(e instanceof DOMException && e.name === 'AbortError') && !expectedRejection) {
-            noteVideoOutcome(false)
-          }
+          // The lane decides what this failure says about the NETWORK: a cancel and a deliberate
+          // refusal say nothing, and counting either used to collapse the lane to serial for the
+          // whole session on a connection that was fine.
+          if (kind === 'video') videoLane.note(videoOutcomeOf(e))
           // Surface the real error (it was previously hidden in a title tooltip, invisible on
           // mobile). AbortError is a deliberate cancel, not worth toasting.
           if (!(e instanceof DOMException && e.name === 'AbortError')) {
@@ -1451,6 +1422,11 @@ export default function UploadZone({ album, onPhotosUploaded, isOwner }: Props) 
         else groups.set(key, { n: 1, sample: f })
       }
       for (const { n, sample } of groups.values()) {
+        // A refusal is not a failure. Too-large and unsupported-type mean the product looked at
+        // the file and correctly declined it — the same class of event as hitting the album cap,
+        // which is already logged at warn. Logged as errors they sat in the admin Errors tab
+        // implying something was broken: a 103 MB video refused twice on 2026-08-18 was two of
+        // the four "errors" outstanding, and nothing was wrong.
         const expected = isExpectedRefusal(sample.msg)
         // A parked failure is not (yet) a lost photo — the uploader is going to retry it by itself.
         // Reporting it at error level would put a row in the Errors tab, and a count against the
@@ -1501,7 +1477,7 @@ export default function UploadZone({ album, onPhotosUploaded, isOwner }: Props) 
   // ran with the stale guest closure and encoded the owner's photos at 3500px — the exact
   // silent shrink this feature exists to end, live for that whole batch. (Correctness used
   // to depend, by accident, on `caps` changing identity after the owner refetch.)
-  }, [album.id, caps, concurrency, isOwner, noteVideoOutcome, patchEntry, flushProgress, onPhotosUploaded])
+  }, [album.id, caps, concurrency, isOwner, videoMax, patchEntry, flushProgress, onPhotosUploaded])
 
   const addFiles = useCallback((files: File[]) => {
     const valid = files.filter(f => detectKind(f) !== null)

@@ -78,3 +78,38 @@ describe('UploadZone writes its rows through lib/upload/row-saver and keeps no c
     expect(text).toMatch(/onWarning: \(msg\) => showAppToast\(msg, 'success'\)/)
   })
 })
+
+describe('UploadZone runs its video lane from lib/upload/video-lane and decides nothing about it here', () => {
+  it('imports the rule and the classifier from the module', () => {
+    const text = src()
+    for (const name of ['createVideoLane', 'videoOutcomeOf']) {
+      expect(text, name).toMatch(new RegExp(String.raw`import \{[^}]*\b` + name + String.raw`\b[^}]*\} from '@/lib/upload/video-lane'`, 's'))
+    }
+  })
+  it('ONE lane for the whole session, built on the real semaphore and the real ceiling', () => {
+    const text = src()
+    // Per BATCH would be the defect back in a new costume: a lane that forgets it collapsed
+    // re-widens on the next drop, on the same connection that just failed.
+    expect(text).toMatch(/if \(!videoLaneRef\.current\) videoLaneRef\.current = createVideoLane\(videoSem, videoMax\)/)
+    expect(text).toMatch(/const videoLane = videoLaneRef\.current/)
+  })
+  it('the failure path hands the lane the REAL error, so a cancel is still a cancel', () => {
+    // The shipped defect: a guest tapping cancel, or a video the product refused on purpose,
+    // collapsed the lane to serial for the rest of the session. Only videoOutcomeOf(e) knows the
+    // difference -- note('failed') here reads identically and is the bug, verbatim.
+    expect(src()).toMatch(/if \(kind === 'video'\) videoLane\.note\(videoOutcomeOf\(e\)\)/)
+  })
+  it('a clean upload is reported too, or the lane never widens at all', () => {
+    expect(src()).toMatch(/if \(kind === 'video'\) videoLane\.note\('clean'\)/)
+  })
+  it('the slot weight comes from the lane, given the real file size', () => {
+    // A literal here (or entry.file.type, or a constant) makes every video take one slot, so a
+    // 400 MB clip runs beside three others on a venue uplink.
+    expect(src()).toMatch(/const weight = kind === 'video' \? videoLane\.weightFor\(entry\.file\.size\) : 1/)
+  })
+  it('keeps no copy of the rule: no streak, no ceiling, no setCapacity, no threshold', () => {
+    const text = src()
+    expect(text).not.toMatch(/videoStreakRef|videoCeilingRef|noteVideoOutcome|VIDEO_WIDEN_AFTER_CLEAN|VIDEO_SOLO_LANE_BYTES/)
+    expect(text, 'only the lane may resize the video semaphore').not.toMatch(/videoSem(Ref\.current)?\.setCapacity/)
+  })
+})
