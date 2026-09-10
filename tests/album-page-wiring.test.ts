@@ -177,3 +177,22 @@ describe('AlbumPageClient runs the upload refresh through delayed-once, and canc
     expect(text).not.toMatch(/uploadRefetchTimerRef/)
   })
 })
+
+describe('AlbumPageClient asks and answers a bib search through lib/bib-request', () => {
+  it('the plan is built from the album id and the typed digits, and its url and delay are what is used', () => {
+    const text = src()
+    expect(text).toMatch(/const plan = bibRequestPlan\(albumId, bibDigits\)/)
+    expect(text).toMatch(/fetch\(plan\.url, \{ signal: controller\.signal \}\)/)
+    expect(text).toMatch(/\}, plan\.delayMs\)/)
+  })
+  it('the answer is reduced with the SAME digits the request was planned with, and every field reaches state', () => {
+    const text = src()
+    expect(text).toMatch(/const answer = applyBibResponse\(bibDigits, json\)/)
+    expect(text).toMatch(/if \(answer\.stats\) setBibStats\(answer\.stats\)/)
+    expect(text).toMatch(/if \(answer\.result\) setBibResult\(answer\.result\)/)
+    expect(text).toMatch(/if \(answer\.retiresFailureFor !== null\) setBibFailedQuery\(\(q\) => \(q === answer\.retiresFailureFor \? null : q\)\)/)
+  })
+  it('a failure is tagged through bibFailureTag, after the cancelled and aborted cases', () => {
+    expect(src()).toMatch(/if \(cancelled \|\| \(err as \{ name\?: string \}\)\?\.name === 'AbortError'\) return\s+const tag = bibFailureTag\(bibDigits\)\s+if \(tag\) setBibFailedQuery\(tag\)/)
+  })
+})

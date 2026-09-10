@@ -244,7 +244,9 @@ const SIZE_BUDGET: Record<string, number> = {
   // module owns the timer and the spread is a test. Locked in.
   // -11 (2026-09-10): the upload-triggered refresh timer and its four cancel sites are
   // lib/delayed-once (replace-never-stack, testable). Locked in.
-  'src/app/[slug]/AlbumPageClient.tsx': 1606,
+  // -27 (2026-09-10): what a bib search asks and what its answer means are lib/bib-request
+  // (the stats reply that is not "no matches", the query tag, the retired failure). Locked in.
+  'src/app/[slug]/AlbumPageClient.tsx': 1579,
   'src/app/card-editor/CardEditorClient.tsx': 873,
   // +1 (2026-08-31): pass collectionTotal to the lightbox counter.
   // +2 (2026-08-31): morphAllowed gate on open and close.

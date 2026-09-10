@@ -7,6 +7,7 @@ import { classifyResolve } from '@/lib/resolve-outcome'
 import { isRealLeavePop, leaveDestination } from '@/lib/leave-intent'
 import { ownerTokenFromHash, verifyOwnerToken } from '@/lib/owner-login'
 import { createDelayedOnce } from '@/lib/delayed-once'
+import { applyBibResponse, bibFailureTag, bibRequestPlan, type BibResponse } from '@/lib/bib-request'
 import { partitionPending, pendingIdSet, publishedTotal as publishedCountOf, visiblePhotos as visiblePhotosOf } from '@/lib/grid-visibility'
 import { monotonicNow, elapsedSince, type Millis } from '@/lib/clock'
 import { createPortal } from 'react-dom'
@@ -80,7 +81,6 @@ const REFETCH_DEBOUNCE_MS = 2500
 const LOAD_MORE_PAGE = 500
 // Most photos one bib number can sensibly return. A runner is in tens of photos; a junk OCR reading
 // off a banner ("2026") can hit thousands, and that is the request this bounds.
-const BIB_RESULT_LIMIT = 300
 
 // How long after one of THIS tab's own album edits a settings-broadcast refetch is treated as an
 // echo of that edit rather than news from somewhere else. Every owner mutation broadcasts, and the
@@ -551,55 +551,28 @@ export default function AlbumPageClient({ initialAlbum = null, initialPhotos, in
     if (!bibEnabled || !albumId) return
     let cancelled = false
     const controller = new AbortController()
-    // Debounced so typing "1234" is one request, not four. 300ms is below the point a person
-    // notices a pause and above a fast typist's gap between digits.
+    // What to ask (limited, debounced; or the stats once per page load) and what the answer
+    // means (a stats reply is not "no matches"; a result is tagged with its query; a success
+    // retires the failure tag for that number; a failure SAYS so rather than falling back to a
+    // local filter that would state "No photos found" to a runner who is in twelve) is
+    // lib/bib-request. This effect owns the fetch, the abort and the setState.
+    const plan = bibRequestPlan(albumId, bibDigits)
     const timer = window.setTimeout(() => {
-      const url = bibDigits
-        // LIMITED. OCR reads every number in the frame, so a banner year like "2026" is a real
-        // stored value; without a cap, typing it returns up to 2,000 full rows. No runner is in 300
-        // photos, so nothing legitimate is lost.
-        //
-        // NO bibStats HERE. Those are two full count scans, and the numbers they return cannot
-        // change between one keystroke and the next — sending them per search meant four round
-        // trips per number typed, three of which returned what we already knew. The empty-box
-        // request below fetches them, which is every page load.
-        ? `/api/album/photos?albumId=${encodeURIComponent(albumId)}&bib=${encodeURIComponent(bibDigits)}&limit=${BIB_RESULT_LIMIT}`
-        : `/api/album/photos?albumId=${encodeURIComponent(albumId)}&bibStats=1&statsOnly=1`
-      fetch(url, { signal: controller.signal })
+      fetch(plan.url, { signal: controller.signal })
         .then((r) => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
-        .then((json: { photos?: Photo[]; total?: number; bibStats?: { indexed: number; totalImages: number } }) => {
+        .then((json: BibResponse) => {
           if (cancelled) return
-          if (json.bibStats) setBibStats(json.bibStats)
-          // A stats-only reply carries no photos and must not be mistaken for "no matches".
-          if (!bibDigits) return
-          // Tagged with the query it answers. Without that, a slow response for "12" can land
-          // after a fast one for "1234" and show the wrong runner's photos — the classic
-          // out-of-order search race, and the one people photograph and send you.
-          // `total` is the TRUE match count even when the rows were capped, so the bar can say
-          // "showing the first 300 of 1,847" instead of presenting 300 as the whole answer.
-          const rows = json.photos ?? []
-          setBibResult({ query: bibDigits, photos: rows, total: json.total ?? rows.length })
-          // A SUCCESS RETIRES THE FAILURE FOR THE SAME NUMBER. Without this the tag set below
-          // outlives the problem: only the Try again button and album navigation ever cleared it,
-          // so a runner who hit one 429 on "3400", edited to "340", then typed the 0 back was shown
-          // "Could not search just now" with a Try again button — above a grid holding the twelve
-          // photos the retry had already fetched — for the rest of the session. The count and the
-          // Face Finder escape hatch stayed hidden with it.
-          //
-          // It also makes searchPhase's failed-before-answered order honest. That order is only
-          // correct while a failure tag describes the LATEST attempt; this is what keeps that true.
-          setBibFailedQuery((q) => (q === bibDigits ? null : q))
+          const answer = applyBibResponse(bibDigits, json)
+          if (answer.stats) setBibStats(answer.stats)
+          if (answer.result) setBibResult(answer.result)
+          if (answer.retiresFailureFor !== null) setBibFailedQuery((q) => (q === answer.retiresFailureFor ? null : q))
         })
         .catch((err: unknown) => {
           if (cancelled || (err as { name?: string })?.name === 'AbortError') return
-          // SAYING SO IS THE POINT. Falling back to the local filter looks harmless and is not: it
-          // filters the loaded window, finds nothing, and the bar states "No photos found" with
-          // full confidence to a runner who is in twelve photos. One 429 on a shared venue IP, or
-          // one dropped packet, is enough. An honest "couldn't search, try again" is the only
-          // answer here that is not a lie.
-          if (bibDigits) setBibFailedQuery(bibDigits)
+          const tag = bibFailureTag(bibDigits)
+          if (tag) setBibFailedQuery(tag)
         })
-    }, bibDigits ? 300 : 0)
+    }, plan.delayMs)
     return () => {
       cancelled = true
       controller.abort()
