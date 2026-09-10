@@ -98,7 +98,8 @@ export type Timers = {
   clear(id: number): void
 }
 
-const realTimers: Timers = {
+/** The browser's own timers; the one definition every scheduler in lib shares. */
+export const realTimers: Timers = {
   set: (fn, ms) => window.setTimeout(fn, ms),
   clear: (id) => window.clearTimeout(id),
 }

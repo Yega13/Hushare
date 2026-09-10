@@ -112,12 +112,15 @@ describe('the supervisor -- status events', () => {
     r.fireAll()
     expect(r.refresh).toHaveBeenCalledTimes(1)   // the SUBSCRIBED refetch only
   })
-  it('the poll keeps running while the channel is down, one refresh per interval, re-armed once', () => {
+  it('the poll keeps running while the channel is down, one PROBE-FIRST refresh per interval, re-armed once', () => {
     const r = rig()
     r.sup.onStatus('CHANNEL_ERROR')
     const pollId = () => [...r.live.entries()].find(([, t]) => t.ms === 15000)![0]
     r.fire(pollId())
     expect(r.refresh).toHaveBeenCalledTimes(1)
+    // force:false: a forced poll skips the 40-byte probe and pulls the whole window on every
+    // websocket-refused phone, every interval -- the herd the probe exists to prevent.
+    expect(r.refresh).toHaveBeenCalledWith({ force: false })
     expect(r.delays().filter((d) => d === 15000)).toHaveLength(1)
     r.fire(pollId())
     expect(r.refresh).toHaveBeenCalledTimes(2)
@@ -147,6 +150,46 @@ describe('the supervisor -- broadcasts', () => {
     const r = rig({ rand: () => 0 })
     r.sup.onChanged()
     expect(r.delays()).toEqual([1875])
+  })
+})
+
+describe('the supervisor -- its DEFAULT random source and poll cadence, the path 300 phones take', () => {
+  // The rig injects rand; these build supervisors WITHOUT it. A reviewer replaced the default
+  // with a constant and every test stayed green, because the free functions' defaults were
+  // tested but the supervisor never reached them.
+  it('reconnect delays differ across supervisors built with no rand', () => {
+    const delays = new Set<number>()
+    for (let i = 0; i < 25; i++) {
+      const t = fakeTimers()
+      const sup = createChannelSupervisor({ connect: () => {}, refresh: () => {}, now: () => 0, debounceMs: 2500, timers: t.timers })
+      sup.onStatus('CHANNEL_ERROR')
+      const reconnect = t.delays().find((d) => d >= 1000 && d <= 2000)
+      expect(reconnect, 'a reconnect in the jittered 1-2 s band').toBeDefined()
+      delays.add(reconnect!)
+    }
+    expect(delays.size).toBeGreaterThan(1)
+  })
+  it('poll delays differ across supervisors built with no pollDelay', () => {
+    const delays = new Set<number>()
+    for (let i = 0; i < 25; i++) {
+      const t = fakeTimers()
+      const sup = createChannelSupervisor({ connect: () => {}, refresh: () => {}, now: () => 0, debounceMs: 2500, timers: t.timers })
+      sup.onStatus('CHANNEL_ERROR')
+      const poll = t.delays().find((d) => d > 2000)
+      expect(poll, 'a poll beyond the reconnect band').toBeDefined()
+      delays.add(poll!)
+    }
+    expect(delays.size).toBeGreaterThan(1)
+  })
+  it('debounce delays differ across supervisors built with no rand', () => {
+    const delays = new Set<number>()
+    for (let i = 0; i < 25; i++) {
+      const t = fakeTimers()
+      const sup = createChannelSupervisor({ connect: () => {}, refresh: () => {}, now: () => 0, debounceMs: 2500, timers: t.timers })
+      sup.onChanged()
+      delays.add(t.delays()[0])
+    }
+    expect(delays.size).toBeGreaterThan(1)
   })
 })
 

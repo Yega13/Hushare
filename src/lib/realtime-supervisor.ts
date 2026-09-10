@@ -1,6 +1,6 @@
 import { fallbackPollDelay } from '@/lib/realtime-fallback'
 import { forcedRefreshAllowed } from '@/lib/album-freshness'
-import type { Timers } from '@/lib/settings-sync'
+import { realTimers, type Timers } from '@/lib/settings-sync'
 
 // WHAT THE PHOTOS CHANNEL DOES ON EACH EVENT -- the three timers and the rules that keep them from
 // stacking. Every one of those rules is a shipped bug:
@@ -58,11 +58,6 @@ export type ChannelSupervisor = {
   dispose(): void
   /** For tests and diagnostics: is the fallback poll running. */
   pollArmed(): boolean
-}
-
-const realTimers: Timers = {
-  set: (fn, ms) => window.setTimeout(fn, ms),
-  clear: (id) => window.clearTimeout(id),
 }
 
 export function createChannelSupervisor(config: SupervisorConfig): ChannelSupervisor {

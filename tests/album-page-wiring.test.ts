@@ -131,7 +131,7 @@ describe('AlbumPageClient hands the photos channel to the supervisor and keeps o
   it('the supervisor is built with connect, the probe-first refresh with the force flag, the wall clock and the debounce', () => {
     const call = singleCall(src(), 'createChannelSupervisor(')
     expect(call).toMatch(/connect:\s*\(\)\s*=>\s*connect\(\)/)
-    expect(call).toMatch(/refresh:\s*\(\{\s*force\s*\}\)\s*=>\s*\{\s*void refreshIfChanged\(albumId,[^]*?\{\s*force\s*\}\)/)
+    expect(call).toMatch(/refresh:\s*\(\{\s*force\s*\}\)\s*=>\s*\{\s*void refreshIfChanged\(albumId, r => \{ if \(active\) applyWindowRefresh\(r\) \}, \{ force \}\)/)
     expect(call).toMatch(/now:\s*\(\)\s*=>\s*Date\.now\(\)/)
     expect(call).toMatch(/debounceMs:\s*REFETCH_DEBOUNCE_MS\b/)
   })
@@ -140,6 +140,9 @@ describe('AlbumPageClient hands the photos channel to the supervisor and keeps o
     expect(text).toMatch(/\.on\('broadcast', \{ event: 'changed' \}, \(\) => \{ if \(active\) supervisor\.onChanged\(\) \}\)/)
     expect(text).toMatch(/if \(!active \|\| ch !== currentChannel\) return\s+if \(status === 'SUBSCRIBED' \|\| status === 'CHANNEL_ERROR' \|\| status === 'TIMED_OUT' \|\| status === 'CLOSED'\) \{\s+supervisor\.onStatus\(status\)/)
     expect(text).toMatch(/active = false\s+supervisor\.dispose\(\)\s+if \(currentChannel\) supabase\.removeChannel\(currentChannel\)/)
+  })
+  it('connect() nulls the current channel BEFORE removing the old one (167023e: the synchronous CLOSED echo must miss the guard)', () => {
+    expect(src()).toMatch(/const prev = currentChannel\s+currentChannel = null\s+if \(prev\) supabase\.removeChannel\(prev\)/)
   })
   it('no timer of the photos channel is left in the component', () => {
     const text = src()
