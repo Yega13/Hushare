@@ -92,6 +92,11 @@ describe('UploadZone runs its video lane from lib/upload/video-lane and decides 
     // re-widens on the next drop, on the same connection that just failed.
     expect(text).toMatch(/if \(!videoLaneRef\.current\) videoLaneRef\.current = createVideoLane\(videoSem, videoMax\)/)
     expect(text).toMatch(/const videoLane = videoLaneRef\.current/)
+    // AND THE SEMAPHORE IT IS BUILT ON must be the session's too. A fresh Semaphore per batch
+    // leaves the session-long lane calling setCapacity on one nothing waits on: video concurrency
+    // is stuck at 1 from batch two onwards, and every assertion above stays green. Found by a
+    // review on 2026-09-10, when this test was named for one lane and pinned only half of it.
+    expect(text).toMatch(/if \(!videoSemRef\.current\) videoSemRef\.current = new Semaphore\(VIDEO_CONCURRENCY_START\)/)
   })
   it('the failure path hands the lane the REAL error, so a cancel is still a cancel', () => {
     // The shipped defect: a guest tapping cancel, or a video the product refused on purpose,

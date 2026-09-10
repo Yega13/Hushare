@@ -186,6 +186,10 @@ const GATED_ROUTES: Record<string, string | null> = {
   'api/album/branding/route.ts': 'plan.noBranding',
   'api/album/sponsors/route.ts': 'plan.sponsors',
   'api/album/bib-search/route.ts': 'plan.bibSearch',
+  // Same feature, same gate: the route refuses below 'studio' with the reason 'Bib number
+  // search'. It is the owner saying a number on the banner is not a runner, so it is sold by
+  // the bib-search bullet rather than a card of its own.
+  'api/album/bib-exclusions/route.ts': 'plan.bibSearch',
   'api/album/face-finder/route.ts': 'plan.faceFinder',
   'api/album/face-search/route.ts': 'plan.faceFinder',
   'api/album/face-index/route.ts': 'plan.faceFinder',

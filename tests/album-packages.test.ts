@@ -1,4 +1,6 @@
 import { describe, it, expect } from 'vitest'
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
 import {
   albumEffectiveTier, packageExpired, albumCap, videoCaps, type AlbumPackage,
 } from '../src/lib/album-entitlements'
@@ -58,6 +60,19 @@ describe('packageExpired — an unreadable date must not grant features forever'
 
 describe('albumCap — a package raises the item allowance and never lowers it', () => {
   const base = { createdAt: '2026-09-01T00:00:00Z', override: null, now: NOW }
+
+  it('the allowance is READ from the catalogue it was sold from, never retyped beside it', () => {
+    // The test above passes just as happily against `pro: 5000` written out by hand, because 5000
+    // is what the catalogue says today (2026-09-10, mutation run: SURVIVED). Two copies of one
+    // number is rule 13 exactly -- the day the package is repriced, the checkout charges for one
+    // allowance and the album enforces the other, and nothing throws. So this reads the source.
+    const src = readFileSync(join(process.cwd(), 'src', 'lib', 'album-entitlements.ts'), 'utf8')
+    const table = src.slice(src.indexOf('const PACKAGE_ITEMS_BY_TIER'), src.indexOf('// HOW MANY ITEMS'))
+    expect(table, 'the per-tier item table must exist').toContain('pro:')
+    expect(table).toContain('PACKAGE_CATALOGUE.package_pro.items')
+    expect(table).toContain('PACKAGE_CATALOGUE.package_max.items')
+    expect(/\d/.test(table), 'a digit in this table is a second copy of a price-list number').toBe(false)
+  })
 
   it('gives a free owner the package allowance they bought', () => {
     // A Pro PACKAGE grants 5,000 where a Pro SUBSCRIPTION grants 3,000 — the package carries its

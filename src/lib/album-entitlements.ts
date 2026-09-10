@@ -126,10 +126,17 @@ export function albumCap({ ownerTier, createdAt, override, pkg, now }: AlbumCapI
  * straight back to the same 1,000 and nothing happened.
  */
 export function registeringWouldHelp(input: AlbumCapInput): boolean {
-  if (input.ownerTier) return false   // already has an account
-  // No special case for an override: it outranks every tier inside albumCap, so both sides of
-  // this comparison come back as the override and the answer is already false. A guard for it
-  // would read as a safety check while doing nothing, which is worse than not being there.
+  // NO GUARD FOR "already has an account", AND NONE FOR AN OVERRIDE. Both answers are already
+  // false, and a guard that cannot fire reads as a safety check while doing nothing -- which is
+  // worse than not being there, because the next person trusts it.
+  //
+  // An override outranks every tier inside albumCap, so both sides of this comparison come back as
+  // the override. And forcing 'free' can only ever RAISE an anonymous album's ceiling, never a
+  // registered one: free is the lowest per-tier cap, and every grandfather promise a higher tier
+  // gets, free gets too. `if (input.ownerTier) return false` sat here until 2026-09-10, when
+  // replacing it with `if (false)` left the entire suite green -- so what it was protecting is
+  // held by "never suggests registering to somebody who is already registered" instead, where a
+  // future cap change that broke the invariant would actually fail rather than be absorbed.
   return albumCap({ ...input, ownerTier: 'free' }).cap > albumCap(input).cap
 }
 
@@ -348,9 +355,9 @@ export function formatClipLimit(seconds: number): string {
 //   1. An unrecognised refusal is filed at 'error' level, so it lands in the admin Errors tab.
 //      A 103 MB video refused twice once accounted for two of the four outstanding "errors" while
 //      nothing was wrong.
-//   2. Worse, an unrecognised video failure calls noteVideoOutcome(false), which collapses that
-//      guest's video upload lane to serial FOR THE REST OF THE SESSION. One refused clip would
-//      have slowed every later video that person uploaded.
+//   2. Worse, an unrecognised video failure reads as a NETWORK failure to lib/upload/video-lane,
+//      which collapses that guest's video upload lane to serial for the rest of the session. One
+//      refused clip would have slowed every later video that person uploaded.
 //
 // So the prefix and the message must be the same fact. They are built here, and upload-policy
 // imports the prefixes rather than retyping them.

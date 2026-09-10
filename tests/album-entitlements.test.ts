@@ -6,6 +6,7 @@ import {
 import { GRANDFATHER_FREE_BEFORE } from '../src/lib/media'
 import {
   ANON_ALBUM_MEDIA, FREE_ALBUM_MEDIA, PRO_ALBUM_MEDIA, STUDIO_ALBUM_MEDIA, LEGACY_FREE_ALBUM_MEDIA,
+  albumMediaCapForTier,
 } from '../src/lib/media'
 
 // Real dates either side of both cutoffs (2026-08-02 and 2026-08-25).
@@ -210,9 +211,28 @@ describe('capNudge — what a full album may tell someone to do', () => {
   })
 
   it('never suggests registering to somebody who is already registered', () => {
+    // THIS IS THE ONLY THING HOLDING IT. registeringWouldHelp used to open with
+    // `if (input.ownerTier) return false`, and mutating that to `if (false)` left the whole suite
+    // green -- the guard could not fire, because forcing 'free' never raises a registered album's
+    // ceiling. It was removed; this test is what would catch a cap change that made it possible.
     for (const tier of ['free', 'pro', 'studio'] as const) {
-      expect(capNudge({ ownerTier: tier, createdAt: OLD, override: null })).not.toBe('register')
-      expect(capNudge({ ownerTier: tier, createdAt: NEW, override: null })).not.toBe('register')
+      for (const at of [OLD, MID, NEW]) {
+        expect(capNudge({ ownerTier: tier, createdAt: at, override: null }), `${tier} @ ${at}`).not.toBe('register')
+      }
+      // ...and not on a packaged album either, where the package raises the ceiling for both
+      // sides of the comparison at once.
+      expect(capNudge({
+        ownerTier: tier, createdAt: NEW, override: null,
+        pkg: { tier: 'studio', expiresAt: '2027-01-01T00:00:00Z' }, now: new Date('2026-09-10T00:00:00Z'),
+      }), `${tier} with a package`).not.toBe('register')
+    }
+  })
+
+  it('the free cap is the LOWEST per-tier cap -- the invariant that removed guard depended on', () => {
+    // If a plan ever gave less room than free, a paying owner would be told to "register for more
+    // space" for an account they already have. That is the sentence this file exists to prevent.
+    for (const tier of ['free', 'pro', 'studio'] as const) {
+      expect(albumMediaCapForTier('free'), `free must not exceed ${tier}`).toBeLessThanOrEqual(albumMediaCapForTier(tier))
     }
   })
 })

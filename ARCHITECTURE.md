@@ -92,10 +92,15 @@ An invariant that is only a sentence in a document is a hope. Each of these name
 ## 4. The upload path, as the worked example
 
 The path a guest's photo takes is the most-tested and most-incident-shaped code here, and it shows
-what the layering is for. `src/components/UploadZone.tsx` (2,242 lines) reads files, drives the
+what the layering is for. `src/components/UploadZone.tsx` (2,039 lines) reads files, drives the
 UI, and calls:
 
-- `lib/upload/semaphore.ts` — the weighted concurrency gate (6 image slots on a phone, 12 on desktop; a video lane that widens from 1 toward 2 or 3 as a network proves it can take it).
+- `lib/upload/semaphore.ts` — the weighted concurrency gate itself: 6 image slots on a phone, 12 on
+  desktop, and a separate, tighter lane for videos. It counts slots and nothing else.
+- `lib/upload/video-lane.ts` — how wide that video lane may be, decided from what the network has
+  actually done. It widens only after a proven clean streak and collapses to serial for the rest of
+  the session the moment a video genuinely fails — where "genuinely" excludes a cancel and a
+  refusal the product made on purpose, which say nothing about the connection.
 - `lib/upload/http.ts` — `xhrPut`, the one function that carries bytes off the phone, with a stall
   watchdog on the monotonic clock; `HttpError` (the server answered) is a different type from a
   network failure (nothing came back), because the retry loops treat them oppositely.

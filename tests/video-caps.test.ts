@@ -120,6 +120,18 @@ describe('videoBudgetExceeded', () => {
     expect(videoBudgetExceeded(NaN, 60, caps)).toBe(false)
     expect(videoBudgetExceeded(-100, 60, caps)).toBe(false)
   })
+
+  it('nonsense usage does not CREATE room either -- one bad row must not disable the budget', () => {
+    // The half the two lines above cannot see. Both of them pass an in-budget clip, where a
+    // clamped zero and an unclamped -100 answer the same way -- so deleting the clamp left them
+    // green (2026-09-10, mutation run). What the clamp actually stops is a stored -2000000000
+    // making the album's remaining allowance effectively infinite: the row exists, the SQL sum
+    // clamps it per row, and this is the second bound. A clip longer than the WHOLE budget is the
+    // case that separates them.
+    expect(videoBudgetExceeded(-2_000_000_000, 700, caps), 'a negative total must not buy room').toBe(true)
+    expect(videoBudgetExceeded(NaN, 700, caps), 'an unreadable total must not buy room').toBe(true)
+    expect(videoBudgetExceeded(Number.NEGATIVE_INFINITY, 601, caps)).toBe(true)
+  })
 })
 
 describe('videoBudgetLeft', () => {

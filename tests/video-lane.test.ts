@@ -3,18 +3,28 @@ import { createVideoLane, videoOutcomeOf } from '@/lib/upload/video-lane'
 import { Semaphore } from '@/lib/upload/semaphore'
 import { VIDEO_SOLO_LANE_BYTES, VIDEO_WIDEN_AFTER_CLEAN } from '@/lib/constants'
 
-// HOW MANY VIDEOS GO UP AT ONCE. The shipped defect was that a guest CANCELLING an upload, or the
-// product refusing one on purpose, collapsed the lane to serial for the rest of the session on a
-// phone whose connection was perfectly fine.
+// HOW MANY VIDEOS GO UP AT ONCE. The rule these tests hold: a guest CANCELLING an upload, or the
+// product refusing one on purpose, must not collapse the lane to serial for the rest of the
+// session on a phone whose connection is perfectly fine.
+//
+// That rule was already kept by the inline code this module replaced -- the move was made so it
+// could be TESTED, not because it was broken. Saying so because a test name is read as evidence.
 
 const clean = (lane: { note: (o: 'clean' | 'failed' | 'ignore') => void }, n: number) => {
   for (let i = 0; i < n; i++) lane.note('clean')
 }
 
 describe('videoOutcomeOf -- what a settled upload says about the NETWORK', () => {
-  it('no error is a clean upload', () => {
-    expect(videoOutcomeOf(null)).toBe('clean')
-    expect(videoOutcomeOf(undefined)).toBe('clean')
+  it('a thrown null is a FAILURE, not a clean upload', () => {
+    // The only caller is a catch block, so "no error" cannot be true there. A null branch
+    // answering 'clean' would widen the lane on a network that had just dropped a file, which is
+    // the fail-safe pointing the wrong way (rule 19).
+    expect(videoOutcomeOf(null)).toBe('failed')
+    expect(videoOutcomeOf(undefined)).toBe('failed')
+  })
+  it('so is anything thrown that is not an Error at all', () => {
+    expect(videoOutcomeOf({ message: 'File too large' })).toBe('failed')
+    expect(videoOutcomeOf({ name: 'AbortError' })).toBe('failed')
   })
   it('a deliberate cancel says NOTHING about the network', () => {
     expect(videoOutcomeOf(new DOMException('cancelled', 'AbortError'))).toBe('ignore')
@@ -66,6 +76,20 @@ describe('the lane widens on proof and collapses on failure', () => {
     clean(lane, VIDEO_WIDEN_AFTER_CLEAN * 5)
     expect(sem.capacity, 'the ceiling is 1 now: no amount of success re-widens it').toBe(1)
   })
+  it('a failure AT CAPACITY 1 does not pin the ceiling -- it says nothing about concurrency', () => {
+    // The lane always starts at 1, so this is where most real failures land. A review found that
+    // moving `cap = 1` above the `if (sem.capacity > 1)` guard left all 14 tests green: the FIRST
+    // video of a session failing once would then hold every later video to serial, on a connection
+    // that recovered a second later. Nothing could see it, because no test failed at capacity 1
+    // and then asked whether the lane could still widen.
+    const sem = new Semaphore(1)
+    const lane = createVideoLane(sem, 3)
+    lane.note('failed')
+    expect(sem.capacity).toBe(1)
+    expect(lane.ceiling, 'a failure with nothing to collapse must not stop the probing').toBe(3)
+    clean(lane, VIDEO_WIDEN_AFTER_CLEAN)
+    expect(sem.capacity, 'the lane can still earn its way up').toBe(2)
+  })
   it('a failure also breaks a streak in progress', () => {
     const sem = new Semaphore(1)
     const lane = createVideoLane(sem, 3)
@@ -75,7 +99,8 @@ describe('the lane widens on proof and collapses on failure', () => {
     expect(sem.capacity, 'the near-complete streak was discarded').toBe(1)
   })
   it('A CANCEL DOES NOT COLLAPSE THE LANE, and neither does a refusal', () => {
-    // The defect. One guest tapping cancel used to make every remaining video upload serially.
+    // The rule the whole module exists for: one guest tapping cancel must not make every remaining
+    // video in that session upload serially.
     const sem = new Semaphore(1)
     const lane = createVideoLane(sem, 3)
     clean(lane, VIDEO_WIDEN_AFTER_CLEAN)

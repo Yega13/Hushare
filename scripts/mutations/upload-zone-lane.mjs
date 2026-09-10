@@ -8,7 +8,7 @@ export default {
   file: 'src/components/UploadZone.tsx',
   test: 'tests/upload-zone-wiring.test.ts',
   mutations: [
-  { name: 'the failure path stops asking WHAT failed -- a cancel collapses the lane again (the shipped defect)',
+  { name: 'the failure path stops asking WHAT failed, so a cancel collapses the lane',
     from: "if (kind === 'video') videoLane.note(videoOutcomeOf(e))",
     to: "if (kind === 'video') videoLane.note('failed')" },
   { name: 'the failure is never reported, so the lane stays wide on a network that is dropping videos',
@@ -18,6 +18,9 @@ export default {
   { name: 'a fresh lane per batch, so a collapse is forgotten on the next drop',
     from: "    if (!videoLaneRef.current) videoLaneRef.current = createVideoLane(videoSem, videoMax)",
     to: "    videoLaneRef.current = createVideoLane(videoSem, videoMax)" },
+  { name: 'a fresh SEMAPHORE per batch, so the session lane resizes a semaphore nothing waits on',
+    from: "    if (!videoSemRef.current) videoSemRef.current = new Semaphore(VIDEO_CONCURRENCY_START)",
+    to: "    videoSemRef.current = new Semaphore(VIDEO_CONCURRENCY_START)" },
   { name: 'the ceiling is a literal, so mobile probes to the desktop maximum',
     from: "createVideoLane(videoSem, videoMax)", to: "createVideoLane(videoSem, 3)" },
   { name: 'every video takes one slot, so a 400 MB clip runs beside three others',
