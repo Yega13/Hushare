@@ -91,6 +91,22 @@ describe('queuePendingRows -- each file waits once', () => {
     const q = queuePendingRows([{ entryId: 'a' }, { entryId: 'b' }], [{ entryId: 'c' }])
     expect(q.map((p) => p.entryId)).toEqual(['a', 'b', 'c'])
   })
+  it('a file refused AGAIN holds its place in the queue instead of moving to the end', () => {
+    // The case the function exists for. A filter-and-append implementation passes every other
+    // test here and quietly reorders the banner on every second refusal.
+    const q = queuePendingRows([{ entryId: 'a' }, { entryId: 'b' }, { entryId: 'c' }], [{ entryId: 'b', row: 2 }])
+    expect(q.map((p) => p.entryId)).toEqual(['a', 'b', 'c'])
+    expect(q[1]).toEqual({ entryId: 'b', row: 2 })
+  })
+  it('the existing queue is not mutated: the caller reads the array it captured', () => {
+    // retryBlockedRows captures the queue, awaits a save for up to 180 s, then decides which
+    // entries were in THAT request from the captured array. An in-place push during the flight
+    // would give a green tick to a photo whose row was never sent.
+    const existing = [{ entryId: 'a' }]
+    const q = queuePendingRows(existing, [{ entryId: 'b' }])
+    expect(q).not.toBe(existing)
+    expect(existing).toEqual([{ entryId: 'a' }])
+  })
   it('nothing incoming leaves the queue as it was', () => {
     expect(queuePendingRows([{ entryId: 'a' }], [])).toEqual([{ entryId: 'a' }])
   })

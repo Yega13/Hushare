@@ -36,6 +36,17 @@ describe('UploadZone retries through lib/upload/retry-plan, and never re-uploads
     // The failed chip.
     expect(text).toMatch(/if \(failed\.some\(e => retryMode\(e\.id, pendingIds\) === 'resave'\)\) void retryBlockedRows\(\)/)
     expect(text).toMatch(/\.filter\(e => retryMode\(e\.id, pendingIds\) === 'reupload'\)/)
+    // The ids come from the REAL queue: an empty set passes every text match above while the
+    // chip re-uploads every queued file -- the original bug, verbatim.
+    expect(text).toMatch(/const pendingIds = new Set\(pendingSaveRef\.current\.map\(p => p\.entryId\)\)/)
+    // ...and the re-save runs BEFORE the re-upload guard and before the early return. When every
+    // failure is a refused save there is nothing to re-upload, and a chip that returned first
+    // would be a dead button for exactly the case this fixes.
+    const chip = text.slice(text.indexOf('const retryFailedUploads'))
+    const resaveAt = chip.indexOf('if (failed.some(e => retryMode(e.id, pendingIds)')
+    expect(resaveAt).toBeGreaterThan(-1)
+    expect(chip.indexOf('if (retryingRef.current) return'), 'the guard sits after the re-save').toBeGreaterThan(resaveAt)
+    expect(chip.indexOf('if (fresh.length === 0) return'), 'the early return sits after the re-save').toBeGreaterThan(resaveAt)
   })
   it('each retry trigger names itself, so the one automatic resume is spent or earned correctly', () => {
     const text = src()

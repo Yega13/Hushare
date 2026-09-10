@@ -140,7 +140,11 @@ const SIZE_BUDGET: Record<string, number> = {
   // re-uploading it and duplicating the photo; one automatic resume; which wall the banner shows)
   // are lib/upload/retry-plan, and retryBlockedRows became a useCallback so both Retry paths can
   // depend on it. One line net, for a customer-visible duplicate fixed.
-  'src/components/UploadZone.tsx': 2121,
+  // +10 (2026-09-10, review findings): a re-save now removes ONLY the rows it posted (clearing the
+  // whole queue dropped rows queued during the 180 s flight, bytes in R2 and no offer to save
+  // them), and the chip re-saves before its own re-upload guard so the full-album case is not a
+  // dead button. Ten lines, mostly why.
+  'src/components/UploadZone.tsx': 2131,
   // +3 on 2026-08-30: the branding toggle gained a real plan check (it was dimmed but still
   // clickable), and Face Finder and bib search stopped riding on the collections flag. Three
   // lines of reasoning for three gates that were wrong. Deliberate.

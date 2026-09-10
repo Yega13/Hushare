@@ -36,8 +36,12 @@
  * So: one pass that knows whether it is inside a string, a template, a regex literal, a line
  * comment or a block comment. A `/` starts a regex when the last significant character cannot end
  * an expression (`(`, `,`, `=`, `:`, an operator, a `{`), and is division otherwise -- the standard
- * heuristic, and the one case it cannot see (a regex after `)`, as in `if (x) /re/.test(y)`) does
- * not occur in this codebase and would only cost a truncated line, never a kept comment.
+ * heuristic. It misreads a regex that FOLLOWS an expression-ending token -- `return /^x$/.test(s)`
+ * and `if (f(x)) /^y$/.test(s)` both look like division -- and two such lines exist today
+ * (api/album/background/route.ts, lib/album-delete.ts). The cost is usually a truncated line,
+ * which is loud; but if such a regex contained a backtick the scanner would open a phantom
+ * template and keep every comment to the end of the file, which is the silent direction. What
+ * actually holds this closed is not the heuristic: it is the whole-repo property test below.
  *
  * DIRECTION OF ERROR, deliberately chosen: keeping a comment is the failure that makes a guard read
  * prose and pass; deleting real code makes a guard report something absent, which fails loudly

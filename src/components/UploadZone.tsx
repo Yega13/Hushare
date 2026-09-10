@@ -1651,9 +1651,15 @@ export default function UploadZone({ album, onPhotosUploaded, isOwner }: Props) 
         ? pending.filter(p => p.row.stream_uid && refused.has(p.row.stream_uid))
         : []
       const lostIds = new Set(lost.map(p => p.entryId))
-      pendingSaveRef.current = []
-      setPendingSaveCount(0)
-      setPendingSaveReason(null)
+      // ONLY WHAT THIS REQUEST CARRIED leaves the queue. A save takes up to 180 s on a venue
+      // connection, and another file can be refused and queued while it is in flight -- clearing
+      // the whole queue dropped that row on the floor with its bytes already in R2, and took the
+      // "Finish saving" offer away with it, leaving a re-upload as the only route back. That is
+      // the duplicate this path exists to prevent.
+      const postedIds = new Set(pending.map(p => p.entryId))
+      pendingSaveRef.current = pendingSaveRef.current.filter(p => !postedIds.has(p.entryId))
+      setPendingSaveCount(pendingSaveRef.current.length)
+      if (pendingSaveRef.current.length === 0) setPendingSaveReason(null)
       // Mark ONLY the entries whose rows were actually in this request. This used to flip every
       // entry with status 'error' to 'done', so in a mixed batch a photo that genuinely failed to
       // upload was given a green tick alongside the ones that really were saved — telling the
@@ -1797,12 +1803,16 @@ export default function UploadZone({ album, onPhotosUploaded, isOwner }: Props) 
     // its result on the very next line, always got an empty array, and called startUploads([]),
     // which returns immediately on an empty list. The files were left marked "Preparing" with
     // nothing scheduled to upload them: stuck forever, and silent about it.
-    if (retryingRef.current) return
     // Files whose bytes are already in R2 and whose row is waiting for "Finish saving" are
-    // RE-SAVED, never re-sent: the chip used to re-upload them and duplicate the photo.
+    // RE-SAVED, never re-sent: the chip used to re-upload them and duplicate the photo. This runs
+    // BEFORE the re-upload guard below, and before its own early return: when every failure is a
+    // refused save -- the full-album case -- there is nothing to re-upload, and a chip that
+    // returned early would be a dead button for exactly the case it was fixed for. Re-saving has
+    // its own guard (`retrying`), so it is not what retryingRef is protecting.
     const pendingIds = new Set(pendingSaveRef.current.map(p => p.entryId))
     const failed = entries.filter(e => e.status === 'error')
     if (failed.some(e => retryMode(e.id, pendingIds) === 'resave')) void retryBlockedRows()
+    if (retryingRef.current) return
     const fresh = failed
       .filter(e => retryMode(e.id, pendingIds) === 'reupload')
       .map(e => freshEntryFor(e, 'chip'))
