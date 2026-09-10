@@ -139,8 +139,14 @@ Before any deploy, `.github/workflows/deploy.yml` runs: `npm test` (through `run
 
 Stated plainly, because a map that hides the swamps is not a map.
 
-- **Components are still where decisions hide -- two of them.** `UploadZone.tsx` 2,242 and
-  `AlbumPageClient.tsx` 1,789 remain. `OwnerToolbar.tsx` went from 2,009 to 448 on 2026-09-07:
+- **Components are still where decisions hide -- two of them.** `AlbumPageClient.tsx` went 1,789
+  -> 1,577 on 2026-09-09/10: the resolve outcome, the grid's review-queue split, the freshness
+  seed and delta merge, the leave-intent predicates, the owner-link reader and login retry, the
+  realtime channel's three timers, the settings refetch jitter, the upload-refresh timer and the
+  bib request plan are lib modules with mutation sets. `UploadZone.tsx` 2,242 -> 2,131 has begun
+  the same way (failure classification, retry rules), with eight slices of its plan left.
+  EVERY extraction carries a CALL-SITE PIN naming its arguments: a reviewer put eight wrong call
+  sites past a pin that only asked for "not a literal", each a defect on every album. `OwnerToolbar.tsx` went from 2,009 to 448 on 2026-09-07:
   its ten panels are components under `components/owner-toolbar/`, each owning its own state, and
   the decisions they make -- what each plan-gated row looks like (`lib/owner-rows`), the reveal
   rules (`lib/reveal-input`), the two-tap delete (`lib/delete-flow`) -- are tested modules with
