@@ -16,8 +16,8 @@
 // the entire time; nothing ran it.
 //
 // WHY NOT JUST RUN `npm run lint` IN CI. Because it reports ~80 other react-hooks findings today
-// (set-state-in-effect, refs, exhaustive-deps), and a gate that fails on everything is a gate
-// somebody turns off. So the blocking set is ONLY the class that crashes a page for a customer,
+// (set-state-in-effect, refs, exhaustive-deps) inside four large components, and a gate that fails
+// on everything is a gate somebody turns off. So the blocking set is ONLY the class that crashes a page for a customer,
 // and the rest is a BUDGET: today's count per rule, which may only fall. That turns "visible as
 // debt" into "cannot grow" without asking anyone to pay 80 findings at once.
 //
@@ -33,9 +33,17 @@ const NL = String.fromCharCode(10)
 
 const BLOCKING = new Set(['react-hooks/rules-of-hooks'])
 
+// WHAT GETS SCANNED. `src` alone until 2026-09-10, which left the tooling and the tests outside the
+// ratchet entirely: a whole-repo run that day found 50 findings nothing was gating, all of them in
+// scripts/ and tests/. They are fixed, and the scan now covers the directories they were in, so the
+// next one cannot arrive unnoticed. Named explicitly rather than passing '.' -- eslint walks
+// everything not ignored, and the point is to say which trees are held rather than to discover it.
+// Costs about 75 seconds; `src` is 55 of them.
+const SCAN = ['src', 'scripts', 'tests']
+
 let raw = ''
 try {
-  raw = execFileSync('npx', ['eslint', 'src', '-f', 'json'], {
+  raw = execFileSync('npx', ['eslint', ...SCAN, '-f', 'json'], {
     encoding: 'utf8', shell: true, maxBuffer: 64 * 1024 * 1024,
   })
 } catch (err) {
