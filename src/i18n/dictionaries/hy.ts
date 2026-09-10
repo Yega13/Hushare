@@ -331,6 +331,10 @@ export const hy: Partial<Record<DictKey, string>> = {
   'ad.more': 'Ավելին',
   'ot.bibSearch': 'Որոնում համարով',
   'ot.bibSearchSub': 'Մրցավազքեր. մասնակիցները գտնում են իրենց լուսանկարները համարով։',
+  // Given by the user on 2026-09-10, verbatim. I do not proofread this script and did not adjust
+  // these — not the wording, not the punctuation. If either needs changing, it is their call.
+  'ot.bibExclusions': 'Թիվը գտնվել է չափից շատ նկարների վրա',
+  'ot.bibExclusionsSub': 'Սեղմիր նրանց վրա որոնք վազորդների նկարներ չեն, նրանք այլևս չեն հայտնվելու',
   'bib.title': 'Գտեք ձեր մրցավազքի լուսանկարները',
   'bib.placeholder': 'Ձեր համարը',
   'bib.hint': 'Գտեք ձեր լուսանկարները համարով',
@@ -339,6 +343,10 @@ export const hy: Partial<Record<DictKey, string>> = {
   'bib.foundCapped': 'Ցուցադրվում են առաջին {n}-ը {total}-ից',
   'bib.searching': 'Որոնում…',
   'bib.failed': 'Որոնումը չհաջողվեց',
+  // Given by the user on 2026-09-10, verbatim — including the shortening of the first one, which
+  // they marked "simple". Not proofread by me and not adjusted.
+  'bib.outOfRange': 'Թիվը գտնվում է սահմաններից դուրս',
+  'bib.excluded': 'Կազմակերպիչը նշել է այս թիվը, որպես վազքին չմասնակցող․',
   'bib.retry': 'Կրկնել',
   'bib.clear': 'Մաքրել',
   'bib.stillIndexing': 'Լուսանկարները դեռ մշակվում են ({done} / {total}) — վերադարձեք մի փոքր ուշ։',

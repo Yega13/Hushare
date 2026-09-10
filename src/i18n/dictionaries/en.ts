@@ -346,6 +346,12 @@ export const en = {
   'ad.more': 'More',
   'ot.bibSearch': 'Bib search',
   'ot.bibSearchSub': 'Race albums: runners find their photos by bib number.',
+  // The owner's side of the exclusion list. OCR reads every number in the frame, so a finish-arch
+  // year or a sponsor's phone number becomes a "bib" on hundreds of photos — and no rule can tell
+  // a year printed alone on a banner from a runner numbered the same. A person can, in one glance,
+  // which is why this asks rather than deciding. Frequency only nominates; it never removes.
+  'ot.bibExclusions': 'Numbers found on many photos',
+  'ot.bibExclusionsSub': 'Tap any that are signage rather than a runner — they\'ll stop appearing in searches.',
   'bib.title': 'Find your race photos',
   'bib.placeholder': 'Your bib number',
   'bib.hint': 'Find your photos by bib number',
@@ -359,6 +365,11 @@ export const en = {
   // absence here is the negative AGENTS.md rule 20 forbids, and it is reachable on any album whose
   // range is wrong — a maximum typed as 300 for a race numbered to 2200 says it to everyone above.
   'bib.outOfRange': 'That number is outside the range set for this race.',
+  // Same rule, a different cause: the organiser marked this exact number as signage. Said out loud
+  // rather than answered with silence, because a number an owner excluded can still be a real bib
+  // — 2026 is inside this race's own 2xxx series — and a runner who is told nothing found would
+  // stop looking. The Face Finder offer stands underneath it.
+  'bib.excluded': 'The organiser marked this number as course signage, not a runner.',
   'bib.retry': 'Try again',
   'bib.clear': 'Clear',
   'bib.stillIndexing': 'Still reading photos ({done} of {total}) — check back shortly.',
