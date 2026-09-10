@@ -1128,3 +1128,38 @@ sessions, one file, no rebase.
 hashes the blob, and the commit follows immediately. And after any commit on a shared file,
 `git diff HEAD~1 HEAD --stat` must show only the files I meant to touch with only the lines I
 meant to change -- a removed line I did not write is somebody else's work leaving.
+
+### 82. A CALL-SITE PIN THAT ACCEPTS ANY IDENTIFIER PINS NOTHING
+
+The lib was proven; the test that holds the component to calling it asserted the arguments were
+"derived, not literals" -- a property read or a name, never `true`. A reviewer fed it eight wrong
+call sites: the Response object instead of the parsed body, `isOwner` instead of
+`effectiveIsOwner`, `null` for the pending ids, `photos` for the published list. All eight are
+identifiers. All eight passed. Each is a defect on every album. When every wrong name is equally
+"derived", the name IS the contract, and a pin that will not say it is decoration. The same night,
+a COUNT of cancel sites let the one that mattered be deleted while another was doubled.
+
+**Habit to build:** a wiring pin names the exact argument and the exact statement around it. It
+is proven the way a test is: change the call site to something plausible and wrong, and watch it
+fail. "Not a literal" is not a property worth asserting.
+
+### 83. THE DEFAULT PATH IS THE PRODUCTION PATH, AND IT WAS THE ONE NOT TESTED
+
+The supervisor took `rand` and `pollDelay` as injectable, and every test injected them. The
+"always jitters with the real random source" test called the free function's default -- which the
+supervisor never reaches, because it passes its own `rand` through. A reviewer replaced that
+default with a constant: 16 of 16 green, and every phone in the room reconnecting on the same
+tick, the herd the module was written to prevent. Rule 16's first example, one level up.
+
+**Habit to build:** for every injectable, one test builds the thing with NOTHING injected and
+asserts the production behaviour (two runs differ; the delay is the real cadence). An injected
+value proves the parameter; only the default proves the product.
+
+### 84. "HEAD PLUS MY PATCH" IS A RACE; THE WORKING TREE WAS THE TRUTH ALL ALONG
+
+Entry 81 named the collision. The mechanism that caused it was my own defence: building the staged
+blob from HEAD's copy to keep the other session's uncommitted hunks out of my commit. Their hunks
+had been committed in between, so "HEAD's copy" was older than the working tree, and my blob
+carried their hunks away. What actually held the correct union was the file on disk. The safe
+rule is not a cleverer blob; it is: build from the working tree, then LIST what the diff removes
+and name whose each removed line is before committing.
