@@ -5,6 +5,10 @@ export default {
   mutations: [
   { name: 'the refetch jitter is gone (a room of guests fetches in the same instant)',
     from: "  return Math.round(REFETCH_JITTER_BASE_MS * (0.5 + rand() * 1.5))", to: "  return REFETCH_JITTER_BASE_MS" },
+  { name: 'the spread is narrowed around the same midpoint',
+    from: "  return Math.round(REFETCH_JITTER_BASE_MS * (0.5 + rand() * 1.5))", to: "  return Math.round(REFETCH_JITTER_BASE_MS * (0.5 + rand()) * 1.25)" },
+  { name: 'a fired refetch stays pending forever',
+    from: "      pending = timers.set(() => { pending = null; config.refetch() }, refetchJitterMs(rand))", to: "      pending = timers.set(() => { config.refetch() }, refetchJitterMs(rand))" },
   { name: 'the refetch jitter can be zero',
     from: "  return Math.round(REFETCH_JITTER_BASE_MS * (0.5 + rand() * 1.5))", to: "  return Math.round(REFETCH_JITTER_BASE_MS * rand() * 2)" },
   { name: 'a real refetch fires at once, unjittered, beside the queued echo',

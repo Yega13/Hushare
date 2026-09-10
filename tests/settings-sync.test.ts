@@ -168,10 +168,17 @@ describe('a dragged slider produces one refetch, not one per broadcast', () => {
     for (let i = 0; i < 5; i++) sync.onBroadcast({ designerOpen: false, now: at(NOW + i), lastLocalEditAt: at(0) })
     expect(pending()).toBe(1)
     expect(delays()).toEqual([Math.round(700 * (0.5 + 0.5 * 1.5))])
+    expect(sync.hasPending()).toBe(true)
     runAll()
     expect(fetches).toBe(1)
+    expect(sync.hasPending(), 'the fired fetch is no longer pending').toBe(false)
   })
 
+  it('the spread is 0.5x to 2x of the base at its EDGES, not just around the middle', () => {
+    // A reviewer narrowed the spread while keeping the midpoint and the suite stayed green.
+    expect(refetchJitterMs(() => 0)).toBe(350)
+    expect(refetchJitterMs(() => 1)).toBe(1400)
+  })
   it('the jitter ALWAYS spreads with the real random source (two viewers differ)', () => {
     const seen = new Set<number>()
     for (let i = 0; i < 25; i++) seen.add(refetchJitterMs())
