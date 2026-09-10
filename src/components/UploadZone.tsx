@@ -9,6 +9,7 @@ import {
   type VideoResume,
 } from '@/lib/upload/failure'
 import { freshEntryFor, mergeWall, queuePendingRows, retryMode, shouldPark, wallFor } from '@/lib/upload/retry-plan'
+import { createRowSaver } from '@/lib/upload/row-saver'
 import { reportClientEvent } from '@/lib/upload/report'
 import { reachability } from '@/lib/upload/reachability'
 import { fetchWithRetry, putImageWithRelay, FETCH_DEADLINE_SAVE_MS } from '@/lib/upload/retry'
@@ -1119,77 +1120,6 @@ async function saveUploadedRows(albumId: string, rows: PhotoRow[]): Promise<{ wa
   return { warning: data.warning, rejected: data.rejected }
 }
 
-// Rows are written to the DB in small batches moments after each file finishes uploading —
-// NOT in one save after the whole batch. Two wins:
-//   - photos appear in the album (via realtime) while the rest of the batch is still uploading
-//   - closing the tab mid-batch loses only in-flight files, not every already-uploaded one
-//     (bytes in storage with no DB row are permanently orphaned)
-// photos/create dedupes on storage_path/stream_uid, so a retried flush is idempotent.
-// Larger debounce = fewer photos/create round trips per guest, which matters at event scale
-// (hundreds of guests each saving). Rows still batch together, and finish() flushes the
-// remainder immediately, so photos appear within a couple seconds of finishing.
-const SAVE_DEBOUNCE_MS = 2500
-
-function createRowSaver(
-  albumId: string,
-  onSaved: (entryIds: string[]) => void,
-  onFailed: (entryIds: string[], message: string, code?: string, rows?: PhotoRow[], nudge?: string) => void,
-  onWarning?: (message: string) => void,
-) {
-  let queue: { row: PhotoRow; entryId: string }[] = []
-  let timer: ReturnType<typeof setTimeout> | null = null
-  // Flushes chain serially — a slow save never interleaves with the next one.
-  let chain: Promise<void> = Promise.resolve()
-  let savedCount = 0
-  let warned = false // over-limit nag: show once per upload session, not per saved batch
-
-  const flush = () => {
-    if (timer) { clearTimeout(timer); timer = null }
-    if (queue.length === 0) return
-    const batch = queue
-    queue = []
-    chain = chain.then(async () => {
-      try {
-        const { warning, rejected } = await saveUploadedRows(albumId, batch.map(b => b.row))
-        // The server saves what it can and names what it could not. Ticking the whole batch green
-        // on a 200 would mark a video "done" that was never written — the guest sees a finished
-        // tile for a video that is not in the album, which is a worse failure than an honest error
-        // because nothing prompts them to fix it.
-        const refused = new Set(rejected ?? [])
-        const lost = refused.size > 0
-          ? batch.filter(b => b.row.stream_uid && refused.has(b.row.stream_uid))
-          : []
-        const saved = lost.length > 0 ? batch.filter(b => !lost.includes(b)) : batch
-        savedCount += saved.length
-        onSaved(saved.map(b => b.entryId))
-        if (lost.length > 0) {
-          // Deliberately NO rows passed: the pending-save queue retries the SAVE, and a refused uid
-          // will be refused again forever — its upload token is already spent. Re-uploading is what
-          // actually works (Retry starts a fresh Stream session), so this has to reach the tile's
-          // Retry button rather than the "finish the job" banner.
-          onFailed(lost.map(b => b.entryId), 'its upload session had already been used. Tap Retry to send it again.')
-        }
-        if (warning && !warned) { warned = true; onWarning?.(warning) }
-      } catch (e) {
-        onFailed(batch.map(b => b.entryId), e instanceof Error ? e.message : 'Failed to save', (e as { code?: string })?.code, batch.map(b => b.row), (e as { nudge?: string })?.nudge)
-      }
-    })
-  }
-
-  return {
-    add(row: PhotoRow, entryId: string) {
-      queue.push({ row, entryId })
-      if (!timer) timer = setTimeout(flush, SAVE_DEBOUNCE_MS)
-    },
-    // Flush the remainder and resolve once every pending save settles.
-    async finish(): Promise<number> {
-      flush()
-      await chain
-      return savedCount
-    },
-  }
-}
-
 // ─── Component ────────────────────────────────────────────────────────────────
 
 type Props = {
@@ -1353,10 +1283,12 @@ export default function UploadZone({ album, onPhotosUploaded, isOwner }: Props) 
     // Incremental saver: each file's row is written within ~1.2s of its upload finishing.
     // A tile flips to 'done' only once its row is actually IN the database — before that a
     // "done" tile could still be lost by closing the tab.
-    const saver = createRowSaver(
-      album.id,
-      (ids) => { for (const id of ids) patchEntry(id, { status: 'done', progress: 100 }) },
-      (ids, msg, code, rows, nudge) => {
+    // The batching, the serial chain, the refused-uid rule and the warn-once are
+    // lib/upload/row-saver; this is what THIS screen does with each answer.
+    const saver = createRowSaver<PhotoRow>({
+      save: (rows) => saveUploadedRows(album.id, rows),
+      onSaved: (ids) => { for (const id of ids) patchEntry(id, { status: 'done', progress: 100 }) },
+      onFailed: (ids, msg, code, rows, nudge) => {
         // A full album is a REFUSAL, not a fault. It was reported at 'error' with the scary
         // "saving failed" prefix, which (a) told the guest their photos broke when the album was
         // simply full, and (b) flooded /admin -- 39 of ~60 events in one day were this, burying
@@ -1388,8 +1320,8 @@ export default function UploadZone({ album, onPhotosUploaded, isOwner }: Props) 
         reportClientEvent(expectedSave ? 'warn' : 'error', full ? 'album-full' : 'save', msg, album.id, { count: ids.length })
       },
       // Over-limit nag (once per upload session): the server flags albums past the free allowance.
-      (msg) => showAppToast(msg, 'success'),
-    )
+      onWarning: (msg) => showAppToast(msg, 'success'),
+    })
 
     // One dropped connection fails every file in flight for the SAME reason. Reporting and
     // toasting each one separately turned a single incident into 98 toasts churning through the

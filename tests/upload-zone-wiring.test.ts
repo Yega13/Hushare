@@ -62,3 +62,19 @@ describe('UploadZone retries through lib/upload/retry-plan, and never re-uploads
     expect(text).toMatch(/setPendingSaveReason\(prev => mergeWall\(prev, wallFor\(code, nudge\)\)\)/)
   })
 })
+
+describe('UploadZone writes its rows through lib/upload/row-saver and keeps no copy of the rules', () => {
+  it('the saver is built with the real save call and the real album, and defines no batching here', () => {
+    const text = src()
+    expect(text).toMatch(/createRowSaver<PhotoRow>\(\{/)
+    expect(text).toMatch(/save: \(rows\) => saveUploadedRows\(album\.id, rows\)/)
+    // The debounce, the serial chain, the refused-uid rule and the warn-once left with it.
+    expect(text).not.toMatch(/SAVE_DEBOUNCE_MS|let chain: Promise|function createRowSaver|warned = true/)
+  })
+  it('each answer reaches the screen: saved ticks green, failed keeps its code and rows, warning toasts', () => {
+    const text = src()
+    expect(text).toMatch(/onSaved: \(ids\) => \{ for \(const id of ids\) patchEntry\(id, \{ status: 'done', progress: 100 \}\) \}/)
+    expect(text).toMatch(/onFailed: \(ids, msg, code, rows, nudge\) => \{/)
+    expect(text).toMatch(/onWarning: \(msg\) => showAppToast\(msg, 'success'\)/)
+  })
+})

@@ -1,17 +1,18 @@
 import { describe, it, expect, beforeAll } from 'vitest'
-import { readFileSync } from 'node:fs'
-import { join } from 'node:path'
-import { PGlite } from '@electric-sql/pglite'
-import { applyRestore, chunkRows, insertStatement, reconcileColumns, restoreOrder, CHUNK } from '../scripts/restore-core.mjs'
-import { createTableSql } from '../scripts/restore-rehearse.mjs'
+import type { PGlite } from '@electric-sql/pglite'
+import { applyRestore, chunkRows, columnsOf, heterogeneousCount, insertStatement, quoteIdent, reconcileColumns, restoreOrder, CHUNK } from '../scripts/restore-core.mjs'
+import { buildRehearsalDb } from '../scripts/rehearsal-db.mjs'
 
 // THE RESTORE PATH, RUN AGAINST A REAL POSTGRES.
 //
 // A backup nobody has ever restored is a guess. `npm run restore:rehearse` restores a REAL backup
 // file into an in-process Postgres and verifies it; this is the same code, the same schema, and a
 // synthetic dump -- so it runs in CI where no backup file exists and no customer row is ever
-// checked into the repository. The schema comes from tests/fixtures/live-schema.json, taken by
-// read-only introspection of the live database (scripts/db-schema-snapshot.mjs).
+// checked into the repository. The schema is `schema.sql` -- the file a recovery actually runs,
+// generated from the live database and guarded against drift by the deploy -- so this database has
+// the real foreign keys, checks, unique and NOT NULL constraints. That matters: the first version
+// built tables from a snapshot of names and types, and passed while the real restore was broken by
+// a foreign-key cycle its target could not express.
 //
 // What must hold, and what each was written for:
 //   * a dry run writes NOTHING;
@@ -21,8 +22,6 @@ import { createTableSql } from '../scripts/restore-rehearse.mjs'
 //     through escaping written by hand;
 //   * a column or table the schema has dropped since the backup is reported and skipped rather
 //     than aborting every table -- the first rehearsal of this path died on `albums.media_hover`.
-
-const SCHEMA = JSON.parse(readFileSync(join(process.cwd(), 'tests', 'fixtures', 'live-schema.json'), 'utf8'))
 
 const ALBUM_ID = '11111111-1111-1111-1111-111111111111'
 const PHOTO_ID = '22222222-2222-2222-2222-222222222222'
@@ -40,6 +39,9 @@ function dump() {
       }],
       albums: [{
         id: ALBUM_ID, slug: 'race', title: 'Race', created_at: '2026-08-01T09:00:00.000Z',
+        // owner_token is NOT NULL with no default: a dump that omitted it would be refused, which
+        // is the schema doing its job and the reason this database is built with its constraints.
+        owner_token: 'tok-1',
         sponsor_logos: [{ id: 's1', url: 'https://x/l.png', name: null }],
         media_radius: 16, hide_branding: false, welcome_message: null,
       }],
@@ -48,14 +50,14 @@ function dump() {
   }
 }
 
-// One Postgres for the file: booting the WASM build takes seconds, recreating two tables takes
-// milliseconds, and every test needs an empty pair rather than a fresh engine.
+// One Postgres for the file: booting the WASM build and applying the whole schema takes seconds,
+// emptying the tables takes milliseconds. Every test needs an empty database, not a fresh engine.
 let shared: PGlite
-beforeAll(async () => { shared = await PGlite.create() }, 60_000)
+beforeAll(async () => { shared = (await buildRehearsalDb()).db }, 120_000)
 
 async function freshDb() {
-  await shared.exec('drop table if exists photos; drop table if exists albums;')
-  for (const name of ['albums', 'photos']) await shared.exec(createTableSql(name, SCHEMA.tables[name]))
+  // truncate, not delete-and-recreate: the constraints are the point of this database.
+  await shared.exec('truncate table photos, albums restart identity cascade')
   return shared
 }
 const count = async (db: PGlite, t: string) =>
@@ -71,13 +73,22 @@ describe('the pure decisions', () => {
   })
   it('builds a parameterised insert that cannot overwrite a live row', () => {
     const sql = insertStatement('photos', ['id', 'url'], 2)
-    expect(sql).toBe('insert into "photos" ("id", "url") values ($1, $2), ($3, $4) on conflict do nothing')
+    expect(sql).toBe('insert into "public"."photos" ("id", "url") values ($1, $2), ($3, $4) on conflict do nothing')
     expect(sql).not.toMatch(/update|delete|truncate/i)
   })
   it('chunks so one statement cannot exceed the parameter ceiling, and empty means no statement', () => {
     expect(chunkRows(Array.from({ length: 450 }, (_, i) => i)).map((c) => c.length)).toEqual([200, 200, 50])
     expect(chunkRows([])).toEqual([])
-    expect(CHUNK * 27).toBeLessThan(65535)   // the widest table this database has
+  })
+  it('quotes an identifier so a name carrying a double quote cannot end the statement', () => {
+    expect(quoteIdent('id","x") values (1); drop table photos; --')).toBe('id"",""x"") values (1); drop table photos; --')
+    expect(insertStatement('photos', ['id'], 1)).toContain('"public"."photos"')
+  })
+  it('takes the columns of EVERY row, not row zero, and counts the rows that differ', () => {
+    const rows = [{ a: 1 }, { a: 2, b: 3 }]
+    expect(columnsOf(rows)).toEqual(['a', 'b'])
+    expect(heterogeneousCount(rows, ['a', 'b'])).toBe(1)
+    expect(heterogeneousCount([{ a: 1 }, { a: 2 }], ['a'])).toBe(0)
   })
   it('keeps the columns that still exist, names the ones that are gone, and notes the new ones', () => {
     const r = reconcileColumns(['id', 'media_hover', 'title'], ['id', 'title', 'reveal_at'])
@@ -88,6 +99,14 @@ describe('the pure decisions', () => {
 })
 
 describe('a restore against a real Postgres', () => {
+  it('one chunk can never exceed the parameter ceiling, for the widest table this schema HAS', async () => {
+    // Read, not remembered: the comment this replaces said 27 columns and the widest is 53.
+    const { rows: [{ widest }] } = await shared.query<{ widest: number }>(
+      `select max(n)::int as widest from (select count(*) n from information_schema.columns where table_schema='public' group by table_name) t`)
+    expect(widest).toBeGreaterThan(40)
+    expect(CHUNK * Number(widest)).toBeLessThan(65535)
+  })
+
   it('a dry run writes NOTHING, and still reports what is missing', async () => {
     const db = await freshDb()
     const res = await applyRestore(db, dump(), { apply: false })
@@ -177,6 +196,84 @@ describe('a restore against a real Postgres', () => {
     expect(await count(db, 'photos')).toBe(1)
   })
 
+  it('the constraint deferral dies with the transaction: the SESSION is left as it was found', async () => {
+    // SET LOCAL, not SET. A session-wide replica role would outlive the restore and silently
+    // disable every foreign key and trigger for whatever the operator did next in that session.
+    const db = await freshDb()
+    await applyRestore(db, dump(), { apply: true })
+    const { rows } = await db.query<{ session_replication_role: string }>('show session_replication_role')
+    expect(rows[0].session_replication_role).toBe('origin')
+  })
+
+  it('the dry run COUNTS what is missing, and is not fooled by two equal totals', async () => {
+    // The number a human reads before deciding a restore is unnecessary. Subtracting the two
+    // cardinalities reported 0 here, for a database whose every row is the wrong one.
+    const db = await freshDb()
+    const live = dump()
+    live.tables.albums[0].id = '99999999-9999-9999-9999-999999999999'
+    live.tables.albums[0].slug = 'other'
+    live.tables.photos = []
+    await applyRestore(db, live, { apply: true })
+    expect(await count(db, 'albums')).toBe(1)
+
+    const res = await applyRestore(db, { ...dump(), tables: { albums: dump().tables.albums } }, { apply: false })
+    const albums = res.tables.find((t: { table: string }) => t.table === 'albums')!
+    expect(albums.live).toBe(1)
+    expect(albums.backup).toBe(1)
+    expect(albums.missing, 'one live album, one different album in the backup: one is missing').toBe(1)
+    expect(albums.exact).toBe(true)
+  })
+
+  it("a dump whose rows carry DIFFERENT keys restores every field, not row zero's", async () => {
+    // Safe only by coincidence of the producer: backup-db.mjs writes select *, so all rows carry
+    // all keys. A hand-edited or merged dump does not, and row zero used to decide for all of them.
+    const db = await freshDb()
+    const d = dump()
+    const [first] = d.tables.photos
+    delete (first as Record<string, unknown>).caption
+    d.tables.photos.push({ ...first, id: '44444444-4444-4444-4444-444444444444', storage_path: 'a/d.jpg', caption: 'a caption' } as unknown as typeof first)
+    const res = await applyRestore(db, d, { apply: true })
+    const photos = res.tables.find((t: { table: string }) => t.table === 'photos')!
+    expect(photos.uneven, 'the rows that differ are counted and reported').toBe(1)
+    const { rows: [back] } = await db.query<{ caption: string | null }>(
+      'select caption from photos where id = $1', ['44444444-4444-4444-4444-444444444444'])
+    expect(back.caption).toBe('a caption')
+  })
+
+  it('a failure part way through leaves NOTHING behind: all or nothing', async () => {
+    // albums are written first and succeed; the photo violates NOT NULL and the whole transaction
+    // goes. A half-restored database is one nobody can reason about at the worst possible moment.
+    const db = await freshDb()
+    const d = dump()
+    ;(d.tables.photos[0] as unknown as Record<string, unknown>).album_id = null
+    await expect(applyRestore(db, d, { apply: true })).rejects.toThrow()
+    expect(await count(db, 'albums'), 'the albums that DID insert are rolled back').toBe(0)
+    expect(await count(db, 'photos')).toBe(0)
+    // ...and the connection is usable afterwards, not stuck in a failed transaction.
+    expect(await count(db, 'albums')).toBe(0)
+  })
+
+  it('a connection that dies mid-restore rolls back, rather than committing what got through', async () => {
+    // A statement error cannot tell rollback from commit -- Postgres treats COMMIT on an aborted
+    // transaction as a rollback, so both look right. The case that separates them is a failure
+    // that never reaches the server: the albums are in, the photo insert never goes out, and
+    // committing there would leave half a database behind.
+    const db = await freshDb()
+    let died = false
+    const flaky = {
+      query: (sql: string, params?: unknown[]) => {
+        if (!died && sql.startsWith('insert') && sql.includes('"public"."photos"')) {
+          died = true
+          return Promise.reject(new Error('connection terminated unexpectedly'))
+        }
+        return db.query(sql, params)
+      },
+    }
+    await expect(applyRestore(flaky, dump(), { apply: true })).rejects.toThrow('connection terminated')
+    expect(died).toBe(true)
+    expect(await count(db, 'albums'), 'the albums that DID insert are rolled back').toBe(0)
+  })
+
   it('one table can be restored alone', async () => {
     const db = await freshDb()
     const res = await applyRestore(db, dump(), { apply: true, onlyTable: 'albums' })
@@ -188,8 +285,9 @@ describe('a restore against a real Postgres', () => {
     const db = await freshDb()
     const res = await applyRestore(db, dump(), { apply: true })
     expect(res.authUsersInBackup).toBe(1)
-    const { rows } = await db.query<{ n: number }>(
-      `select count(*)::int as n from information_schema.tables where table_name = 'users'`)
+    // The table EXISTS in the target (Supabase owns it, and three tables have foreign keys into
+    // it); the property is that the restore writes not one row of it.
+    const { rows } = await db.query<{ n: number }>('select count(*)::int as n from auth.users')
     expect(rows[0].n).toBe(0)
   })
 })

@@ -22,8 +22,7 @@
     "mutate": "node scripts/mutations/run.mjs",
     "restore": "node scripts/restore-db.mjs",
     "test:raw": "vitest run",
-    "restore:rehearse": "node scripts/restore-rehearse.mjs",
-    "db:schema-snapshot": "node scripts/db-schema-snapshot.mjs"
+    "restore:rehearse": "node scripts/restore-rehearse.mjs"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1071.0",

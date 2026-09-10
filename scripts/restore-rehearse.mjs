@@ -1,12 +1,20 @@
 // REHEARSE THE RESTORE. A backup nobody has ever restored is a guess.
 //
-// This boots a real Postgres in-process (PGlite), builds the tables from the live schema snapshot,
-// restores an actual backup file into it, and then CHECKS the result instead of trusting the exit
-// code: row counts against the dump, a deep comparison of sampled rows so arrays, jsonb and
-// timestamps are proven to round-trip, and a second run to prove the restore is idempotent.
+// This boots a real Postgres in-process (PGlite), builds it from `schema.sql` -- the file the
+// database is actually rebuilt from, generated from the live database and guarded against drift by
+// the deploy -- restores an actual backup file into it, and then CHECKS the result instead of
+// trusting the exit code: row counts against the dump, a field-by-field comparison of sampled rows
+// so arrays, jsonb and timestamps are proven to round-trip, a dry run that must write nothing, and
+// a second pass that must insert nothing.
 //
-// Nothing here touches production. The snapshot is read-only introspection taken separately
-// (scripts/db-schema-snapshot.mjs) and the backup is a file on disk.
+// IT BUILDS THE CONSTRAINTS, and that is the point. The first version created tables from a
+// snapshot of column names and types, so its database had no foreign keys, no NOT NULLs, no CHECKs
+// and no unique constraints -- and it passed while the real restore was broken: `albums`
+// references `photos` and `photos` references `albums`, a cycle no insert order can satisfy, so
+// the restore died on its first table having written nothing. A rehearsal against a target that
+// cannot fail is not a rehearsal.
+//
+// Nothing here touches production. schema.sql is a file, the backup is a file.
 //
 //   node scripts/restore-rehearse.mjs                          (newest file in backups/)
 //   node scripts/restore-rehearse.mjs backups/hushare-....json.gz
@@ -16,23 +24,9 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import zlib from 'node:zlib'
-import { PGlite } from '@electric-sql/pglite'
+import { fileURLToPath } from 'node:url'
+import { buildRehearsalDb, describeConstraints } from './rehearsal-db.mjs'
 import { applyRestore } from './restore-core.mjs'
-
-const SNAPSHOT = path.join(process.cwd(), 'tests', 'fixtures', 'live-schema.json')
-
-/** The live schema as CREATE TABLE. Types come from udt_name, which is the honest one: an array is
- *  reported by information_schema as 'ARRAY' and only udt_name says what it is an array of. */
-export function createTableSql(name, table) {
-  const cols = table.columns.map((c) => {
-    const type = c.udt.startsWith('_') ? `${c.udt.slice(1)}[]` : c.udt
-    return `  "${c.name}" ${type}`
-  })
-  // The primary key is what makes ON CONFLICT DO NOTHING mean anything, so a rehearsal without it
-  // would prove the opposite of what it claims: every row would insert, twice.
-  if (table.primaryKey.length) cols.push(`  primary key (${table.primaryKey.map((c) => `"${c}"`).join(', ')})`)
-  return `create table "${name}" (\n${cols.join(',\n')}\n)`
-}
 
 function newestBackup() {
   const dir = path.join(process.cwd(), 'backups')
@@ -59,43 +53,57 @@ function sameValue(a, b) {
   return String(a) === String(b)
 }
 
-async function main() {
-  const file = process.argv.slice(2).find((a) => !a.startsWith('--')) ?? newestBackup()
-  const snapshot = JSON.parse(fs.readFileSync(SNAPSHOT, 'utf8'))
+async function primaryKeyOf(db, table) {
+  const { rows } = await db.query(`
+    select kcu.column_name from information_schema.table_constraints tc
+    join information_schema.key_column_usage kcu
+      on kcu.constraint_name = tc.constraint_name and kcu.table_schema = tc.table_schema
+    where tc.table_schema = 'public' and tc.constraint_type = 'PRIMARY KEY' and tc.table_name = $1
+    order by kcu.ordinal_position`, [table])
+  return rows.map((r) => r.column_name)
+}
+
+export async function rehearse(file) {
   const dump = JSON.parse(zlib.gunzipSync(fs.readFileSync(file)).toString())
 
   console.log(`  backup:   ${path.relative(process.cwd(), file)}`)
   console.log(`  taken:    ${dump.meta?.takenAt ?? 'unknown'}`)
-  console.log(`  schema:   snapshot of ${new Date(snapshot.takenAt).toISOString()} (${Object.keys(snapshot.tables).length} tables)`)
   if (dump.meta?.skipped?.length) console.log(`  skipped at backup time: ${dump.meta.skipped.join(', ')}`)
 
-  const db = await PGlite.create()
+  const { db, failed } = await buildRehearsalDb()
   const failures = []
+  for (const f of failed) failures.push(`schema.sql statement did not apply: ${f.error} — ${f.statement}`)
 
-  // 1. Build the schema the dump has to fit.
-  const dumpTables = Object.keys(dump.tables ?? {})
-  const goneTables = []
-  for (const name of dumpTables) {
-    const table = snapshot.tables[name]
-    // A table dropped since the backup is not a failure of the restore -- it is the shape of an old
-    // dump, and the restore has to survive it rather than abandon the tables after it. Reported,
-    // and the rehearsal goes on.
-    if (!table) { goneTables.push(`${name} (${dump.tables[name].length} rows)`); continue }
-    await db.exec(createTableSql(name, table))
-  }
-  if (goneTables.length) console.log(`  dropped since the backup: ${goneTables.join(', ')}`)
+  const enforced = await describeConstraints(db)
+  console.log(`  schema:   schema.sql — ${enforced.tables} tables, ${enforced.foreignKeys} foreign keys, `
+    + `${enforced.checks} checks, ${enforced.uniques} unique, ${enforced.notNulls} not-null columns`)
 
-  // 2. The dry run must write NOTHING. Asserted, not assumed.
+  // A table in the backup that the schema no longer has is the shape of an old dump, not a fault.
+  const gone = Object.keys(dump.tables ?? {}).filter((t) => !(t in dump.tables) || false)
+  if (gone.length) console.log(`  dropped since the backup: ${gone.join(', ')}`)
+
+  // 1. The dry run must write NOTHING. Asserted, not assumed.
   const dry = await applyRestore(db, dump, { apply: false })
   for (const t of dry.tables) {
     const { rows: [{ count }] } = await db.query(`select count(*)::int as count from "${t.table}"`)
     if (Number(count) !== 0) failures.push(`dry run wrote ${count} rows into ${t.table}`)
   }
-  console.log(`\n  dry run:  would insert ${dry.totalWould.toLocaleString('en-US')} rows, wrote 0`)
+  const inexact = dry.tables.filter((t) => !t.exact).map((t) => t.table)
+  console.log(`\n  dry run:  would insert ${dry.totalWould.toLocaleString('en-US')} rows, wrote 0`
+    + (inexact.length ? ` (estimated, no single-column key: ${inexact.join(', ')})` : ' (counted by key)'))
 
-  // 3. The real thing.
+  // 2. The real thing, into a schema that can refuse it.
   const started = Date.now()
-  const res = await applyRestore(db, dump, { apply: true })
+  let res
+  try {
+    res = await applyRestore(db, dump, { apply: true })
+  } catch (e) {
+    console.error(`\n  RESTORE FAILED: ${e instanceof Error ? e.message : String(e)}`)
+    const { rows: [{ count }] } = await db.query('select count(*)::int as count from albums')
+    console.error(`  albums in the database afterwards: ${count} (the transaction rolled back)`)
+    process.exitCode = 1
+    return
+  }
   const seconds = ((Date.now() - started) / 1000).toFixed(1)
   console.log(`\n  restored in ${seconds}s:`)
   for (const s of res.skipped) console.log(`    ${s.table.padEnd(26)} SKIPPED — ${s.reason} (${s.rows} rows)`)
@@ -108,42 +116,43 @@ async function main() {
     const live = Number(count)
     const ok = live === expected && t.written === expected
     if (!ok) failures.push(`${t.table}: backup ${expected}, inserted ${t.written}, in database ${live}`)
-    console.log(`    ${t.table.padEnd(26)} ${String(live).padStart(6)} / ${String(expected).padEnd(6)} ${ok ? 'ok' : 'MISMATCH'}`)
+    const note = t.skippedByConflict ? ` (${t.skippedByConflict} already present or refused by a unique constraint)` : ''
+    console.log(`    ${t.table.padEnd(26)} ${String(live).padStart(6)} / ${String(expected).padEnd(6)} ${ok ? 'ok' : 'MISMATCH'}${note}`)
   }
 
-  // 4. The values themselves, not just the counts: arrays, jsonb, timestamps, nulls.
+  // 3. The values themselves, not just the counts: arrays, jsonb, timestamps, nulls.
   let compared = 0
   for (const [name, rows] of Object.entries(dump.tables)) {
     if (!rows.length) continue
-    const pk = snapshot.tables[name]?.primaryKey
-    if (!pk?.length) continue
+    const pk = await primaryKeyOf(db, name)
+    if (!pk.length) continue
+    const droppedCols = new Set(res.tables.find((t) => t.table === name)?.dropped ?? [])
     for (const original of sample(rows, 5)) {
       const where = pk.map((c, i) => `"${c}" = $${i + 1}`).join(' and ')
       const { rows: [back] } = await db.query(`select * from "${name}" where ${where}`, pk.map((c) => original[c]))
       if (!back) { failures.push(`${name}: row ${pk.map((c) => original[c]).join('/')} did not come back`); continue }
-      // A column the schema has since dropped cannot come back, and saying so once in the report
-      // above is honest; counting it as a changed value 83 times is noise.
-      const gone = new Set(res.tables.find((t) => t.table === name)?.dropped ?? [])
       for (const [col, value] of Object.entries(original)) {
-        if (gone.has(col)) continue
+        if (droppedCols.has(col)) continue
         compared++
-        if (!sameValue(back[col], value)) {
-          failures.push(`${name}.${col} changed: ${JSON.stringify(value)} -> ${JSON.stringify(back[col])}`)
-        }
+        if (!sameValue(back[col], value)) failures.push(`${name}.${col} changed: ${JSON.stringify(value)} -> ${JSON.stringify(back[col])}`)
       }
     }
   }
   console.log(`\n  values:   ${compared.toLocaleString('en-US')} fields compared across sampled rows`)
 
-  // 5. Idempotent: restoring the same dump again must insert nothing and change nothing.
+  // 4. Idempotent: restoring the same dump again must insert nothing and change nothing.
   const again = await applyRestore(db, dump, { apply: true })
   if (again.totalWritten !== 0) failures.push(`second restore inserted ${again.totalWritten} rows; it must insert none`)
   console.log(`  repeat:   second restore inserted ${again.totalWritten} rows`)
 
   if (res.authUsersInBackup) {
     console.log(`\n  NOTE: ${res.authUsersInBackup} auth.users rows are in the backup for reference and were NOT restored.`)
-    console.log('  Supabase owns that schema; recreating accounts is an auth operation, not a row copy.')
+    console.log('  Supabase owns that schema; recreating accounts is an auth operation, not a row copy. The rows')
+    console.log('  of collections, profiles and subscriptions that point at them restore anyway, because the')
+    console.log('  foreign keys are deferred -- but those accounts do not exist until someone recreates them.')
   }
+  console.log('\n  NOT PROVEN HERE: the photos themselves. The bytes live in R2 and Cloudflare Stream; this')
+  console.log('  database holds only the pointers, and restoring it does not bring back a single image.')
 
   if (failures.length) {
     console.error(`\n  FAILED — ${failures.length} problem(s):`)
@@ -151,7 +160,14 @@ async function main() {
     process.exitCode = 1
     return
   }
-  console.log(`\n  REHEARSAL PASSED — ${res.totalWritten.toLocaleString('en-US')} rows restored into a real Postgres and verified.`)
+  console.log(`\n  REHEARSAL PASSED — ${res.totalWritten.toLocaleString('en-US')} rows restored into a real Postgres`)
+  console.log(`  holding ${enforced.foreignKeys} foreign keys, ${enforced.checks} checks and ${enforced.uniques} unique constraints, and verified.`)
 }
 
-main().catch((e) => { console.error('rehearsal failed:', e.message); process.exitCode = 1 })
+// Only when RUN, never when imported: tests/restore-core.test.ts imports from this module's
+// neighbours, and a module that rehearses 11,166 rows as an import side effect is the same defect
+// the restore itself was just cured of.
+if (process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.argv[1])) {
+  const file = process.argv.slice(2).find((a) => !a.startsWith('--')) ?? newestBackup()
+  rehearse(file).catch((e) => { console.error('rehearsal failed:', e.message); process.exitCode = 1 })
+}

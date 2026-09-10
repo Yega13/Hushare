@@ -144,7 +144,11 @@ const SIZE_BUDGET: Record<string, number> = {
   // whole queue dropped rows queued during the 180 s flight, bytes in R2 and no offer to save
   // them), and the chip re-saves before its own re-upload guard so the full-album case is not a
   // dead button. Ten lines, mostly why.
-  'src/components/UploadZone.tsx': 2131,
+  // -68 (2026-09-10): the row saver -- one request per batch not per file, saves chained so two
+  // never race, the server's refused-uid list honoured so a video is never ticked green unwritten,
+  // and the rows handed back on a failure so bytes in R2 are never orphaned -- is
+  // lib/upload/row-saver with 12 tests and 14 mutations. Locked in.
+  'src/components/UploadZone.tsx': 2063,
   // +3 on 2026-08-30: the branding toggle gained a real plan check (it was dimmed but still
   // clickable), and Face Finder and bib search stopped riding on the collections flag. Three
   // lines of reasoning for three gates that were wrong. Deliberate.
