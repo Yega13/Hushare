@@ -23,9 +23,18 @@ const cfg: {
   claimedRows: { id: string }[]
   updateError: boolean
   countError: boolean
+  /** Every column list the album lookup asked PostgREST for. */
+  selects: string[]
+  /** Every cookie name read. The owner cookie must be scoped to ONE album. */
+  cookieNames: string[]
+  /** Every rate-limit call: the bucket name and the options it was given. */
+  rateLimits: { key: string; opts: unknown }[]
+  /** How many rows each album lookup asked for. Two are needed to resolve a slug collision. */
+  limits: number[]
 } = {
   rows: [], lookups: 0, claims: 0, user: null, ownedCount: 0, cookieValue: null, rlOk: true,
   claimedRows: [{ id: 'alb-1' }], updateError: false, countError: false,
+  selects: [], cookieNames: [], rateLimits: [], limits: [],
 }
 
 vi.mock('@/lib/supabase/admin', () => ({
@@ -44,15 +53,22 @@ vi.mock('@/lib/supabase/admin', () => ({
           return { eq: () => chain }
         }
         // The album lookup: select(cols).or(...).is(...).limit(2).returns()
+        cfg.selects.push(_cols)
         return {
           or: () => ({
             is: () => ({
-              limit: () => ({
-                returns: async () => {
-                  cfg.lookups++
-                  return { data: cfg.rows, error: null }
-                },
-              }),
+              limit: (n: number) => {
+                cfg.limits.push(n)
+                // The real query returns at most n rows; a mock that ignores n cannot see a
+                // .limit(1) that makes the collision resolver below unable to do its job.
+                const data = cfg.rows.slice(0, n)
+                return {
+                  returns: async () => {
+                    cfg.lookups++
+                    return { data, error: null }
+                  },
+                }
+              },
             }),
           }),
         }
@@ -77,17 +93,28 @@ vi.mock('@/lib/supabase/server', () => ({
   createClient: async () => ({ auth: { getUser: async () => ({ data: { user: cfg.user } }) } }),
 }))
 vi.mock('next/headers', () => ({
-  cookies: async () => ({ get: () => (cfg.cookieValue === null ? undefined : { value: cfg.cookieValue }) }),
+  cookies: async () => ({
+    get: (name: string) => {
+      cfg.cookieNames.push(name)
+      return cfg.cookieValue === null ? undefined : { value: cfg.cookieValue }
+    },
+  }),
 }))
 vi.mock('@/lib/rate-limit', () => ({
-  checkRateLimit: async () => (cfg.rlOk ? { ok: true } : { ok: false, retryAfterSeconds: 60 }),
-  clientIpKey: () => 'test-key',
+  checkRateLimit: async (key: string, _limit: number, _window: number, opts: unknown) => {
+    cfg.rateLimits.push({ key, opts })
+    return cfg.rlOk ? { ok: true } : { ok: false, retryAfterSeconds: 60 }
+  },
+  clientIpKey: (_req: unknown, bucket: string) => `test-key:${bucket}`,
 }))
 vi.mock('@/lib/subscriptions', () => ({
   getUserTier: async () => 'free',
 }))
 
-import { verifyAlbumOwnerAccess, verifyOwnerViaCookie, verifyOwnerViaCookieOrAccount, verifyOwnerWithRateLimit } from '@/lib/album-owner-access'
+import {
+  verifyAlbumOwnerAccess, verifyOwnerViaCookie, verifyOwnerViaCookieOrAccount, verifyOwnerWithRateLimit,
+  verifyOwnerViaCookieWithRateLimit,
+} from '@/lib/album-owner-access'
 
 const ALBUM: Row = { id: 'alb-1', owner_token: 'real-secret-token', user_id: 'owner-1', slug: 'abcd1234', custom_slug: null }
 
@@ -102,6 +129,10 @@ beforeEach(() => {
   cfg.claimedRows = [{ id: 'alb-1' }]
   cfg.updateError = false
   cfg.countError = false
+  cfg.selects = []
+  cfg.cookieNames = []
+  cfg.rateLimits = []
+  cfg.limits = []
   vi.spyOn(console, 'info').mockImplementation(() => {})
 })
 
@@ -352,5 +383,112 @@ describe('the rate-limited wrapper', () => {
     const r = await verifyOwnerWithRateLimit(req, 'abcd1234', 'real-secret-token')
     expect(r).toMatchObject({ ok: false, status: 429, reason: 'rate_limited' })
     expect(cfg.lookups, 'a limited caller must cost nothing further').toBe(0)
+  })
+})
+
+
+// ── WHAT THE MODULE ASKS FOR, WHICH IS NOT VISIBLE IN ITS ANSWER ─────────────────────────────────
+//
+// Added 2026-09-10 after a mutation run. Five mutations of this file survived the whole suite, and
+// every one of them is invisible in the ok/refused answer these tests were reading: the columns the
+// query selects, the NAME of the cookie it reads, and the three things the rate-limiter is told.
+// A test that only checks the verdict cannot see any of them.
+
+describe('the extra columns a route may ask for', () => {
+  it('drops anything not on the allow-list, so a route cannot select a secret by naming it', async () => {
+    await verifyAlbumOwnerAccess('abcd1234', 'real-secret-token', 'password_hash, reveal_at, owner_token_backup')
+    expect(cfg.selects.length, 'the lookup must have run').toBeGreaterThan(0)
+    const cols = cfg.selects[0]
+    expect(cols, 'password_hash is not an allowed extra column').not.toContain('password_hash')
+    expect(cols).not.toContain('owner_token_backup')
+    expect(cols, 'a real extra column still arrives').toContain('reveal_at')
+  })
+
+  it('always asks for the columns the check itself depends on', async () => {
+    // slug is deliberately forced into the select: the collision resolver reads it, and when it
+    // was absent that resolver silently matched nothing and fell through to row zero.
+    await verifyAlbumOwnerAccess('abcd1234', 'real-secret-token')
+    for (const col of ['id', 'owner_token', 'user_id', 'slug', 'custom_slug']) {
+      expect(cfg.selects[0], `${col} must be selected`).toContain(col)
+    }
+  })
+})
+
+describe('the owner cookie belongs to ONE album', () => {
+  it('is read under a name carrying the album id', async () => {
+    // A fixed cookie name would make one album's owner cookie open every album the visitor
+    // touches. The verdict is identical either way in a single-album test, so the NAME is what
+    // has to be asserted.
+    cfg.cookieValue = 'real-secret-token'
+    await verifyOwnerViaCookie('abcd1234')
+    expect(cfg.cookieNames).toContain('hushare_owner_alb-1')
+    for (const name of cfg.cookieNames) {
+      expect(name, 'no owner cookie may be read under an album-independent name').toContain('alb-1')
+    }
+  })
+})
+
+describe('what the rate limiter is told', () => {
+  it('CLOSES on an outage instead of opening', async () => {
+    // failOpen:true would turn an outage of the limiter store into unlimited owner-token guesses.
+    // Nothing in the ok/refused answer shows which way it was asked.
+    await verifyOwnerWithRateLimit(new Request('https://h.test/'), 'abcd1234', 'real-secret-token')
+    expect(cfg.rateLimits.length).toBeGreaterThan(0)
+    for (const call of cfg.rateLimits) {
+      expect(call.opts, 'the limiter must be asked to deny when it cannot answer').toEqual({ failOpen: false })
+    }
+  })
+
+  it('the two owner paths use SEPARATE buckets', async () => {
+    // Ordinary settings traffic sharing the token bucket would exhaust the brute-force limit for
+    // the owner themselves, and a stranger guessing tokens would be paced by somebody else's saves.
+    const req = new Request('https://h.test/')
+    await verifyOwnerWithRateLimit(req, 'abcd1234', 'real-secret-token')
+    const tokenKeys = cfg.rateLimits.map((r) => r.key)
+    cfg.rateLimits = []
+    cfg.cookieValue = 'real-secret-token'
+    await verifyOwnerViaCookieWithRateLimit(req, 'abcd1234')
+    const settingsKeys = cfg.rateLimits.map((r) => r.key)
+    expect(tokenKeys[0]).toContain('owner_token')
+    expect(settingsKeys[0]).toContain('owner_settings')
+    expect(settingsKeys[0], 'a shared bucket is a denial of service on the owner').not.toBe(tokenKeys[0])
+  })
+
+  it('a 429 carries how long to wait, on BOTH paths', async () => {
+    // Without it the client has no basis for a retry and hammers the same 429. The type says a
+    // rate_limited failure must carry it; the type only enforces that where the return is
+    // annotated, which is exactly why it once went missing.
+    cfg.rlOk = false
+    const req = new Request('https://h.test/')
+    const a = await verifyOwnerWithRateLimit(req, 'abcd1234', 'real-secret-token')
+    const b = await verifyOwnerViaCookieWithRateLimit(req, 'abcd1234')
+    for (const r of [a, b]) {
+      expect(r.ok).toBe(false)
+      expect(r.ok === false && r.status).toBe(429)
+      expect(r.ok === false && r.reason).toBe('rate_limited')
+      expect(r.ok === false && r.reason === 'rate_limited' && r.retryAfterSeconds).toBe(60)
+    }
+  })
+})
+
+describe('a slug collision needs BOTH rows to resolve', () => {
+  it('asks for two, because one cannot be preferred over the other', async () => {
+    // slug and custom_slug are separately unique, so at most two rows can match one string. Ask
+    // for one and PostgREST picks; the resolver below then has nothing to choose from, and the
+    // owner of whichever album lost gets a 403 on every mutation. The verdict looks identical in
+    // any test with a single album, so the LIMIT itself is what has to be asserted.
+    await verifyAlbumOwnerAccess('abcd1234', 'real-secret-token')
+    expect(cfg.limits.length, 'the lookup must have run').toBeGreaterThan(0)
+    for (const n of cfg.limits) expect(n, 'both candidate rows must be fetched').toBeGreaterThanOrEqual(2)
+  })
+
+  it('and finds the right one when the wrong one comes back first', async () => {
+    // The same collision, end to end: the custom_slug match is row zero, the real slug match is
+    // row one, and only the second is this album.
+    const other: Row = { id: 'alb-2', owner_token: 'other-token', user_id: null, slug: 'zzzz9999', custom_slug: 'abcd1234' }
+    cfg.rows = [other, ALBUM]
+    const res = await verifyAlbumOwnerAccess('abcd1234', 'real-secret-token')
+    expect(res.ok, 'the owner of the random-slug album must be admitted').toBe(true)
+    expect(res.ok && res.album.id).toBe('alb-1')
   })
 })
