@@ -1,5 +1,5 @@
 import { describe, it, expect, afterEach } from 'vitest'
-import { execFileSync } from 'node:child_process'
+import { execFileSync, spawnSync } from 'node:child_process'
 import { readFileSync, writeFileSync, existsSync, rmSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { selectSets } from '../scripts/mutations/select.mjs'
@@ -33,11 +33,25 @@ const RUN = join(MUT, 'run.mjs')
 // first run's note, restored the file it was mid-test on, and manufactured two SURVIVED results.
 const notePath = (pid: number) => join(MUT, `.in-flight.${pid}.json`)
 const backupPath = (pid: number) => join(MUT, `.in-flight.${pid}.backup`)
-// A pid that is certainly NOT running. Chosen high and checked, rather than assumed.
-const DEAD = 999_999
+// A pid that is certainly NOT running: a real process is started and waited for, so its pid is one
+// the operating system has genuinely handed out and genuinely reaped. A number picked out of the
+// air (999999) is fine on Windows and can collide on Linux, where pid_max is in the millions -- and
+// a colliding pid would send every recovery case below down the leave-it-alone path instead, which
+// is the quiet kind of wrong.
+const DEAD: number = (() => {
+  const done = spawnSync(process.execPath, ['-e', '0'])
+  if (typeof done.pid !== 'number') throw new Error('could not obtain a reaped pid')
+  return done.pid
+})()
 const note = (file: string, mutation: string) => JSON.stringify({ file, set: 'pretend', mutation })
+// ONLY the notes this file wrote. A blanket sweep would delete the note of a mutation run happening
+// in another window on this shared checkout -- and that note is the only thing standing between a
+// killed run and a mutant committed by mistake. Cleaning up must not undo the thing being tested.
 const clearNotes = () => {
-  for (const f of readdirSync(MUT)) if (/^\.in-flight\./.test(f)) rmSync(join(MUT, f), { force: true })
+  for (const pid of [DEAD, process.pid]) {
+    rmSync(notePath(pid), { force: true })
+    rmSync(backupPath(pid), { force: true })
+  }
 }
 
 const AVAILABLE: string[] = readdirSync(MUT)
