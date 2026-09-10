@@ -8,6 +8,7 @@ import {
   VideoUploadError, errText, friendlyUploadError, isDeterministicTusError, isRecoverableNetworkFailure, tusHttpStatus,
   type VideoResume,
 } from '@/lib/upload/failure'
+import { freshEntryFor, mergeWall, queuePendingRows, retryMode, shouldPark, wallFor } from '@/lib/upload/retry-plan'
 import { reportClientEvent } from '@/lib/upload/report'
 import { reachability } from '@/lib/upload/reachability'
 import { fetchWithRetry, putImageWithRelay, FETCH_DEADLINE_SAVE_MS } from '@/lib/upload/retry'
@@ -1374,16 +1375,12 @@ export default function UploadZone({ album, onPhotosUploaded, isOwner }: Props) 
         // photos they had already successfully uploaded.
         if (rows?.length) {
           const pairs = ids.map((entryId, i) => ({ entryId, row: rows[i] })).filter(p => p.row)
-          pendingSaveRef.current = [...pendingSaveRef.current, ...pairs]
+          // Each file waits ONCE: a second refusal for the same file used to append a second pair,
+          // so the banner counted the same photo twice and finishing the job posted both rows.
+          pendingSaveRef.current = queuePendingRows(pendingSaveRef.current, pairs)
           setPendingSaveCount(pendingSaveRef.current.length)
-          // A cap refusal outranks a transient failure. But 'full' is the state that OFFERS AN
-          // ACCOUNT, so it is only correct when the server actually said registering would help.
-          // Inferring it from `code` alone showed a signed-in Max owner "Your album is full — keep
-          // going for free / Create a free account", for an account they were already using, above
-          // a button that would be refused forever. 'fullOther' is the same refusal without the
-          // sign-up: the album is full and nothing on this screen changes that.
-          const wall = full ? (nudge === 'register' ? 'full' : 'fullOther') : 'failed'
-          setPendingSaveReason(prev => (prev === 'full' ? 'full' : prev === 'fullOther' && wall === 'failed' ? 'fullOther' : wall))
+          // Which banner, and which refusal outranks which, is lib/upload/retry-plan.
+          setPendingSaveReason(prev => mergeWall(prev, wallFor(code, nudge)))
         }
         // Same rule on the save path: a gate refusal arrives here as a plain message, and it is
         // not a failure of ours any more than a full album is.
@@ -1446,7 +1443,7 @@ export default function UploadZone({ album, onPhotosUploaded, isOwner }: Props) 
           // sat as red tiles until the guest happened to look. A phone that goes back in a pocket
           // took those photos with it. The File objects are still in memory, so the uploader can
           // simply wait and try again.
-          const parked = isRecoverableNetworkFailure(e) && !entry.autoResumed
+          const parked = shouldPark(isRecoverableNetworkFailure(e), entry)
           patchEntry(entry.id, {
             status: parked ? 'waiting' : 'error',
             error: msg,
@@ -1637,47 +1634,7 @@ export default function UploadZone({ album, onPhotosUploaded, isOwner }: Props) 
     if (!e.currentTarget.contains(e.relatedTarget as Node)) setIsDragging(false)
   }, [])
 
-  const retryEntry = useCallback((id: string) => {
-    // Same defect as the bulk path: `fresh` was assigned inside a setState updater and read on the
-    // next line, before React had run it, so it was always null and startUploads was never called.
-    // The tile flipped to "Preparing" and stayed there.
-    const entry = entries.find(e => e.id === id)
-    // 'waiting' is tappable too: the tile offers an immediate retry for anyone who would rather not
-    // wait for the probe.
-    if (!entry || (entry.status !== 'error' && entry.status !== 'waiting')) return
-    const fresh: FileEntry = {
-      ...entry, status: 'pending', progress: 0, error: undefined,
-      // Tapping a PARKED tile only skips the wait — same recovery cycle, so it consumes the one
-      // automatic resume and a second network failure becomes a real error. Tapping a genuinely
-      // FAILED tile is a fresh decision by someone who may have just switched to mobile data, so it
-      // earns a new one; without this reset the retry they were invited to make would be the one
-      // attempt that is never allowed to park.
-      autoResumed: entry.status === 'waiting',
-    }
-    setEntries(prev => prev.map(e => (e.id === id ? fresh : e)))
-    void startUploads([fresh])
-  }, [entries, startUploads])
-
-  const dismissDone = useCallback(() => {
-    setEntries(prev => {
-      for (const e of prev) if (e.status === 'done' && e.preview) URL.revokeObjectURL(e.preview)
-      return prev.filter(e => e.status !== 'done')
-    })
-  }, [])
-
-  // Revoke any remaining preview object URLs when the component unmounts.
-  const entriesRef = useRef(entries)
-  useEffect(() => { entriesRef.current = entries })
-  useEffect(() => () => {
-    for (const e of entriesRef.current) if (e.preview) URL.revokeObjectURL(e.preview)
-  }, [])
-
-  const doneCount    = entries.filter(e => e.status === 'done').length
-  const errorCount   = entries.filter(e => e.status === 'error').length
-  const activeCount  = entries.filter(e => e.status === 'uploading' || e.status === 'pending').length
-  const waitingCount = entries.filter(e => e.status === 'waiting').length
-
-  async function retryBlockedRows() {
+  const retryBlockedRows = useCallback(async () => {
     const pending = pendingSaveRef.current
     if (retrying || pending.length === 0) return
     setRetrying(true)
@@ -1718,7 +1675,51 @@ export default function UploadZone({ album, onPhotosUploaded, isOwner }: Props) 
     } finally {
       setRetrying(false)
     }
-  }
+    // A useCallback so the two Retry paths can depend on it: both must be able to RE-SAVE a file
+    // whose bytes are already in R2 rather than send them again.
+  }, [album.id, retrying, t, onPhotosUploaded])
+
+  const retryEntry = useCallback((id: string) => {
+    // Same defect as the bulk path: `fresh` was assigned inside a setState updater and read on the
+    // next line, before React had run it, so it was always null and startUploads was never called.
+    // The tile flipped to "Preparing" and stayed there.
+    const entry = entries.find(e => e.id === id)
+    if (!entry) return
+    // ITS BYTES MAY ALREADY BE IN R2. When the SAVE was refused (a full album, a blip), the upload
+    // succeeded and the row is held for "Finish saving" -- re-uploading it presigns a fresh key,
+    // sends the same bytes again, and queues a second row, so the album showed the photo twice
+    // once there was room. Retry means re-save for those (lib/upload/retry-plan).
+    if (retryMode(id, new Set(pendingSaveRef.current.map(p => p.entryId))) === 'resave') {
+      void retryBlockedRows()
+      return
+    }
+    // Which statuses a tap may retry, and whether it spends the one automatic resume, is the
+    // module's; 'waiting' is tappable so nobody has to wait for the probe.
+    const fresh = freshEntryFor(entry, 'tap')
+    if (!fresh) return
+    setEntries(prev => prev.map(e => (e.id === id ? fresh : e)))
+    void startUploads([fresh])
+  }, [entries, startUploads, retryBlockedRows])
+
+  const dismissDone = useCallback(() => {
+    setEntries(prev => {
+      for (const e of prev) if (e.status === 'done' && e.preview) URL.revokeObjectURL(e.preview)
+      return prev.filter(e => e.status !== 'done')
+    })
+  }, [])
+
+  // Revoke any remaining preview object URLs when the component unmounts.
+  const entriesRef = useRef(entries)
+  useEffect(() => { entriesRef.current = entries })
+  useEffect(() => () => {
+    for (const e of entriesRef.current) if (e.preview) URL.revokeObjectURL(e.preview)
+  }, [])
+
+  const doneCount    = entries.filter(e => e.status === 'done').length
+  const errorCount   = entries.filter(e => e.status === 'error').length
+  const activeCount  = entries.filter(e => e.status === 'uploading' || e.status === 'pending').length
+  const waitingCount = entries.filter(e => e.status === 'waiting').length
+
 
   // On 2026-08-17 at 23:34 a single Android phone lost its connection mid-batch: 41 photos landed
   // and 52 failed together as their retry deadlines expired. The uploader had already fought for
@@ -1758,8 +1759,8 @@ export default function UploadZone({ album, onPhotosUploaded, isOwner }: Props) 
   // startUploads gets called with nothing while the tiles sit marked "Preparing" forever.
   const resumeWaitingUploads = useCallback(() => {
     const fresh = entriesRef.current
-      .filter(e => e.status === 'waiting')
-      .map(e => ({ ...e, status: 'pending' as const, progress: 0, error: undefined, autoResumed: true }))
+      .map(e => freshEntryFor(e, 'auto'))
+      .filter((e): e is FileEntry => e !== null)
     if (fresh.length === 0) return
     const byId = new Map(fresh.map(e => [e.id, e]))
     setEntries(prev => prev.map(e => byId.get(e.id) ?? e))
@@ -1797,15 +1798,15 @@ export default function UploadZone({ album, onPhotosUploaded, isOwner }: Props) 
     // which returns immediately on an empty list. The files were left marked "Preparing" with
     // nothing scheduled to upload them: stuck forever, and silent about it.
     if (retryingRef.current) return
-    const fresh = entries
-      .filter(e => e.status === 'error')
-      .map(e => ({
-        ...e, status: 'pending' as const, progress: 0, error: undefined,
-        // Same rule as the single-tile Retry: a deliberate retry of a failed file earns a fresh
-        // automatic recovery, so a drop during THIS attempt parks and heals itself rather than
-        // landing straight back in the failed chip.
-        autoResumed: false,
-      }))
+    // Files whose bytes are already in R2 and whose row is waiting for "Finish saving" are
+    // RE-SAVED, never re-sent: the chip used to re-upload them and duplicate the photo.
+    const pendingIds = new Set(pendingSaveRef.current.map(p => p.entryId))
+    const failed = entries.filter(e => e.status === 'error')
+    if (failed.some(e => retryMode(e.id, pendingIds) === 'resave')) void retryBlockedRows()
+    const fresh = failed
+      .filter(e => retryMode(e.id, pendingIds) === 'reupload')
+      .map(e => freshEntryFor(e, 'chip'))
+      .filter((e): e is FileEntry => e !== null)
     if (fresh.length === 0) return
     // Ref guard replaces the atomicity the updater was supposed to provide: a second tap before
     // the state has settled cannot start the same files twice.
@@ -1813,7 +1814,7 @@ export default function UploadZone({ album, onPhotosUploaded, isOwner }: Props) 
     const byId = new Map(fresh.map(e => [e.id, e]))
     setEntries(prev => prev.map(e => byId.get(e.id) ?? e))
     void startUploads(fresh).finally(() => { retryingRef.current = false })
-  }, [entries, startUploads])
+  }, [entries, startUploads, retryBlockedRows])
 
   return (
     <div className="hush-upload-zone px-3 sm:px-4 pt-2 pb-4">

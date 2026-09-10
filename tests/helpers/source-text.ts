@@ -22,53 +22,97 @@
 /**
  * JavaScript/TypeScript source with comments removed.
  *
- * A SCANNER, not two regexes. The regex version stripped block comments first, so a `/*` inside a
- * LINE comment (UploadZone has one: "video/* — avoids ...") opened a block that ran to the next
- * closing marker hundreds of lines later, and every call-site pin below it was reading nothing. Found on
- * 2026-09-10 when a pin on a line that plainly existed failed. The scanner walks the file once,
- * knows which of a string, a template, a line comment or a block comment it is inside, and only
- * ever REMOVES comment text. Regex literals are not tracked: a `//` or `/*` inside one would be
- * misread, and none in this codebase carries either.
+ * A SCANNER, not a pipeline of regexes, and it tracks REGEX LITERALS -- which is not fussiness.
+ * Two live blind spots came from not doing it:
+ *
+ *   * stripping block comments before line comments let `// accept="video/*"` in UploadZone open a
+ *     block that ran 622 lines to the next closing marker, erasing everything between from every
+ *     guard that reads that file;
+ *   * a backtick inside a regex character class -- `.replace(/[`\s]+$/, '')` in the support-chat
+ *     route -- opened a phantom TEMPLATE, and a template does not end at a newline, so 77 lines
+ *     were copied out verbatim WITH their comments. That is the "a comment answers the grep"
+ *     failure this helper exists to prevent (three occurrences, MISTAKES 21), through a new door.
+ *
+ * So: one pass that knows whether it is inside a string, a template, a regex literal, a line
+ * comment or a block comment. A `/` starts a regex when the last significant character cannot end
+ * an expression (`(`, `,`, `=`, `:`, an operator, a `{`), and is division otherwise -- the standard
+ * heuristic, and the one case it cannot see (a regex after `)`, as in `if (x) /re/.test(y)`) does
+ * not occur in this codebase and would only cost a truncated line, never a kept comment.
+ *
+ * DIRECTION OF ERROR, deliberately chosen: keeping a comment is the failure that makes a guard read
+ * prose and pass; deleting real code makes a guard report something absent, which fails loudly
+ * (rule 19). tests/helpers/source-text.test.ts holds BOTH directions over every file in the repo.
  */
 export function stripJsComments(src: string): string {
   let out = ''
   let i = 0
   const n = src.length
+  /** The last character that was code, ignoring whitespace: what decides regex versus division. */
+  let lastSignificant = ''
   while (i < n) {
     const c = src[i]
     const next = src[i + 1]
     if (c === '"' || c === "'" || c === '`') {
-      // A string or template: copied verbatim, escapes honoured, up to the matching quote.
+      // A string or template, copied verbatim, escapes honoured, up to the matching quote. A plain
+      // string also ends at a newline: an unterminated one must not swallow the rest of the file.
       const quote = c
       let j = i + 1
       while (j < n && src[j] !== quote) {
         if (src[j] === '\\') j++
-        else if (quote !== '`' && src[j] === '\n') break   // an unterminated plain string ends at the line
+        else if (quote !== '`' && src[j] === '\n') break
         j++
       }
       out += src.slice(i, j + 1)
       i = j + 1
+      lastSignificant = quote
       continue
     }
     if (c === '/' && next === '/') {
-      // A line comment: dropped up to (not including) the newline.
+      // A URL is not a comment: `https://x` has its ':' IMMEDIATELY before the slashes. The last
+      // SIGNIFICANT character is the wrong test -- a `case 'x':` label sits behind every comment
+      // on the following line, and eleven real comments survived the strip that way.
+      if (src[i - 1] === ':') { out += c; i++; continue }
       let j = i
       while (j < n && src[j] !== '\n') j++
       i = j
       continue
     }
     if (c === '/' && next === '*') {
-      // A block comment: replaced by one space, so tokens either side stay apart.
+      // Replaced by one space, so the tokens either side stay apart.
       const end = src.indexOf('*/', i + 2)
       out += ' '
       i = end === -1 ? n : end + 2
+      lastSignificant = ' '
+      continue
+    }
+    if (c === '/' && !CAN_END_EXPRESSION.test(lastSignificant)) {
+      // A regex literal: copied verbatim to its closing slash. Inside a character class a slash is
+      // literal, which is how `/[/]/` and `/^https?:\/\//` reach their real end.
+      let j = i + 1
+      let inClass = false
+      while (j < n) {
+        const d = src[j]
+        if (d === '\\') { j += 2; continue }
+        if (d === '\n') break               // an unterminated regex: it was division after all
+        if (d === '[') inClass = true
+        else if (d === ']') inClass = false
+        else if (d === '/' && !inClass) break
+        j++
+      }
+      out += src.slice(i, j + 1)
+      i = j + 1
+      lastSignificant = '/'
       continue
     }
     out += c
     i++
+    if (!/\s/.test(c)) lastSignificant = c
   }
   return out
 }
+
+/** Characters that can END an expression, so a `/` after one of them is division, not a regex. */
+const CAN_END_EXPRESSION = /[\w$)\]'"`]/
 
 /**
  * SQL source with comments removed — TRAILING ones too.

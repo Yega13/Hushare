@@ -5,6 +5,8 @@ export default {
   mutations: [
   { name: 'a video with a real 413 parks forever',
     from: "  if (e instanceof VideoUploadError) return e.httpStatus === null", to: "  if (e instanceof VideoUploadError) return true" },
+  { name: 'the refusal check loses its anchor (a server blob mentioning "unsupported" stops parking)',
+    from: "  if (/^(File too large|Unsupported)/i.test(raw)) return false", to: "  if (/(File too large|Unsupported)/i.test(raw)) return false" },
   { name: 'a deliberate refusal parks',
     from: "  if (/^(File too large|Unsupported)/i.test(raw)) return false\n", to: "" },
   { name: 'a dead file reference is a red tile with no second attempt',

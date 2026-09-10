@@ -136,7 +136,11 @@ const SIZE_BUDGET: Record<string, number> = {
   // -122 (2026-09-10): what a failed upload MEANS (park for the network, or fail with Retry, and
   // the sentence the guest reads) is lib/upload/failure with a mutation set; the file-read test
   // imports its classifiers instead of the copies it had kept. Locked in.
-  'src/components/UploadZone.tsx': 2120,
+  // +1 (2026-09-10): the retry rules (re-save a file whose bytes are already in R2 instead of
+  // re-uploading it and duplicating the photo; one automatic resume; which wall the banner shows)
+  // are lib/upload/retry-plan, and retryBlockedRows became a useCallback so both Retry paths can
+  // depend on it. One line net, for a customer-visible duplicate fixed.
+  'src/components/UploadZone.tsx': 2121,
   // +3 on 2026-08-30: the branding toggle gained a real plan check (it was dimmed but still
   // clickable), and Face Finder and bib search stopped riding on the collections flag. Three
   // lines of reasoning for three gates that were wrong. Deliberate.

@@ -22,6 +22,32 @@ describe('UploadZone classifies failures through lib/upload/failure and defines 
     expect(text).not.toMatch(/failed to fetch\|/)
   })
   it('the park decision is the module\'s verdict on the real error, with nothing hard-wired', () => {
-    expect(src()).toMatch(/const parked = isRecoverableNetworkFailure\(e\) && !entry\.autoResumed/)
+    // The one-resume rule is the module's now: shouldPark decides, and it is handed the real
+    // error's verdict and the real entry -- never a literal.
+    expect(src()).toMatch(/const parked = shouldPark\(isRecoverableNetworkFailure\(e\), entry\)/)
+  })
+})
+
+describe('UploadZone retries through lib/upload/retry-plan, and never re-uploads what is already in R2', () => {
+  it('BOTH Retry paths re-save a file whose row is queued, instead of sending its bytes again', () => {
+    const text = src()
+    // The tile.
+    expect(text).toMatch(/if \(retryMode\(id, new Set\(pendingSaveRef\.current\.map\(p => p\.entryId\)\)\) === 'resave'\) \{\s+void retryBlockedRows\(\)\s+return\s+\}/)
+    // The failed chip.
+    expect(text).toMatch(/if \(failed\.some\(e => retryMode\(e\.id, pendingIds\) === 'resave'\)\) void retryBlockedRows\(\)/)
+    expect(text).toMatch(/\.filter\(e => retryMode\(e\.id, pendingIds\) === 'reupload'\)/)
+  })
+  it('each retry trigger names itself, so the one automatic resume is spent or earned correctly', () => {
+    const text = src()
+    expect(text).toMatch(/freshEntryFor\(entry, 'tap'\)/)
+    expect(text).toMatch(/freshEntryFor\(e, 'chip'\)/)
+    expect(text).toMatch(/freshEntryFor\(e, 'auto'\)/)
+    // ...and no path builds a fresh entry by hand any more.
+    expect(text).not.toMatch(/autoResumed: (true|false)/)
+  })
+  it('the pending-save queue is keyed, and the banner reducer is the module\'s', () => {
+    const text = src()
+    expect(text).toMatch(/pendingSaveRef\.current = queuePendingRows\(pendingSaveRef\.current, pairs\)/)
+    expect(text).toMatch(/setPendingSaveReason\(prev => mergeWall\(prev, wallFor\(code, nudge\)\)\)/)
   })
 })

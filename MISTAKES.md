@@ -1180,3 +1180,23 @@ header lists three), one level down: the tool that scopes the grep was not scope
 **Habit to build:** a stripper is a scanner, not a pipeline of regexes -- one pass that knows
 whether it is inside a string, a template, a line comment or a block comment. And when a pin fails
 on a line that is plainly there, suspect the reader before the file.
+
+### 86. I FIXED THE STRIPPER AND LEFT THE SAME HOLE ONE DOOR ALONG
+
+The scanner that replaced the two regexes (entry 85) did not track REGEX LITERALS, and its own
+header said so with a false reassurance: "none in this codebase carries either". A reviewer
+measured it: ten files carry a regex whose escaped slash truncated the line, and one -- the
+support-chat route's `.replace(/[`\s]+$/, '')` -- has a BACKTICK inside a character class. The
+scanner read it as the start of a template, and a template does not end at a newline, so 77 lines
+were copied out with their comments intact. Sixteen real comments survived the strip in that file.
+That is the exact "a comment answers the grep" failure the helper exists to prevent, live, in the
+fix for the previous instance of it.
+
+What closed it was not a third careful implementation. It was a WHOLE-REPO PROPERTY TEST: strip
+every file in src, tests and scripts, and assert that no comment line survives and no plain
+statement is lost. Neither of the two bugs was reachable by an example test, because neither shape
+had been imagined -- and that is the point. Reverting to the old regex fails it in both directions.
+
+**Habit to build:** when a helper's contract is a property ("no comment survives"), assert the
+property over the real corpus, not examples. And a comment claiming "this case does not occur in
+this codebase" is a claim about the codebase: grep for it, or do not write it (rule 18).

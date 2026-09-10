@@ -45,6 +45,9 @@ describe('isRecoverableNetworkFailure -- what parks', () => {
   it('a refusal the product made on purpose is not the network, whatever else its text says', () => {
     expect(isRecoverableNetworkFailure(new Error('File too large: failed to fetch'))).toBe(false)
     expect(isRecoverableNetworkFailure(new Error('Unsupported video codec, load failed'))).toBe(false)
+    // ANCHORED: the refusal is how the message STARTS. A server blob that merely mentions an
+    // unsupported something is not a refusal of ours, and must still park.
+    expect(isRecoverableNetworkFailure(new Error('tus: 500, body: unsupported media type, Load failed'))).toBe(true)
   })
   it('a file the device would not hand over PARKS (a second attempt is what saves it)', async () => {
     const err: unknown = await readFileRobust(unreadable('NotReadableError'), 1).catch((e) => e)
