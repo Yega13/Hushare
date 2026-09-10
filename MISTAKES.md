@@ -1007,6 +1007,122 @@ because it handles multi-line replacement conveniently, and paid three times.
 content that is pure ASCII prose with no escapes -- and even then, `assert count == 1` before every
 write, which is the only reason none of the three aborted scripts corrupted a file.
 
+### 67. A GUARD THAT NEVER FIRED, THREE TIMES IN THE SAME ENGINE
+
+The outreach draft generator had three decisions written as if they varied, and not one of them
+ever varied.
+
+`sponsor_names` and `races_per_year` were read by the approach selector and were absent from the
+research JSON schema, which sets `additionalProperties: false` -- so the model could not have
+returned them if it had wanted to. The sponsor count was permanently 0 and the cadence permanently
+1, which made two of the four opening approaches unreachable and quoted every race on earth a
+one-off package. `custom_price` was read by the assembler and was missing from the schema's
+`required` list, so the model simply omitted it, `undefined` is falsy, and the one sentence in the
+whole letter that offered any flexibility could never appear. And `recommendedTier` was derived
+from a hardcoded string, so the filter that stops a Pro price sitting beside a Max-only promise had
+never removed a single sentence.
+
+None of the three threw. A missing field and a real zero are identical through `?? 0`, and a guard
+that never fires looks exactly like a guard that works. The user found the third one by reading the
+output and saying "i don't see flexibility here" -- which is the only detector that was working.
+
+**Habit to build:** every field the code reads must be in the schema AND in its `required` list, and
+a decision function's test must show every branch reached from a realistic input. `expect(f(x)).toBe(y)`
+proves the function returns something; only a case per branch proves the branches exist.
+
+### 68. MY OWN MUTATION PROVED NOTHING, THREE TIMES
+
+Rule 16 says break the code and watch the test fail. Three of my mutations SURVIVED, and in every
+case the mutation was the problem, not the test: `(x ?? 1) >= 3` is the same function as
+`x !== null && x >= 3`; `hostname.toLowerCase()` cannot change an answer because the URL parser has
+already lowercased the host; and a month-range check is dead code when the line below it reads the
+month back off the parsed date. Each survivor was an equivalent mutation, and each one pointed at
+real dead code rather than at a missing test -- two of the three lines were then deleted.
+
+**Habit to build:** a survivor is not automatically a missing test. Ask first whether the mutant is
+actually a different function. When it is not, the code it touched is dead and should go.
+
+### 69. A TYPE-CHECK THAT IS ALWAYS RED REPORTS NOTHING
+
+`npx tsc --noEmit` failed with nineteen errors in tests/search-answer.test.ts, all one missing
+property on one object literal. Underneath them sat a real finding: that file's deliberate
+exhaustiveness guard -- a conditional type that resolves to `never` when a phase is unlisted -- was
+firing because `SearchPhase` had gained an `'excluded'` member that nothing in the file covered.
+The phase is the one that stops a runner being told "No photos with that number" for a bib the
+ORGANISER excluded, and it had no test at all. vitest does not type-check, so 1,643 green tests said
+nothing about any of it.
+
+**Habit to build:** a failing type-check is not background noise to route around. Clear it to zero,
+because the errors it is hiding are the ones nobody chose to accept.
+
+### 70. THE DEAD BRANCH, THIRD TIME: AN OUTPUT WITH NO CONSUMER
+
+Entry 67 was about decisions whose INPUTS had no source. I fixed those, wrote the module, wrote
+nineteen tests, killed the mutations, and reported it done. An adversarial review then found
+`chooseApproach` returning a correct answer that reached nothing at all: it was not a parameter of
+`assembleEmail`, so it could not shape the letter, and the word "approach" appeared ZERO times in
+the writing prompt, so the model received `"the crowd nobody shoots"` as a bare JSON key with no
+instruction attached. `has_photo_supplier` was not even in the facts sent to the model, which made
+that branch unimplementable rather than merely un-instructed.
+
+Four branches, six tests, one opening instruction that described the same approach for every race.
+The tests certified a no-op, and they passed because they asserted what the function RETURNS rather
+than what changes when it returns it.
+
+**Habit to build:** for a decision function, the test that matters is not "does it return the right
+string" but "does the output change the artefact". Grep the consumer for the value's name before
+believing a decision is wired up.
+
+### 71. A VALIDATOR THAT PASSED THE EXACT FAILURE IT WAS NAMED FOR, THREE TIMES
+
+The numbers check exists because a draft said "the eight partners you list" when the research had
+confirmed seven. Its docstring says so. Executed against real research, it returned `[]` for that
+sentence.
+
+Backing "eight" meant `JSON.stringify(research).includes('8')` -- one character, matched by a date,
+a page count, a field size. It was also substring containment, so "202 sponsors" was backed by
+"2026". The tests passed because I fed them hand-built corpora (`'{"n":7}'`) that contained no digit
+8 and no long numbers -- rule 17's shape, where the test constructs an input the production path
+never produces.
+
+Then the repair failed the same way. I collected whole tokens and added array lengths so a
+seven-entry sponsor list would back "seven" -- and `pages_read` is also an array, holding up to
+eight pages, so 8 walked straight back into the backing set and the same sentence passed again. It
+took a third attempt to get the distinction right: a claim about a COUNT has to be backed by a
+count, never by a digit that happens to appear in prose or a URL.
+
+**Habit to build:** test a validator against the real artefact its subject produces, not against a
+minimal literal. And when a fix targets a specific failing input, re-run THAT input against the fix
+before believing it -- twice, I did not.
+
+### 72. RULE 24, BY ME, IN THE FILE THAT ENFORCES RULE 24
+
+I typed literal U+00A0 and U+202F into two regex character classes in `src/lib/outreach/validate.ts`
+-- the module whose entire job is to catch invisible and machine-looking characters, and whose own
+comment explains that a check written as a literal can be defeated by the accident it exists to
+catch. Four invisible characters, invisible in the diff, invisible in grep, found by a reviewer.
+`tests/source-hygiene.test.ts` passed throughout, because it does not scan for those two code
+points.
+
+**Habit to build:** any character above ASCII goes into source as an escape, in the file that bans
+them most of all. And when a hygiene test passes, check what it actually scans for before treating
+it as cover.
+
+### 73. A PIPE ATE THE EXIT CODE AND I REPORTED A PROOF THAT HAD NOT HAPPENED
+
+I told the user "54 of 54 mutations killed". There were 65, not 54 -- I carried a stale count from
+before I added more -- and one of them had gone stale when I reworded the sentence it targeted, so
+it had never executed. A reviewer running the same sets found the same thing about their own run:
+`node scripts/mutations/run.mjs ... | tail -25` returns TAIL's exit status, not the runner's, so a
+failing run reads as a passing one.
+
+The runner already prints DID NOT APPLY and exits 1 for exactly this. Both of us piped it and lost
+the signal.
+
+**Habit to build:** never pipe a command whose exit code is the result. Redirect to a file and echo
+`$?`. And after editing a module, re-run its mutation set before citing an older number -- a
+mutation set is only as current as the last edit to the file it targets.
+
 ### 74. I FIXED A RACE BY MAKING THE BASELINE IMMOVABLE, AND CREATED TWO NEW RACES INSIDE ONE ROUND TRIP
 
 The media panel diffed its draft against an album it had already patched optimistically, so a
@@ -1222,3 +1338,84 @@ the real artefact against the real shape. "Insert-only and dry-run by default" i
 intent; "11,166 rows restored and 553 fields compared" is evidence. Anything that can only be run
 against production has no test, and that is a reason to inject the client, not a reason to trust
 the code.
+
+## 2026-09-10 — Circle: the bib engine
+
+### 64. I NEARLY TALKED THE OWNER OUT OF THE ONE THING THAT FIXED THE LIVE ALBUM
+
+Asked what remained, I wrote that the exclusion panel "won't help that album either" -- and
+corrected myself in the same paragraph, because exclusions are applied at SEARCH time and therefore
+work on rows indexed long before any of this shipped. The first sentence was wrong and the second
+was right, and the owner had already read the first.
+
+The cause is that I had spent two days reasoning about the INDEX-time rule, where "we are not
+re-indexing VMF" really does mean "nothing changes for VMF". I carried that conclusion across to a
+search-time mechanism where it does not hold.
+
+**Habit to build:** when a decision has been settled ("we are not re-indexing"), re-derive its
+consequences for each new mechanism rather than reusing the summary. The summary is about the
+mechanism it was formed on.
+
+### 65. SIX ALTERNATIVES MEASURED, AND MY OWN HEADLINE EVIDENCE WAS THE WRONG DISTRIBUTION
+
+I refused a reviewer's recommendation to ship a line-recurrence rule, and led the refusal with the
+finding that on the 69-photo album the banner year and the real bib 00663 each appeared on exactly 4
+photographs. The refusal was right. The evidence was not: both candidate rules apply AFTER the line
+filter, and post-filter that collision does not exist -- the banner year is gone and the bib is not.
+I was quoting the pre-filter distribution for a comparison that happens downstream of it.
+
+The reviewer supplied the argument that actually holds: a real bib appears on 1-4 photographs
+whatever the album size, while any album-relative threshold scales WITH the album, so a floor safe
+on 4,566 photos sits below the entire real-bib population on 69.
+
+I also stated, and repeated to the owner, that recurrence and number-frequency are "the same
+signal". Measured post-filter they are not: recurrence catches the arch year and frequency does not.
+Right conclusion, wrong mechanism, twice -- and a mechanism written into a comment is what the next
+reader believes.
+
+**Habit to build:** check WHERE in the pipeline a comparison happens before quoting a distribution
+at it. And when a conclusion survives having its stated reason disproved, replace the reason rather
+than keeping both.
+
+### 66. THREE TIMES I SHIPPED A ROW WHOSE MEASURED SET WAS ITS OWN DEFINING SET
+
+"range 100-3000 removes every 1-2 digit tag" -- every 1-2 digit number is below 100 by arithmetic.
+Then twice more: "excluding the top 5 most-frequent numbers removes 100% of the noise", where the
+label defined noise as the eyeballed four plus anything above a frequency floor, which IS those five
+numbers. Each row looked like the strongest number in the table and measured nothing.
+
+Both reviewers caught it independently, the second time noting it was becoming a habit rather than a
+slip. It is: the shape is always a filter scored against a label built from the same property the
+filter uses.
+
+**Habit to build:** before a number goes in a table, name the measured set and the defining set out
+loud and check they are different sets. A row that cannot fail is not a measurement.
+
+### 67. MY OWN GUARD READ ITS FILE THROUGH THE BROKEN STRIPPER
+
+tests/bib-filter.test.ts greps rekognition.ts to pin the call site, and carried its own inline copy
+of the two comment-stripping regexes rather than importing the shared helper. The parallel session
+had just replaced that pair with a real scanner, because a `/*` inside a line comment made the first
+regex swallow everything to the next `*/` -- hundreds of lines. My guard was reading a fraction of
+the file and passing for the wrong reason.
+
+I only learned it because that session mentioned the change in passing. They then grepped and
+confirmed mine was the last copy in the repository.
+
+**Habit to build:** a guard that reads source must import the repo's stripper, never carry one. And
+when a shared helper is fixed, grep for the shape of the thing it replaced -- the copies are exactly
+where the fix cannot reach.
+
+### 68. TWO SESSIONS BUILT THE SAME PHASE, AND NEITHER NOTICED FOR AN HOUR
+
+Both of us added an `excluded` member to SearchPhase and its test coverage on the same afternoon, in
+the same file. It converged only because the other session's edit landed first and mine failed to
+apply -- I read the file, found a comment I had not written, and only then checked ListAgents and
+found four peer sessions, one named "Bib search and Face Finder reenabling".
+
+The cost was small this time and could have been a lost afternoon. What made it small was that a
+`node -e` replace printed "no change" instead of silently succeeding.
+
+**Habit to build:** on a shared tree, `ListAgents` BEFORE picking up a feature, not after something
+looks strange. And every scripted edit asserts its own needle matched -- an edit that quietly does
+nothing is indistinguishable from an edit someone else already made.
