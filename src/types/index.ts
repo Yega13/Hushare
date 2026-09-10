@@ -91,6 +91,10 @@ export type Album = {
   bib_search_enabled: boolean;
   // Race numbering bounds. Detections outside them are ignored at SEARCH time (never at indexing
   // time), so correcting a wrong range is instant and costs no re-OCR. NULL = unbounded that end.
+  // Numbers the OWNER marked as signage rather than runners. Sent to the client because the
+  // exclusion is applied at SEARCH time on the phone as well as in the database — see
+  // lib/bib-exclusions. An album resolved without it filters nothing locally.
+  bib_excluded_numbers: string[];
   bib_min: number | null;
   bib_max: number | null;
   // Derived server-side from password_hash presence — the hash itself is never sent

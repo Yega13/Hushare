@@ -93,6 +93,7 @@ export type Database = {
           package_last_order_id: string | null
           package_reminder_at: string | null
           deleted_at: string | null
+          bib_excluded_numbers: string[]
         }
         Insert: {
           id?: string
@@ -148,6 +149,7 @@ export type Database = {
           package_last_order_id?: string | null
           package_reminder_at?: string | null
           deleted_at?: string | null
+          bib_excluded_numbers?: string[]
         }
         Update: {
           id?: string
@@ -203,6 +205,7 @@ export type Database = {
           package_last_order_id?: string | null
           package_reminder_at?: string | null
           deleted_at?: string | null
+          bib_excluded_numbers?: string[]
         }
         Relationships: []
       }

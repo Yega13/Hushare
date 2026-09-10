@@ -533,8 +533,8 @@ export default function AlbumPageClient({ initialAlbum = null, initialPhotos, in
   // The race's declared numbering, memoised for IDENTITY (it sits in visiblePhotos' deps). Read
   // here because the phase depends on it: a number outside it is refused before any search runs.
   const bibRange = useMemo(
-    () => ({ min: album?.bib_min ?? null, max: album?.bib_max ?? null }),
-    [album?.bib_min, album?.bib_max])
+    () => ({ min: album?.bib_min ?? null, max: album?.bib_max ?? null, excluded: album?.bib_excluded_numbers ?? [] }),
+    [album?.bib_min, album?.bib_max, album?.bib_excluded_numbers])
   const bibPhase = searchPhase({
     enabled: bibEnabled,
     query: bibDigits,

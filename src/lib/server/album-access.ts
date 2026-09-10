@@ -50,7 +50,7 @@ const A_IDENTITY = 'id, user_id, slug, custom_slug, title, background_theme'
 const A_LAYOUT = 'media_radius, media_filter, mobile_grid_columns, desktop_grid_columns, photo_layout, photo_order'
 const A_SLIDESHOW = 'slideshow_interval_ms, slideshow_animation, slideshow_motion, video_autoplay'
 const A_HEADER = 'cover_photo_id, header_image, header_focal, header_zoom, header_touched, header_video_mode, reveal_at, guest_uploads_enabled, allow_guest_downloads'
-const A_GATES = 'require_approval, face_finder_enabled, bib_search_enabled, bib_min, bib_max, branding_locked'
+const A_GATES = 'require_approval, face_finder_enabled, bib_search_enabled, bib_min, bib_max, bib_excluded_numbers, branding_locked'
 const A_PACKAGE = 'package_tier, package_expires_at'
 const A_BRAND = 'accent_color, logo_url, sponsor_logos, title_font, photo_style, welcome_message, hide_branding'
 const A_TIMES = 'last_activity_at, created_at'
@@ -91,7 +91,7 @@ type AlbumRow = {
   cover_photo_id: string | null; header_image: string | null; header_focal: string | null; header_zoom: number | null; header_touched: boolean
   header_video_mode: string | null; reveal_at: string | null; guest_uploads_enabled: boolean
   allow_guest_downloads: boolean; require_approval: boolean; face_finder_enabled: boolean; bib_search_enabled: boolean
-  bib_min: number | null; bib_max: number | null
+  bib_min: number | null; bib_max: number | null; bib_excluded_numbers: string[]
   accent_color: string | null; logo_url: string | null
   // Json, NOT SponsorLogo[] — and this line is the one MISTAKES.md is about.
   //
@@ -552,7 +552,7 @@ export async function fetchAuthorizedPhotos(
     // bib_min/bib_max come from the ALBUM, never from the caller. They decide which OCR readings
     // count, so accepting them from the request would let anyone widen the race's numbering and
     // pull back photos the owner's bounds were set to exclude.
-    .select('id, user_id, owner_token, password_hash, reveal_at, retired_at, bib_search_enabled, bib_min, bib_max, photo_order, package_tier, package_expires_at')
+    .select('id, user_id, owner_token, password_hash, reveal_at, retired_at, bib_search_enabled, bib_min, bib_max, bib_excluded_numbers, photo_order, package_tier, package_expires_at')
     .eq('id', albumId)
     .maybeSingle()
 
@@ -666,7 +666,7 @@ export async function fetchAuthorizedPhotos(
   // tests/bib-match.ts exists to protect, and it sits one layer above them. If `bib` was asked for
   // at all, an unusable value matches nothing — it never matches everything.
   const bibCandidates = opts.bib !== undefined
-    ? (bibSearchCandidates(opts.bib, { min: album.bib_min, max: album.bib_max }) ?? [])
+    ? (bibSearchCandidates(opts.bib, { min: album.bib_min, max: album.bib_max, excluded: album.bib_excluded_numbers }) ?? [])
     : null
   // An empty candidate list is NOT "no filter" — it is a number that cannot match anything, such as
   // one outside the race's numbering. Returning the whole album here would hand a runner every

@@ -25,7 +25,10 @@ const EXPECTED_ALBUM =
   'slideshow_interval_ms, slideshow_animation, slideshow_motion, video_autoplay, ' +
   'cover_photo_id, header_image, header_focal, header_zoom, header_touched, header_video_mode, ' +
   'reveal_at, guest_uploads_enabled, allow_guest_downloads, ' +
-  'require_approval, face_finder_enabled, bib_search_enabled, bib_min, bib_max, branding_locked, ' +
+  // bib_excluded_numbers added 2026-09-10 with the migration of the same name. It is on the album
+  // read because the GUEST needs it: the exclusion list is applied at search time in bib-match, on
+  // the phone as well as in the database, so an album resolved without it filters nothing.
+  'require_approval, face_finder_enabled, bib_search_enabled, bib_min, bib_max, bib_excluded_numbers, branding_locked, ' +
   'package_tier, package_expires_at, ' +
   'accent_color, logo_url, sponsor_logos, title_font, photo_style, welcome_message, hide_branding, ' +
   'last_activity_at, created_at, password_hash, retired_at'
@@ -42,10 +45,15 @@ describe('the album select string is exactly what it always was', () => {
     expect(ALBUM_SELECT_COLS).toBe(EXPECTED_ALBUM)
   })
 
-  it('still asks for 44 columns, none lost in the regrouping', () => {
+  it('still asks for 45 columns, none lost in the regrouping', () => {
     // A count as well as the string, because a diff of one long line is unreadable and this is the
     // number a reviewer can actually check.
-    expect(ALBUM_SELECT_COLS.split(', ')).toHaveLength(44)
+    //
+    // 44 until 2026-09-10, when bib_excluded_numbers was added. Raising this number is meant to be
+    // a deliberate act: the last time these two counts disagreed, the select was fetching 44
+    // columns while AlbumRow declared 42, and the two missing ones were package_tier and
+    // package_expires_at -- the pair that decides whether a PAID album gets what it paid for.
+    expect(ALBUM_SELECT_COLS.split(', ')).toHaveLength(45)
   })
 
   it('carries no duplicate column, which a copy-paste regrouping invites', () => {
@@ -105,6 +113,7 @@ const ALBUM_ROW_KEYS = {
   accent_color: 0, logo_url: 0, welcome_message: 0, hide_branding: 0, title_font: 0,
   photo_style: 0, header_image: 0, header_focal: 0, sponsor_logos: 0, header_touched: 0,
   header_video_mode: 0, header_zoom: 0, bib_search_enabled: 0, bib_min: 0, bib_max: 0,
+  bib_excluded_numbers: 0,
   slideshow_motion: 0, face_consent_at: 0, face_consent_by: 0, branding_locked: 0,
   desktop_grid_columns: 0, photo_order: 0, package_tier: 0, package_expires_at: 0,
   package_last_order_id: 0, package_reminder_at: 0, deleted_at: 0,
