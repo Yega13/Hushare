@@ -84,6 +84,16 @@ describe('what the owner is shown', () => {
 })
 
 describe('an exclusion is always undoable', () => {
+  it('shows a number ONCE, not once per list', async () => {
+    // THE BUG THE OWNER FOUND IN A SCREENSHOT. Excluding added the number to one list without
+    // removing it from the other, so after one tap "2026" rendered twice -- dark, and again still
+    // offering its count. The owner saw a number they had just switched off apparently still on.
+    renderPanel()
+    await userEvent.click(await screen.findByRole('button', { name: /2026/ }))
+    await waitFor(() => expect(state.posted).toHaveLength(1))
+    expect(screen.getAllByRole('button', { name: /2026/ })).toHaveLength(1)
+  })
+
   it('KEEPS an excluded number on screen, marked, so it can be put back', async () => {
     // The load-bearing property. If excluded numbers vanished from the panel, a wrong exclusion
     // would be permanent and its victim would never know to complain.

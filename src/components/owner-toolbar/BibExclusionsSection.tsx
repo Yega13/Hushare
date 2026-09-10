@@ -90,47 +90,57 @@ export default function BibExclusionsSection({ album }: Props) {
   const { candidates, excluded } = view
   if (candidates.length === 0 && excluded.length === 0) return null
 
+  // ONE LIST, ONE CHIP PER NUMBER.
+  //
+  // This rendered the excluded set and the candidate set as two separate rows, and the first tap
+  // proved why that is wrong: excluding a number adds it to one list without removing it from the
+  // other, so "2026" appeared TWICE -- once dark and once still offering its count. The owner sees
+  // a number they have just switched off apparently still on.
+  //
+  // A number is one thing with one state, so it gets one chip and the state is `pressed`. `order`
+  // is fixed for the life of the panel rather than derived from the two sets, because deriving it
+  // would make an un-excluded number vanish: the server does not return it as a candidate any more,
+  // having been told it was excluded when the panel loaded.
+  const counts = new Map(candidates.map((c) => [c.number, c.photos]))
+  const order = [...new Set([...candidates.map((c) => c.number), ...excluded])]
+
   return (
     <div className="mt-3 rounded-xl px-3 py-3" style={{ background: '#FDFAF5', border: '1px solid #E8E0D2' }}>
       <p className="text-sm font-semibold" style={{ color: '#630826' }}>{t('ot.bibExclusions')}</p>
       <p className="text-xs mt-1 mb-3" style={{ color: '#7C5C3E' }}>{t('ot.bibExclusionsSub')}</p>
 
       <div className="flex flex-wrap gap-2">
-        {/* EXCLUDED FIRST, and never hidden -- this is the undo. */}
-        {excluded.map((number) => (
-          <button
-            key={`x-${number}`}
-            type="button"
-            onClick={() => void toggle(number)}
-            disabled={saving !== null}
-            aria-pressed
-            className={CHIP}
-            style={{ background: '#630826', color: '#FFFFFF', opacity: saving === number ? 0.6 : 1 }}
-          >
-            {number}
-          </button>
-        ))}
-        {candidates.map((c) => (
-          <button
-            key={c.number}
-            type="button"
-            onClick={() => void toggle(c.number)}
-            disabled={saving !== null}
-            aria-pressed={false}
-            className={CHIP}
-            style={{
-              background: '#FFFFFF', border: '1px solid #DDD5C5', color: '#630826',
-              opacity: saving === c.number ? 0.6 : 1,
-            }}
-          >
-            {c.number}
-            {/* The count is what makes the question answerable: "2026 -- on 1,145 photos" is
-                recognisably an arch, where a bare number is a guess. */}
-            <span className="ml-1.5 font-normal" style={{ color: '#8B6F4E' }}>
-              {t('album.photos', { n: c.photos })}
-            </span>
-          </button>
-        ))}
+        {order.map((number) => {
+          const off = excluded.includes(number)
+          const photos = counts.get(number)
+          return (
+            <button
+              key={number}
+              type="button"
+              onClick={() => void toggle(number)}
+              disabled={saving !== null}
+              aria-pressed={off}
+              className={CHIP}
+              style={{
+                background: off ? '#630826' : '#FFFFFF',
+                border: off ? '1px solid #630826' : '1px solid #DDD5C5',
+                color: off ? '#FFFFFF' : '#630826',
+                opacity: saving === number ? 0.6 : 1,
+                textDecoration: off ? 'line-through' : 'none',
+              }}
+            >
+              {number}
+              {/* The count is what makes the question answerable: "2026 -- on 1,145 photos" is
+                  recognisably an arch, where a bare number is a guess. Absent only for a number
+                  excluded before this panel opened, which the server no longer counts. */}
+              {photos !== undefined && (
+                <span className="ml-1.5 font-normal" style={{ color: off ? '#E8D5DA' : '#8B6F4E' }}>
+                  {t('album.photos', { n: photos })}
+                </span>
+              )}
+            </button>
+          )
+        })}
       </div>
     </div>
   )
