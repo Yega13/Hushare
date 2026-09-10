@@ -92,3 +92,9 @@ scripts/_tmp-*
 
 # Scratch watchers, same reasoning as .audit-*
 .watch-*
+
+# The mutation runner writes a note and a backup, named with its pid, while a file is mutated, and
+# deletes them when it restores it. A pair left behind by a DEAD process means that run was killed:
+# the next `npm run mutate` reads them and puts the file back. A pair belonging to a LIVE process is
+# another session working right now, and is left alone.
+scripts/mutations/.in-flight.*

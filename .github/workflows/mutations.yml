@@ -1,0 +1,97 @@
+# THE TESTS THAT PROVE THE TESTS.
+#
+# `npm test` says the suite passes. It cannot say the suite would NOTICE anything. That is what the
+# mutation sets in scripts/mutations are for: each one breaks the code on purpose and requires the
+# tests to go red (AGENTS.md rule 16). 766 of them across 51 sets, and every one has been killed at
+# least once -- on somebody's laptop, by hand, on the day it was written.
+#
+# Nothing re-ran them. The runner's own header says a set exists "so a test that quietly weakens is
+# caught the next time someone runs its set", and until this workflow the answer to when that
+# happened was: when somebody remembered. A test can be weakened by an ordinary refactor -- a
+# fixture that stops covering a branch, an assertion loosened to make an unrelated change pass --
+# and the suite stays green while the proof behind it is gone.
+#
+# WHY NOT ON EVERY PUSH. Each mutation runs a real vitest, so a full pass is over an hour even
+# sharded. A deploy gate nobody waits for is a gate somebody disables. `npm test` and
+# `npm run check:hooks` stay on the deploy path (deploy.yml); this runs on its own clock and shouts
+# when a proof has decayed.
+
+name: Mutation suite
+
+on:
+  schedule:
+    # 04:20 UTC on Mondays. Off the hour deliberately: GitHub's scheduler is busiest exactly on it
+    # and a queued run can be delayed for many minutes or dropped, the same reason backup.yml uses
+    # 03:15 rather than 03:00. Monday morning so a decayed proof is found at the start of a week
+    # rather than discovered mid-change.
+    - cron: '20 4 * * 1'
+  # So it can be proven to work without waiting a week, and run deliberately after a large refactor.
+  workflow_dispatch:
+
+# Least privilege. This job reads the repository, runs tests, and reports. It never needs to write
+# anything, and on a public repo a writable token is a far larger prize than the code.
+permissions:
+  contents: read
+
+concurrency:
+  # A second run while the first is going would double the load for no extra information.
+  group: mutation-suite
+  cancel-in-progress: false
+
+jobs:
+  mutate:
+    runs-on: ubuntu-latest
+    # Six shards. The runner splits the SORTED set list round-robin, so the expensive sets
+    # (restore-core boots a real Postgres through PGlite; upload-policy runs three test files 45
+    # times) are spread rather than stacked, and no shard can be empty.
+    #
+    # The shard COUNT lives here and the set list lives in scripts/mutations -- one fact, one place.
+    # A seventh set file needs no change to this file.
+    strategy:
+      # Never cancel the other five because one found something. A single early failure would
+      # otherwise hide however many more are waiting in the shards that got killed.
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4, 5, 6]
+    name: Mutations (shard ${{ matrix.shard }} of 6)
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      # THE RUNNER'S OWN TESTS FIRST, and this ordering is the point rather than tidiness. A shard
+      # that selects nothing exits 0, so a broken splitter turns this whole workflow into six green
+      # ticks for no work done. tests/mutation-runner.test.ts holds exactly that: the shards cover
+      # every set exactly once, none is empty, and a killed run's leftover mutant is repaired.
+      - name: Prove the runner still splits and recovers correctly
+        run: npx vitest run tests/mutation-runner.test.ts
+
+      # A killed run on any machine leaves a note and the original bytes beside it. Harmless here on
+      # a fresh checkout; it costs nothing and means the first thing a rerun does is repair, not
+      # mutate on top of a mutant.
+      - name: Repair anything a previous run left mutated
+        run: node scripts/mutations/run.mjs --recover-only
+
+      - name: Run this shard
+        run: node scripts/mutations/run.mjs --shard ${{ matrix.shard }}/6
+
+      # The runner restores in a finally, on every catchable signal, and again with a byte
+      # comparison after each set. This is the independent check on all of that: if the tree is
+      # dirty here, a mutant survived the run and the restore machinery is broken, whatever the
+      # mutation results said.
+      - name: The working tree must be exactly as checked out
+        if: always()
+        run: |
+          if [ -n "$(git status --porcelain)" ]; then
+            echo "A mutation was left on disk. The restore path is broken:"
+            git status --porcelain
+            git diff
+            exit 1
+          fi
+          echo "Clean."

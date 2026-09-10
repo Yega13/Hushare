@@ -1341,7 +1341,7 @@ the code.
 
 ## 2026-09-10 — Circle: the bib engine
 
-### 64. I NEARLY TALKED THE OWNER OUT OF THE ONE THING THAT FIXED THE LIVE ALBUM
+### 88. I NEARLY TALKED THE OWNER OUT OF THE ONE THING THAT FIXED THE LIVE ALBUM
 
 Asked what remained, I wrote that the exclusion panel "won't help that album either" -- and
 corrected myself in the same paragraph, because exclusions are applied at SEARCH time and therefore
@@ -1356,7 +1356,7 @@ search-time mechanism where it does not hold.
 consequences for each new mechanism rather than reusing the summary. The summary is about the
 mechanism it was formed on.
 
-### 65. SIX ALTERNATIVES MEASURED, AND MY OWN HEADLINE EVIDENCE WAS THE WRONG DISTRIBUTION
+### 89. SIX ALTERNATIVES MEASURED, AND MY OWN HEADLINE EVIDENCE WAS THE WRONG DISTRIBUTION
 
 I refused a reviewer's recommendation to ship a line-recurrence rule, and led the refusal with the
 finding that on the 69-photo album the banner year and the real bib 00663 each appeared on exactly 4
@@ -1377,7 +1377,7 @@ reader believes.
 at it. And when a conclusion survives having its stated reason disproved, replace the reason rather
 than keeping both.
 
-### 66. THREE TIMES I SHIPPED A ROW WHOSE MEASURED SET WAS ITS OWN DEFINING SET
+### 90. THREE TIMES I SHIPPED A ROW WHOSE MEASURED SET WAS ITS OWN DEFINING SET
 
 "range 100-3000 removes every 1-2 digit tag" -- every 1-2 digit number is below 100 by arithmetic.
 Then twice more: "excluding the top 5 most-frequent numbers removes 100% of the noise", where the
@@ -1391,7 +1391,7 @@ filter uses.
 **Habit to build:** before a number goes in a table, name the measured set and the defining set out
 loud and check they are different sets. A row that cannot fail is not a measurement.
 
-### 67. MY OWN GUARD READ ITS FILE THROUGH THE BROKEN STRIPPER
+### 91. MY OWN GUARD READ ITS FILE THROUGH THE BROKEN STRIPPER
 
 tests/bib-filter.test.ts greps rekognition.ts to pin the call site, and carried its own inline copy
 of the two comment-stripping regexes rather than importing the shared helper. The parallel session
@@ -1406,7 +1406,7 @@ confirmed mine was the last copy in the repository.
 when a shared helper is fixed, grep for the shape of the thing it replaced -- the copies are exactly
 where the fix cannot reach.
 
-### 68. TWO SESSIONS BUILT THE SAME PHASE, AND NEITHER NOTICED FOR AN HOUR
+### 92. TWO SESSIONS BUILT THE SAME PHASE, AND NEITHER NOTICED FOR AN HOUR
 
 Both of us added an `excluded` member to SearchPhase and its test coverage on the same afternoon, in
 the same file. It converged only because the other session's edit landed first and mine failed to
@@ -1419,3 +1419,116 @@ The cost was small this time and could have been a lost afternoon. What made it 
 **Habit to build:** on a shared tree, `ListAgents` BEFORE picking up a feature, not after something
 looks strange. And every scripted edit asserts its own needle matched -- an edit that quietly does
 nothing is indistinguishable from an edit someone else already made.
+
+## 2026-09-10 — Circle: the video lane, the money file and the album gate
+
+### 93. I WROTE AN INCIDENT THAT NEVER HAPPENED INTO FOUR PLACES AT ONCE
+
+Moving the video-lane rule out of UploadZone into `lib/upload/video-lane.ts`, I described it as
+fixing a shipped defect: a guest tapping cancel, or a video the product refused on purpose,
+collapsing the upload lane to serial for the rest of the session. It made a good story. The
+distinction had been made correctly inline since the lane first shipped (68178fe, 2026-08-03), and
+was broadened to the shared refusal list on 2026-08-18 -- before the refusal I named in the story
+even existed as a constant.
+
+I did not invent it out of nothing; I inferred it from the fact that the classification was
+untested. Untested is not the same as wrong, and I wrote the second when I only knew the first.
+
+The cost is not the wasted sentence. It went into the commit message, the module header, four test
+names and two mutation names, and in this repository those texts are read later as evidence: the
+next person deciding whether a guard matters reads "this was a shipped defect" and stops checking.
+A reviewer found it with one `git log -S` on the line I had just deleted.
+
+**Habit to build:** before writing "this was a bug" about code you are MOVING, run `git log -S` on
+the line being replaced and read what it said the day it shipped. If all you can demonstrate is
+that nothing tested it, then that is the sentence -- "a rule that was believed rather than held" --
+and it is a good enough reason on its own.
+
+### 94. THREE PROTECTIONS, NONE OF WHICH ANY TEST COULD TELL FROM ITS ABSENCE
+
+One mutation run over `album-entitlements.ts` -- the file that decides what a customer's money buys
+-- turned up three defensive lines that were believed and not held:
+
+- `registeringWouldHelp` opened with `if (input.ownerTier) return false`. Replacing it with
+  `if (false)` left the whole suite green, because forcing `'free'` can never raise a registered
+  album's ceiling: free is the lowest per-tier cap, and every grandfather promise a higher tier
+  gets, free gets too. A guard that cannot fire, sitting two lines above a comment explaining why a
+  *different* guard was deliberately not added for exactly that reason.
+- `videoBudgetExceeded` clamps a negative or unreadable used-total to zero. Both existing tests
+  passed an in-budget clip, where clamped and unclamped answer identically. The case that separates
+  them is a clip longer than the WHOLE budget: unclamped, a stored `-2000000000` buys unlimited
+  video. Nothing asked.
+- `PACKAGE_ITEMS_BY_TIER` reads the package catalogue rather than retyping the numbers. Every
+  behavioural test passes just as happily against `pro: 5000` written out by hand, because 5000 is
+  what the catalogue says today. It stops passing the day the package is repriced, which is the day
+  it matters and the day nobody is looking.
+
+All three LOOK tested. Coverage is green through every one. What separates "protected" from
+"believed" is asking what input would tell the two apart -- which is what a mutation is. The same
+run over `album-password` found nine more, and over `album-owner-access` five.
+
+**Habit to build:** for every defensive line, name the input that distinguishes it from its absence
+BEFORE writing the test. If there is no such input, the line is either dead code or the test is
+missing, and those need opposite responses: delete it, or write the case. Deciding out loud is the
+point -- a survivor quietly deleted is how a real hole gets filed as noise.
+
+### 95. A BEHAVIOUR-PRESERVING MOVE THAT QUIETLY FLIPPED A FAIL-SAFE
+
+Extracting `videoOutcomeOf`, I wrote `if (error === null || error === undefined) return 'clean'` at
+the top. It reads as obvious housekeeping: no error means it worked. The only caller is a `catch`
+block, where "no error" cannot be true -- so the branch could only ever fire on a thrown null, and
+it answered that a network which had just dropped a file was healthy enough to widen the lane. The
+inline code I was replacing had always called that a failure.
+
+The two directions are not equal, which is the whole of rule 19: a wrong `'failed'` makes uploads
+serial, and a wrong `'clean'` puts more of them on a connection that is already losing them. I
+turned the safe direction into the unsafe one while believing I was changing nothing.
+
+**Habit to build:** in a refactor, list the inputs the OLD code could receive and check the new
+answer for each, especially the ones that look impossible. And when adding a "nothing went wrong"
+branch, find the caller first: if it is a catch block, that branch is not housekeeping, it is a
+guess about a value that should never arrive.
+
+### 96. TWO SESSIONS NUMBERED INTO THE SAME FILE AND MADE FIVE ENTRIES AMBIGUOUS
+
+The bib circle was appended as entries 64 to 68 while entries 64 to 68 already existed 400 lines
+above, so this file -- whose entire job is to be cited -- had five duplicate numbers, and two
+comments in `scripts/mutations/` that say "MISTAKES 68" stopped naming one thing. Neither session
+did anything careless; both counted from what they could see, and appended.
+
+The later block was renumbered to 88-92 rather than the earlier one, because the earlier numbers
+are the ones already cited from code.
+
+**Habit to build:** on a shared tree, a numbered list is a shared counter. Read the LAST heading in
+the file before writing a new one, not the last heading in the section you are adding to -- and when
+citing an entry from code, cite the title as well as the number, so a renumbering cannot silently
+redirect the reference.
+
+### 97. I KILLED MY OWN MUTATION RUN, THEN BUILT A RECOVERY THAT INVENTED SURVIVORS
+
+Two mistakes in one hour, and the second was caused by fixing the first.
+
+I started a mutation run by accident -- passing a flag the runner did not know, which it filtered
+out, so it ran every set instead of printing a list -- and stopped it from the task manager. The
+runner restores in a `finally` and on SIGINT; a task-manager stop is neither. It left
+`src/lib/media-settings-diff.ts` holding `const carried = {}` in `revertMediaSave`, which throws
+away a guest's in-flight settings on a failed save. It type-checks. It reads as ordinary code. The
+only reason it was found is that `git status` was read within the minute; the next commit would
+have shipped it, and the mutation set that proves that line matters would have gone on passing,
+because a mutation set proves the TEST notices, not that the code is right.
+
+So I added a note on disk, written before the file is touched, that the next run reads and repairs
+from. And it made things worse, because two sessions share this checkout. With one fixed filename,
+my run started while the other session was mid-set, read ITS note, restored the file it was in the
+middle of testing, and deleted the note. The mutation vanished from under a running vitest, the
+tests passed, and two mutations that had been killed an hour earlier were reported SURVIVED. I very
+nearly went looking for the missing test.
+
+A recovery that invents survivors is worse than no recovery at all. A survivor is a finding, and a
+finding costs an afternoon -- rule 12b says exactly this about review agents and it is just as true
+of tooling.
+
+**Habit to build:** anything that writes to a shared working tree names its file after its own
+process, and checks whether the owner of a foreign file is still alive before touching it. And a
+flag a tool does not recognise is an error, not something to filter out and carry on: "unknown
+argument" would have cost nothing, and silently running the whole suite cost a mutant on disk.

@@ -36,6 +36,7 @@ export default {
     from: "  if (lost.length === 0) return { saved: batch, lost: [] }\n", to: "" },
   // Not mutated: an early return for an empty `rejected` list. It survived, because the
   // `lost.length === 0` guard below already answers that case -- the line was dead and is gone
-  // (MISTAKES 68: a survivor is not always a missing test, sometimes it is dead code).
+  // (MISTAKES 68, "MY OWN MUTATION PROVED NOTHING, THREE TIMES": a survivor is not always a
+  // missing test, sometimes it is dead code).
   ],
 }

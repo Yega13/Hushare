@@ -9,7 +9,8 @@ export default {
     to: "  const adopted = { confirmed: incoming, draft: media.draft, inFlight: media.inFlight }\n" },
   // Not mutated: "an immediate save does not cancel the pending debounce". With one request in
   // flight at a time that cancel changed no outcome (the timer found the request out and did
-  // nothing), so the mutant was equivalent and the cancel was removed (MISTAKES 68).
+  // nothing), so the mutant was equivalent and the cancel was removed
+  // (MISTAKES 68, "MY OWN MUTATION PROVED NOTHING, THREE TIMES").
   { name: 'a failed save does not tell the album (the grid keeps the refused value)',
     from: "      if (Object.keys(reverted.patch).length > 0) onAlbumUpdated(reverted.patch)\n", to: "" },
   { name: 'closing Settings drops the pending media save (the old resync behaviour)',
