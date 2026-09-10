@@ -242,7 +242,9 @@ const SIZE_BUDGET: Record<string, number> = {
   // lib/realtime-supervisor, 16 tests, 16 mutations. The effect keeps the socket. Locked in.
   // -6 (2026-09-10): the settings-refetch jitter is settings-sync's own (refetchJitterMs), so the
   // module owns the timer and the spread is a test. Locked in.
-  'src/app/[slug]/AlbumPageClient.tsx': 1617,
+  // -11 (2026-09-10): the upload-triggered refresh timer and its four cancel sites are
+  // lib/delayed-once (replace-never-stack, testable). Locked in.
+  'src/app/[slug]/AlbumPageClient.tsx': 1606,
   'src/app/card-editor/CardEditorClient.tsx': 873,
   // +1 (2026-08-31): pass collectionTotal to the lightbox counter.
   // +2 (2026-08-31): morphAllowed gate on open and close.

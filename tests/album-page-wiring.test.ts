@@ -157,3 +157,23 @@ describe('AlbumPageClient hands settings-sync the refetch itself; the jitter is 
     expect(call).not.toMatch(/setTimeout|Math\.random/)
   })
 })
+
+describe('AlbumPageClient runs the upload refresh through delayed-once, and cancels it at every exit', () => {
+  it('one scheduler, created once, at the product delay', () => {
+    expect(src()).toMatch(/const \[uploadRefresh\] = useState\(\(\) => createDelayedOnce\(\{ delayMs: UPLOAD_REFRESH_DELAY_MS \}\)\)/)
+    expect(src()).toMatch(/const UPLOAD_REFRESH_DELAY_MS = 3000/)
+  })
+  it('an upload requests the forced, merging refresh for the album it happened on', () => {
+    expect(src()).toMatch(/uploadRefresh\.request\(\(\) => runUploadRefresh\(uploadAlbumId\)\)/)
+    const run = singleCall(src(), 'runUploadRefresh = useCallback(')
+    expect(run).toMatch(/refreshIfChanged\(albumId,/)
+    expect(run).toMatch(/\{ force: true \}/)
+    expect(run).toMatch(/mergePreservingExtras\(prev, r\.photos\)/)
+    expect(run).toMatch(/if \(!shouldApplyRefresh\(r\)\) return/)
+  })
+  it('cancelled on a slug change, on retry, and on unmount -- and nowhere is a bare timer left', () => {
+    const text = src()
+    expect(text.match(/uploadRefresh\.cancel\(\)/g)?.length).toBe(3)
+    expect(text).not.toMatch(/uploadRefetchTimerRef/)
+  })
+})

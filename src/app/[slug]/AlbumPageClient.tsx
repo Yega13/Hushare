@@ -6,6 +6,7 @@ import { queryOutsideRange } from '@/lib/bib-match'
 import { classifyResolve } from '@/lib/resolve-outcome'
 import { isRealLeavePop, leaveDestination } from '@/lib/leave-intent'
 import { ownerTokenFromHash, verifyOwnerToken } from '@/lib/owner-login'
+import { createDelayedOnce } from '@/lib/delayed-once'
 import { partitionPending, pendingIdSet, publishedTotal as publishedCountOf, visiblePhotos as visiblePhotosOf } from '@/lib/grid-visibility'
 import { monotonicNow, elapsedSince, type Millis } from '@/lib/clock'
 import { createPortal } from 'react-dom'
@@ -70,6 +71,7 @@ type Props = {
 // Full album view server-renders the first window; a BIG album (> first window) loads its tail on
 // demand. Small albums (every album today) load fully in the first window — pagination never engages.
 const ALBUM_FIRST_WINDOW = 500 // must match ALBUM_PAGE_SIZE in lib/server/album-access.ts
+const UPLOAD_REFRESH_DELAY_MS = 3000
 // Above this many new photos a delta stops being cheaper than just taking the window again, and
 // the merge has more chances to be wrong. 100 rows is roughly 85 KB against the window's 424 KB.
 const ALBUM_DELTA_MAX = 100
@@ -196,7 +198,9 @@ export default function AlbumPageClient({ initialAlbum = null, initialPhotos, in
   const ownerTokenFromUrlRef = useRef(false)
   const settingsChannelRef = useRef<RealtimeChannel | null>(null)
   const prevGuestDownloadsRef = useRef<boolean | null>(null)
-  const uploadRefetchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  // The upload-triggered refresh: one, 3 s after the uploader's last upload (lib/delayed-once owns
+  // the timer and its "replace, never stack" rule; the action is handed over at request time).
+  const [uploadRefresh] = useState(() => createDelayedOnce({ delayMs: UPLOAD_REFRESH_DELAY_MS }))
   // fetchGenRef: monotonic generation counter incremented on every slug change.
   // fetchAlbum captures myGen at call time; isCancelled() returns true if the
   // generation advanced past myGen (i.e. a newer slug navigation superseded this call).
@@ -772,13 +776,9 @@ export default function AlbumPageClient({ initialAlbum = null, initialPhotos, in
     // slug will see fetchGenRef.current !== myGen and skip all remaining setState calls.
     fetchGenRef.current++
 
-    // Cancel any pending upload-triggered refetch from the previous album.
-    // Without this, a 3s timer from album A would call fetchPhotos(oldAlbumId)
-    // while album B is loaded, overwriting album B's photos with album A's.
-    if (uploadRefetchTimerRef.current) {
-      clearTimeout(uploadRefetchTimerRef.current)
-      uploadRefetchTimerRef.current = null
-    }
+    // Cancel any pending upload-triggered refetch from the previous album: a 3 s timer from
+    // album A used to refetch A's photos over album B.
+    uploadRefresh.cancel()
 
     // Synchronously reset state for the new slug before any async work.
     // App Router re-renders the same component instance on slug changes — it
@@ -863,7 +863,7 @@ export default function AlbumPageClient({ initialAlbum = null, initialPhotos, in
     })()
 
     return () => { cancelled = true }
-  }, [slug])
+  }, [slug, uploadRefresh])
 
   // ─── Effect 1b: Restore owner view after the "save your album" Google sign-in ─
   // The Google round-trip drops the #owner= fragment (fragments never reach the server), so the
@@ -1065,11 +1065,7 @@ export default function AlbumPageClient({ initialAlbum = null, initialPhotos, in
   }, [album?.allow_guest_downloads, album?.id, effectiveIsOwner])
 
   // ─── Effect 6: Cleanup upload timer on unmount ──────────────────────────────
-  useEffect(() => {
-    return () => {
-      if (uploadRefetchTimerRef.current) clearTimeout(uploadRefetchTimerRef.current)
-    }
-  }, [])
+  useEffect(() => () => uploadRefresh.cancel(), [uploadRefresh])
 
   // ─── Effect 7: Owner "save your album" prompt — fires when they try to LEAVE ──
   // A signed-OUT owner who has added photos is one tap from losing management access, so when they
@@ -1164,31 +1160,27 @@ export default function AlbumPageClient({ initialAlbum = null, initialPhotos, in
     if (href) window.location.href = href
   }, [])
 
+  // Through refreshIfChanged with force, rather than a bare fetch: forcing is right (an upload
+  // definitely changed something) but the bare call never updated seenFreshnessRef, so the
+  // uploader's very next probe disagreed with itself and pulled a full window for nothing.
+  const runUploadRefresh = useCallback((albumId: string) => {
+    void refreshIfChanged(albumId, r => {
+      // Null on failure — the uploader's own tiles are already on screen, so keeping them beats
+      // replacing them with nothing.
+      if (!shouldApplyRefresh(r)) return
+      // ALWAYS merges, unlike the refresh above, and that difference is deliberate: realtime may
+      // have delivered photos after this query was issued but before it resolved, and a replace
+      // would briefly remove the uploader's own tiles from under them.
+      setPhotos(prev => mergePreservingExtras(prev, r.photos))
+      setTotal(r.total)
+    }, { force: true })
+  }, [refreshIfChanged])
+  // 3 s after the last upload: gives realtime a chance to deliver first, and a burst is one refetch.
+  const uploadAlbumId = album?.id ?? null
   const handlePhotosUploaded = useCallback(() => {
-    if (!album?.id) return
-    const albumId = album.id
-    if (uploadRefetchTimerRef.current) clearTimeout(uploadRefetchTimerRef.current)
-    // 3s delay: gives Realtime a chance to deliver INSERT events first.
-    // If Realtime delivers them, this refetch is a no-op (overwrites with same data).
-    uploadRefetchTimerRef.current = setTimeout(() => {
-      uploadRefetchTimerRef.current = null
-      // Merge instead of replace: Realtime may have delivered photos after the query was
-      // issued but before it resolves — a full replace would briefly remove them
-      // Through refreshIfChanged with force, rather than a bare fetch: forcing is right (an upload
-      // definitely changed something) but the bare call never updated seenFreshnessRef, so the
-      // uploader's very next probe disagreed with itself and pulled a full window for nothing.
-      void refreshIfChanged(albumId, r => {
-        // Null on failure — the uploader's own tiles are already on screen, so keeping them beats
-        // replacing them with nothing.
-        if (!shouldApplyRefresh(r)) return
-        // ALWAYS merges, unlike the refresh above, and that difference is deliberate: realtime may
-        // have delivered photos after this query was issued but before it resolved, and a replace
-        // would briefly remove the uploader's own tiles from under them.
-        setPhotos(prev => mergePreservingExtras(prev, r.photos))
-        setTotal(r.total)
-      }, { force: true })
-    }, 3000)
-  }, [album?.id, fetchPhotos])
+    if (!uploadAlbumId) return
+    uploadRefresh.request(() => runUploadRefresh(uploadAlbumId))
+  }, [uploadAlbumId, uploadRefresh, runUploadRefresh])
 
   const handlePhotoDeleted = useCallback((photoId: string) => {
     deletedIdsRef.current.set(photoId, monotonicNow())  // tombstone against racing refetch
@@ -1330,10 +1322,7 @@ export default function AlbumPageClient({ initialAlbum = null, initialPhotos, in
         <button
           type="button"
           onClick={() => {
-            if (uploadRefetchTimerRef.current) {
-              clearTimeout(uploadRefetchTimerRef.current)
-              uploadRefetchTimerRef.current = null
-            }
+            uploadRefresh.cancel()
             fetchGenRef.current++  // cancel any in-flight fetchAlbum before retrying
             setNetworkError(false)
             setLoading(true)
