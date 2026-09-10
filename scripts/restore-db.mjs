@@ -1,7 +1,10 @@
 // Restore rows from a backup written by scripts/backup-db.mjs.
 //
-// A backup nobody has ever restored is a guess, not a backup. This exists so the restore path is
-// something that has actually been run before the day it matters.
+// A backup nobody has ever restored is a guess, not a backup. The RULES of the restore live in
+// scripts/restore-core.mjs, which is exercised end to end against a real Postgres by
+// `npm run restore:rehearse` and by tests/restore-core.test.ts -- so the code that runs on the day
+// it matters is the code that has been run before. This file is the command around it: the
+// connection, the arguments, and what a human sees.
 //
 // SAFETY, because this is the script most capable of destroying the thing it protects:
 //   * DRY RUN BY DEFAULT. It reports what it would insert and writes nothing until --apply.
@@ -11,6 +14,8 @@
 //     are. Newer data is never overwritten by an older dump.
 //   * Values go through parameterised queries, so timestamps, arrays and jsonb round-trip through
 //     the driver instead of through escaping written by hand.
+//   * A column or table the schema has dropped since the backup is REPORTED and skipped, not a
+//     crash. The first rehearsal of this path died on `albums.media_hover` and restored nothing.
 //
 // This means the tool restores what is MISSING. Recovering from "a table was wrongly modified"
 // is a different operation and deliberately not automated here.
@@ -24,47 +29,22 @@ import fs from 'node:fs'
 import zlib from 'node:zlib'
 import pg from 'pg'
 import { connectionString } from './db-connection.mjs'
+import { applyRestore } from './restore-core.mjs'
 
 const args = process.argv.slice(2)
 const file = args.find(a => !a.startsWith('--'))
 const apply = args.includes('--apply')
-const only = args[args.indexOf('--table') + 1]
-const onlyTable = args.includes('--table') ? only : null
+const onlyTable = args.includes('--table') ? args[args.indexOf('--table') + 1] : null
 
 if (!file) {
   console.error('usage: node scripts/restore-db.mjs <backup.json.gz> [--apply] [--table <name>]')
   process.exit(1)
 }
 
-// Parents before children, so a foreign key never points at a row that has not been written yet.
-// Anything not named here is restored afterwards in whatever order it appears.
-const ORDER = ['albums', 'photos', 'subscriptions', 'error_events']
-
 const client = new pg.Client({
   connectionString: connectionString('restore'),
   ssl: { rejectUnauthorized: false },
 })
-
-const CHUNK = 200
-
-async function insertRows(table, rows) {
-  const cols = Object.keys(rows[0])
-  const quoted = cols.map(c => `"${c}"`).join(', ')
-  let written = 0
-  for (let i = 0; i < rows.length; i += CHUNK) {
-    const chunk = rows.slice(i, i + CHUNK)
-    const values = []
-    const placeholders = chunk.map((row, r) =>
-      `(${cols.map((c, k) => { values.push(row[c]); return `$${r * cols.length + k + 1}` }).join(', ')})`,
-    ).join(', ')
-    const res = await client.query(
-      `insert into "${table}" (${quoted}) values ${placeholders} on conflict do nothing`,
-      values,
-    )
-    written += res.rowCount
-  }
-  return written
-}
 
 async function main() {
   const dump = JSON.parse(zlib.gunzipSync(fs.readFileSync(file)).toString())
@@ -73,36 +53,26 @@ async function main() {
   console.log(apply ? '  MODE: APPLY (will write)' : '  MODE: dry run (writes nothing)\n')
 
   await client.connect()
+  const res = await applyRestore(client, dump, { apply, onlyTable })
 
-  const names = Object.keys(dump.tables)
-  const ordered = [...ORDER.filter(t => names.includes(t)), ...names.filter(t => !ORDER.includes(t))]
-
-  let totalWould = 0
-  let totalDid = 0
-  for (const table of ordered) {
-    if (onlyTable && table !== onlyTable) continue
-    const rows = dump.tables[table]
-    if (!rows?.length) continue
-
-    const { rows: [{ count }] } = await client.query(`select count(*)::int as count from "${table}"`)
-    const missing = rows.length - count
-    totalWould += Math.max(0, missing)
-
-    if (!apply) {
-      console.log(`  ${table.padEnd(26)} backup ${String(rows.length).padStart(6)} · live ${String(count).padStart(6)} · would insert up to ${Math.max(0, missing)}`)
-      continue
+  for (const s of res.skipped) {
+    console.log(`  ${s.table.padEnd(26)} SKIPPED — ${s.reason} (${s.rows} rows in the backup)`)
+  }
+  for (const t of res.tables) {
+    if (t.dropped?.length) {
+      console.log(`  ${t.table.padEnd(26)} columns the schema no longer has, dropped: ${t.dropped.join(', ')}`)
     }
-    const written = await insertRows(table, rows)
-    totalDid += written
-    console.log(`  ${table.padEnd(26)} inserted ${String(written).padStart(6)} (live was ${count})`)
+    console.log(apply
+      ? `  ${t.table.padEnd(26)} inserted ${String(t.written).padStart(6)} (live was ${t.live})`
+      : `  ${t.table.padEnd(26)} backup ${String(t.backup).padStart(6)} · live ${String(t.live).padStart(6)} · would insert up to ${t.would}`)
   }
 
   console.log(apply
-    ? `\n  done — ${totalDid.toLocaleString('en-US')} rows inserted, nothing deleted or overwritten.`
-    : `\n  dry run — up to ${totalWould.toLocaleString('en-US')} rows are missing live. Re-run with --apply to write them.`)
+    ? `\n  done — ${res.totalWritten.toLocaleString('en-US')} rows inserted, nothing deleted or overwritten.`
+    : `\n  dry run — up to ${res.totalWould.toLocaleString('en-US')} rows are missing live. Re-run with --apply to write them.`)
 
-  if (dump.authUsers?.length) {
-    console.log(`\n  NOTE: ${dump.authUsers.length} auth.users rows are in the backup for reference and were NOT restored.`)
+  if (res.authUsersInBackup) {
+    console.log(`\n  NOTE: ${res.authUsersInBackup} auth.users rows are in the backup for reference and were NOT restored.`)
     console.log('  Supabase owns that schema; recreating accounts is an auth operation, not a row copy.')
   }
 }

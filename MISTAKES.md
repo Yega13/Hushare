@@ -1200,3 +1200,25 @@ had been imagined -- and that is the point. Reverting to the old regex fails it 
 **Habit to build:** when a helper's contract is a property ("no comment survives"), assert the
 property over the real corpus, not examples. And a comment claiming "this case does not occur in
 this codebase" is a claim about the codebase: grep for it, or do not write it (rule 18).
+
+### 87. THE BACKUP THAT RESTORED NOTHING, AND THE ONLY WAY ANYONE WAS EVER GOING TO FIND OUT
+
+The restore script had been written carefully: dry run by default, insert only, ON CONFLICT DO
+NOTHING, parameterised values, and a header explaining that a backup nobody has restored is a
+guess. Every one of those claims was true. It had still never been run, and the first time it was,
+it died on its second table and wrote nothing: the 26 August dump carries `albums.media_hover`, a
+column dropped since, and Postgres refuses an INSERT naming a column that does not exist. Not a
+partial restore -- nothing. On the day it mattered, with the album gone, the recovery would have
+been a stack trace.
+
+Nothing in the code was wrong. The gap was that a schema moves and a backup does not, and no test
+could see that because the script connected to production the moment it was imported, so there was
+nowhere to run it. What found it was booting a real Postgres in-process, building the schema from a
+read-only snapshot of the live one, and restoring an actual dump into it -- twenty minutes of work
+that had been described as "half a day, blocked on nothing" for weeks.
+
+**Habit to build:** a recovery path is not written, it is REHEARSED, and the rehearsal has to use
+the real artefact against the real shape. "Insert-only and dry-run by default" is a description of
+intent; "11,166 rows restored and 553 fields compared" is evidence. Anything that can only be run
+against production has no test, and that is a reason to inject the client, not a reason to trust
+the code.

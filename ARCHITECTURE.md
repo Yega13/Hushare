@@ -180,9 +180,21 @@ Stated plainly, because a map that hides the swamps is not a map.
   so the whole run is closer to half an hour than ten minutes), but CI does not run it, so a test that quietly weakens is caught the next time
   somebody runs the set rather than at the push that weakened it. The older `lib` modules were
   tested before the practice existed and have no sets.
-- **A restore has not been rehearsed on record.** `scripts/restore-db.mjs` exists (insert-only,
-  dry-run by default) and the nightly backup is verified to upload; no run of a restore against a
-  real dump is recorded anywhere in the repository.
+- **The restore is rehearsed, and rehearsing it found the backup was not one.** `npm run
+  restore:rehearse` boots a real Postgres in-process, builds the schema from a read-only snapshot of
+  the live one (`tests/fixtures/live-schema.json`), restores an actual backup file into it and then
+  CHECKS the result: row counts against the dump, a field-by-field comparison of sampled rows so
+  arrays, jsonb and timestamps are proven to round-trip, a dry run that must write nothing, and a
+  second pass that must insert nothing. Recorded run, 2026-09-10: the 2026-08-26 backup, 11,166 rows,
+  1.8 s, 553 fields compared, passed.
+  THE FIRST RUN FAILED, which is the point of rehearsing: the dump carries `albums.media_hover`, a
+  column dropped since, and the restore died on it having written nothing at all -- a backup that
+  silently was not one, on exactly the day it would have mattered. The restore reconciles columns
+  now and names what it dropped. `scripts/restore-core.mjs` holds the rules with the client
+  injected, so the code that runs against production is the code the rehearsal and
+  `tests/restore-core.test.ts` (15 tests against a real Postgres, 14 mutations killed) exercise.
+  Still true and written into the script: it restores what is MISSING, and a row deliberately
+  deleted since the backup is missing too -- the dry run names those before `--apply` is typed.
 - **`lib` vs `lib/server` is a convention plus one test.** The boundary test protects the property
   that matters (no secret reaches a client bundle); it does not force server modules into
   `lib/server`, and several still sit in `lib`.
