@@ -164,12 +164,30 @@ describe('the pricing FAQ has a question and an answer for every number it count
 // Adding a gate now forces a decision: which plan advertises it, or explicitly nothing.
 // ─────────────────────────────────────────────────────────────────────────────────────────────────
 
-// Every way a gate is currently written. Two idioms exist — the refuseBelowTier/albumHasTier
-// helpers, and hand-rolled comparisons that predate them — and both must be found, because a gate
-// that this regex misses is a gate the test cannot protect.
+// EVERY WAY A GATE IS CURRENTLY WRITTEN -- and the list of ways is itself held, because it was
+// wrong. Until 2026-09-10 this was six hand-written regexes, and a review found two holes in them
+// at once: `requireTier(user, 'studio')` matched nothing, so api/collections gated four handlers
+// on Max while this file had never heard of the route; and the helper patterns used `[^)]*?`,
+// which cannot cross a nested parenthesis, so wall/[slug] -- written as
+// `albumHasTier({ id, user_id: (owner?.user_id as string | null) ?? null }, 'studio')` -- was in
+// the table only because somebody typed it there by hand. Neither cost a customer anything: both
+// routes happen to be gated at the tier their card sells. A safety net with holes in it is still
+// the finding.
+//
+// So the helpers are named once, patterns are built from the names, and the names are held against
+// the module that exports them: a fourth gate helper in lib/require-tier fails this file until
+// somebody decides what it is.
+const GATE_HELPERS = ['refuseBelowTier', 'albumHasTier', 'requireTier']
+
+// {0,300} rather than [^)]*: the tier argument can sit behind a nested call, an object literal or
+// a cast, and a character class that stops at the first ')' cannot reach it. Bounded so it cannot
+// wander into an unrelated call further down the file.
+const helperPattern = (name: string) =>
+  new RegExp(name + String.raw`\([\s\S]{0,300}?['"](pro|studio)['"]`, 'g')
+
 const GATE_PATTERNS = [
-  /refuseBelowTier\([^)]*?['"](pro|studio)['"]/g,
-  /albumHasTier\([^)]*?['"](pro|studio)['"]/g,
+  ...GATE_HELPERS.map(helperPattern),
+  // The hand-rolled comparisons that predate the helpers.
   /tier\s*===\s*['"]free['"]/g,
   /tier\s*!==\s*['"]studio['"]/g,
   /\)\)\s*!==\s*['"]studio['"]/g,
@@ -193,6 +211,10 @@ const GATED_ROUTES: Record<string, string | null> = {
   'api/album/face-finder/route.ts': 'plan.faceFinder',
   'api/album/face-search/route.ts': 'plan.faceFinder',
   'api/album/face-index/route.ts': 'plan.faceFinder',
+  // Four handlers, all requireTier(user, 'studio'). Gated on the ACCOUNT rather than the album,
+  // deliberately: a collection groups albums across an account, so a single-album package cannot
+  // open it (the same reason the toolbar reads collections_enabled).
+  'api/collections/route.ts': 'plan.collections',
   'wall/[slug]/page.tsx': 'plan.photoWall',
   'c/[slug]/page.tsx': 'plan.collections',
 }
@@ -226,10 +248,53 @@ describe('the plan lists track the gates the server actually enforces', () => {
     .filter((f) => GATE_PATTERNS.some((re) => { re.lastIndex = 0; return re.test(readFileSync(f, 'utf8')) }))
     .map((f) => f.slice(appDir.length + 1).split(sep).join('/'))
 
-  it('finds the gates at all', () => {
-    // A guard on the guard: if the patterns ever stop matching, every assertion below would pass
-    // vacuously while checking nothing — the same way the pricing-key regex once did.
-    expect(gatedFiles.length).toBeGreaterThanOrEqual(10)
+  it('finds every route the table already knows about', () => {
+    // A GUARD ON THE GUARD, and it points the way that lets a hole hide. If the patterns stop
+    // matching, every assertion below would pass vacuously while checking nothing -- the same way
+    // the pricing-key regex once did -- and an entry typed into GATED_ROUTES by hand keeps the
+    // file looking complete while the pattern that should have discovered that route finds
+    // nothing. That is exactly what wall/[slug] did for a year:
+    // `albumHasTier([^)]*?'studio')` cannot cross the nested parenthesis in its argument.
+    //
+    // This replaced a `gatedFiles.length >= 10` floor on 2026-09-10. A count is the weaker
+    // question -- it still passed at 12 while two of the fourteen real gates were missing -- and
+    // once the named check exists the floor cannot fail without this failing first. It was
+    // removed rather than kept as reassurance: a guard that cannot fire is worse than no guard,
+    // because it is believed.
+    for (const route of Object.keys(GATED_ROUTES)) {
+      expect(gatedFiles, `${route} is in the table but no GATE_PATTERN finds it any more`).toContain(route)
+    }
+  })
+
+  it('knows every gate HELPER, so a new one cannot be invisible', () => {
+    // The hole this closes: requireTier existed, gated four handlers on Max, and was in none of
+    // the patterns. A helper the patterns do not name finds nothing and reports nothing.
+    const requireTierSrc = readFileSync(join(process.cwd(), 'src', 'lib', 'require-tier.ts'), 'utf8')
+    const exported = [...requireTierSrc.matchAll(/export async function (\w+)/g)].map((m) => m[1])
+    expect(exported.length, 'lib/require-tier must export the helpers it is named for').toBeGreaterThan(0)
+    for (const name of exported) {
+      expect(GATE_HELPERS, `${name} is exported from lib/require-tier but no pattern looks for it`).toContain(name)
+    }
+    // requireTier lives in lib/subscriptions rather than lib/require-tier, so it is named here
+    // explicitly and pinned to its real home.
+    expect(readFileSync(join(process.cwd(), 'src', 'lib', 'subscriptions.ts'), 'utf8'))
+      .toContain('export async function requireTier')
+  })
+
+  it('every helper pattern can actually match the call it is written for', () => {
+    // A pattern that matches nothing looks exactly like a codebase with no gates. Each is tried
+    // against the shape it exists to find, INCLUDING the nested-parenthesis one that defeated the
+    // old [^)]*? patterns for a year.
+    const samples: Record<string, string> = {
+      refuseBelowTier: "await refuseBelowTier(access.album, 'studio', 'Bib number search')",
+      requireTier: "const gate = await requireTier(user, 'studio')",
+      albumHasTier: "albumHasTier({ id: a.id, user_id: (owner?.user_id as string | null) ?? null }, 'studio')",
+    }
+    for (const name of GATE_HELPERS) {
+      const re = helperPattern(name)
+      re.lastIndex = 0
+      expect(re.test(samples[name]), `the ${name} pattern does not match a real ${name} call`).toBe(true)
+    }
   })
 
   it('knows about every gated route in src/app', () => {

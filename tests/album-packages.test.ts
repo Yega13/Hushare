@@ -67,7 +67,15 @@ describe('albumCap — a package raises the item allowance and never lowers it',
     // number is rule 13 exactly -- the day the package is repriced, the checkout charges for one
     // allowance and the album enforces the other, and nothing throws. So this reads the source.
     const src = readFileSync(join(process.cwd(), 'src', 'lib', 'album-entitlements.ts'), 'utf8')
-    const table = src.slice(src.indexOf('const PACKAGE_ITEMS_BY_TIER'), src.indexOf('// HOW MANY ITEMS'))
+    const from = src.indexOf('const PACKAGE_ITEMS_BY_TIER')
+    const to = src.indexOf('// HOW MANY ITEMS')
+    // Both anchors must be there and in this order, said before the slice is read. A missing
+    // anchor is -1 and a reordered file inverts the pair; String.slice answers '' to both rather
+    // than throwing, so without this the failure arrives further down as "a digit in this table",
+    // which names the wrong cause and sends the next person to the wrong file.
+    expect(from, 'the item table anchor is gone -- did the table move or get renamed?').toBeGreaterThan(-1)
+    expect(to, 'the comment that ends the table is gone').toBeGreaterThan(from)
+    const table = src.slice(from, to)
     expect(table, 'the per-tier item table must exist').toContain('pro:')
     expect(table).toContain('PACKAGE_CATALOGUE.package_pro.items')
     expect(table).toContain('PACKAGE_CATALOGUE.package_max.items')
