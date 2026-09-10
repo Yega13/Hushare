@@ -44,6 +44,7 @@ const REQUIRED_COLUMNS = {
 const REQUIRED_FUNCTIONS = [
   'album_is_open', 'set_updated_at', 'prune_rate_limit_events',
   'admin_growth_series', 'admin_user_cohorts', 'admin_user_overview', 'admin_weekday_series',
+  'album_bib_tallies',
   'album_video_seconds', 'batch_set_sort_order', 'coalesce_error_event', 'find_user_id_by_email',
   'prune_error_events', 'rate_limit_hit', 'reserve_album_video',
 ]

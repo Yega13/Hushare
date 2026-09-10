@@ -650,6 +650,13 @@ export type Database = {
         }
         Returns: { dow: number; albums: number; uploads: number }[]
       }
+      album_bib_tallies: {
+        Args: {
+        p_album_id: string | null
+        p_limit?: number | null
+        }
+        Returns: { number: string; photos: number }[]
+      }
       album_is_open: {
         Args: {
         p_album_id: string | null

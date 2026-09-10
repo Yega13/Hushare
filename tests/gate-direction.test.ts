@@ -23,6 +23,11 @@ const OFF_SWITCH_GUARDS: Record<string, RegExp> = {
   'api/album/logo/route.ts': /if \(value !== null\) \{[\s\S]{0,200}?refuseBelowTier/,
   'api/album/sponsors/route.ts': /if \(addsSomething\) \{[\s\S]{0,200}?refuseBelowTier/,
   'api/album/bib-search/route.ts': /if \(enabled\) \{[\s\S]{0,200}?refuseBelowTier/,
+  // Adding a number to the signage list uses the paid feature; REMOVING one must always work. The
+  // asymmetry matters more here than anywhere else on this list: a wrong exclusion hides a runner's
+  // own photographs from them, and they never learn to complain, so an owner who has left the plan
+  // must still be able to undo it.
+  'api/album/bib-exclusions/route.ts': /if \(addsSomething\) \{[\s\S]{0,200}?refuseBelowTier/,
   'api/album/custom-url/route.ts': /if \(newCustomSlug !== null\) \{[\s\S]{0,300}?refuseBelowTier/,
   'api/album/face-finder/route.ts': /if \(enabled\) \{[\s\S]{0,200}?refuseBelowTier/,
   'api/album/branding/route.ts': /if \(hide\) \{[\s\S]{0,300}?refuseBelowTier/,
