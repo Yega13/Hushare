@@ -169,8 +169,13 @@ for (const name of names) {
     rmSync(SENTINEL, { force: true })
     rmSync(BACKUP, { force: true })
   }
-  // Every signal that can reach a node process here, not just the one a person types. SIGKILL and a
-  // power cut cannot be caught at all, which is why the sentinel on disk exists as well.
+  // Every signal that can reach a node process here, not just the one a person types.
+  //
+  // MEASURED, NOT ASSUMED: on Windows these handlers cover much less than they appear to.
+  // `process.kill(pid, 'SIGTERM')` maps to TerminateProcess, which is not catchable -- tried on
+  // 2026-09-10 against a real run, and the handler did not fire. The file was left mutated and only
+  // the sentinel below brought it back. So the handlers are the tidy path, and the sentinel is the
+  // one that actually holds.
   for (const sig of ['SIGINT', 'SIGTERM', 'SIGHUP', 'SIGBREAK']) {
     process.once(sig, () => { restore(); process.exit(130) })
   }

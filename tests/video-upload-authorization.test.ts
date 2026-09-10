@@ -140,6 +140,7 @@ vi.mock('@/lib/report-server-error', () => ({
 
 import { authorizeVideoUpload } from '@/lib/server/video-upload-authorization'
 import { videoCaps, videoAlbumFullMessage } from '@/lib/album-entitlements'
+import { uploadCapsForTier } from '@/lib/media'
 import { resolveMaxDurationSeconds } from '@/lib/stream-duration'
 import { isExpectedRefusal, verdictForResponse } from '@/lib/upload-policy'
 
@@ -506,5 +507,70 @@ describe('the budget the caller books against is the album own ceiling', () => {
     expect(res.budgetSeconds).toBe(videoCaps('studio').maxTotalSeconds)
     expect(res.budgetSeconds).toBe(3000)
     expect(res.budgetSeconds).toBeGreaterThan(videoCaps('free').maxTotalSeconds)
+  })
+})
+
+
+// ── WHAT THE ORDER AND THE TYPE CHECK BUY ────────────────────────────────────────────────────────
+//
+// Added 2026-09-11 after a mutation run. Three mutations survived the whole file, and each one is
+// invisible in the allowed/refused answer the tests were reading.
+
+describe('the absolute ceiling earns its place by running FIRST', () => {
+  it('refuses an absurd size before it costs a database lookup', async () => {
+    // The ceiling equals the highest tier cap, so it can never refuse anything the per-tier check
+    // would allow -- deleting it changes no verdict, which is why removing it survived. What it
+    // still does is refuse EARLY, which the per-tier check cannot: that one runs after the album
+    // lookup, the gate, the rate limiter and the subscription lookup.
+    //
+    // Asserted by making the album lookup fatal: size-first gives 413, album-first gives 404.
+    cfg.album = null
+    const res = await authorizeVideoUpload(req({ fileSize: 40 * 1024 * 1024 * 1024 }))
+    expect(res.ok).toBe(false)
+    if (!res.ok) expect(res.response.status, 'size must be refused before the album is looked up').toBe(413)
+  })
+
+  it('and the ceiling is the highest tier cap, not a number typed beside it', async () => {
+    // A hand-typed ceiling drifts: raise a tier cap and it silently starts refusing uploads a
+    // paying customer was sold. Asserted through behaviour -- a Max album must accept exactly its
+    // own cap -- rather than by importing the constant, which would assert nothing.
+    cfg.album = { ...OK_ALBUM, user_id: 'user-1' }
+    cfg.tier = 'studio'
+    const res = await authorizeVideoUpload(req({ fileSize: uploadCapsForTier('studio').video }))
+    expect(res.ok, 'the highest tier must be able to upload exactly its own cap').toBe(true)
+  })
+})
+
+describe('the type check is case-insensitive, because phones are not', () => {
+  it('accepts what a camera roll actually sends', async () => {
+    for (const contentType of ['video/MP4', 'VIDEO/QUICKTIME', 'Video/Mp4']) {
+      const res = await authorizeVideoUpload(req({ contentType }))
+      expect(res.ok, `${contentType} must be accepted`).toBe(true)
+    }
+  })
+})
+
+describe('the ceiling handed back for the atomic booking is the ALBUM budget', () => {
+  it('a package raises it, not just the owner plan', async () => {
+    // budgetSeconds is what reserve_album_video re-checks inside its lock. Re-deriving it from the
+    // OWNER's tier would let a Max Package album on a free account book against the free pool --
+    // the album is sold 50 minutes and the booking refuses it at 10.
+    const soon = new Date(Date.now() + 86_400_000).toISOString()
+    cfg.tier = 'free'
+    cfg.album = { ...OK_ALBUM, user_id: 'user-1', package_tier: 'studio', package_expires_at: soon }
+    const res = await authorizeVideoUpload(req())
+    expect(res.ok).toBe(true)
+    if (!res.ok) return
+    expect(res.budgetSeconds, 'the booking must be measured against the album, not the account')
+      .toBe(videoCaps('studio').maxTotalSeconds)
+    expect(res.budgetSeconds).not.toBe(videoCaps('free').maxTotalSeconds)
+  })
+
+  it('and matches the pool the refusal message quotes, so the two cannot disagree', async () => {
+    cfg.tier = 'pro'
+    cfg.album = { ...OK_ALBUM, user_id: 'user-1' }
+    const res = await authorizeVideoUpload(req())
+    expect(res.ok).toBe(true)
+    if (res.ok) expect(res.budgetSeconds).toBe(videoCaps('pro').maxTotalSeconds)
   })
 })

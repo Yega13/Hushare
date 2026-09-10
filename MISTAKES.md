@@ -1528,7 +1528,16 @@ A recovery that invents survivors is worse than no recovery at all. A survivor i
 finding costs an afternoon -- rule 12b says exactly this about review agents and it is just as true
 of tooling.
 
+A third thing was assumed rather than measured, and it is the reason the note on disk is not
+belt-and-braces but the whole mechanism. I added handlers for SIGTERM, SIGHUP and SIGBREAK on the
+theory that the first mistake was only about SIGINT. Later the same evening I had to stop another
+run and did it with `process.kill(pid, 'SIGTERM')` -- and the file was left mutated again. On
+Windows that call maps to TerminateProcess, which is not catchable; the handler never ran. The
+recovery note is what brought the file back, in a real incident, ten minutes after being written.
+
 **Habit to build:** anything that writes to a shared working tree names its file after its own
-process, and checks whether the owner of a foreign file is still alive before touching it. And a
-flag a tool does not recognise is an error, not something to filter out and carry on: "unknown
-argument" would have cost nothing, and silently running the whole suite cost a mutant on disk.
+process, and checks whether the owner of a foreign file is still alive before touching it. A flag a
+tool does not recognise is an error, not something to filter out and carry on: "unknown argument"
+would have cost nothing, and silently running the whole suite cost a mutant on disk. And a cleanup
+path that depends on a signal handler is a hope, not a guarantee -- write down what you are about to
+do before you do it, so the next run can finish the job.

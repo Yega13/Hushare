@@ -68,8 +68,9 @@ export type VideoUploadAuthResult =
 export async function authorizeVideoUpload(
   params: { albumId: string; contentType: string; fileSize: number; durationSeconds: unknown },
 ): Promise<VideoUploadAuthResult> {
-  const normalizedType = params.contentType.toLowerCase()
-  if (!isAllowedVideo(normalizedType)) {
+  // As in the image path: isAllowedVideo lowercases its own argument, so normalising here first
+  // is a line that cannot change an answer.
+  if (!isAllowedVideo(params.contentType)) {
     return { ok: false, response: NextResponse.json({ error: 'File type not allowed' }, { status: 415, headers: NO_STORE }) }
   }
 

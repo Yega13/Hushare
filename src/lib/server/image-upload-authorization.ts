@@ -55,8 +55,10 @@ export async function authorizeImageUpload(
   // by the relay's size-limit stream, which is the only measurement that was ever authoritative.
   params: { albumId: string; contentType: string; fileSize: number | null },
 ): Promise<ImageUploadAuthResult> {
-  const normalizedType = params.contentType.toLowerCase()
-  if (!isAllowedImage(normalizedType)) {
+  // Not lowercased first: isAllowedImage does that itself, and a second normalisation in front of
+  // it cannot change an answer. It was here, it looked like the case-insensitivity guard, and
+  // deleting it changed no test -- which is the shape that makes a real guard look optional.
+  if (!isAllowedImage(params.contentType)) {
     return { ok: false, response: NextResponse.json({ error: 'File type not allowed' }, { status: 415, headers: NO_STORE }) }
   }
   if (params.fileSize !== null && params.fileSize > MAX_FILESIZE_HARD_CAP) {

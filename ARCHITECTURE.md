@@ -131,6 +131,14 @@ The loop in AGENTS.md rule 27, and it is not shortened for small changes to cust
    runs the module's tests, restores the file, and reports KILLED or SURVIVED. A survivor is either
    a missing test or — as often — code that cannot execute, which is then deleted with its reason
    written in its place. New modules arrive with a set -- a convention today, not an enforced rule.
+
+   The runner restores the file in a `finally`, on every catchable signal, and from a note it
+   writes to disk BEFORE touching the file, so a run that is killed outright is repaired by the
+   next one. Two sessions share this checkout, so the note carries its pid: a note whose process is
+   still alive is left strictly alone, and a set refuses to start on a file another live run holds.
+   `scripts/mutations/select.mjs` decides which sets a given invocation runs, and
+   `tests/mutation-runner.test.ts` holds both of those, because a shard that selects nothing and a
+   recovery that restores the wrong thing are both silent successes.
 3. One to three agents whose only job is to break the change, briefed to be fair (rule 12b): every
    finding carries a reproducible path, and the report ends with what was checked and found sound.
 4. A different agent plans the fix. The loop repeats.
@@ -180,11 +188,16 @@ Stated plainly, because a map that hides the swamps is not a map.
   the types drift check run when `SUPABASE_DB_URL` is set in CI -- it is (verified in the
   2026-09-07 deploy log: "matches the live database") -- but a missing or rotated secret turns
   all three into a `::warning` and the deploy proceeds.
-- **Mutation runs are on demand, not a gate.** `npm run mutate` reproduces every recorded result
-  (275 mutations across twenty sets on 2026-09-09; the component sets run jsdom once per mutant,
-  so the whole run is closer to half an hour than ten minutes), but CI does not run it, so a test that quietly weakens is caught the next time
-  somebody runs the set rather than at the push that weakened it. The older `lib` modules were
-  tested before the practice existed and have no sets.
+- **Mutation runs are weekly, not a gate — deliberately.** `.github/workflows/mutations.yml` runs
+  the whole suite every Monday, sharded six ways (`--shard k/6`), and fails if any mutation survives
+  or if the working tree is dirty afterwards. It is not on the deploy path: each mutation runs a
+  real vitest, so a full pass is over an hour even sharded, and a gate nobody waits for is a gate
+  somebody disables. What that costs is a week's latency on a test that quietly weakens. As of
+  2026-09-11 the suite is 822 mutations across 53 sets; before 2026-09-10 nothing re-ran any of
+  them at all. The older `lib` modules are being given sets in order of what a customer loses when
+  they are wrong — the plan table, the upload policy, the entitlement maths, the album password, the
+  owner gate and both upload-authorization modules have them now; `lib/server/album-access.ts` (772
+  lines), `polar.ts` and the package-reconcile path do not yet.
 - **The restore is rehearsed, and rehearsing it found the backup was not one -- twice.** `npm run
   restore:rehearse` boots a real Postgres in-process, builds it from `schema.sql` (the file a
   recovery actually runs, generated from the live database and guarded against drift by the deploy),

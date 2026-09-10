@@ -116,7 +116,7 @@ vi.mock('@/lib/server/album-access', async (orig) => {
 })
 vi.mock('@/lib/report-server-error', () => ({ reportServerError: () => {} }))
 
-import { authorizeImageUpload } from '@/lib/server/image-upload-authorization'
+import { authorizeImageUpload, deriveImageKey } from '@/lib/server/image-upload-authorization'
 import { uploadCapsForTier } from '@/lib/media'
 
 const ALBUM_ID = '11111111-2222-3333-4444-555555555555'
@@ -328,11 +328,15 @@ describe('the limits that stop one album writing bytes nobody can find', () => {
     expect(res.response.headers.get('Retry-After')).toBe('60')
   })
 
-  it('429s a hammered ALBUM', async () => {
+  it('429s a hammered ALBUM, WITH a Retry-After', async () => {
+    // The IP refusal was checked for its Retry-After and this one was not, so dropping the header
+    // here survived. A 429 with nothing to wait for is a client hammering the same refusal.
     cfg.albumRlOk = false
     const res = await authorizeImageUpload(req, params())
     expect(res.ok).toBe(false)
-    if (!res.ok) expect(res.response.status).toBe(429)
+    if (res.ok) return
+    expect(res.response.status).toBe(429)
+    expect(res.response.headers.get('Retry-After'), 'a 429 must say how long to wait').toBe('60')
   })
 
   it('checks the IP limit BEFORE looking anything up', async () => {
@@ -402,5 +406,131 @@ describe('the signed-in owner is recognized on a device with no owner cookie', (
   it('gates the album it was asked about', async () => {
     await authorizeImageUpload(req, params())
     expect(cfg.gateCalls[0].albumId).toBe(ALBUM_ID)
+  })
+})
+
+
+// ── WHAT THE BUDGET IS SIZED FROM ────────────────────────────────────────────────────────────────
+//
+// Added 2026-09-10 after a mutation run. The test above proves the per-album budget is DERIVED
+// rather than flat; it could not see what it is derived from. Four mutations survived it, and each
+// one is a different way for an album to be handed a bigger hourly ceiling than it can ever fill --
+// which is bytes in R2 that no database row will ever reference, no deletion path can find, and no
+// audit can reconcile. The bill is permanent.
+
+const albumBudget = async (album: Record<string, unknown>): Promise<number> => {
+  cfg.album = { ...OK_ALBUM, ...album }
+  cfg.rateLimitCalls = []
+  await authorizeImageUpload(req, params())
+  const call = cfg.rateLimitCalls.find((c) => String(c[0]).startsWith('presign_album:'))
+  expect(call, 'the per-album limiter must be consulted').toBeDefined()
+  return call?.[2] as number
+}
+
+describe('the per-album presign budget follows what THIS album could still legitimately hold', () => {
+  it('an ANONYMOUS album is not sized as a free ACCOUNT', async () => {
+    // The module's own comment records this as a shipped bug: getUserTierById(null) answers 'free'
+    // rather than throwing, so passing the tier straight through told albumCap that an anonymous
+    // album was a free-account album -- 500 items instead of 250, or 1,000 once the free
+    // grandfathering applied. Every anonymous album alive predates that date, so it doubled the
+    // hourly presign budget for all of them.
+    cfg.tier = 'free'
+    const anon = await albumBudget({ user_id: null })
+    const registered = await albumBudget({ user_id: 'user-1' })
+    expect(anon, 'a guest album holds fewer items, so it may presign fewer').toBeLessThan(registered)
+  })
+
+  it('a hand-set override raises it', async () => {
+    const ordinary = await albumBudget({ user_id: 'user-1', media_cap_override: null })
+    const lifted = await albumBudget({ user_id: 'user-1', media_cap_override: 9000 })
+    expect(lifted, 'an album deliberately given more room may presign more').toBeGreaterThan(ordinary)
+  })
+
+  it('a GRANDFATHERED album is sized by the ceiling it was promised', async () => {
+    // The budget and the hard block in photos/create must agree about the cap. They used to
+    // disagree: this path read `override ?? tierCap` with no grandfathering at all, so an old
+    // album's budget was computed from a smaller cap than the one enforced a moment later.
+    cfg.tier = 'free'
+    const today = await albumBudget({ user_id: 'user-1', created_at: '2026-09-01T00:00:00.000Z' })
+    const old = await albumBudget({ user_id: 'user-1', created_at: '2026-07-01T00:00:00.000Z' })
+    expect(old, 'an album promised 1,000 items may presign for 1,000').toBeGreaterThan(today)
+  })
+
+  it('a LIVE package raises it, and an expired one does not', async () => {
+    const soon = new Date(Date.now() + 86_400_000).toISOString()
+    const past = new Date(Date.now() - 86_400_000).toISOString()
+    cfg.tier = 'free'
+    const none = await albumBudget({ user_id: 'user-1' })
+    const bought = await albumBudget({ user_id: 'user-1', package_tier: 'studio', package_expires_at: soon })
+    const lapsed = await albumBudget({ user_id: 'user-1', package_tier: 'studio', package_expires_at: past })
+    expect(bought, 'a Max Package album holds 10,000 items and must be able to fill them').toBeGreaterThan(none)
+    expect(lapsed, 'an expired package buys nothing').toBe(none)
+  })
+})
+
+describe('the content type is normalised before it is judged', () => {
+  it('accepts what a phone actually sends, whatever its case', async () => {
+    // A camera roll upload can arrive as image/JPEG or image/HEIC. Judging the raw string refuses
+    // it as "File type not allowed" -- a guest at an event, with an ordinary photo, told no.
+    for (const contentType of ['image/JPEG', 'IMAGE/PNG', 'Image/Heic']) {
+      const res = await authorizeImageUpload(req, params({ contentType }))
+      expect(res.ok, `${contentType} must be accepted`).toBe(true)
+    }
+  })
+})
+
+// ── THE STORAGE KEY ──────────────────────────────────────────────────────────────────────────────
+//
+// deriveImageKey had no test of any kind, and four mutations of it survived the whole suite. It is
+// the entire cross-album-injection defence on this path: the key is server-generated, so there is
+// nothing to allowlist because there is nothing client-controlled to allow. Take that away and a
+// filename decides where in R2 the bytes land.
+
+describe('deriveImageKey never lets the client choose where bytes go', () => {
+  const ALBUM_B = '99999999-8888-7777-6666-555555555555'
+
+  it('ignores the filename entirely, hostile or not', () => {
+    // Distinctive stems, so "does the key contain any of this" is a real question rather than a
+    // letter that happens to appear in the word "albums".
+    const hostile = ['../../qzqz/wrecker.jpg', 'nested/deeper/marker.jpg', 'trailer.jpg?x=1', '.envfile']
+    for (const fileName of hostile) {
+      const { key } = deriveImageKey(ALBUM_ID, 'image/jpeg', fileName, false)
+      expect(key.startsWith(`albums/${ALBUM_ID}/`), `${fileName} escaped its album`).toBe(true)
+      for (const stem of ['qzqz', 'wrecker', 'nested', 'deeper', 'marker', 'trailer', 'envfile', '..']) {
+        expect(key, `${stem} from the client name reached the key`).not.toContain(stem)
+      }
+      expect(key.split('/').length, 'exactly albums/<id>/<name>').toBe(3)
+    }
+  })
+
+  it('scopes every key to the album it was called for', () => {
+    const a = deriveImageKey(ALBUM_ID, 'image/jpeg', 'p.jpg', false).key
+    const b = deriveImageKey(ALBUM_B, 'image/jpeg', 'p.jpg', false).key
+    expect(a).toContain(ALBUM_ID)
+    expect(b).toContain(ALBUM_B)
+    expect(a, 'two albums must never share a prefix').not.toBe(b)
+  })
+
+  it('never repeats a key, so one upload cannot overwrite another', () => {
+    const keys = new Set(Array.from({ length: 200 }, () => deriveImageKey(ALBUM_ID, 'image/jpeg', 'same.jpg', false).key))
+    expect(keys.size, 'the same filename twice must not collide').toBe(200)
+  })
+
+  it('takes the extension from the MIME type, not from the name', () => {
+    // The name is attacker-controlled and the type has already been checked against the allowed
+    // list. Trusting the name puts .html or .svg into a bucket served over HTTP.
+    expect(deriveImageKey(ALBUM_ID, 'image/jpeg', 'evil.svg', false).key.endsWith('.jpg')).toBe(true)
+    expect(deriveImageKey(ALBUM_ID, 'image/png', 'evil.html', false).key.endsWith('.png')).toBe(true)
+  })
+
+  it('a thumbnail is always a JPEG, in its own prefix, whatever came in', () => {
+    const { key, finalContentType } = deriveImageKey(ALBUM_ID, 'image/png', 'x.png', true)
+    expect(key.startsWith(`thumbs/${ALBUM_ID}/`)).toBe(true)
+    expect(key.endsWith('.jpg')).toBe(true)
+    expect(finalContentType, 'the thumbnail pipeline writes JPEG; the stored type must say so').toBe('image/jpeg')
+  })
+
+  it('a full-size upload keeps its own type, normalised', () => {
+    expect(deriveImageKey(ALBUM_ID, 'image/PNG', 'x.png', false).finalContentType).toBe('image/png')
   })
 })
