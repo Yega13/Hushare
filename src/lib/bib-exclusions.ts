@@ -24,7 +24,13 @@
 // it is being rebuilt. That is the same choice the bib range already made, for the same reason.
 
 /** One number and how many photographs of this album it was read on. */
-export type NumberTally = { number: string; photos: number }
+export type NumberTally = {
+  number: string
+  photos: number
+  /** One photograph the number was read on -- the thing that makes the question answerable at a
+   *  glance instead of from a bare number. Null on a legacy row with no thumbnail. */
+  sampleThumb?: string | null
+}
 
 /**
  * How many photographs a number must appear on before it is worth asking about.

@@ -62,7 +62,9 @@ export async function GET(req: Request) {
   const excluded = access.album.bib_excluded_numbers ?? []
   // COUNTED in SQL, RANKED in lib. The database returns raw tallies and nothing else; which of them
   // are worth putting in front of a person is a decision, and it lives with its tests.
-  const tallies: NumberTally[] = (data ?? []).map((r) => ({ number: r.number, photos: Number(r.photos) }))
+  const tallies: NumberTally[] = (data ?? []).map((r) => ({
+    number: r.number, photos: Number(r.photos), sampleThumb: r.sample_thumb,
+  }))
   return NextResponse.json(
     { candidates: exclusionCandidates(tallies, excluded), excluded },
     { headers: NO_STORE },

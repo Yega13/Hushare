@@ -655,7 +655,7 @@ export type Database = {
         p_album_id: string | null
         p_limit?: number | null
         }
-        Returns: { number: string; photos: number }[]
+        Returns: { number: string; photos: number; sample_thumb: string }[]
       }
       album_is_open: {
         Args: {

@@ -144,7 +144,7 @@ export default function FilesSection({ album, photos, albumPhotoCount, zip, user
             />
             {/* Only once the album is a race album: the list is built from numbers OCR has already
                 read, so before the switch is on there is nothing to offer. */}
-            {album.bib_search_enabled && <BibExclusionsSection album={album} />}
+            {album.bib_search_enabled && <BibExclusionsSection album={album} albumPhotoCount={albumPhotoCount} />}
           </div>
         )}
       </section>

@@ -1,3 +1,4 @@
+import type { NumberTally } from '@/lib/bib-exclusions'
 import type { CollectionSummary } from '@/components/owner-toolbar/types'
 import type { MediaDisplayFilter, MobileGridColumns, SlideshowAnimation } from '@/lib/media-display'
 import type { SponsorLogo, SlideshowMotion } from '@/types'
@@ -703,8 +704,11 @@ export async function saveBibSearchRequest(
 // THE OWNER'S SIGNAGE LIST. GET offers the album's most-seen numbers with their photo counts,
 // already ranked and already filtered of what is excluded -- lib/bib-exclusions owns that decision
 // and has tests, so nothing here re-sorts or re-filters.
+// THE SHAPE COMES FROM lib/bib-exclusions, not a second copy of it here. It was written out again
+// -- {number, photos} -- and the moment the tally gained a sample thumbnail the two disagreed and
+// the panel could not read a field the server was already sending (rule 13).
 export type BibExclusionsView = {
-  candidates: Array<{ number: string; photos: number }>
+  candidates: NumberTally[]
   excluded: string[]
 }
 
