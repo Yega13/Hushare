@@ -256,17 +256,30 @@ describe('the owner toolbar reads the same table as the server, through lib/owne
 describe('the admin page selects what its filters read', () => {
   const page = readFileSync(join(process.cwd(), 'src', 'app', 'admin', 'page.tsx'), 'utf8')
 
-  it('the subscriptions query includes polar_product_id', () => {
+  // THE RULE ITSELF MOVED. It is lib/admin-subscription-rows now, behind real unit tests -- which
+  // is what the second version of this bug proved was needed: the page asked whether
+  // polar_product_id started with "comp-", the comp SCRIPT writes the bare string "comp", and two
+  // live gifts were counted as revenue. A source scan cannot catch a wrong comparison; a test that
+  // runs the function can. What is left HERE is the half a unit test can never see -- whether the
+  // query hands that function the columns it reads.
+  it('the subscriptions query selects every column the split reads', () => {
     const m = /from\('subscriptions'\)\.select\('([^']*user_id[^']*)'\)/.exec(page)
     expect(m, 'the row-level subscriptions select must exist').not.toBeNull()
-    expect((m as RegExpExecArray)[1].includes('polar_product_id'),
-      'isHouseAccount filters on polar_product_id — dropping it from the select turns comp rows into revenue, silently').toBe(true)
+    const selected = (m as RegExpExecArray)[1]
+    for (const column of ['polar_product_id', 'polar_subscription_id']) {
+      expect(selected.includes(column),
+        `the split reads ${column} — dropping it from the select turns comp rows into revenue, silently`).toBe(true)
+    }
+    expect(selected.includes('id,'),
+      'a row is removed by its own primary key; without id the remove button cannot be rendered').toBe(true)
   })
 
-  it('the house section is built from people, not only from subscription rows', () => {
-    // An admin's Max comes from code, so an admin with no row must still appear.
-    expect(page.includes('for (const u of allUsers)'), 'admins without rows must be listed').toBe(true)
-    expect(page.includes("'admin · comped'"), 'an admin who also holds a comp row shows once, labelled with both').toBe(true)
+  it('the page delegates the split rather than deciding it inline again', () => {
+    // Both halves, because keeping either one inline is how the two definitions drifted apart.
+    expect(page.includes('splitSubscriptions('), 'who is revenue is decided in lib').toBe(true)
+    expect(page.includes('houseAccountRows('), 'who appears in the house table is decided in lib').toBe(true)
+    expect(page.includes("startsWith('comp-')"),
+      'the comp test must not be re-inlined here — that literal IS the bug').toBe(false)
   })
 })
 

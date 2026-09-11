@@ -73,7 +73,11 @@ const SIZE_BUDGET: Record<string, number> = {
   // +1 (2026-09-04): one import line. The bucket name moved to r2BucketName() in lib/server, so
   // this page stops carrying its own copy of `R2_BUCKET_NAME ?? 'hushare-media'`. A line of import
   // bought the deletion of a duplicated fact, which is the trade this budget is meant to permit.
-  'src/app/admin/page.tsx': 894,
+  // 894 -> 901: a gift mark and a per-row remove button in both subscription tables. The rule
+  // behind them -- who is revenue and who is us -- moved OUT to lib/admin-subscription-rows and
+  // lib/subscription-origin in the same commit, where it got the tests that would have caught it
+  // being wrong for as long as it was.
+  'src/app/admin/page.tsx': 901,
   // +4 on 2026-08-30: FILE_ACCEPT stopped being a fourth hand-written copy of the accepted
   // MIME types and now builds from lib/media. An import and a comment cost four lines here
   // and removed a list that had already fallen two formats behind. Deliberate.

@@ -7,6 +7,8 @@ import type { Metadata } from 'next'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { isAccountAdmin } from '@/lib/auth'
+import { houseAccountRows, splitSubscriptions, type SubscriptionRow } from '@/lib/admin-subscription-rows'
+import AdminDeleteSubButton from '@/components/AdminDeleteSubButton'
 import AdminRefreshButton from '@/components/AdminRefreshButton'
 import AdminErrorTabs from '@/components/AdminErrorTabs'
 import AdminTestAlertButton from '@/components/AdminTestAlertButton'
@@ -139,7 +141,11 @@ export default async function AdminPage() {
     admin.from('subscriptions').select('id', { count: 'exact', head: true }).eq('status', 'active'),
     admin.from('albums').select('id, slug, custom_slug, title, user_id, created_at, retired_at')
       .order('created_at', { ascending: false }).limit(300),
-    admin.from('subscriptions').select('user_id, tier, status, current_period_end, polar_product_id, created_at')
+    // id, because a row is removed by its own primary key -- a person can hold two. And
+    // polar_subscription_id, because it is the marker BOTH comp writers set, where the product id
+    // carries it in two different shapes. This select is where the last version of this bug lived:
+    // polar_product_id was missing, and a filter on an unselected column is a filter on undefined.
+    admin.from('subscriptions').select('id, user_id, tier, status, current_period_end, polar_subscription_id, polar_product_id, created_at')
       .order('created_at', { ascending: false }).limit(200),
     getStreamUsage(),
     getR2Usage(),
@@ -258,48 +264,17 @@ export default async function AdminPage() {
     admin.rpc('admin_user_cohorts', { p_months: 6 }),
   ])
 
-  // WHO IS ACTUALLY PAYING, AND WHO IS US.
+  // WHO IS ACTUALLY PAYING, AND WHO IS US -- decided in lib, where it has tests.
   //
-  // Admin accounts resolve to Max in code (see computeUserTier) and some also carry a comped row,
-  // so both sat in the Subscriptions table looking exactly like revenue. A dashboard that counts
-  // its own operators as customers is worse than no dashboard: every number built on it is wrong in
-  // the flattering direction.
-  //
-  // Two signals, because either alone misses a case: a comp row is by definition not revenue, and
-  // an admin is not a customer even without one.
-  const isHouseAccount = (userId: string | null | undefined, productId: string | null | undefined): boolean => {
-    if (String(productId ?? '').startsWith('comp-')) return true
-    const email = userId ? emailById.get(userId) : null
-    return isAccountAdmin({ email })
-  }
-  // The section lists PEOPLE, not subscription rows: an admin's Max comes from code (see
-  // computeUserTier), so the owner's own account has no row at all and a row-based section showed
-  // "None." while alinagnuni3's comp row sat in Subscriptions looking like revenue — because the
-  // query above didn't even select polar_product_id, and a filter on an unselected column is a
-  // filter on undefined. Both halves of that failure were silent.
-  const houseSubs = subs.filter((s) => isHouseAccount(
-    (s as { user_id?: string | null }).user_id,
-    (s as { polar_product_id?: string | null }).polar_product_id,
-  ))
-  const payingSubs = subs.filter((s) => !houseSubs.includes(s))
-
-  const houseRows: { email: string; tier: string; why: string }[] = []
-  {
-    const seen = new Set<string>()
-    for (const u of allUsers) {
-      if (!isAccountAdmin(u)) continue
-      const email = u.email ?? '(no email)'
-      seen.add(email)
-      const hasComp = houseSubs.some((x) => (x as { user_id?: string | null }).user_id === u.id)
-      houseRows.push({ email, tier: 'studio', why: hasComp ? 'admin · comped' : 'admin' })
-    }
-    for (const x of houseSubs) {
-      const uid = (x as { user_id?: string | null }).user_id
-      const email = uid ? (emailById.get(uid) ?? '(user)') : '—'
-      if (seen.has(email)) continue
-      houseRows.push({ email, tier: String((x as { tier?: string }).tier ?? ''), why: 'comped' })
-    }
-  }
+  // It was decided here, and it was wrong the whole time: the comp test asked whether
+  // polar_product_id started with "comp-", while the comp SCRIPT writes the bare string "comp".
+  // Gifts made by the script were counted as revenue; gifts made by the button were not. Two of
+  // the seven live rows were on the wrong side of it, and nothing could notice, because a rule
+  // inside a 900-line page has nowhere to be tested from.
+  const { paying: payingSubs, house: houseSubs } = splitSubscriptions(
+    subs as SubscriptionRow[], emailById, (email) => isAccountAdmin({ email }),
+  )
+  const houseRows = houseAccountRows(houseSubs, allUsers, emailById, (u) => isAccountAdmin(u))
 
   const tierByUser = new Map<string, 'pro' | 'studio'>()
   for (const sub of subs) {
@@ -844,12 +819,37 @@ export default async function AdminPage() {
             <h2 style={{ fontSize: 15, fontWeight: 700, color: INK, margin: '0 0 10px' }}>Subscriptions</h2>
             <div style={scrollBox}>
               <table style={{ borderCollapse: 'collapse', width: '100%' }}>
-                <thead><tr><th style={th}>Email</th><th style={th}>Tier</th><th style={th}>Status</th></tr></thead>
+                <thead><tr><th style={th}>Email</th><th style={th}>Tier</th><th style={th}>Status</th><th style={th}></th></tr></thead>
                 <tbody>
-                  {payingSubs.length === 0 && <tr><td style={td} colSpan={3}>No subscriptions yet.</td></tr>}
-                  {payingSubs.map((s, i) => (
-                    <tr key={i}><td style={{ ...td, whiteSpace: 'normal' }}>{s.user_id ? (emailById.get(s.user_id) ?? '(user)') : '—'}</td><td style={td}>{s.tier}</td><td style={td}>{s.status}</td></tr>
-                  ))}
+                  {payingSubs.length === 0 && <tr><td style={td} colSpan={4}>No subscriptions yet.</td></tr>}
+                  {payingSubs.map((s, i) => {
+                    const row = s as {
+                      id?: string; user_id?: string | null; tier?: string; status?: string
+                    }
+                    const email = row.user_id ? (emailById.get(row.user_id) ?? '(user)') : '—'
+                    // A cancelled row is still a real subscription and still revenue that WAS paid,
+                    // so it stays in this table -- but it is over, and saying so in the same grey as
+                    // "active" is how a dead row goes on looking like income.
+                    const over = String(row.status ?? '') !== 'active'
+                    return (
+                      <tr key={row.id ?? i}>
+                        <td style={{ ...td, whiteSpace: 'normal' }}>{email}</td>
+                        <td style={td}>{row.tier}</td>
+                        <td style={{ ...td, color: over ? '#C0392B' : INK, fontWeight: over ? 700 : 400 }}>{row.status}</td>
+                        <td style={{ ...td, textAlign: 'right' }}>
+                          {row.id && (
+                            <AdminDeleteSubButton
+                              subscriptionId={row.id}
+                              email={email}
+                              tier={String(row.tier ?? '')}
+                              status={String(row.status ?? '')}
+                              comped={false}
+                            />
+                          )}
+                        </td>
+                      </tr>
+                    )
+                  })}
                 </tbody>
               </table>
             </div>
@@ -862,14 +862,31 @@ export default async function AdminPage() {
             <h2 style={{ fontSize: 15, fontWeight: 700, color: INK, margin: '0 0 10px' }}>Admins &amp; comped</h2>
             <div style={scrollBox}>
               <table style={{ borderCollapse: 'collapse', width: '100%' }}>
-                <thead><tr><th style={th}>Email</th><th style={th}>Tier</th><th style={th}>Why</th></tr></thead>
+                <thead><tr><th style={th}>Email</th><th style={th}>Tier</th><th style={th}>Why</th><th style={th}></th></tr></thead>
                 <tbody>
-                  {houseRows.length === 0 && <tr><td style={td} colSpan={3}>None.</td></tr>}
+                  {houseRows.length === 0 && <tr><td style={td} colSpan={4}>None.</td></tr>}
                   {houseRows.map((r, i) => (
-                    <tr key={i}>
-                      <td style={{ ...td, whiteSpace: 'normal' }}>{r.email}</td>
-                      <td style={td}>{r.tier}</td>
+                    // GIFTS READ AS GIFTS AT A GLANCE. The icon and the colour carry the same fact
+                    // twice on purpose: a colour alone is invisible to anyone who does not see it,
+                    // and an icon alone is easy to skim past in a table of grey text.
+                    <tr key={r.subId ?? i} style={{ background: r.comped ? '#FFF8E7' : 'transparent' }}>
+                      <td style={{ ...td, whiteSpace: 'normal' }}>
+                        {r.comped && <span title="We gave this — not revenue" style={{ marginRight: 6 }}>🎁</span>}
+                        {r.email}
+                      </td>
+                      <td style={{ ...td, color: r.comped ? '#8A6D1F' : INK, fontWeight: r.comped ? 700 : 400 }}>{r.tier}</td>
                       <td style={{ ...td, color: MUTED }}>{r.why}</td>
+                      <td style={{ ...td, textAlign: 'right' }}>
+                        {r.subId && (
+                          <AdminDeleteSubButton
+                            subscriptionId={r.subId}
+                            email={r.email}
+                            tier={r.tier}
+                            status={r.status}
+                            comped={r.comped}
+                          />
+                        )}
+                      </td>
                     </tr>
                   ))}
                 </tbody>
