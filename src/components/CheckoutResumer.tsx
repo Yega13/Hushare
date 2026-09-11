@@ -1,6 +1,7 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef } from 'react'
+import { useBrowserValue } from '@/lib/use-browser-value'
 
 // Stable plan keys only (see lib/polar.ts) — never a raw Polar product ID, so this resume link
 // stays valid even if the underlying product ID is later rotated.
@@ -8,13 +9,12 @@ const PLAN_KEY_RE = /^(pro|studio)_(monthly|yearly)$/
 
 export default function CheckoutResumer() {
   const formRef = useRef<HTMLFormElement>(null)
-  const [plan, setPlan] = useState<string | null>(null)
-
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search)
-    const p = params.get('plan')
-    if (p && PLAN_KEY_RE.test(p)) setPlan(p)
-  }, [])
+  // The query string does not exist while the server renders, so it is read after hydration.
+  // Validated here rather than trusted: this value is posted to the checkout.
+  const plan = useBrowserValue(() => {
+    const p = new URLSearchParams(window.location.search).get('plan')
+    return p && PLAN_KEY_RE.test(p) ? p : null
+  }, null as string | null)
 
   useEffect(() => {
     if (plan) formRef.current?.submit()

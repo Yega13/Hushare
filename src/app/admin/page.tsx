@@ -182,6 +182,7 @@ export default async function AdminPage() {
 
   const lastBackupAt = (backupRes.data as { updated_at?: string } | null)?.updated_at ?? null
   const backupAgeHours = lastBackupAt
+    // eslint-disable-next-line react-hooks/purity -- server component; see ARCHITECTURE.md s3
     ? Math.floor((Date.now() - new Date(lastBackupAt).getTime()) / 3600e3)
     : null
   // 36 hours rather than 24: the job runs at 03:15 UTC, so this means a night was missed outright
@@ -239,6 +240,7 @@ export default async function AdminPage() {
   // One clock read for every window on this page. Three separate Date.now() calls could, in
   // principle, straddle a midnight and give windows that disagree with each other by a day — and
   // each one is separately flagged as impure in a render path.
+  // eslint-disable-next-line react-hooks/purity -- server component; see ARCHITECTURE.md s3
   const nowMs = Date.now()
   const DAY_MS = 24 * 60 * 60 * 1000
   const weekAgo = new Date(nowMs - 7 * DAY_MS).toISOString()

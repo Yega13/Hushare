@@ -1,6 +1,7 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
+import { useBrowserValue } from '@/lib/use-browser-value'
 import WordReveal, { wordCount } from '@/components/WordReveal'
 import type { PointerEvent } from 'react'
 import { useRouter } from 'next/navigation'
@@ -23,13 +24,14 @@ export default function HomeHeroInteractive() {
   const router = useRouter()
   const { t } = useT()
   const [title, setTitle] = useState('')
-  const [albumPlaceholder, setAlbumPlaceholder] = useState(ALBUM_PLACEHOLDERS[0])
+  // Picked after hydration, not during render: the server would pick one placeholder and the
+  // client another, which is a mismatch React resolves by throwing the subtree away.
+  const albumPlaceholder = useBrowserValue(
+    () => ALBUM_PLACEHOLDERS[Math.floor(Math.random() * ALBUM_PLACEHOLDERS.length)],
+    ALBUM_PLACEHOLDERS[0],
+  )
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
-
-  useEffect(() => {
-    setAlbumPlaceholder(ALBUM_PLACEHOLDERS[Math.floor(Math.random() * ALBUM_PLACEHOLDERS.length)])
-  }, [])
 
   function tiltCard(event: PointerEvent<HTMLElement>) {
     if (window.matchMedia('(max-width: 1023px)').matches) return

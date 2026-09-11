@@ -1,6 +1,7 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
+import { useBrowserSeededState } from '@/lib/use-browser-value'
 import Script from 'next/script'
 import { Send, CheckCircle2, AlertCircle } from 'lucide-react'
 import { useT } from '@/i18n/LocaleProvider'
@@ -21,14 +22,11 @@ export default function SupportForm() {
   const { t } = useT()
   const [status, setStatus] = useState<Status>('idle')
   const [errorMsg, setErrorMsg] = useState('')
-  const [subject, setSubject] = useState('')
-  const [message, setMessage] = useState('')
-
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search)
-    setSubject(params.get('subject') ?? '')
-    setMessage(params.get('message') ?? '')
-  }, [])
+  // Pre-filled from the query string -- which does not exist while the server renders -- so the
+  // read happens after hydration. lib/use-browser-value carries the why.
+  const qs = () => new URLSearchParams(window.location.search)
+  const [subject, setSubject] = useBrowserSeededState(() => qs().get('subject') ?? '', '')
+  const [message, setMessage] = useBrowserSeededState(() => qs().get('message') ?? '', '')
 
   async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault()

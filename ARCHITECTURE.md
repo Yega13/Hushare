@@ -76,6 +76,20 @@ An invariant that is only a sentence in a document is a hope. Each of these name
 | No server secret is reachable from a client bundle | `tests/boundaries.test.ts`, transitive import graph | red test, names the import chain |
 | No duration is a difference of wall-clock readings | `Millis` brand in `lib/clock.ts`; `createDeadline`, `createStallWatch`, `settleWithin` own the arithmetic | compile error |
 | The largest files only shrink | `SIZE_BUDGET` in `tests/architecture.test.ts`; a reduction must be recorded, slack is a failure | red test |
+| A lint finding is either fixed or has a written reason | `scripts/check-hooks.mjs` budget may only fall; anything suppressed in place carries why on the line | red test either way |
+
+**The two suppressions that recur, and why they are not debt.** Both are `react-hooks` rules
+modelling a client render, applied where no client render happens.
+
+`react-hooks/purity` on `Date.now()` in a **Server Component**. It renders once, on the server, per
+request, and the request's own clock is the right one to read — the two-passes-disagree failure the
+rule exists for cannot occur. Suppressed on the line in `app/account`, `app/admin` and `app/c/[slug]`.
+
+`react-hooks/set-state-in-effect` for a **browser-only value read after hydration** — the query
+string, `localStorage`, a random pick. None can be read while the server renders, and reading one
+during the client's first render is the hydration mismatch that throws the subtree away. That idiom
+is `lib/use-browser-value.ts` now, so the rule fires once, inside it, beside the explanation,
+instead of once per component. Anything still flagged elsewhere is a real finding again.
 | Every `lib` module has a test | `tests/architecture.test.ts` walks `src/lib` one level down; `UNTESTED_LEGACY` may only shrink | red test |
 | Every database read is typed against the live schema | generated `Database` type on all three clients; no `.returns<>()` on `single`/`maybeSingle` | `tsc`, and the deploy drift check |
 | A nullable column is never treated as present without a check | `withNonNull()` in `lib/non-null.ts` (a tested predicate, not a cast) | `tsc` at the call site, the body's own test |

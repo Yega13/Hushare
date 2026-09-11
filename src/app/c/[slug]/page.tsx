@@ -146,6 +146,7 @@ export default async function CollectionPage({ params }: Props) {
   // A gated album is dropped from the page entirely rather than shown locked: the collection is a
   // shop window, and a tile that says "this one is private" still leaks that it exists and how
   // many photos are in it.
+  // eslint-disable-next-line react-hooks/purity -- server component; see ARCHITECTURE.md s3
   const now = Date.now()
   const visibleAlbums = (albums ?? []).filter((a) => (
     !a.retired_at &&

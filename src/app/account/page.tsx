@@ -269,10 +269,15 @@ export default async function AccountPage({ searchParams }: Props) {
   //
   // So they are listed separately, with the days left and a way to put them back.
   const accountAlbums = allAccountAlbums.filter((a) => !a.deleted_at)
+  // ONE reading, which the two calls this replaces were not: the filter and the map each took their
+  // own, so a page rendered across a midnight could drop an album and then compute its "days left"
+  // from the other side of the boundary.
+  // eslint-disable-next-line react-hooks/purity -- server component; see ARCHITECTURE.md s3
+  const nowMs = Date.now()
   const binnedAlbums = allAccountAlbums
-    .filter((a) => binState(a.deleted_at, Date.now()).state !== 'live')
+    .filter((a) => binState(a.deleted_at, nowMs).state !== 'live')
     .map((a) => {
-      const s = binState(a.deleted_at, Date.now())
+      const s = binState(a.deleted_at, nowMs)
       return { ...a, daysLeft: s.state === 'in-bin' ? s.daysLeft : null }
     })
 

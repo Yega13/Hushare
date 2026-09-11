@@ -77,7 +77,11 @@ const SIZE_BUDGET: Record<string, number> = {
   // behind them -- who is revenue and who is us -- moved OUT to lib/admin-subscription-rows and
   // lib/subscription-origin in the same commit, where it got the tests that would have caught it
   // being wrong for as long as it was.
-  'src/app/admin/page.tsx': 901,
+  // +2 (2026-09-11): two `eslint-disable-next-line react-hooks/purity` lines, each carrying its
+  // reason. This is a Server Component, so reading the request's clock during render is correct and
+  // the rule is modelling a client render that never happens. Two lines of stated decision in
+  // exchange for two findings that had been sitting in the lint budget reading as debt.
+  'src/app/admin/page.tsx': 903,
   // +4 on 2026-08-30: FILE_ACCEPT stopped being a fourth hand-written copy of the accepted
   // MIME types and now builds from lib/media. An import and a comment cost four lines here
   // and removed a list that had already fallen two formats behind. Deliberate.

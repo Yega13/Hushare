@@ -1,6 +1,7 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
+import { useBrowserValue } from '@/lib/use-browser-value'
 import Script from 'next/script'
 import { AlertCircle, CheckCircle2, Send } from 'lucide-react'
 import { useT } from '@/i18n/LocaleProvider'
@@ -33,18 +34,16 @@ export default function ReportForm() {
   const [errorMsg, setErrorMsg] = useState('')
   const [reason, setReason] = useState<string>(REPORT_REASONS[0].value)
   const [details, setDetails] = useState('')
-  const [albumTitle, setAlbumTitle] = useState('')
-  const [albumUrl, setAlbumUrl] = useState('')
-  const [albumSlug, setAlbumSlug] = useState('')
-
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search)
-    setAlbumTitle(params.get('album') ?? '')
-    setAlbumUrl(params.get('url') ?? '')
-    setAlbumSlug(params.get('slug') ?? '')
-    setStatus('idle')
-    setErrorMsg('')
-  }, [])
+  // Pre-filled from the query string -- which does not exist while the server renders -- so the
+  // read happens after hydration. lib/use-browser-value carries the why.
+  //
+  // The old effect also reset status and errorMsg. That was dead: both already start at exactly
+  // those values and this runs once on mount, so it could only ever set them to what they were.
+  const qs = () => new URLSearchParams(window.location.search)
+  // Read-only: nothing in this form ever writes them back, so they are values rather than state.
+  const albumTitle = useBrowserValue(() => qs().get('album') ?? '', '')
+  const albumUrl = useBrowserValue(() => qs().get('url') ?? '', '')
+  const albumSlug = useBrowserValue(() => qs().get('slug') ?? '', '')
 
   async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault()
