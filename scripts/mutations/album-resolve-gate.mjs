@@ -13,6 +13,10 @@ export default {
   file: 'src/lib/server/album-access.ts',
   test: 'tests/album-resolve-gate.test.ts tests/gate-direction.test.ts tests/gates-and-money.test.ts',
   mutations: [
+  // MOVED to scripts/mutations/album-gate-verdict.mjs on 2026-09-11. The reveal and password
+  // checks are no longer written out here -- all three callers ask albumGateVerdict, and that
+  // set runs its mutations against all three callers' tests at once. What stays below is what
+  // is genuinely this caller's: who it counts as the owner, and the shape it answers in.
   // ── which album ──────────────────────────────────────────────────────────────────────────────
   { name: 'a slug carrying PostgREST filter syntax reaches the .or() unescaped',
     from: "  if (!slug || slug.length < 4 || slug.length > 80 || !SLUG_RE.test(slug)) {", to: "  if (false) {" },
@@ -39,6 +43,10 @@ export default {
   { name: 'the owner cookie is read under a fixed name, so one album cookie opens every album',
     from: "  const ownerCookieVal = (cookieStore.get(`hushare_owner_${albumId}`)?.value ?? '').trim()",
     to: "  const ownerCookieVal = (cookieStore.get('hushare_owner')?.value ?? '').trim()" },
+  { name: 'a REVEAL-ONLY album stops being worth an ownership lookup, so its owner sees a countdown',
+    from: "  const gated = !!album.password_hash || revealPending(album)", to: "  const gated = !!album.password_hash" },
+  { name: 'every album is treated as gated, so an open album pays for a lookup that changes nothing',
+    from: "  const gated = !!album.password_hash || revealPending(album)", to: "  const gated = true" },
   { name: 'the owner is never recognised, so an owner sees their own album ask for a password',
     from: "  if (ownerCookieVal && (wantsOwner || gated)) {", to: "  if (false) {" },
   { name: 'the ownership lookup runs on every page load, costing a round trip that changes nothing',
@@ -47,18 +55,6 @@ export default {
     from: "      .from('albums').select('owner_token').eq('id', albumId)", to: "      .from('albums').select('owner_token')" },
 
   // ── the gate ─────────────────────────────────────────────────────────────────────────────────
-  { name: 'a SEALED album renders its contents before its date',
-    from: "    if (album.reveal_at && new Date(album.reveal_at) > new Date()) {\n      return { kind: 'reveal', reveal_at: album.reveal_at",
-    to: "    if (false) {\n      return { kind: 'reveal', reveal_at: album.reveal_at" },
-  { name: 'THE PASSWORD IS NOT CHECKED, so knowing the slug renders the album',
-    from: "    if (album.password_hash) {\n      const pwCookie = cookieStore.get(`hushare_pw_${albumId}`)?.value ?? ''\n      const unlocked",
-    to: "    if (false) {\n      const pwCookie = cookieStore.get(`hushare_pw_${albumId}`)?.value ?? ''\n      const unlocked" },
-  { name: 'holding ANY password cookie counts as unlocked',
-    from: "      const unlocked = pwCookie.length > 0\n        ? await verifyAccessToken(pwCookie, album.password_hash, albumId)\n        : false",
-    to: "      const unlocked = pwCookie.length > 0" },
-  { name: "another album's password cookie unlocks this one",
-    from: "      const unlocked = pwCookie.length > 0\n        ? await verifyAccessToken(pwCookie, album.password_hash, albumId)",
-    to: "      const unlocked = pwCookie.length > 0\n        ? await verifyAccessToken(pwCookie, album.password_hash, 'any-album')" },
 
   // ── what reaches the browser ─────────────────────────────────────────────────────────────────
   { name: 'THE PASSWORD HASH IS SERIALISED INTO THE PAGE for everyone who opens the URL',

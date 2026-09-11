@@ -13,6 +13,10 @@ export default {
   file: 'src/lib/server/album-access.ts',
   test: 'tests/gates-and-money.test.ts tests/gate-direction.test.ts tests/album-select-cols.test.ts tests/contribution-gate.test.ts',
   mutations: [
+  // MOVED to scripts/mutations/album-gate-verdict.mjs on 2026-09-11. The reveal and password
+  // checks are no longer written out here -- all three callers ask albumGateVerdict, and that
+  // set runs its mutations against all three callers' tests at once. What stays below is what
+  // is genuinely this caller's: who it counts as the owner, and the shape it answers in.
   // ── the owner cookie ─────────────────────────────────────────────────────────────────────────
   { name: 'THE OWNER COOKIE IS NOT COMPARED, so holding any value opens a locked album',
     from: "  if (ownerPresent && timingSafeEqual(ownerCookie, album.owner_token)) return { ok: true }",
@@ -24,8 +28,8 @@ export default {
     from: "  if (ownerPresent && timingSafeEqual(ownerCookie, album.owner_token)) return { ok: true }",
     to: "  if (timingSafeEqual(ownerCookie, album.owner_token)) return { ok: true }" },
   { name: 'the cookie is read under a fixed name, so one album cookie opens every album',
-    from: "  const ownerCookie = (cookieStore.get(`hushare_owner_${album.id}`)?.value ?? '').trim()",
-    to: "  const ownerCookie = (cookieStore.get('hushare_owner')?.value ?? '').trim()" },
+    from: "  const ownerCookie = (cookieStore.get(`hushare_owner_${album.id}`)?.value ?? '').trim()\n  const ownerPresent = ownerCookie.length > 0",
+    to: "  const ownerCookie = (cookieStore.get('hushare_owner')?.value ?? '').trim()\n  const ownerPresent = ownerCookie.length > 0" },
 
   // ── the signed-in account ────────────────────────────────────────────────────────────────────
   { name: 'BEING SIGNED IN AS ANYBODY counts as owning the album',
@@ -39,33 +43,21 @@ export default {
   { name: 'the session is looked up even for an OPEN album, costing an auth round trip per upload',
     from: "  if (!album.password_hash && !album.reveal_at) return null\n", to: "" },
   { name: 'a failed session lookup throws out of the gate instead of answering "nobody"',
-    from: "  } catch {\n    return null\n  }\n}\n\nexport async function gateAllowsContribution(",
-    to: "  } finally {\n    void 0\n  }\n}\n\nexport async function gateAllowsContribution(" },
+    from: "    const { data: { user } } = await supabase.auth.getUser()\n    return user?.id ?? null\n  } catch {\n    return null\n  }",
+    to: "    const { data: { user } } = await supabase.auth.getUser()\n    return user?.id ?? null\n  } finally {\n    void 0\n  }" },
 
   // ── the reveal date ──────────────────────────────────────────────────────────────────────────
-  { name: 'a sealed album accepts uploads before its reveal date',
-    from: "  if (album.reveal_at && new Date(album.reveal_at) > new Date()) {\n    return { ok: false, error: 'This album has not been revealed yet', reason: 'not-revealed' }",
-    to: "  if (false) {\n    return { ok: false, error: 'This album has not been revealed yet', reason: 'not-revealed' }" },
-  { name: 'the reveal comparison inverts, so a revealed album is sealed forever',
-    from: "  if (album.reveal_at && new Date(album.reveal_at) > new Date()) {\n    return { ok: false",
-    to: "  if (album.reveal_at && new Date(album.reveal_at) < new Date()) {\n    return { ok: false" },
 
   // ── the password ─────────────────────────────────────────────────────────────────────────────
-  { name: 'THE PASSWORD IS NOT CHECKED AT ALL',
-    from: "  if (album.password_hash) {\n    const pwCookie = cookieStore.get(`hushare_pw_${album.id}`)?.value ?? ''",
-    to: "  if (false) {\n    const pwCookie = cookieStore.get(`hushare_pw_${album.id}`)?.value ?? ''" },
-  { name: 'holding ANY password cookie counts as unlocked',
-    from: "    const unlocked = pwCookie.length > 0\n      ? await verifyAccessToken(pwCookie, album.password_hash, album.id)\n      : false",
-    to: "    const unlocked = pwCookie.length > 0" },
-  { name: "another album's password cookie unlocks this one",
-    from: "      ? await verifyAccessToken(pwCookie, album.password_hash, album.id)",
-    to: "      ? await verifyAccessToken(pwCookie, album.password_hash, 'any-album')" },
-  { name: 'the password cookie is read under a fixed name, so unlocking one album unlocks all',
-    from: "    const pwCookie = cookieStore.get(`hushare_pw_${album.id}`)?.value ?? ''",
-    to: "    const pwCookie = cookieStore.get('hushare_pw')?.value ?? ''" },
   { name: 'a stale cookie and an absent one become the same reason, so the fix for each is guessed',
-    from: "        reason: pwCookie.length > 0\n          ? 'password-cookie-stale'\n          : ownerPresent ? 'owner-cookie-mismatch' : 'password-cookie-absent',",
-    to: "        reason: 'password-cookie-absent'," },
+    from: "    reason: verdict.passwordCookiePresent\n      ? 'password-cookie-stale'\n      : ownerPresent ? 'owner-cookie-mismatch' : 'password-cookie-absent',",
+    to: "    reason: 'password-cookie-absent'," },
+  { name: 'a stale OWNER LINK is reported as a missing password, so the wrong thing is said to fix it',
+    from: "      : ownerPresent ? 'owner-cookie-mismatch' : 'password-cookie-absent',",
+    to: "      : 'password-cookie-absent'," },
+  { name: 'the reveal refusal is worded as a password one',
+    from: "    return { ok: false, error: 'This album has not been revealed yet', reason: 'not-revealed' }",
+    to: "    return { ok: false, error: 'Enter the album password before adding photos', reason: 'not-revealed' }" },
 
   // ── the columns the gate needs ───────────────────────────────────────────────────────────────
   { name: 'the gate columns lose the password hash, so every gated album reads as open',

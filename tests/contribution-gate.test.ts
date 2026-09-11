@@ -33,6 +33,7 @@ vi.mock('@/lib/supabase/server', () => ({
 
 import { gateAllowsContribution, signedInUserForGate, ALBUM_GATE_COLS, type AlbumGateRow } from '@/lib/server/album-access'
 import { hashPassword, deriveAccessToken } from '@/lib/album-password'
+import { isExpectedRefusal } from '@/lib/upload-policy'
 
 const ALBUM_ID = 'aaaaaaaa-1111-4111-8111-aaaaaaaaaaaa'
 const OWNER_TOKEN = 'owner-token-256-bits-worth-of-secret'
@@ -145,6 +146,46 @@ describe('the refusal says WHICH of the two things went wrong', () => {
     if (!res.ok) expect(res.reason).toBe('owner-cookie-mismatch')
   })
 
+  it('and its WORDING is its own too, which two other things depend on', async () => {
+    // A sealed album telling a guest to "enter the album password" sends them looking for one that
+    // does not exist (rule 20). Worse, this exact sentence is a prefix in upload-policy's
+    // EXPECTED_REFUSAL_PREFIXES: reword it and the refusal stops being recognised as deliberate,
+    // so it files as an error in the admin panel AND reads as a network failure to the video lane,
+    // which collapses that guest's uploads to serial for the rest of the session.
+    const album = { ...OPEN, reveal_at: new Date(Date.now() + 86_400_000).toISOString() }
+    const res = await gateAllowsContribution(album, cookies())
+    expect(res.ok).toBe(false)
+    if (!res.ok) {
+      expect(res.error).toBe('This album has not been revealed yet')
+      expect(isExpectedRefusal(res.error), 'upload-policy must recognise it as a deliberate refusal').toBe(true)
+    }
+  })
+
+  it('the password refusal is worded for the thing it is, and is recognised too', async () => {
+    const res = await gateAllowsContribution(await locked(), cookies())
+    expect(res.ok).toBe(false)
+    if (!res.ok) {
+      expect(res.error).toBe('Enter the album password before adding photos')
+      expect(isExpectedRefusal(res.error)).toBe(true)
+    }
+  })
+
+  it('REVEAL BEFORE PASSWORD on an album that carries both', async () => {
+    // The precedence is the rule, not an accident of writing order, and one line now decides it for
+    // all three callers. Asking the password first would let somebody who has it open a SEALED
+    // album early -- they were given the password for after the reveal, not before it.
+    const album = {
+      ...OPEN,
+      password_hash: await hashPassword('secret-pass'),
+      reveal_at: new Date(Date.now() + 86_400_000).toISOString(),
+    }
+    const hash = album.password_hash
+    const unlocked = cookies({ [`hushare_pw_${ALBUM_ID}`]: await deriveAccessToken(hash, ALBUM_ID) })
+    const res = await gateAllowsContribution(album, unlocked)
+    expect(res.ok, 'a correct password must not open a sealed album').toBe(false)
+    if (!res.ok) expect(res.reason).toBe('not-revealed')
+  })
+
   it('not-revealed is its own reason, not a password problem', async () => {
     const album = { ...OPEN, reveal_at: new Date(Date.now() + 86_400_000).toISOString() }
     const res = await gateAllowsContribution(album, cookies())
@@ -162,12 +203,20 @@ describe('the gate asks the database for every column it reads', () => {
     //
     // Derived from the function's own source rather than listed by hand, so a new `album.<field>`
     // arrives already held.
+    // THE SLICE MUST COVER THE WHOLE GATE. On 2026-09-11 the shared decision moved into
+    // albumGateVerdict, which sits ABOVE this function -- so the two fields that matter
+    // (password_hash, reveal_at) fell outside the window and this test went on passing while
+    // deriving three names instead of five. A review caught it. The window is both bodies now, and
+    // the count below is a floor high enough to notice if one of them slips out again.
     const src = readFileSync(join(process.cwd(), 'src', 'lib', 'server', 'album-access.ts'), 'utf8')
-    const start = src.indexOf('export async function gateAllowsContribution(')
-    expect(start, 'the gate must still be in this file').toBeGreaterThan(-1)
-    const body = src.slice(start, src.indexOf('export type PhotosResult', start))
+    const start = src.indexOf('export function revealPending(')
+    expect(start, 'the shared verdict must still be in this file').toBeGreaterThan(-1)
+    const end = src.indexOf('export type PhotosResult', start)
+    expect(end, 'and the window must not be inverted or empty').toBeGreaterThan(start)
+    const body = src.slice(start, end)
     const fields = new Set([...body.matchAll(/\balbum\.([a-z_]+)\b/g)].map((m) => m[1]))
-    expect(fields.size, 'the gate should read several album fields').toBeGreaterThan(2)
+    expect(fields.size, 'the gate reads id, owner_token, password_hash, reveal_at and user_id')
+      .toBeGreaterThanOrEqual(5)
     const selected = ALBUM_GATE_COLS.split(',').map((c) => c.trim())
     for (const field of fields) {
       if (field === 'id') continue // the row id is always present; it is not a selected gate column

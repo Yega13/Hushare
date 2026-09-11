@@ -2,10 +2,10 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 
 // WHO GETS TO SEE THE ALBUM PAGE, and what it hands them when they do.
 //
-// resolveAlbum is the third and last of the three copies of one gate in lib/server/album-access
-// (see ARCHITECTURE.md section 6). gateAllowsContribution decides who may ADD, fetchAuthorizedPhotos
-// decides who may LIST photos, and this one decides whether the page renders at all -- and, once it
-// does, which of the album's paid marks are published with it.
+// resolveAlbum decides whether the page renders at all -- and, once it does, which of the album's
+// paid marks are published with it. The gate itself is albumGateVerdict, shared since 2026-09-11
+// with gateAllowsContribution (who may ADD) and fetchAuthorizedPhotos (who may LIST photos); what
+// stays here is this caller's own ownership rule, its answer shapes, and the masks.
 //
 // It had only source-reading assertions: tests/gate-direction reads this file's text to check that
 // certain masks are written down. Nothing ran it. So nothing had ever established that a stranger
@@ -160,6 +160,23 @@ describe('the gate, on the page itself', () => {
     cfg.rows = [{ ...ALBUM, password_hash: hash }]
     cfg.cookies[`hushare_pw_${ALBUM_ID}`] = await deriveAccessToken(hash, OTHER_ID)
     expect((await resolve()).kind).toBe('password')
+  })
+
+  it('REVEAL BEFORE PASSWORD, so a password holder cannot open a sealed album early', async () => {
+    const hash = await hashPassword('secret-pass')
+    cfg.rows = [{ ...ALBUM, password_hash: hash, reveal_at: new Date(Date.now() + 86_400_000).toISOString() }]
+    cfg.cookies[`hushare_pw_${ALBUM_ID}`] = await deriveAccessToken(hash, ALBUM_ID)
+    expect((await resolve()).kind, 'the countdown, not the album').toBe('reveal')
+  })
+
+  it('A REVEAL-ONLY ALBUM STILL RECOGNISES ITS OWNER on the server render', async () => {
+    // The `gated` expression decides whether an ownership lookup is worth paying for. Reduce it to
+    // "has a password" -- which a review did, and nothing went red -- and the owner of an album
+    // that is merely sealed is shown a countdown to their own album. That is rule 25, and it is
+    // what the comment above that expression says was fixed once already.
+    cfg.rows = [{ ...ALBUM, password_hash: null, reveal_at: new Date(Date.now() + 86_400_000).toISOString() }]
+    cfg.cookies[`hushare_owner_${ALBUM_ID}`] = OWNER_TOKEN
+    expect((await resolve(SLUG, false)).kind, 'the owner sees their own sealed album').toBe('album')
   })
 
   it('THE OWNER COOKIE LIFTS BOTH GATES on the server render', async () => {

@@ -12,12 +12,16 @@ export default {
   file: 'src/lib/server/album-access.ts',
   test: 'tests/photo-listing-gate.test.ts tests/gates-and-money.test.ts tests/contribution-gate.test.ts',
   mutations: [
+  // MOVED to scripts/mutations/album-gate-verdict.mjs on 2026-09-11. The reveal and password
+  // checks are no longer written out here -- all three callers ask albumGateVerdict, and that
+  // set runs its mutations against all three callers' tests at once. What stays below is what
+  // is genuinely this caller's: who it counts as the owner, and the shape it answers in.
   // ── the album this is even about ─────────────────────────────────────────────────────────────
   { name: 'a non-UUID album id reaches PostgREST instead of being refused',
     from: "  if (!UUID_RE.test(albumId)) return { kind: 'invalid' }\n", to: "" },
   { name: 'a RETIRED album is listed while it waits to be deleted',
-    from: "  if (!album || album.retired_at) return { kind: 'notfound' }\n\n  const ownerCookie",
-    to: "  if (!album) return { kind: 'notfound' }\n\n  const ownerCookie" },
+    from: "  if (!album || album.retired_at) return { kind: 'notfound' }\n\n  // BOTH COOKIES KEY ON THE ROW'S id",
+    to: "  if (!album) return { kind: 'notfound' }\n\n  // BOTH COOKIES KEY ON THE ROW'S id" },
 
   // ── the owner ────────────────────────────────────────────────────────────────────────────────
   { name: 'THE OWNER TOKEN IS NOT COMPARED, so any cookie value opens a locked album',
@@ -30,31 +34,15 @@ export default {
     from: "  const isOwner = ownerCookie.length > 0 && timingSafeEqual(ownerCookie, album.owner_token)",
     to: "  const isOwner = timingSafeEqual(ownerCookie, album.owner_token)" },
   { name: 'the owner cookie is read under a fixed name, so one album cookie opens every album',
-    from: "  const ownerCookie = (cookieStore.get(`hushare_owner_${albumId}`)?.value ?? '').trim()\n  const isOwner = ownerCookie.length > 0",
+    from: "  const ownerCookie = (cookieStore.get(`hushare_owner_${album.id}`)?.value ?? '').trim()\n  const isOwner = ownerCookie.length > 0",
     to: "  const ownerCookie = (cookieStore.get('hushare_owner')?.value ?? '').trim()\n  const isOwner = ownerCookie.length > 0" },
+  { name: "the owner cookie keys on the CALLER's id rather than the row's, so an uppercase id fails closed",
+    from: "  const ownerCookie = (cookieStore.get(`hushare_owner_${album.id}`)?.value ?? '').trim()\n  const isOwner = ownerCookie.length > 0",
+    to: "  const ownerCookie = (cookieStore.get(`hushare_owner_${albumId}`)?.value ?? '').trim()\n  const isOwner = ownerCookie.length > 0" },
 
   // ── the reveal date ──────────────────────────────────────────────────────────────────────────
-  { name: 'a SEALED album lists its photos before its date',
-    from: "    if (album.reveal_at && new Date(album.reveal_at) > new Date()) return { kind: 'reveal' }\n", to: "" },
-  { name: 'the reveal comparison inverts, so a revealed album is sealed forever',
-    from: "    if (album.reveal_at && new Date(album.reveal_at) > new Date()) return { kind: 'reveal' }",
-    to: "    if (album.reveal_at && new Date(album.reveal_at) < new Date()) return { kind: 'reveal' }" },
 
   // ── the password ─────────────────────────────────────────────────────────────────────────────
-  { name: 'THE PASSWORD IS NOT CHECKED, so knowing the album id is enough again',
-    from: "    if (album.password_hash) {\n      const pwCookie = cookieStore.get(`hushare_pw_${albumId}`)?.value ?? ''\n      authorized = pwCookie.length > 0",
-    to: "    if (false) {\n      const pwCookie = cookieStore.get(`hushare_pw_${albumId}`)?.value ?? ''\n      authorized = pwCookie.length > 0" },
-  { name: 'holding ANY password cookie counts as unlocked',
-    from: "      authorized = pwCookie.length > 0\n        ? await verifyAccessToken(pwCookie, album.password_hash, albumId)\n        : false",
-    to: "      authorized = pwCookie.length > 0" },
-  { name: "another album's password cookie unlocks this one",
-    from: "      authorized = pwCookie.length > 0\n        ? await verifyAccessToken(pwCookie, album.password_hash, albumId)",
-    to: "      authorized = pwCookie.length > 0\n        ? await verifyAccessToken(pwCookie, album.password_hash, 'any-album')" },
-  { name: 'the password cookie is read under a fixed name, so unlocking one album unlocks all',
-    from: "      const pwCookie = cookieStore.get(`hushare_pw_${albumId}`)?.value ?? ''\n      authorized = pwCookie.length > 0",
-    to: "      const pwCookie = cookieStore.get('hushare_pw')?.value ?? ''\n      authorized = pwCookie.length > 0" },
-  { name: 'a failed unlock falls through to the listing instead of refusing',
-    from: "      if (!authorized) return { kind: 'password' }\n", to: "" },
 
   // ── what a guest may see of what is there ────────────────────────────────────────────────────
   { name: 'A GUEST SEES EVERY HIDDEN PHOTO on the main listing -- moderation stops working',

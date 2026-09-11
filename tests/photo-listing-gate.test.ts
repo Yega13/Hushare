@@ -7,10 +7,10 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 // album page, the live wall, the delta refresh and the bib search read through, and it is the only
 // thing between a stranger who knows an album id and the photo URLs inside it.
 //
-// It is also the third of three copies of the same gate in lib/server/album-access (resolveAlbum
-// for viewing the album, gateAllowsContribution for adding to it, this one for listing photos --
-// see ARCHITECTURE.md section 6). Nothing holds the copies to each other, so each needs holding
-// on its own.
+// The gate itself is albumGateVerdict, shared since 2026-09-11 with resolveAlbum (viewing the
+// album) and gateAllowsContribution (adding to it) -- one decision, held from three directions by
+// scripts/mutations/album-gate-verdict.mjs, which runs each break against all three callers' tests
+// at once. What stays this caller's own is who it counts as the owner, and the moderation filter.
 //
 // THE MODERATION FILTER IS HERE TOO, and it is the same class of secret: a photo awaiting approval,
 // or one the owner has hidden, must not reach a guest. One missing `.eq('hidden', false)` publishes
@@ -144,6 +144,17 @@ describe('the password and reveal gate, on the READING side', () => {
   })
 })
 
+describe('reveal comes before password when an album carries both', () => {
+  it('a correct password does not list a SEALED album early', async () => {
+    // One line in albumGateVerdict decides this for the page, the photo listing and the upload at
+    // once. Nothing pinned it until a review mutated the order and the whole suite stayed green.
+    const hash = await hashPassword('secret-pass')
+    cfg.album = { ...OPEN_ALBUM, password_hash: hash, reveal_at: new Date(Date.now() + 86_400_000).toISOString() }
+    cfg.cookies[`hushare_pw_${ALBUM_ID}`] = await deriveAccessToken(hash, ALBUM_ID)
+    expect((await list()).kind).toBe('reveal')
+  })
+})
+
 describe('the owner gets past both gates, and only the real owner', () => {
   const locked = async () => ({
     ...OPEN_ALBUM,
@@ -171,6 +182,18 @@ describe('the owner gets past both gates, and only the real owner', () => {
     cfg.album = { ...(await locked()), owner_token: '' }
     cfg.cookies[`hushare_owner_${ALBUM_ID}`] = ''
     expect((await list()).kind).not.toBe('ok')
+  })
+
+  it('both cookies key on the ROW id, not on the id the caller happened to type', async () => {
+    // UUID_RE carries /i, so an uppercase id in the request validates; Postgres answers with the
+    // canonical lowercase one; and the access token HMACs the id's exact bytes. Keying on the
+    // caller's string looked for a cookie never set under that name and verified against a value
+    // no token was minted for -- it failed CLOSED, which is why nobody saw it, and it disagreed
+    // with the two places that set and read these cookies.
+    cfg.album = await locked()
+    cfg.cookies[`hushare_owner_${ALBUM_ID}`] = OWNER_TOKEN
+    const res = await fetchAuthorizedPhotos(ALBUM_ID.toUpperCase(), jar())
+    expect(res.kind, 'the owner is still the owner when the URL shouts').toBe('ok')
   })
 
   it('the cookie is read under a name carrying THIS album id', async () => {

@@ -1619,3 +1619,25 @@ absent or whole, and the state that needed a human cannot exist.
 what happens if the crash lands DURING the marker's own write. Two writes where one must imply the
 other is a rename, not two writes. And a recovery path that ends in "a human will work it out" is
 not finished -- it is the failure mode with better manners.
+
+### 99. I TESTED WHAT THE GATE DECIDED AND NOT WHAT IT SAID
+
+Three test files for the three album gates, twenty-plus cases each, every refusal checked for its
+KIND and its REASON. Not one of them read the sentence. So rewording the reveal refusal to "Enter
+the album password before adding photos" passed the entire suite — a guest at a sealed album sent
+looking for a password that does not exist (rule 20), and nothing red.
+
+It is worse than a bad sentence. That exact wording is a prefix in upload-policy's
+EXPECTED_REFUSAL_PREFIXES, which is how the product knows a refusal was deliberate. Reword it and
+the refusal stops being recognised: it files as an ERROR in the admin panel, and it reads as a
+network failure to the video lane, which collapses that guest's uploads to serial for the rest of
+the session. One string, three consequences, and I had already written the comment explaining that
+coupling in album-entitlements the same week — where VIDEO_ALBUM_FULL_PREFIX is imported rather
+than retyped precisely so this cannot happen.
+
+I knew the mechanism and did not look for it one file away.
+
+**Habit to build:** when a function returns a MESSAGE as well as a verdict, the message is part of
+the contract, not decoration — assert it. And when any string is matched on by prefix somewhere
+else, its test asserts the match too, in the same breath: `expect(isExpectedRefusal(res.error))`
+costs one line and is the only thing that connects the two files.

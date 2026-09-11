@@ -60,6 +60,7 @@ directions). This is the registry. The third column is what holds every consumer
 | The Cache-Control header every object is stored with | `IMMUTABLE_CACHE_CONTROL` in `lib/media.ts` | four importers; the presigned PUT signature binds it, so a drift is every upload refused |
 | The one rate-limit window not derived from code | `wrangler.toml` (the Cloudflare binding) | `tests/ratelimit-window.test.ts` parses the file and pins the constant to it |
 | Time, in the client | `lib/clock.ts` — `Millis` is a branded reading of `performance.now()` | `elapsedSince(Date.now())` is a compile error |
+| Who is past an album's gate | `albumGateVerdict` in `lib/server/album-access.ts` — the reveal date, then the password cookie verified against THIS album | `scripts/mutations/album-gate-verdict.mjs` runs each break against all three callers' tests at once; the callers keep only their own ownership rule and answer shape |
 | Which crons exist | `worker.ts` schedules them | `tests/architecture.test.ts` checks every scheduled name has a route and every route is scheduled |
 | Which RPCs the code calls | `REQUIRED_FUNCTIONS` in `scripts/check-db.mjs` | `tests/architecture.test.ts` greps every `.rpc()` and compares; deploy runs `db:check` against the live database |
 
@@ -151,17 +152,6 @@ Before any deploy, `.github/workflows/deploy.yml` runs: `npm test` (through `run
 ## 6. What is still weak
 
 Stated plainly, because a map that hides the swamps is not a map.
-
-- **The password-and-reveal gate is written three times in one file.** `lib/server/album-access.ts`
-  answers "is this person allowed past the gate" in `resolveAlbum` (viewing the album), in
-  `gateAllowsContribution` (adding to it) and in `fetchAuthorizedPhotos` (listing its photos). The
-  three are not identical and were never meant to be -- the contribution gate also accepts the
-  signed-in owner, which the other two do not -- but the shared part (reveal date in the future,
-  then password cookie verified against THIS album) is copied, and rule 13 says the copies will
-  disagree. Nothing yet holds them to each other; a mutation of one is not seen by tests of the
-  others, which is how the mutation set for the contribution gate ended up needing a line of
-  context on every `from` string just to say which copy it meant. Not merged yet because the three
-  return different shapes to different callers, and doing it badly takes album viewing offline.
 
 - **Components are still where decisions hide -- two of them.** `AlbumPageClient.tsx` went 1,789
   -> 1,577 on 2026-09-09/10: the resolve outcome, the grid's review-queue split, the freshness

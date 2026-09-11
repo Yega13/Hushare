@@ -237,7 +237,7 @@ export async function resolveAlbum(
   // Owner chrome (the toolbar) still keys off the fragment, client-side, exactly as before. Only the
   // GATE bypass moves to the cookie — which is the credential that actually proves ownership, is
   // compared timing-safely against owner_token, and is scoped to this one album.
-  const gated = !!album.password_hash || (!!album.reveal_at && new Date(album.reveal_at) > new Date())
+  const gated = !!album.password_hash || revealPending(album)
   let isOwner = false
   const ownerCookieVal = (cookieStore.get(`hushare_owner_${albumId}`)?.value ?? '').trim()
   // Only pay for the lookup when the answer can change what gets rendered: an owner-mode request, or
@@ -250,17 +250,13 @@ export async function resolveAlbum(
     isOwner = !!ownerRow && timingSafeEqual(ownerCookieVal, ownerRow.owner_token)
   }
 
-  if (!isOwner) {
-    if (album.reveal_at && new Date(album.reveal_at) > new Date()) {
-      return { kind: 'reveal', reveal_at: album.reveal_at, slug: album.slug, title: album.title }
-    }
-    if (album.password_hash) {
-      const pwCookie = cookieStore.get(`hushare_pw_${albumId}`)?.value ?? ''
-      const unlocked = pwCookie.length > 0
-        ? await verifyAccessToken(pwCookie, album.password_hash, albumId)
-        : false
-      if (!unlocked) return { kind: 'password', slug: album.slug, title: album.title }
-    }
+  const verdict = await albumGateVerdict(album, cookieStore, isOwner)
+  if (!verdict.pass) {
+    // reveal_at is non-null whenever the verdict says so; the assertion is on the shape the caller
+    // renders, not on the decision.
+    return verdict.blockedBy === 'reveal'
+      ? { kind: 'reveal', reveal_at: album.reveal_at as string, slug: album.slug, title: album.title }
+      : { kind: 'password', slug: album.slug, title: album.title }
   }
 
   touchActivity(admin, albumId, album.last_activity_at)
@@ -463,6 +459,70 @@ export async function signedInUserForGate(
   }
 }
 
+/**
+ * IS THIS VISITOR PAST THE ALBUM'S GATE? One answer, asked three times.
+ *
+ * This rule was written out three times in this file -- in resolveAlbum (may the page render), in
+ * gateAllowsContribution (may they add) and in fetchAuthorizedPhotos (may they list photos). The
+ * three genuinely differ about WHO COUNTS AS THE OWNER: resolveAlbum pays for a second query only
+ * when the answer could change what renders, the contribution gate also accepts the signed-in
+ * account that owns the album, and the photo listing trusts the cookie alone. That difference is
+ * real and stays with each caller.
+ *
+ * What was copied is everything AFTER that: a reveal date still in the future refuses, then a
+ * password refuses unless a cookie verifies against THIS album. Three copies of a rule are three
+ * chances to fix two of them (rule 13), and the mutation sets could not even name which copy they
+ * meant without a line of surrounding context. Now they ask this.
+ *
+ * The SHAPE of the refusal stays with each caller too -- a page needs a title to render a prompt, a
+ * photo listing needs a kind, an upload needs a sentence and a reason. Only the verdict is shared.
+ *
+ * `ownerCookiePresent` exists for one caller: an upload refused while an owner cookie IS present
+ * means a stale owner link, not a missing password, and those two need opposite things said to the
+ * person holding them.
+ */
+type AlbumGateRowLike = Pick<AlbumGateRow, 'id' | 'password_hash' | 'reveal_at'>
+
+/**
+ * Is this album still sealed?
+ *
+ * Its own function because the merge below left a FOURTH copy of this comparison behind, in
+ * resolveAlbum's `gated` -- the expression that decides whether paying for an ownership lookup can
+ * change what renders. A review found that reducing it to `!!album.password_hash` broke nothing any
+ * test could see, and what it costs is precise: the owner of a reveal-only album opens their own
+ * album and is shown a countdown to it, which is rule 25 and is exactly what the twenty-line comment
+ * above that expression says was fixed. One comparison, two readers, no third place for it to drift.
+ */
+export function revealPending(album: Pick<AlbumGateRow, 'reveal_at'>): boolean {
+  return !!album.reveal_at && new Date(album.reveal_at) > new Date()
+}
+
+export type GateVerdict =
+  | { pass: true }
+  | { pass: false; blockedBy: 'reveal' }
+  | { pass: false; blockedBy: 'password'; passwordCookiePresent: boolean }
+
+export async function albumGateVerdict(
+  album: AlbumGateRowLike,
+  cookieStore: CookieStore,
+  isOwner: boolean,
+): Promise<GateVerdict> {
+  if (isOwner) return { pass: true }
+  // REVEAL BEFORE PASSWORD, and the order is the rule rather than an accident of writing. An album
+  // can carry both; asking the password first would let somebody holding it open a sealed album
+  // early, on the page, the photo listing and the upload at once. All three callers inherit this
+  // one line now, so it is pinned by a test that puts a guest in front of a both-gated album.
+  if (revealPending(album)) return { pass: false, blockedBy: 'reveal' }
+  if (album.password_hash) {
+    const pwCookie = cookieStore.get(`hushare_pw_${album.id}`)?.value ?? ''
+    const unlocked = pwCookie.length > 0
+      ? await verifyAccessToken(pwCookie, album.password_hash, album.id)
+      : false
+    if (!unlocked) return { pass: false, blockedBy: 'password', passwordCookiePresent: pwCookie.length > 0 }
+  }
+  return { pass: true }
+}
+
 export async function gateAllowsContribution(
   album: AlbumGateRow,
   cookieStore: CookieStore,
@@ -490,27 +550,22 @@ export async function gateAllowsContribution(
   // album) must never match a null session.
   if (signedInUserId && album.user_id && signedInUserId === album.user_id) return { ok: true }
 
-  if (album.reveal_at && new Date(album.reveal_at) > new Date()) {
+  const verdict = await albumGateVerdict(album, cookieStore, false)
+  if (verdict.pass) return { ok: true }
+  if (verdict.blockedBy === 'reveal') {
     return { ok: false, error: 'This album has not been revealed yet', reason: 'not-revealed' }
   }
-  if (album.password_hash) {
-    const pwCookie = cookieStore.get(`hushare_pw_${album.id}`)?.value ?? ''
-    const unlocked = pwCookie.length > 0
-      ? await verifyAccessToken(pwCookie, album.password_hash, album.id)
-      : false
-    if (!unlocked) {
-      return {
-        ok: false,
-        error: 'Enter the album password before adding photos',
-        // Which of the two it is decides everything: absent means they never unlocked on this
-        // device, stale means the password was changed underneath someone who had.
-        reason: pwCookie.length > 0
-          ? 'password-cookie-stale'
-          : ownerPresent ? 'owner-cookie-mismatch' : 'password-cookie-absent',
-      }
-    }
+  return {
+    ok: false,
+    error: 'Enter the album password before adding photos',
+    // Which of the three it is decides everything: absent means they never unlocked on this device,
+    // stale means the password was changed underneath somebody who had, and an owner cookie that is
+    // present but wrong means a stale management link -- three different things to say, and the
+    // shared verdict deliberately does not decide between them.
+    reason: verdict.passwordCookiePresent
+      ? 'password-cookie-stale'
+      : ownerPresent ? 'owner-cookie-mismatch' : 'password-cookie-absent',
   }
-  return { ok: true }
 }
 
 export type PhotosResult =
@@ -558,22 +613,17 @@ export async function fetchAuthorizedPhotos(
 
   if (!album || album.retired_at) return { kind: 'notfound' }
 
-  const ownerCookie = (cookieStore.get(`hushare_owner_${albumId}`)?.value ?? '').trim()
+  // BOTH COOKIES KEY ON THE ROW'S id, not on the caller's. UUID_RE carries /i, so an uppercase id
+  // in the request validates, Postgres answers with the canonical lowercase one, and the access
+  // token HMACs the id's exact bytes -- so keying on the caller's string looked for a cookie that
+  // was never set under that name and verified against a value no token was minted for. It failed
+  // CLOSED, which is why nobody saw it, and it disagreed with the two places that set and read
+  // these cookies (api/album/password/verify and api/download/photo), both of which use the row.
+  const ownerCookie = (cookieStore.get(`hushare_owner_${album.id}`)?.value ?? '').trim()
   const isOwner = ownerCookie.length > 0 && timingSafeEqual(ownerCookie, album.owner_token)
-  let authorized = isOwner
 
-  if (!authorized) {
-    if (album.reveal_at && new Date(album.reveal_at) > new Date()) return { kind: 'reveal' }
-    if (album.password_hash) {
-      const pwCookie = cookieStore.get(`hushare_pw_${albumId}`)?.value ?? ''
-      authorized = pwCookie.length > 0
-        ? await verifyAccessToken(pwCookie, album.password_hash, albumId)
-        : false
-      if (!authorized) return { kind: 'password' }
-    } else {
-      authorized = true
-    }
-  }
+  const verdict = await albumGateVerdict(album, cookieStore, isOwner)
+  if (!verdict.pass) return { kind: verdict.blockedBy }
 
   // Moderation: the owner sees every photo (so they can review/approve); guests only see photos
   // that aren't hidden (pending approval, or hidden by the owner).
