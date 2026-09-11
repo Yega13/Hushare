@@ -191,3 +191,53 @@ describe('extendExpiry — paying early must never cost somebody time', () => {
     }
   })
 })
+
+
+// ── THE PRICE LIST, PINNED TO WHAT IS ACTUALLY SOLD ──────────────────────────────────────────────
+//
+// Added 2026-09-11 after a mutation run. The existing tests compare the catalogue against itself
+// (max >= pro) and read its numbers into other assertions, so quietly halving the Max allowance
+// passed everything: every consumer agreed, consistently, on the wrong number. Literals here are
+// correct and deliberate -- this is a price list, and the whole point is that the code must match
+// what a customer was sold, not merely be self-consistent.
+
+describe('the catalogue matches what the checkout actually sells', () => {
+  it('the item allowances are the ones on the pricing page', () => {
+    expect(PACKAGE_CATALOGUE.package_pro.items, 'Pro Package is sold as 5,000 items').toBe(5_000)
+    expect(PACKAGE_CATALOGUE.package_max.items, 'Max Package is sold as 10,000 items').toBe(10_000)
+  })
+
+  it('both packages cover two years, and both renewals one', () => {
+    expect(PACKAGE_CATALOGUE.package_pro.years).toBe(2)
+    expect(PACKAGE_CATALOGUE.package_max.years).toBe(2)
+    expect(RENEWAL_CATALOGUE.renewal_pro.years).toBe(1)
+    expect(RENEWAL_CATALOGUE.renewal_max.years).toBe(1)
+  })
+
+  it('a package key and a renewal key are never each other', () => {
+    // They carry very different money -- $99 against $9 -- and the webhook picks the grant by
+    // asking these two in turn. One accepting the other's keys makes a renewal read as a purchase.
+    for (const key of Object.keys(PACKAGE_CATALOGUE)) {
+      expect(isPackageKey(key), `${key} is a package key`).toBe(true)
+      expect(isRenewalKey(key), `${key} must NOT be a renewal key`).toBe(false)
+    }
+    for (const key of Object.keys(RENEWAL_CATALOGUE)) {
+      expect(isRenewalKey(key), `${key} is a renewal key`).toBe(true)
+      expect(isPackageKey(key), `${key} must NOT be a package key`).toBe(false)
+    }
+    for (const junk of ['', 'package', 'toString', 'constructor', '__proto__']) {
+      expect(isPackageKey(junk), `${junk} is not a package key`).toBe(false)
+      expect(isRenewalKey(junk), `${junk} is not a renewal key`).toBe(false)
+    }
+  })
+
+  it('the expiry arithmetic is in UTC, which only the source can show', () => {
+    // setFullYear reads the LOCAL year, so a purchase near midnight lands a year out for anyone
+    // east or west of UTC -- and no portable test can prove it, because CI runs in UTC where the
+    // two are identical. The file itself is the only honest place to assert this (rule 13's
+    // remedy: when the fact cannot be imported, make the test read the real source).
+    const src = readFileSync(join(process.cwd(), 'src', 'lib', 'package-catalogue.ts'), 'utf8')
+    expect(src, 'the year must be added in UTC').toContain('setUTCFullYear')
+    expect(/\bsetFullYear\b|\bgetFullYear\b/.test(src), 'a local-time date accessor is a timezone bug waiting for a customer').toBe(false)
+  })
+})

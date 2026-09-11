@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { packageGrantForProduct, applyPackageGrant , orderAmountLooksPaid, refundOutcome, PACKAGE_PRICE_TOLERANCE_CENTS } from '../src/lib/package-purchase'
+import { packageGrantForProduct, applyPackageGrant , orderAmountLooksPaid, refundOutcome, refundIsWhole, PACKAGE_PRICE_TOLERANCE_CENTS } from '../src/lib/package-purchase'
 import { PACKAGE_CATALOGUE, RENEWAL_CATALOGUE } from '../src/lib/package-catalogue'
 
 const NOW = new Date('2026-09-01T12:00:00Z')
@@ -173,5 +173,85 @@ describe('what was actually paid decides whether a package is granted', () => {
       expect(r.ok).toBe(false)
       if (!r.ok) expect(r.reason).toBe('unknown')
     }
+  })
+})
+
+
+// ── A FIELD WE CANNOT READ IS NOT A REFUND ───────────────────────────────────────────────────────
+//
+// Added 2026-09-11 after a mutation run. refundIsWhole opens with two guards on the amounts, and
+// deleting either left the whole suite green -- because every test passes two real numbers. What
+// they stop is the arithmetic being done on a value that is not a number at all: `null + 100 >= x`
+// is 100 >= x, which is TRUE for any order under a dollar and, with the total missing, true for
+// everything. A missing field in a Polar payload would then revoke a live package that nobody
+// refunded, on an album somebody paid $99 for.
+//
+// Erring the other way costs a support thread; erring this way destroys what a customer bought.
+
+describe('refundIsWhole refuses to decide on a number it does not have', () => {
+  it('an unreadable ORDER TOTAL is not a whole refund', () => {
+    for (const total of [null, undefined, NaN, 'lots' as unknown as number]) {
+      expect(refundIsWhole(total, 9900).whole, `total ${String(total)}`).toBe(false)
+    }
+  })
+
+  it('a zero or negative order total is not a whole refund either', () => {
+    // Nothing was collected, so there is nothing for a refund to cancel -- and dividing the
+    // question by an amount that cannot be right is how a bad row revokes a good album.
+    expect(refundIsWhole(0, 0).whole).toBe(false)
+    expect(refundIsWhole(-9900, 9900).whole).toBe(false)
+  })
+
+  it('an unreadable REFUNDED amount is not a whole refund', () => {
+    for (const refunded of [null, undefined, NaN, 'some' as unknown as number]) {
+      expect(refundIsWhole(9900, refunded).whole, `refunded ${String(refunded)}`).toBe(false)
+    }
+  })
+
+  it('...including on a SMALL order, which is the only place the arithmetic lies', () => {
+    // Against a $99 package, dropping the guard changes nothing: `null + 100 >= 9900` is still
+    // false, so the four cases above pass either way. The guard earns its place on an order at or
+    // below the tolerance -- a $1 test purchase in the same Polar account, which the nightly
+    // reconcile job scans alongside the real ones. There, `null + 100 >= 50` is TRUE, and an order
+    // nobody refunded reads as wholly refunded.
+    expect(refundIsWhole(50, null).whole, 'a 50c order with no refunded amount').toBe(false)
+    expect(refundIsWhole(100, null).whole).toBe(false)
+    expect(refundIsWhole(50, 50).whole, 'and a real full refund of it still reads as whole').toBe(true)
+  })
+
+  it('and it still says yes to a real full refund, so the guards did not break it', () => {
+    expect(refundIsWhole(9900, 9900).whole).toBe(true)
+    expect(refundIsWhole(9900, 9900 - PACKAGE_PRICE_TOLERANCE_CENTS).whole, 'within tolerance').toBe(true)
+    expect(refundIsWhole(9900, 5000).whole, 'half is not whole').toBe(false)
+  })
+
+  it('a refund with unreadable amounts KEEPS the package, and says it could not tell', () => {
+    // End to end through the decision the webhook actually makes.
+    const live = { tier: 'studio' as const, expiresAt: '2028-09-01T00:00:00Z', lastOrderId: 'order-1' }
+    expect(refundOutcome(live, 'order-1', { totalCents: null, refundedCents: 9900 }))
+      .toEqual({ action: 'keep', reason: 'unknown' })
+    expect(refundOutcome(live, 'order-1', { totalCents: 9900, refundedCents: undefined }))
+      .toEqual({ action: 'keep', reason: 'unknown' })
+  })
+})
+
+describe('a corrupt stored expiry does not 500 the purchase', () => {
+  it('extends from NOW rather than from a date that will not parse', () => {
+    // package_expires_at is a text column, so an unparseable value is reachable -- from an old
+    // import, a hand edit, or a restore. Feeding it to extendExpiry produces an Invalid Date, and
+    // .toISOString() on that THROWS: the webhook 500s, Polar retries, and a customer who has paid
+    // sits without their package while the same error repeats.
+    const grant = { kind: 'package' as const, key: 'package_max' as const, tier: 'studio' as const, years: 2, label: 'Max' }
+    for (const bad of ['not-a-date', '', '0000-00-00']) {
+      const out = applyPackageGrant({ tier: 'studio', expiresAt: bad }, grant, NOW)
+      expect(Number.isFinite(new Date(out.package_expires_at).getTime()), `expiry from "${bad}"`).toBe(true)
+      expect(new Date(out.package_expires_at).getTime(), 'and it must be in the future').toBeGreaterThan(NOW.getTime())
+    }
+  })
+
+  it('a live, readable expiry is still extended from, not discarded', () => {
+    const grant = { kind: 'package' as const, key: 'package_pro' as const, tier: 'pro' as const, years: 2, label: 'Pro' }
+    const out = applyPackageGrant({ tier: 'pro', expiresAt: '2027-09-01T12:00:00.000Z' }, grant, NOW)
+    expect(new Date(out.package_expires_at).getUTCFullYear(), 'two years on top of the year remaining').toBe(2029)
   })
 })
