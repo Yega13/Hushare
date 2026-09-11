@@ -153,6 +153,17 @@ const SIZE_BUDGET: Record<string, number> = {
   // distinction it depends on -- a guest tapping cancel, or a video the product refused on purpose,
   // counted as the network failing and made every remaining video upload serially for the rest of
   // the session. 14 tests, 14 module mutations and 7 wiring mutations, all killed.
+  // -1 then +1 (2026-09-11), net zero: how fast a batch was, and how many files it lost, are
+  // lib/upload/throughput. Small in lines and not small in effect -- the elapsed time came from two
+  // Date.now readings, so a phone taking an NTP correction mid-batch reported a throughput wrong by
+  // the size of the jump (rule 22). The clock is monotonic now, and the wiring test asserts no
+  // wall-clock reading of any spelling survives in this file, because the next person who needs
+  // "the time" reaches for one by habit.
+  //
+  // The +1 is a review finding and is worth more than the line it costs: the denominator was the
+  // bytes the batch ATTEMPTED, summed up front. On a batch where nine of ten files fail -- the
+  // batches this metric exists to explain -- that reads about ten times too fast. Bytes are counted
+  // as each file lands now, which needs one statement where the sum used to be a one-line reduce.
   'src/components/UploadZone.tsx': 2039,
   // +3 on 2026-08-30: the branding toggle gained a real plan check (it was dimmed but still
   // clickable), and Face Finder and bib search stopped riding on the collections flag. Three

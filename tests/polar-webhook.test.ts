@@ -1,5 +1,5 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest'
-import { verifyWebhookSignature, tierFromProduct, isPlanKey, subProductId, subCustomerId } from '@/lib/polar'
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
+import { verifyWebhookSignature, tierFromProduct, isPlanKey, subProductId, subCustomerId, orderProductId, productIdForPlan } from '@/lib/polar'
 
 // THE BOUNDARY THAT DECIDES WHO HAS PAID.
 //
@@ -227,5 +227,86 @@ describe('plan keys and subscription field readers', () => {
     expect(subCustomerId({ customer_id: 'c1' } as never)).toBe('c1')
     expect(subCustomerId({ customer: { id: 'c2' } } as never)).toBe('c2')
     expect(subCustomerId({} as never)).toBeNull()
+  })
+})
+
+
+// ── WHAT A MUTATION RUN FOUND ON 2026-09-11 ──────────────────────────────────────────────────────
+//
+// Seven mutations of lib/polar survived this file. Four were real, and every one of them is a
+// payment: a signature accepted on a PREFIX of the real one, an order with an empty product id
+// resolving to a tier, a plan key pointing at another plan's product, and an order payload in the
+// nested shape reading as no product at all.
+
+describe('a signature that merely STARTS like the real one is not the real one', () => {
+  it('refuses every prefix of a genuine signature', async () => {
+    // `startsWith` reads as a match and is walkable: an attacker submits one character, then two,
+    // learning the signature a byte at a time against an endpoint that grants subscriptions.
+    const body = JSON.stringify({ type: 'order.created' })
+    const ts = nowSeconds()
+    const signature = await sign(SECRET, ID, ts, body)
+    for (const cut of [1, 8, signature.length - 1]) {
+      const headers = headersFor(ID, ts, `v1,${signature.slice(0, cut)}`)
+      expect(await verifyWebhookSignature(body, headers, SECRET), `prefix of length ${cut}`).toBe(false)
+    }
+  })
+
+  it('and refuses a genuine signature with anything appended', async () => {
+    const body = JSON.stringify({ type: 'order.created' })
+    const ts = nowSeconds()
+    const signature = await sign(SECRET, ID, ts, body)
+    const headers = headersFor(ID, ts, `v1,${signature}x`)
+    expect(await verifyWebhookSignature(body, headers, SECRET)).toBe(false)
+  })
+})
+
+describe('a product id that is not a product does not resolve to a tier', () => {
+  it('an EMPTY product id is unknown, even when the env vars are unset', () => {
+    // `order.product_id ?? order.product?.id` passes an empty string straight through -- nullish
+    // coalescing does not catch ''. If an unset env var had also mapped '', that order would have
+    // granted Pro to somebody who bought nothing.
+    expect(tierFromProduct('')).toBeNull()
+  })
+
+  it('and neither does a whitespace id', () => {
+    expect(tierFromProduct(' ')).toBeNull()
+  })
+})
+
+describe('each plan key resolves to its OWN product', () => {
+  it('never to another plan\'s', () => {
+    // pro_yearly pointing at the monthly product charges a year as a month, or a month as a year,
+    // depending which way it drifted -- and the checkout looks entirely normal either way.
+    const envByPlan: Record<string, string> = {
+      pro_monthly: 'POLAR_PRODUCT_PRO_MONTHLY',
+      pro_yearly: 'POLAR_PRODUCT_PRO_YEARLY',
+      studio_monthly: 'POLAR_PRODUCT_STUDIO_MONTHLY',
+      studio_yearly: 'POLAR_PRODUCT_STUDIO_YEARLY',
+    }
+    // A distinct id per env var, so a plan reading the wrong one is visible in the answer.
+    for (const [plan, envVar] of Object.entries(envByPlan)) vi.stubEnv(envVar, `id-for-${plan}`)
+    try {
+      for (const plan of Object.keys(envByPlan)) {
+        expect(productIdForPlan(plan)?.productId, `${plan} must resolve to its own product`).toBe(`id-for-${plan}`)
+      }
+    } finally {
+      vi.unstubAllEnvs()
+    }
+  })
+
+  it('and an unknown plan resolves to nothing', () => {
+    for (const plan of ['free', 'pro', '', 'PRO_MONTHLY']) {
+      expect(productIdForPlan(plan), `${plan}`).toBeNull()
+    }
+  })
+})
+
+describe('an ORDER payload is read in either shape Polar sends', () => {
+  it('flat and nested, and null for neither', () => {
+    // Only the SUBSCRIPTION readers were covered. The order reader feeds the package grant and the
+    // nightly reconcile: reading no product id there means a real purchase silently grants nothing.
+    expect(orderProductId({ product_id: 'p1' } as never)).toBe('p1')
+    expect(orderProductId({ product: { id: 'p2' } } as never)).toBe('p2')
+    expect(orderProductId({} as never)).toBeNull()
   })
 })

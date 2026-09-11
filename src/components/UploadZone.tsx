@@ -1,7 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { createStallWatch, settleWithin } from '@/lib/clock'
+import { createStallWatch, settleWithin, monotonicNow, elapsedSince } from '@/lib/clock'
 import { Semaphore } from '@/lib/upload/semaphore'
 import { readJson, HttpError } from '@/lib/upload/http'
 import {
@@ -11,6 +11,7 @@ import {
 import { freshEntryFor, mergeWall, queuePendingRows, retryMode, shouldPark, wallFor } from '@/lib/upload/retry-plan'
 import { createRowSaver } from '@/lib/upload/row-saver'
 import { createVideoLane, videoOutcomeOf } from '@/lib/upload/video-lane'
+import { batchThroughputKbps, lostCount } from '@/lib/upload/throughput'
 import { reportClientEvent } from '@/lib/upload/report'
 import { reachability } from '@/lib/upload/reachability'
 import { fetchWithRetry, putImageWithRelay, FETCH_DEADLINE_SAVE_MS } from '@/lib/upload/retry'
@@ -1241,8 +1242,10 @@ export default function UploadZone({ album, onPhotosUploaded, isOwner }: Props) 
     // Bytes and clock for this batch, so the throughput reported at the end is a measurement rather
     // than an impression. "Uploads feel slow" fits a slow connection, a slow phone and a slow server
     // equally well, and those are three completely different fixes.
-    const batchStartedAt = Date.now()
-    const batchBytes = toUpload.reduce((n, e) => n + (e.file?.size ?? 0), 0)
+    // MONOTONIC, not Date.now (rule 22): a phone that takes an NTP correction mid-batch would
+    // otherwise report a throughput wrong by the size of the jump. Why, at length, in the module.
+    const batchStartedAt = monotonicNow()
+    let deliveredBytes = 0   // bytes that actually crossed the network, counted as each file lands
     activeBatchCountRef.current++
     setIsUploading(true)
 
@@ -1343,6 +1346,7 @@ export default function UploadZone({ album, onPhotosUploaded, isOwner }: Props) 
             : await uploadVideoToStream(entry.file, album.id, pct => patchEntry(entry.id, { progress: pct }), signal, entry.videoResume)
 
           // Bytes are in storage; the saver flips this tile to 'done' when the row commits.
+          deliveredBytes += entry.file.size
           patchEntry(entry.id, { progress: 100, videoResume: undefined })
           saver.add(row, entry.id)
           if (kind === 'video') videoLane.note('clean')   // the lane may widen on a proven streak
@@ -1453,15 +1457,11 @@ export default function UploadZone({ album, onPhotosUploaded, isOwner }: Props) 
     // Both halves of the outcome, so the dashboard shows a RATE rather than a count. media_uploaded
     // already recorded successes; without the failures beside them a bad night and a quiet night
     // produce the same shape.
-    const elapsedMs = Date.now() - batchStartedAt
-    // Only when something actually landed and enough time passed to divide by: a 200ms batch of one
-    // cached thumbnail would report a throughput no real upload could reach and drag the median with
-    // it.
-    const kbps = savedCount > 0 && elapsedMs > 500
-      ? Math.round((batchBytes / 1024) / (elapsedMs / 1000))
-      : undefined
+    // What counts as measurable, and what "lost" means, are lib/upload/throughput's -- along with
+    // the reason a short batch reports nothing rather than a number no upload could reach.
+    const kbps = batchThroughputKbps(deliveredBytes, elapsedSince(batchStartedAt), savedCount)
     trackUploadStep('done', savedCount, album.id, kbps)
-    const lost = Math.max(0, toUpload.length - savedCount)
+    const lost = lostCount(toUpload.length, savedCount)
     if (lost > 0) trackUploadStep('failed', lost, album.id)
 
     // Decrement before onPhotosUploaded so if the parent unmounts UploadZone

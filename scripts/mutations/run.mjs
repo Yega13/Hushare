@@ -26,7 +26,7 @@
 // This lives in the repository rather than a scratchpad so a mutation result can be re-run by
 // anyone, and so a test that quietly weakens is caught the next time someone runs its set.
 
-import { readFileSync, writeFileSync, readdirSync, existsSync, rmSync } from 'node:fs'
+import { readFileSync, writeFileSync, readdirSync, existsSync, rmSync, renameSync } from 'node:fs'
 import { execSync } from 'node:child_process'
 import { dirname, join, basename } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
@@ -167,6 +167,7 @@ for (const name of names) {
   const restore = () => {
     writeFileSync(target, original)
     rmSync(SENTINEL, { force: true })
+    rmSync(`${SENTINEL}.tmp`, { force: true })
     rmSync(BACKUP, { force: true })
   }
   // Every signal that can reach a node process here, not just the one a person types.
@@ -187,8 +188,16 @@ for (const name of names) {
       if (occurrences > 1) { console.log(`AMBIGUOUS (${occurrences} matches)  ${m.name}`); failed = true; continue }
       // The note and the original bytes go down FIRST. If this process dies between here and the
       // restore below, the next run reads these and puts the file back.
+      //
+      // THE NOTE IS WRITTEN ATOMICALLY, via a temp name and a rename, because a HALF-written note
+      // is the one state the recovery cannot act on -- it refuses rather than guess which file the
+      // backup belongs to, which is safe and still leaves a human to do it by hand. That happened
+      // on 2026-09-11: a run killed mid-write left a blank note beside a good backup, and the
+      // mutant sat in src/lib/upload/throughput.ts until the sizes were compared by hand. A rename
+      // on the same filesystem cannot be observed half-done, so the note is either absent or whole.
       writeFileSync(BACKUP, original)
-      writeFileSync(SENTINEL, JSON.stringify({ file: set.file, set: name, mutation: m.name }, null, 2))
+      writeFileSync(`${SENTINEL}.tmp`, JSON.stringify({ file: set.file, set: name, mutation: m.name }, null, 2))
+      renameSync(`${SENTINEL}.tmp`, SENTINEL)
       writeFileSync(target, text.replace(m.from, m.to))
       let killed = false
       try {

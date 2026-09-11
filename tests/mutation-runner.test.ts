@@ -204,6 +204,29 @@ describe('a killed run does not leave a mutant on disk', () => {
     expect(() => run('--recover-only')).toThrow()
   })
 
+  it('the note is written atomically, so a half-written one cannot exist', () => {
+    // The one state the recovery cannot act on is a note that parses as nothing: it refuses rather
+    // than guess which file the backup belongs to, which is safe and still leaves somebody to
+    // restore by hand. That happened on 2026-09-11 -- a run killed mid-write left a blank note
+    // beside a good backup, and the mutant sat in src/lib/upload/throughput.ts until the file sizes
+    // were compared by hand.
+    //
+    // A rename on one filesystem cannot be observed half-done. The timing this protects against
+    // cannot be produced by a test, so the mechanism is asserted where it lives (rule 13's remedy
+    // for a fact that cannot be expressed as behaviour).
+    const runner = readFileSync(RUN, 'utf8')
+    expect(runner, 'the note goes to a temp name first').toContain('${SENTINEL}.tmp')
+    expect(runner, 'and is put in place by a rename').toMatch(/renameSync\(`\$\{SENTINEL\}\.tmp`, SENTINEL\)/)
+    expect(runner, 'never written straight to its final name').not.toMatch(/writeFileSync\(SENTINEL,/)
+  })
+
+  it('leaves no temp file behind after a normal run', () => {
+    run('--recover-only')
+    for (const f of readdirSync(MUT)) {
+      expect(f.endsWith('.tmp'), `${f} was left behind`).toBe(false)
+    }
+  })
+
   it('a clean tree is left completely alone', () => {
     const before = readFileSync(victim)
     run('--recover-only')

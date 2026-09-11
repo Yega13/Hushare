@@ -118,3 +118,48 @@ describe('UploadZone runs its video lane from lib/upload/video-lane and decides 
     expect(text, 'only the lane may resize the video semaphore').not.toMatch(/videoSem(Ref\.current)?\.setCapacity/)
   })
 })
+
+describe('UploadZone measures a batch with a clock that cannot jump', () => {
+  it('NO WALL-CLOCK READING SURVIVES IN THIS FILE AT ALL', () => {
+    // Rule 22, as a whole-file rule rather than a line-by-line one. Date.now moves when a phone
+    // takes an NTP or NITZ correction, when the time is set by hand, and when a device whose clock
+    // was wrong corrects itself on boot -- all of which happen to phones at events, which is the
+    // only place this component runs. Any duration derived from two of those readings is wrong by
+    // the size of the jump, silently, in whichever direction it moved.
+    //
+    // Asserted as absence because that is the only form that stays true: a future edit that needs
+    // "the time" reaches for Date.now by habit, and this fails in the same commit.
+    // Every spelling, not just the one I happened to replace. `new Date().getTime()` is an equally
+    // common habit and walked straight past the first version of this pin, as did Date.parse.
+    const text = src()
+    expect(text, 'Date.now').not.toMatch(/\bDate\.now\s*\(/)
+    expect(text, 'new Date(...)').not.toMatch(/\bnew\s+Date\s*\(/)
+    expect(text, 'Date.parse').not.toMatch(/\bDate\.parse\s*\(/)
+  })
+
+  it('the batch clock is monotonic, and the duration comes from lib/clock', () => {
+    const text = src()
+    expect(text).toMatch(/const batchStartedAt = monotonicNow\(\)/)
+    // No `s` flag on this one: [^}] already matches newlines, and a literal regex with `s`
+    // requires an es2018 target that tsconfig does not set.
+    expect(text).toMatch(/import \{[^}]*\bmonotonicNow\b[^}]*\} from '@\/lib\/clock'/)
+    expect(text).toMatch(/elapsedSince\(batchStartedAt\)/)
+  })
+
+  it('what counts as measurable, and what "lost" means, are the module\'s', () => {
+    const text = src()
+    // The real bytes, the real duration and the real saved count -- a literal in any of the three
+    // reads identically at the call site and makes the dashboard number fiction.
+    // deliveredBytes, NOT the bytes the batch set out to send. Ten photos totalling 30 MB with one
+    // 3 MB photo landing in 60 seconds is 51 kB/s; measured against what was attempted it reads
+    // 512 kB/s -- ten times too fast, for the worst upload of the night.
+    expect(text).toMatch(/const kbps = batchThroughputKbps\(deliveredBytes, elapsedSince\(batchStartedAt\), savedCount\)/)
+    expect(text, 'bytes are counted as each file lands, not summed up front').toMatch(/deliveredBytes \+= entry\.file\.size/)
+    // ...and it STARTS at zero. Seeding it with the sum of what the batch set out to send passes
+    // the line above untouched and puts the old, ten-times-too-fast number straight back.
+    expect(text, 'the counter starts empty').toMatch(/let deliveredBytes = 0\b/)
+    expect(text).toMatch(/const lost = lostCount\(toUpload\.length, savedCount\)/)
+    // ...and no copy of the arithmetic stayed behind.
+    expect(text).not.toMatch(/elapsedMs > 500|deliveredBytes \/ 1024|Math\.max\(0, toUpload\.length - savedCount\)/)
+  })
+})
