@@ -80,6 +80,7 @@ create table if not exists public.albums (
   package_last_order_id text,
   package_reminder_at timestamp with time zone,
   deleted_at timestamp with time zone,
+  bib_excluded_numbers text[] default '{}'::text[] not null,
   primary key (id)
 );
 alter table public.albums enable row level security;
@@ -276,6 +277,12 @@ do $$ begin
   if not exists (select 1 from pg_constraint where conname = 'albums_background_theme_check'
     and conrelid = 'albums'::regclass) then
     alter table albums add constraint albums_background_theme_check CHECK (((background_theme IS NULL) OR (char_length(background_theme) <= 2048)));
+  end if;
+end $$;
+do $$ begin
+  if not exists (select 1 from pg_constraint where conname = 'albums_bib_excluded_numbers_bounded'
+    and conrelid = 'albums'::regclass) then
+    alter table albums add constraint albums_bib_excluded_numbers_bounded CHECK (((array_length(bib_excluded_numbers, 1) IS NULL) OR (array_length(bib_excluded_numbers, 1) <= 200)));
   end if;
 end $$;
 do $$ begin
@@ -690,6 +697,26 @@ AS $function$
   order by g.dow;
 $function$;
 
+CREATE OR REPLACE FUNCTION public.album_bib_tallies(p_album_id uuid, p_limit integer DEFAULT 20)
+ RETURNS TABLE(number text, photos bigint, sample_thumb text)
+ LANGUAGE sql
+ STABLE
+AS $function$
+  select
+    n as number,
+    count(*) as photos,
+    -- thumb_url, never url: this is a 40px chip in a dropdown, and the full image is several
+    -- megabytes. NULL where a legacy row has no thumbnail; the panel renders the number alone.
+    (array_agg(p.thumb_url order by p.created_at asc))[1] as sample_thumb
+  from public.photos p, unnest(p.bib_numbers) as n
+  where p.album_id = p_album_id
+    and p.media_type = 'image'
+    and p.bib_numbers is not null
+  group by n
+  order by count(*) desc, n asc
+  limit greatest(0, least(coalesce(p_limit, 20), 100));
+$function$;
+
 CREATE OR REPLACE FUNCTION public.album_is_open(p_album_id uuid)
  RETURNS boolean
  LANGUAGE sql
@@ -970,6 +997,7 @@ revoke execute on function public.admin_growth_series(p_days integer) from publi
 revoke execute on function public.admin_user_cohorts(p_months integer) from public, anon, authenticated;
 revoke execute on function public.admin_user_overview(p_limit integer) from public, anon, authenticated;
 revoke execute on function public.admin_weekday_series(p_days integer, p_tz text) from public, anon, authenticated;
+revoke execute on function public.album_bib_tallies(p_album_id uuid, p_limit integer) from public, anon, authenticated;
 revoke execute on function public.album_is_open(p_album_id uuid) from public, anon, authenticated;
 revoke execute on function public.album_video_seconds(p_album_id uuid) from public, anon, authenticated;
 revoke execute on function public.batch_set_sort_order(p_album_id uuid, p_ids uuid[], p_orders integer[]) from public, anon, authenticated;
