@@ -1,10 +1,11 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useDraftOf } from '@/lib/use-draft-of'
 
 export function ColorSwatch({ value, onChange }: { value: string; onChange: (v: string) => void }) {
-  const [hex, setHex] = useState(value)
-  useEffect(() => setHex(value), [value])
+  // A draft while it is being typed in -- "#FF" is not a colour yet -- that follows `value` when
+  // the swatch or another panel changes it. lib/use-draft-of carries why this is not an effect.
+  const [hex, setHex] = useDraftOf(value, (v) => v)
   function handle(raw: string) {
     const v = raw.startsWith('#') ? raw : '#' + raw
     setHex(v)
@@ -29,8 +30,7 @@ export function ColorSwatch({ value, onChange }: { value: string; onChange: (v: 
 }
 
 export function NumInput({ label, value, onChange, min, max, unit = '' }: { label: string; value: number; min?: number; max?: number; step?: number; unit?: string; onChange: (v: number) => void }) {
-  const [local, setLocal] = useState(String(Math.round(value * 10) / 10))
-  useEffect(() => { setLocal(String(Math.round(value * 10) / 10)) }, [value])
+  const [local, setLocal] = useDraftOf(value, (v) => String(Math.round(v * 10) / 10))
   function commit(raw: string) {
     const n = parseFloat(raw)
     if (!isNaN(n)) {

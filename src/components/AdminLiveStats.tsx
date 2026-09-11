@@ -1,6 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react'
+import { useBrowserSeededState } from '@/lib/use-browser-value'
 
 // The dashboard's counts, live, and showing what changed since you last looked.
 //
@@ -180,8 +181,7 @@ export default function AdminLiveStats({ initial }: { initial: LiveStats }) {
   // initializer made the first client render disagree with the SSR text whenever the switch
   // was off — a React hydration error reported into the very panel this dashboard displays,
   // on every admin reload. Same pattern as useIsNarrow, for the same reason.
-  const [rt, setRt] = useState(true)
-  useEffect(() => { setRt(rtInitial()) }, [])
+  const [rt, setRt] = useBrowserSeededState(rtInitial, true)
   const tick = useRef(0)
   const mounted = useRef(true)
 

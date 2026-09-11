@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
+import { useBrowserValue } from '@/lib/use-browser-value'
 import { useT } from '@/i18n/LocaleProvider'
 import { ownerRows } from '@/lib/owner-rows'
 import { FEATURE_TIER } from '@/lib/plan-gates'
@@ -92,11 +93,10 @@ export default function OwnerToolbar({ album, photos, albumPhotoCount, ownerToke
   const settingsRef = useRef<HTMLDivElement>(null)
 
   const publicSlug = album.custom_slug ?? album.slug
-  // shareUrl and ownerUrl depend on window.location.origin, which is not available during
-  // SSR. Initialise with '' and populate in a useEffect so the server-rendered HTML and
-  // the first client render both produce an empty origin — eliminating the hydration mismatch.
-  const [origin, setOrigin] = useState('')
-  useEffect(() => { setOrigin(window.location.origin) }, [])
+  // shareUrl and ownerUrl need window.location.origin, which does not exist during SSR. The
+  // fallback is '' so the server's HTML and the first client render agree; lib/use-browser-value
+  // carries the rest of the reason.
+  const origin = useBrowserValue(() => window.location.origin, '')
   const shareUrl = origin ? `${origin}/${publicSlug}` : `/${publicSlug}`
 
   // Fetch the owner token eagerly when the toolbar mounts (owner view is already confirmed),

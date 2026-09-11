@@ -4,5 +4,5 @@
   "react-hooks/exhaustive-deps": 4,
   "react-hooks/immutability": 10,
   "react-hooks/refs": 20,
-  "react-hooks/set-state-in-effect": 27
+  "react-hooks/set-state-in-effect": 23
 }
