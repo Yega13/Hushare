@@ -39,13 +39,13 @@ export default {
     },
     {
       name: 'the dedup keeps the FIRST reading instead of the most confident one',
-      from: '    if (prev === undefined || w.confidence > prev.confidence) best.set(digits, w)',
-      to: '    if (prev === undefined) best.set(digits, w)',
+      from: '    if (prev === undefined || w.confidence > prev.word.confidence) best.set(key, { word: w, digits })',
+      to: '    if (prev === undefined) best.set(key, { word: w, digits })',
     },
     {
-      name: 'the dedup keeps the LEAST confident reading',
-      from: 'w.confidence > prev.confidence',
-      to: 'w.confidence < prev.confidence',
+      name: 'the dedup keeps the LEAST confident reading, so a crowded banner beats an isolated bib',
+      from: 'w.confidence > prev.word.confidence',
+      to: 'w.confidence < prev.word.confidence',
     },
     {
       name: 'the confidence floor is removed — unreadable digits become bibs',
@@ -81,6 +81,16 @@ export default {
       name: 'leading zeros are stripped, so a padded bib stops matching what a runner types',
       from: '  return cleaned',
       to: '  return String(Number(cleaned))',
+    },
+    {
+      name: 'the per-photo map is keyed by SPELLING, so one runner is stored and counted twice',
+      from: '    const key = numericKey(digits)',
+      to: '    const key: string | null = digits',
+    },
+    {
+      name: 'the stored spelling is the canonical key rather than what OCR actually read',
+      from: '    out.push({ number: digits, confidence: w.confidence })',
+      to: '    out.push({ number: String(Number(digits)), confidence: w.confidence })',
     },
   ],
 }

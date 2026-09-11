@@ -293,6 +293,15 @@ describe('mergeTalliesByValue — the tallies count spellings, the panel counts 
     expect(out[0].number).toBe('2026')
   })
 
+  it('prefers the unpadded spelling when both were seen equally often', () => {
+    // The RPC breaks count ties by TEXT, and '02026' sorts before '2026', so first-seen-wins would
+    // label the row with the padded form. Cosmetic only -- everything downstream compares by value
+    // -- but the label is the thing the owner has to recognise on their own finish arch.
+    const out = mergeTalliesByValue([{ number: '02026', photos: 40 }, { number: '2026', photos: 40 }])
+    expect(out[0].number).toBe('2026')
+    expect(out[0].photos).toBe(80)
+  })
+
   it('takes a photograph from whichever spelling has one', () => {
     const out = mergeTalliesByValue([
       { number: '2026', photos: 1105, sampleThumb: null },

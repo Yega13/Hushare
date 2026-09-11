@@ -84,9 +84,14 @@ export default {
       to: '    if (false) continue',
     },
     {
+      name: 'a tie labels the row with the PADDED spelling, which the owner is least likely to know',
+      from: '      || (t.photos === prev.topPhotos && t.number.length < prev.row.number.length)) {',
+      to: '      || false) {',
+    },
+    {
       name: 'the row is labelled with the rarest spelling rather than the one most often seen',
-      from: '    if (t.photos > prev.topPhotos) {',
-      to: '    if (t.photos <= prev.topPhotos) {',
+      from: '    if (t.photos > prev.topPhotos',
+      to: '    if (t.photos < prev.topPhotos',
     },
     {
       name: 'an excluded row is looked up in the unmerged tallies, so it shows one spelling only',

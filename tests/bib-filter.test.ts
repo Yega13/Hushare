@@ -120,6 +120,48 @@ describe('acceptedBibs — the boundaries', () => {
 // highest-confidence reading is kept and the line rule is applied to THAT one. Asking instead
 // "was ANY reading isolated?" readmits the banner year: measured on the real sample the two
 // orderings differ on 3 of 712 tags, and 2 of the 3 are exactly that.
+// ONE RUNNER IS ONE NUMBER, WHATEVER OCR SPELLED IT.
+//
+// The per-photograph map was keyed on the digit STRING, so "945" and "0945" were two entries for
+// one runner and one photograph was counted twice in the owner's signage tallies -- measured at 2
+// of 4,697 indexed photographs. That count decides whether a number is offered for exclusion at
+// all, and the over-count only ever pushes toward "this is signage", which is the direction that
+// hides a runner from their own search.
+describe('acceptedBibs — two spellings of one number are one bib', () => {
+  it('stores a padded and an unpadded reading of one number ONCE', () => {
+    const out = acceptedBibs([
+      { text: '945', confidence: 95, lineId: 1 }, { text: '0945', confidence: 90, lineId: 2 },
+    ])
+    expect(out).toHaveLength(1)
+  })
+
+  it('keeps the spelling of the most confident reading', () => {
+    const out = acceptedBibs([
+      { text: '945', confidence: 90, lineId: 1 }, { text: '0945', confidence: 95, lineId: 2 },
+    ])
+    expect(out.map((b) => b.number)).toEqual(['0945'])
+    expect(out[0].confidence).toBe(95)
+  })
+
+  it('still keeps two genuinely different numbers apart', () => {
+    const out = acceptedBibs([
+      { text: '945', confidence: 95, lineId: 1 }, { text: '9450', confidence: 95, lineId: 2 },
+    ])
+    expect(out.map((b) => b.number).sort()).toEqual(['945', '9450'])
+  })
+
+  it('applies the line rule to the winning reading, not to whichever spelling was isolated', () => {
+    // The measured ordering below decides this, and keying by value must not quietly reverse it:
+    // the most confident reading of the NUMBER faces the line test, even when a different spelling
+    // of it happened to stand alone.
+    const out = acceptedBibs([
+      { text: '02026', confidence: 99, lineId: 1 }, { text: 'AUGUST', confidence: 98, lineId: 1 },
+      { text: '2026', confidence: 84, lineId: 2 },
+    ])
+    expect(out).toEqual([])
+  })
+})
+
 describe('acceptedBibs — the max-confidence reading decides', () => {
   it('drops a number whose BEST reading is on a shared line, though a worse one was alone', () => {
     const out = acceptedBibs([

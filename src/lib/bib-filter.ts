@@ -58,6 +58,12 @@
 // exclusion list is for, and it is a separate decision with a human in front of it.
 
 /** Longest number a bib can be. Also the width bibSearchCandidates pads to when matching. */
+// "The same number" is defined once, in bib-exclusions, and both the owner's list and search
+// already compare through it. Indexing needs the same definition to avoid storing one runner twice
+// under two spellings, and a second copy of the rule here is how the two halves start disagreeing
+// about what a number is (rule 13).
+import { numericKey } from '@/lib/bib-exclusions'
+
 export const MAX_BIB_DIGITS = 6
 
 /**
@@ -124,23 +130,38 @@ export function acceptedBibs(
     wordsPerLine.set(w.lineId, (wordsPerLine.get(w.lineId) ?? 0) + 1)
   }
 
-  const best = new Map<string, DetectedWord>()
+  // KEYED BY VALUE, NOT BY SPELLING. OCR keeps leading zeros, so "945" and "0945" were two
+  // entries for one runner: one photograph counted twice in the owner's signage tallies, which
+  // lands exactly on the floor where a single photograph decides whether a number is offered for
+  // exclusion at all. Measured at 2 of 4,697 indexed photographs -- rare, and never in the safe
+  // direction, because an over-count only ever makes a number look more like signage. Search has
+  // always compared by value (bib-match pads the query to every spelling), so the second spelling
+  // bought nothing and could only miscount.
+  //
+  // THE MAX-CONFIDENCE READING STILL DECIDES, and that ordering is measured, not preference: see
+  // the note above the tests for it. Keying by value only changes WHICH readings compete for the
+  // slot -- it does not change that the winner, and only the winner, faces the line rule.
+  const best = new Map<string, { word: DetectedWord; digits: string }>()
   for (const w of words) {
     if (!Number.isFinite(w.confidence) || w.confidence < minConfidence) continue
     const digits = bibDigitsOf(w.text)
     if (digits === null) continue
-    const prev = best.get(digits)
-    if (prev === undefined || w.confidence > prev.confidence) best.set(digits, w)
+    // The shared definition of "the same number", never a second copy of it (rule 13).
+    const key = numericKey(digits)
+    if (key === null) continue
+    const prev = best.get(key)
+    if (prev === undefined || w.confidence > prev.word.confidence) best.set(key, { word: w, digits })
   }
 
   const out: AcceptedBib[] = []
-  for (const [digits, w] of best) {
+  for (const { word: w, digits } of best.values()) {
     // A word with no line at all is not evidence of isolation, it is missing information, so it is
     // refused. Measured on 8,939 real detections across two albums, ParentId was present on every
     // one -- so this branch is unreachable today and must stay the safe direction rather than
     // become a convenient default if the API ever omits it.
     if (w.lineId === null || w.lineId === undefined) continue
     if ((wordsPerLine.get(w.lineId) ?? 0) !== 1) continue
+    // The spelling of the reading that won, so the stored value is what OCR actually read.
     out.push({ number: digits, confidence: w.confidence })
   }
   return out

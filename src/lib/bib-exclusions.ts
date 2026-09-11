@@ -45,17 +45,6 @@ export const CANDIDATE_MIN_PHOTOS = 2
 export const CANDIDATE_MAX = 20
 
 /**
- * The numbers to put in front of the owner, most-seen first.
- *
- * TOP-20 RATHER THAN TOP-5, from a real finding: the five loudest numbers on the measured album
- * were the arch year and one billboard's phone number, and immediately behind them sat 2020 (76
- * photos), 202 (67) and 2028 (41) -- banner misreads that a shorter list would leave behind while
- * the owner believed they had cleared the noise.
- *
- * Numbers already excluded are not offered again; the panel shows those separately so they can be
- * put back.
- */
-/**
  * One row per NUMBER, where the tallies count spellings.
  *
  * The tally RPC groups by the literal string OCR read, and OCR keeps leading zeros -- so an arch
@@ -64,11 +53,16 @@ export const CANDIDATE_MAX = 20
  * your album") is split across both, two of the twenty slots go to one value, and the owner sees a
  * number listed twice -- which is the exact symptom this panel was redesigned to remove.
  *
- * THE COUNT IS SUMMED, and the direction it can err is worth stating. Summing over-counts only when
- * ONE photograph carries both spellings, which needs OCR to read the same number twice on one frame
- * with different padding -- lib/bib-filter accepts a number only when it is ALONE on its line, so
- * that is close to unreachable. Across different photographs, which is the real case, the sum is
- * exact.
+ * THE COUNT IS SUMMED, and the direction it can err is worth stating exactly. Summing over-counts
+ * when ONE photograph carries both spellings. lib/bib-filter no longer produces that -- it keys its
+ * per-photograph map by VALUE -- but rows indexed before that change still hold it, measured at 2 of
+ * 4,697. The line rule does NOT prevent it and this comment once claimed it did: "alone on its line"
+ * and "once per photograph" are different guarantees, and only the first was ever enforced here.
+ * Across different photographs, which is the real case, the sum is exact.
+ *
+ * The error is never in the safe direction: an over-count only makes a number look MORE like
+ * signage, and it decides an outcome only at CANDIDATE_MIN_PHOTOS, where one photograph is the
+ * whole difference between a number being offered for exclusion and never being mentioned.
  *
  * THE SPELLING SEEN MOST OFTEN LABELS THE ROW, with its photograph, because that is the one the
  * owner is most likely to recognise. Which spelling wins does not affect what gets excluded:
@@ -90,7 +84,11 @@ export function mergeTalliesByValue(tallies: readonly NumberTally[]): NumberTall
       continue
     }
     prev.row.photos += t.photos
-    if (t.photos > prev.topPhotos) {
+    // On a TIE the shorter spelling wins, because the RPC orders ties by text and "02026" sorts
+    // before "2026" -- so first-seen-wins would label the row with the padded form the owner is
+    // least likely to recognise. Cosmetic only: everything downstream compares by value.
+    if (t.photos > prev.topPhotos
+      || (t.photos === prev.topPhotos && t.number.length < prev.row.number.length)) {
       prev.topPhotos = t.photos
       prev.row.number = t.number
       if (t.sampleThumb) prev.row.sampleThumb = t.sampleThumb
@@ -101,6 +99,17 @@ export function mergeTalliesByValue(tallies: readonly NumberTally[]): NumberTall
   return [...merged.values()].map((m) => m.row)
 }
 
+/**
+ * The numbers to put in front of the owner, most-seen first.
+ *
+ * TOP-20 RATHER THAN TOP-5, from a real finding: the five loudest numbers on the measured album
+ * were the arch year and one billboard's phone number, and immediately behind them sat 2020 (76
+ * photos), 202 (67) and 2028 (41) -- banner misreads that a shorter list would leave behind while
+ * the owner believed they had cleared the noise.
+ *
+ * Numbers already excluded are not offered again; the panel shows those separately so they can be
+ * put back.
+ */
 export function exclusionCandidates(
   tallies: readonly NumberTally[],
   excluded: readonly string[] = [],
