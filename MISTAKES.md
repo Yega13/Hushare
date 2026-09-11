@@ -1597,3 +1597,25 @@ and I would not have looked without chasing the bounded one.
 is not done until I have grepped for every other comparison of X in the feature and either imported
 the shared rule or written down why it cannot. And before believing my own mutation set, check the
 easy-to-set-up path is not the only one any test takes -- count the fixtures, not the assertions.
+
+### 98. THE RECOVERY WORKED, AND THEN MET THE ONE STATE IT COULD NOT ACT ON
+
+The note-on-disk mechanism from 97 did its job twice in a day. The third time it met its own gap: a
+run killed part-way through writing the note left a file that was zero bytes of valid JSON, sitting
+beside a perfectly good backup. The recovery refused -- correctly, because it cannot know which file
+a backup belongs to without the note -- and printed "check git status, then delete it".
+
+That is the safe direction and it is still a failure, because the safe direction here means a human
+compares byte counts by hand to work out which of two candidate files is holding a mutant. I did
+exactly that: the backup was 5,165 bytes, `throughput.ts` on disk was 5,156, and the nine missing
+bytes were `/ 1000` -- a mutation that makes every reported upload speed a thousand times too small.
+It would have been committed inside the hour.
+
+The fix is one line and I should have written it first: the note goes to a temp name and is put in
+place with a rename. A rename on one filesystem cannot be observed half-done, so the note is either
+absent or whole, and the state that needed a human cannot exist.
+
+**Habit to build:** when you write a marker so that a later process can clean up after a crash, ask
+what happens if the crash lands DURING the marker's own write. Two writes where one must imply the
+other is a rename, not two writes. And a recovery path that ends in "a human will work it out" is
+not finished -- it is the failure mode with better manners.
