@@ -55,13 +55,59 @@ export const CANDIDATE_MAX = 20
  * Numbers already excluded are not offered again; the panel shows those separately so they can be
  * put back.
  */
+/**
+ * One row per NUMBER, where the tallies count spellings.
+ *
+ * The tally RPC groups by the literal string OCR read, and OCR keeps leading zeros -- so an arch
+ * year read as "2026" on 1,105 photographs and "02026" on 40 arrives as two tallies. Left alone
+ * they become two rows for one number: the count that carries the whole argument ("a quarter of
+ * your album") is split across both, two of the twenty slots go to one value, and the owner sees a
+ * number listed twice -- which is the exact symptom this panel was redesigned to remove.
+ *
+ * THE COUNT IS SUMMED, and the direction it can err is worth stating. Summing over-counts only when
+ * ONE photograph carries both spellings, which needs OCR to read the same number twice on one frame
+ * with different padding -- lib/bib-filter accepts a number only when it is ALONE on its line, so
+ * that is close to unreachable. Across different photographs, which is the real case, the sum is
+ * exact.
+ *
+ * THE SPELLING SEEN MOST OFTEN LABELS THE ROW, with its photograph, because that is the one the
+ * owner is most likely to recognise. Which spelling wins does not affect what gets excluded:
+ * everything downstream compares by value.
+ */
+export function mergeTalliesByValue(tallies: readonly NumberTally[]): NumberTally[] {
+  const merged = new Map<string, { row: NumberTally; topPhotos: number }>()
+  for (const t of tallies) {
+    // Dropped before the sum, never after: one NaN would otherwise poison the whole number.
+    if (!Number.isFinite(t.photos)) continue
+    const key = numericKey(t.number)
+    if (key === null) continue
+    const prev = merged.get(key)
+    if (prev === undefined) {
+      merged.set(key, {
+        row: { number: t.number, photos: t.photos, sampleThumb: t.sampleThumb ?? null },
+        topPhotos: t.photos,
+      })
+      continue
+    }
+    prev.row.photos += t.photos
+    if (t.photos > prev.topPhotos) {
+      prev.topPhotos = t.photos
+      prev.row.number = t.number
+      if (t.sampleThumb) prev.row.sampleThumb = t.sampleThumb
+    } else if (!prev.row.sampleThumb) {
+      prev.row.sampleThumb = t.sampleThumb ?? null
+    }
+  }
+  return [...merged.values()].map((m) => m.row)
+}
+
 export function exclusionCandidates(
   tallies: readonly NumberTally[],
   excluded: readonly string[] = [],
   max: number = CANDIDATE_MAX,
 ): NumberTally[] {
   const already = new Set(excluded.map(numericKey).filter((k): k is string => k !== null))
-  return tallies
+  return mergeTalliesByValue(tallies)
     .filter((t) => Number.isFinite(t.photos) && t.photos >= CANDIDATE_MIN_PHOTOS)
     .filter((t) => {
       const key = numericKey(t.number)
@@ -71,6 +117,58 @@ export function exclusionCandidates(
     // Most-seen first; ties by the number itself so the list does not reshuffle between renders.
     .sort((a, b) => b.photos - a.photos || a.number.localeCompare(b.number))
     .slice(0, Math.max(0, Math.floor(max)))
+}
+
+/**
+ * Every number the panel puts on screen, ordered, with what is known about each.
+ *
+ * AN EXCLUDED NUMBER KEEPS ITS PHOTOGRAPH AND ITS COUNT. `exclusionCandidates` drops what is
+ * already excluded, which is right for "what should I be asked about" and wrong for "what am I
+ * looking at": the owner reopened the panel and found the number they had switched off reduced to
+ * a struck-through digit string with a blank square where its photograph had been, sitting at the
+ * bottom of the list. Undoing an exclusion is the property this whole panel is built around
+ * (a wrong one hides a runner from their own search and produces no complaint), and it cannot be
+ * done from evidence that has been taken away. The tally is already in the same response.
+ *
+ * ORDERED BY COUNT ACROSS BOTH, so a row does not move when it is tapped. Appending the excluded
+ * set after the candidates sent the loudest number on the album -- always the first thing excluded
+ * -- to the far end of the list on the next open, which reads as "it is gone" rather than "it is
+ * off".
+ *
+ * A number excluded with no tally behind it still gets a row, at zero. That is an exclusion made
+ * before this panel existed, or one whose photographs have since been deleted; dropping it would
+ * make it permanent and invisible.
+ */
+export function exclusionRows(
+  tallies: readonly NumberTally[],
+  excluded: readonly string[] = [],
+  max: number = CANDIDATE_MAX,
+): NumberTally[] {
+  // Merged ONCE, and handed to both halves: an excluded row must show the same combined count the
+  // owner was offered, not whichever spelling happened to be stored.
+  const byValue = mergeTalliesByValue(tallies)
+  const rows: NumberTally[] = exclusionCandidates(byValue, excluded, max)
+  const seen = new Set(rows.map((r) => numericKey(r.number)))
+
+  const byKey = new Map<string, NumberTally>()
+  for (const t of byValue) {
+    const key = numericKey(t.number)
+    if (key !== null && !byKey.has(key)) byKey.set(key, t)
+  }
+
+  for (const e of excluded) {
+    const key = numericKey(e)
+    if (key === null) continue
+    if (seen.has(key)) continue
+    seen.add(key)
+    // THE STORED SPELLING WINS for `number`, never the tally's. OCR keeps leading zeros, so the
+    // same runner is "00945" on one photograph and "945" in the list; a row labelled with the
+    // tally's spelling would not be recognised as excluded by anything comparing text.
+    const tally = byKey.get(key)
+    rows.push({ number: e, photos: tally?.photos ?? 0, sampleThumb: tally?.sampleThumb ?? null })
+  }
+
+  return rows.sort((a, b) => b.photos - a.photos || a.number.localeCompare(b.number))
 }
 
 /**

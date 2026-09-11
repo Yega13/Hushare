@@ -1541,3 +1541,59 @@ tool does not recognise is an error, not something to filter out and carry on: "
 would have cost nothing, and silently running the whole suite cost a mutant on disk. And a cleanup
 path that depends on a signal handler is a hope, not a guarantee -- write down what you are about to
 do before you do it, so the next run can finish the job.
+
+---
+
+## 2026-09-11 — I fixed the screenshot, and left three of the same bug behind it
+
+The owner photographed one symptom: an excluded number reduced to a struck-through digit string,
+blank thumbnail, no count, sunk to the bottom. I found the cause quickly and correctly -- the panel
+built its rows from the CANDIDATE list, and an excluded number is correctly not a candidate.
+
+What I did not do was ask what else that mistake implied. All four findings a review agent returned
+were the same error wearing different clothes: **two things comparing the same number by TEXT when
+the rest of the feature compares by VALUE.**
+
+- The route's `addsSomething` gate used `current.includes(n)`. With any non-canonical spelling in
+  the column, a pure REMOVAL reads as an addition and the tier gate refuses it -- the exact failure
+  the comment three lines above it says must never happen, sitting three lines above it.
+- The tally RPC groups by the literal OCR string, so `2026` and `02026` arrive as two tallies and
+  became two rows for one number. That is the *same symptom the owner had already photographed*, one
+  layer down. I had just written the comment saying one row per number and did not check the input.
+
+I wrote `numericKey` and `isExcludedNumber` for precisely this, used them in the component, and then
+did not grep for the remaining text comparisons in the same feature. Extracting the rule is half the
+work; **the other half is finding every place that was doing it by hand**, which is rule 15 stated
+about decisions and is just as true of comparisons.
+
+**The two mutations I would never have written.** The agent found that the collapse/reveal had ZERO
+coverage -- no test built more than two rows, so deleting the `+N` button hid every row past the
+sixth, exclusions included, with the suite green. And `albumPhotoCount` was never passed by any
+test, so the bar's real branch never ran. Both are the shape of rule 16's own examples: the test
+exercises the path that is easy to set up, and production takes the other one. My own mutation sets
+covered every line I had thought hard about and none of the ones I had not.
+
+**Three of my own mutations were bad, in three different ways**, and each cost a cycle:
+`0 || new Set(...)` is a no-op; a fixture whose "duplicates" were identical strings collapsed in a
+`Set` before reaching the code under test; and one anchor still named a line I had edited, which the
+runner correctly reported as DID NOT APPLY rather than pretending. A mutation that cannot change
+behaviour is not evidence, and a SURVIVED line means *either* a weak test or a weak mutation -- I
+assumed the first both times and it was the second.
+
+**Rule 24 caught me twice in one session**, both through a Python heredoc: `\n` inside a mutation
+string became a real newline and broke the module, and `\'` inside a test name vanished and broke
+the parse. Both were invisible in the diff. The fix both times was to stop needing the escape --
+anchor on a single line, and write a title that has no apostrophe in it.
+
+**What I got right and want to keep:** I did not add a compatibility alias for the renamed response
+field. I measured first -- 2 albums have bib search on, 1 has exclusions, out of 168 -- and a
+transitional field that two owners would benefit from for one deploy cycle is permanent debt bought
+with rule 13. But the investigation was still worth it: it found that ANY malformed 200 (a captive
+portal, a truncated body) crashed the owner's whole album page, because `ErrorBoundary.tsx` exists
+in this repo and is imported nowhere. That one is unbounded, it had nothing to do with my change,
+and I would not have looked without chasing the bounded one.
+
+**Habit to build:** when a bug turns out to be "these two things disagree about what X is", the fix
+is not done until I have grepped for every other comparison of X in the feature and either imported
+the shared rule or written down why it cannot. And before believing my own mutation set, check the
+easy-to-set-up path is not the only one any test takes -- count the fixtures, not the assertions.

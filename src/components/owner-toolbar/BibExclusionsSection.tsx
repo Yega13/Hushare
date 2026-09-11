@@ -6,6 +6,7 @@ import { showAppToast } from '@/components/AppToast'
 import {
   fetchBibExclusions, saveBibExclusionsRequest, type BibExclusionsView,
 } from '@/components/owner-toolbar/api'
+import { isExcludedNumber, numericKey } from '@/lib/bib-exclusions'
 import { useT } from '@/i18n/LocaleProvider'
 
 // THE HALF OF BIB SEARCH A RULE CANNOT DO.
@@ -64,10 +65,16 @@ export default function BibExclusionsSection({ album, albumPhotoCount }: Props) 
 
   async function toggle(number: string) {
     if (!view || saving) return
-    const isExcluded = view.excluded.includes(number)
+    // BY VALUE, NOT BY TEXT, both ways -- lib/bib-exclusions decides what "the same number" means
+    // and bib search compares the same way. OCR keeps leading zeros while the route stores the
+    // canonical form, so a row read as "00945" and a stored "945" are one number. Comparing text
+    // made a just-excluded row spring back ON the moment the server's answer arrived, and made a
+    // second tap post the number again instead of removing it.
+    const key = numericKey(number)
+    const isExcluded = isExcludedNumber(number, view.excluded)
     // THE WHOLE LIST, because the route replaces rather than merges.
     const next = isExcluded
-      ? view.excluded.filter((n) => n !== number)
+      ? view.excluded.filter((n) => numericKey(n) !== key)
       : [...view.excluded, number]
 
     const before = view
@@ -94,23 +101,21 @@ export default function BibExclusionsSection({ album, albumPhotoCount }: Props) 
   }
 
   if (failed || !view) return null
-  const { candidates, excluded } = view
-  if (candidates.length === 0 && excluded.length === 0) return null
+  const { rows, excluded } = view
+  if (rows.length === 0) return null
 
-  // ONE ROW PER NUMBER. Rendering the excluded set and the candidate set separately put a number
-  // the owner had just switched off on screen twice -- dark, and again beside it still offering its
-  // count. `order` is fixed for the life of the panel rather than derived from the two sets, because
-  // deriving it makes an un-excluded number vanish instead: the server stops returning it as a
-  // candidate once told it is excluded, so the row would disappear the moment it was tapped back on.
-  const byNumber = new Map(candidates.map((c) => [c.number, c]))
-  const order = [...new Set([...candidates.map((c) => c.number), ...excluded])]
-  const shown = expanded ? order : order.slice(0, COLLAPSED)
+  // ONE ROW PER NUMBER, ORDERED ONCE, IN lib. This component used to build the list from the
+  // candidate set plus the excluded set, which put a just-switched-off number on screen twice and
+  // then, after a reload, reduced it to a struck-through digit string with a blank square and no
+  // count -- because the server stops offering an excluded number as a candidate. `rows` carries
+  // both, with the photograph and the count intact, which is what makes an exclusion undoable.
+  const shown = expanded ? rows : rows.slice(0, COLLAPSED)
   // The bar is a share of the ALBUM where that is known, because "a quarter of your photographs"
   // is the fact that decides this. Falling back to a share of the biggest number keeps the bars
   // meaningful rather than all full-width when the total has not been passed down.
   const scale = albumPhotoCount && albumPhotoCount > 0
     ? albumPhotoCount
-    : Math.max(1, ...candidates.map((c) => c.photos))
+    : Math.max(1, ...rows.map((r) => r.photos))
 
   return (
     <div className="mt-3 rounded-xl px-3 py-3" style={{ background: '#FDFAF5', border: '1px solid #E8E0D2' }}>
@@ -118,10 +123,10 @@ export default function BibExclusionsSection({ album, albumPhotoCount }: Props) 
       <p className="text-xs mt-1 mb-3" style={{ color: '#7C5C3E' }}>{t('ot.bibExclusionsSub')}</p>
 
       <div className="space-y-1">
-        {shown.map((number) => {
-          const row = byNumber.get(number)
-          const off = excluded.includes(number)
-          const share = row ? Math.min(100, Math.round((row.photos / scale) * 100)) : 0
+        {shown.map((row) => {
+          const number = row.number
+          const off = isExcludedNumber(number, excluded)
+          const share = Math.min(100, Math.round((row.photos / scale) * 100))
           return (
             <button
               key={number}
@@ -138,7 +143,7 @@ export default function BibExclusionsSection({ album, albumPhotoCount }: Props) 
             >
               {/* THE POINT OF THE WHOLE ROW. One look answers what a number cannot: the arch, the
                   advertising board, or a runner. Absent only for a legacy row with no thumbnail. */}
-              {row?.sampleThumb
+              {row.sampleThumb
                 ? (
                   // A 32px CDN thumbnail inside a dropdown: next/image would add a loader round
                   // trip and a layout wrapper for no benefit at this size. The directive below has
@@ -174,7 +179,10 @@ export default function BibExclusionsSection({ album, albumPhotoCount }: Props) 
                     style={{ width: `${Math.max(share, 2)}%`, background: off ? '#B79AA3' : '#630826' }}
                   />
                 </span>
-                {row && (
+                {/* Shown for an excluded number too: "on 1,145 photographs" is the whole argument
+                    for having switched it off, and the owner needs it again to decide whether they
+                    were right. Absent only at zero -- an exclusion whose photographs are gone. */}
+                {row.photos > 0 && (
                   <span className="mt-0.5 block text-[11px] leading-none" style={{ color: '#8B6F4E' }}>
                     {t('album.photos', { n: row.photos })}
                   </span>
@@ -195,14 +203,14 @@ export default function BibExclusionsSection({ album, albumPhotoCount }: Props) 
 
       {/* A COUNT, NOT A WORD: no thirteenth string to translate, and "+14" says the same thing in
           every language this album is read in. */}
-      {!expanded && order.length > COLLAPSED && (
+      {!expanded && rows.length > COLLAPSED && (
         <button
           type="button"
           onClick={() => setExpanded(true)}
           className="hush-press mt-2 w-full rounded-lg py-1.5 text-xs font-semibold"
           style={{ background: '#FFFFFF', border: '1px solid #E8E0D2', color: '#7C5C3E' }}
         >
-          +{order.length - COLLAPSED}
+          +{rows.length - COLLAPSED}
         </button>
       )}
     </div>

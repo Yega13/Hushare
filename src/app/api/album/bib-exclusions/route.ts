@@ -5,7 +5,10 @@ import { verifyOwnerViaCookieWithRateLimit } from '@/lib/album-owner-access'
 import { refuseBelowTier } from '@/lib/require-tier'
 import { forbidCrossSiteRequest } from '@/lib/request-security'
 import { queueAlbumSettingsBroadcast } from '@/lib/broadcast'
-import { exclusionCandidates, normalizeExclusions, type NumberTally } from '@/lib/bib-exclusions'
+import {
+  exclusionRows, isExcludedNumber, MAX_EXCLUSIONS, normalizeExclusions, numericKey,
+  type NumberTally,
+} from '@/lib/bib-exclusions'
 
 export const runtime = 'nodejs'
 
@@ -34,7 +37,14 @@ const NO_STORE = { 'Cache-Control': 'no-store' }
 // The list is applied at SEARCH time (lib/bib-match, both halves), so saving it re-filters every
 // photograph at once -- no re-index, no re-OCR, and no window where the album says "no photos".
 
-/** GET: what to show the owner — the most-seen numbers, and what they have already excluded. */
+/**
+ * GET: what to show the owner -- the most-seen numbers, and which of them are already off.
+ *
+ * `rows` carries the excluded ones too, with their photograph and their count. They are not
+ * candidates -- nothing is asking about them again -- but they are the only evidence the owner has
+ * for undoing an exclusion, and an exclusion aimed at a real bib is the one mistake here that
+ * produces no complaint.
+ */
 export async function GET(req: Request) {
   const { searchParams } = new URL(req.url)
   const slug = searchParams.get('slug')
@@ -66,7 +76,7 @@ export async function GET(req: Request) {
     number: r.number, photos: Number(r.photos), sampleThumb: r.sample_thumb,
   }))
   return NextResponse.json(
-    { candidates: exclusionCandidates(tallies, excluded), excluded },
+    { rows: exclusionRows(tallies, excluded), excluded },
     { headers: NO_STORE },
   )
 }
@@ -95,11 +105,35 @@ export async function POST(req: Request) {
   const next = normalizeExclusions(excluded)
   const current = access.album.bib_excluded_numbers ?? []
 
+  // SAID, NOT SWALLOWED. normalizeExclusions keeps the FIRST 200, and the panel appends a new
+  // number at the end -- so at the ceiling the one just tapped is the one dropped, the write
+  // stores the identical array, and the row springs back on with nothing said. A UI that shows a
+  // state the album does not hold is the class of lie this whole feature exists to remove
+  // (rule 20), so the request is refused instead, with a reason.
+  // Only the CAP is worth refusing over. Junk -- a non-string, an unparseable entry, the same
+  // number sent twice -- is cleaned silently and always has been; nothing the owner asked for is
+  // lost by it.
+  const distinctKeys = new Set(
+    excluded.filter((n): n is string => typeof n === 'string')
+      .map(numericKey).filter((k): k is string => k !== null),
+  ).size
+  if (distinctKeys > MAX_EXCLUSIONS) {
+    return NextResponse.json(
+      { error: `An album can hold ${MAX_EXCLUSIONS} excluded numbers. Remove one first.` },
+      { status: 400, headers: NO_STORE },
+    )
+  }
+
   // ONE DIRECTION ONLY (tests/gate-direction). Adding an exclusion uses the paid feature and is
   // gated; REMOVING one must always work. A gate that runs both ways freezes a wrong exclusion onto
   // the album of an owner who has left the plan -- and a wrong exclusion hides a runner's own
   // photographs from them, which is the one mistake here nobody would ever report.
-  const addsSomething = next.some((n) => !current.includes(n))
+  // BY VALUE, like everything else in this feature. `next` is canonical and `current` is whatever
+  // the column holds, so comparing them as TEXT misreads a pure REMOVAL as an addition the moment
+  // a non-canonical spelling is in the column: stored ['02026','700'], the owner drops 700, and
+  // the survivor normalises to '2026', which `includes` cannot find. The gate then refuses -- and
+  // a refused removal is exactly what the paragraph above says must never happen.
+  const addsSomething = next.some((n) => !isExcludedNumber(n, current))
   if (addsSomething) {
     const refusal = await refuseBelowTier(access.album, 'studio', 'Bib number search')
     if (refusal) return refusal

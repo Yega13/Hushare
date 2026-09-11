@@ -55,8 +55,8 @@ export default {
     },
     {
       name: 'the tie-break is dropped, so the panel reshuffles under the owner between renders',
-      from: 'b.photos - a.photos || a.number.localeCompare(b.number)',
-      to: 'b.photos - a.photos',
+      from: '    .sort((a, b) => b.photos - a.photos || a.number.localeCompare(b.number))',
+      to: '    .sort((a, b) => b.photos - a.photos)',
     },
     {
       name: 'the asking floor is removed and one-off misreads flood the panel',
@@ -69,6 +69,31 @@ export default {
       to: '    .slice()',
     },
     {
+      name: 'the tallies are not merged, so one number takes two rows and its count is split',
+      from: '  return mergeTalliesByValue(tallies)',
+      to: '  return tallies.slice()',
+    },
+    {
+      name: 'merged counts are replaced rather than added, losing the photographs of one spelling',
+      from: '    prev.row.photos += t.photos',
+      to: '    prev.row.photos = t.photos',
+    },
+    {
+      name: 'a non-finite count reaches the sum and poisons the whole number',
+      from: '    if (!Number.isFinite(t.photos)) continue',
+      to: '    if (false) continue',
+    },
+    {
+      name: 'the row is labelled with the rarest spelling rather than the one most often seen',
+      from: '    if (t.photos > prev.topPhotos) {',
+      to: '    if (t.photos <= prev.topPhotos) {',
+    },
+    {
+      name: 'an excluded row is looked up in the unmerged tallies, so it shows one spelling only',
+      from: '  for (const t of byValue) {',
+      to: '  for (const t of tallies) {',
+    },
+    {
       name: 'normalizeExclusions stops de-duplicating, so one number is stored several ways',
       from: '    if (key === null || seen.has(key)) continue',
       to: '    if (key === null) continue',
@@ -77,6 +102,36 @@ export default {
       name: 'the stored list is unbounded',
       from: '    if (out.length >= MAX_EXCLUSIONS) break',
       to: '    if (false) break',
+    },
+    {
+      name: 'exclusionRows drops the excluded numbers, so a wrong exclusion cannot be seen or undone',
+      from: '  for (const e of excluded) {',
+      to: '  for (const e of []) {',
+    },
+    {
+      name: 'an excluded row loses its count and its photograph, which is the evidence for undoing it',
+      to: "    rows.push({ number: e, photos: 0, sampleThumb: null })",
+      from: "    rows.push({ number: e, photos: tally?.photos ?? 0, sampleThumb: tally?.sampleThumb ?? null })",
+    },
+    {
+      name: 'the excluded set is appended instead of ordered in, so the loudest number sinks out of sight',
+      from: '  return rows.sort((a, b) => b.photos - a.photos || a.number.localeCompare(b.number))',
+      to: '  return rows',
+    },
+    {
+      name: 'an excluded row is labelled with the spelling OCR read, so nothing recognises it as off',
+      from: '    rows.push({ number: e, photos: tally?.photos ?? 0, sampleThumb: tally?.sampleThumb ?? null })',
+      to: '    rows.push({ number: tally?.number ?? e, photos: tally?.photos ?? 0, sampleThumb: tally?.sampleThumb ?? null })',
+    },
+    {
+      name: 'an exclusion with no photographs behind it gets no row, so it can never be removed',
+      from: '    rows.push({ number: e, photos: tally?.photos ?? 0, sampleThumb: tally?.sampleThumb ?? null })',
+      to: '    if (tally) rows.push({ number: e, photos: tally.photos, sampleThumb: tally.sampleThumb ?? null })',
+    },
+    {
+      name: 'an already-offered number is rowed a second time as an exclusion',
+      from: '    if (seen.has(key)) continue',
+      to: '    if (false) continue',
     },
     {
       name: 'normalizeExclusions keeps non-strings, so a number or an object reaches the column',

@@ -1,4 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
+// The real ceiling, imported rather than typed again: the column carries the same bound as a CHECK
+// and a copy here would drift from both (rule 13/17).
+import { MAX_EXCLUSIONS } from '@/lib/bib-exclusions'
 
 // THE ROUTE THAT CAN HIDE A RUNNER'S OWN PHOTOGRAPHS FROM THEM.
 //
@@ -17,7 +20,10 @@ const ALBUM_ID = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee'
 
 const state: {
   album: { id: string; owner_token: string; user_id: string | null; bib_excluded_numbers: string[] } | null
-  tallies: Array<{ number: string; photos: number }>
+  // sample_thumb IS the RPC's column name, and the fake carried only two columns -- so nothing
+  // covered the route mapping it to sampleThumb, and the photograph the panel is built around
+  // could have been dropped in transit without a test noticing.
+  tallies: Array<{ number: string; photos: number; sample_thumb?: string | null }>
   rpcError: string | null
   updateError: string | null
   updates: Array<Record<string, unknown>>
@@ -31,7 +37,9 @@ const state: {
 vi.mock('@/lib/supabase/admin', () => ({
   createAdminClient: () => ({
     rpc: async () => ({
-      data: state.rpcError ? null : state.tallies.map((t) => ({ number: t.number, photos: t.photos })),
+      data: state.rpcError ? null : state.tallies.map((t) => ({
+        number: t.number, photos: t.photos, sample_thumb: t.sample_thumb ?? null,
+      })),
       error: state.rpcError ? { message: state.rpcError } : null,
     }),
     from: () => {
@@ -104,9 +112,9 @@ describe('GET — what the owner is offered', () => {
     state.tallies = [
       { number: '2188', photos: 61 }, { number: '2026', photos: 1145 }, { number: '700', photos: 508 },
     ]
-    const body = await (await get()).json() as { candidates: Array<{ number: string; photos: number }> }
-    expect(body.candidates.map((c) => c.number)).toEqual(['2026', '700', '2188'])
-    expect(body.candidates[0].photos).toBe(1145)
+    const body = await (await get()).json() as { rows: Array<{ number: string; photos: number }> }
+    expect(body.rows.map((c) => c.number)).toEqual(['2026', '700', '2188'])
+    expect(body.rows[0].photos).toBe(1145)
   })
 
   it('OFFERS A REAL BIB TOO, because only a person can tell it from a banner', async () => {
@@ -114,16 +122,50 @@ describe('GET — what the owner is offered', () => {
     // rule this whole feature exists to avoid — and on the 69-photo album the banner year and the
     // real bib 00663 appeared on exactly 4 photographs each.
     state.tallies = [{ number: '2026', photos: 1145 }, { number: '2188', photos: 61 }]
-    const body = await (await get()).json() as { candidates: Array<{ number: string }> }
-    expect(body.candidates.map((c) => c.number)).toContain('2188')
+    const body = await (await get()).json() as { rows: Array<{ number: string }> }
+    expect(body.rows.map((c) => c.number)).toContain('2188')
   })
 
-  it('does not re-offer what is already excluded, and says what IS excluded', async () => {
+  it('KEEPS an excluded number, with its count and its photograph, and says it is excluded', async () => {
+    // An owner reopening the panel found the number they had switched off reduced to a struck-out
+    // digit string -- no photograph, no count, last in the list -- because the row list was built
+    // from candidates and an excluded number is correctly not a candidate. Undoing an exclusion is
+    // this panel's load-bearing property, and it cannot be done from evidence that was taken away.
     state.album = { ...state.album!, bib_excluded_numbers: ['2026'] }
-    state.tallies = [{ number: '2026', photos: 1145 }, { number: '700', photos: 508 }]
-    const body = await (await get()).json() as { candidates: Array<{ number: string }>; excluded: string[] }
-    expect(body.candidates.map((c) => c.number)).toEqual(['700'])
+    state.tallies = [
+      { number: '2026', photos: 1145, sample_thumb: 'https://cdn/arch.jpg' },
+      { number: '700', photos: 508 },
+    ]
+    const body = await (await get()).json() as {
+      rows: Array<{ number: string; photos: number; sampleThumb?: string | null }>
+      excluded: string[]
+    }
+    expect(body.rows.map((c) => c.number)).toEqual(['2026', '700'])
+    expect(body.rows[0].photos).toBe(1145)
+    expect(body.rows[0].sampleThumb).toBe('https://cdn/arch.jpg')
     expect(body.excluded).toEqual(['2026'])
+  })
+
+  it('rows an exclusion that has fallen below the top-20 cut, so it can still be undone', async () => {
+    // The cap is a floor on the QUESTION -- how many numbers a person is asked about at once --
+    // and must never be a floor on the answer. An album with a long tail of signage pushes an
+    // early exclusion out of the top 20, and if the route rowed only what it is offering, that
+    // exclusion would be invisible and therefore permanent. It is a real bib often enough to
+    // matter: the panel offers real bibs by design, because only a person can tell them apart.
+    state.album = { ...state.album!, bib_excluded_numbers: ['9001'] }
+    state.tallies = Array.from({ length: 25 }, (_, i) => ({ number: String(100 + i), photos: 500 - i }))
+    state.tallies.push({ number: '9001', photos: 3 })
+    const body = await (await get()).json() as { rows: Array<{ number: string }> }
+    expect(body.rows.map((r) => r.number)).toContain('9001')
+  })
+
+  it('shows one row for a number the tallies spell two ways, with the counts added', async () => {
+    // The RPC groups by the literal OCR string, so one number arrives as two tallies. Two rows for
+    // one number splits the count the decision rests on, and is the symptom the redesign removed.
+    state.tallies = [{ number: '2026', photos: 1105 }, { number: '02026', photos: 40 }]
+    const body = await (await get()).json() as { rows: Array<{ number: string; photos: number }> }
+    expect(body.rows).toHaveLength(1)
+    expect(body.rows[0].photos).toBe(1145)
   })
 
   it('reports a failed tally rather than presenting an empty list as the answer', async () => {
@@ -157,6 +199,19 @@ describe('POST — the gate runs in one direction only', () => {
     state.refuseTier = true
     expect((await post({ slug: 'race', excluded: [] })).status).toBe(200)
     expect(state.updates[0].bib_excluded_numbers).toEqual([])
+  })
+
+  it('ALLOWS a removal when the column holds a non-canonical spelling', async () => {
+    // The gate compared TEXT. `next` is canonical and the column is whatever is in it, so with
+    // '02026' stored, removing 700 leaves a survivor that normalises to '2026' -- a string the
+    // stored list does not contain. The gate read that as an ADDITION and refused the removal,
+    // which is precisely what the asymmetry above exists to prevent: an owner off the plan frozen
+    // out of undoing an exclusion, and the runner behind it hidden from their own search forever.
+    state.album = { ...state.album!, bib_excluded_numbers: ['02026', '700'] }
+    state.refuseTier = true
+    const res = await post({ slug: 'race', excluded: ['02026'] })
+    expect(res.status).toBe(200)
+    expect(state.updates[0].bib_excluded_numbers).toEqual(['2026'])
   })
 
   it('checks the plan when the list changes membership, not merely its length', async () => {
@@ -201,6 +256,53 @@ describe('POST — what actually reaches the column', () => {
     state.updateError = 'permission denied'
     expect((await post({ slug: 'race', excluded: ['2026'] })).status).toBe(500)
     expect(state.broadcasts, 'a failed save must not tell guests it happened').toEqual([])
+  })
+})
+
+describe('POST — the ceiling is said out loud, not swallowed', () => {
+  // normalizeExclusions keeps the FIRST 200 and the panel appends a new number at the END, so at
+  // the ceiling the number just tapped is the one dropped. The column is then rewritten identical,
+  // the response carries the unchanged list, and the row springs back on with nothing said -- a
+  // screen showing a state the album does not hold (rule 20).
+
+  it('refuses a list that would be truncated, rather than storing it short', async () => {
+    const many = Array.from({ length: MAX_EXCLUSIONS + 1 }, (_, i) => String(i + 1))
+    const res = await post({ slug: 'race', excluded: many })
+    expect(res.status).toBe(400)
+    expect(state.updates, 'nothing may be written on a refusal').toEqual([])
+  })
+
+  it('says what the limit is, so the message is actionable', async () => {
+    const many = Array.from({ length: MAX_EXCLUSIONS + 1 }, (_, i) => String(i + 1))
+    const body = await (await post({ slug: 'race', excluded: many })).json() as { error: string }
+    expect(body.error).toContain(String(MAX_EXCLUSIONS))
+  })
+
+  it('accepts a list exactly AT the ceiling', async () => {
+    const exact = Array.from({ length: MAX_EXCLUSIONS }, (_, i) => String(i + 1))
+    expect((await post({ slug: 'race', excluded: exact })).status).toBe(200)
+    expect(state.updates[0].bib_excluded_numbers).toHaveLength(MAX_EXCLUSIONS)
+  })
+
+  it('counts DISTINCT numbers, not raw entries, so duplicates do not trip the ceiling', async () => {
+    // A panel resend, a double tap, or a list carrying two spellings of the same number can push
+    // the raw count past 200 while the album is nowhere near the limit. Refusing that would block a
+    // save the owner is entitled to make, and the message would name a limit they have not reached.
+    // PADDED, not repeated. A plain repeat collapses in any Set, so it would prove nothing about
+    // whether the ceiling counts spellings or numbers. "7" and "007" are one number and two strings.
+    const distinct = Array.from({ length: 150 }, (_, i) => String(i + 1))
+    const withDupes = [...distinct, ...distinct.slice(0, 100).map((n) => `00${n}`)]
+    expect(withDupes.length).toBeGreaterThan(MAX_EXCLUSIONS)
+    const res = await post({ slug: 'race', excluded: withDupes })
+    expect(res.status).toBe(200)
+    expect(state.updates[0].bib_excluded_numbers).toHaveLength(150)
+  })
+
+  it('still cleans junk silently — only the CAP is worth refusing over', async () => {
+    // Nothing the owner asked for is lost by dropping a duplicate or an unparseable entry.
+    const res = await post({ slug: 'race', excluded: ['2026', '02026', 'abc', '', '700'] })
+    expect(res.status).toBe(200)
+    expect(state.updates[0].bib_excluded_numbers).toEqual(['2026', '700'])
   })
 })
 

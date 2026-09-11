@@ -701,14 +701,18 @@ export async function saveBibSearchRequest(
   return { ok: true }
 }
 
-// THE OWNER'S SIGNAGE LIST. GET offers the album's most-seen numbers with their photo counts,
-// already ranked and already filtered of what is excluded -- lib/bib-exclusions owns that decision
-// and has tests, so nothing here re-sorts or re-filters.
+// THE OWNER'S SIGNAGE LIST. GET offers the album's most-seen numbers with their photo counts and
+// one photograph each, already ranked -- lib/bib-exclusions owns that decision and has tests, so
+// nothing here re-sorts or re-filters.
+//
+// TWO FIELDS, TWO JOBS. `rows` is everything on screen, INCLUDING what is already excluded, so a
+// wrong exclusion can be seen and undone. `excluded` is what the album has stored, and is what
+// gets posted back; it is the write path and the row list is the read path.
 // THE SHAPE COMES FROM lib/bib-exclusions, not a second copy of it here. It was written out again
 // -- {number, photos} -- and the moment the tally gained a sample thumbnail the two disagreed and
 // the panel could not read a field the server was already sending (rule 13).
 export type BibExclusionsView = {
-  candidates: NumberTally[]
+  rows: NumberTally[]
   excluded: string[]
 }
 
@@ -716,7 +720,17 @@ export async function fetchBibExclusions(slug: string): Promise<BibExclusionsVie
   try {
     const res = await fetch(`/api/album/bib-exclusions?slug=${encodeURIComponent(slug)}`)
     if (!res.ok) return null
-    return await res.json() as BibExclusionsView
+    // A 200 IS NOT A SHAPE. The panel reads `rows.length` during render, so a body without it --
+    // an interception page, a truncated response, or a browser still holding the bundle from
+    // before this field was renamed -- throws inside React. Nothing here mounts ErrorBoundary, so
+    // that throw reaches app/error.tsx and replaces the owner's whole ALBUM PAGE with an error
+    // screen, over a dropdown they may not even have opened deliberately.
+    //
+    // An unusable body is "could not ask", the same as a network failure, and never an album with
+    // no signage (rule 20).
+    const body = await res.json() as Partial<BibExclusionsView> | null
+    if (!body || !Array.isArray(body.rows) || !Array.isArray(body.excluded)) return null
+    return { rows: body.rows, excluded: body.excluded }
   } catch {
     // Null is "could not ask", NOT "this album has no signage". The panel must tell those apart:
     // an empty list is a claim about the album and a failure is not (rule 20).

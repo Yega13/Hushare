@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
-  exclusionCandidates, isExcludedNumber, numericKey, normalizeExclusions,
+  exclusionCandidates, exclusionRows, isExcludedNumber, mergeTalliesByValue, numericKey,
+  normalizeExclusions,
   CANDIDATE_MIN_PHOTOS, CANDIDATE_MAX, MAX_EXCLUSIONS, type NumberTally,
 } from '@/lib/bib-exclusions'
 import { bibMatches, bibSearchCandidates, queryOutsideRange, type BibRange } from '@/lib/bib-match'
@@ -184,5 +185,144 @@ describe('an exclusion reaches the phone AND the database', () => {
     expect(bibSearchCandidates('50', both), 'below the range').toEqual([])
     expect(bibSearchCandidates('2026', both), 'excluded').toEqual([])
     expect(bibSearchCandidates('2188', both), 'a runner').not.toEqual([])
+  })
+})
+
+describe('exclusionRows — what an exclusion can be undone from', () => {
+  // AN EXCLUDED NUMBER IS NOT A CANDIDATE, and it is still on screen. The owner reopened the panel
+  // and found the number they had switched off reduced to a struck-through digit string: blank
+  // square where its photograph had been, no count, and last in the list. Every one of those is
+  // load-bearing -- a wrong exclusion hides a runner from their own search and produces no
+  // complaint, so the evidence for undoing it has to stay in front of the person who made it.
+
+  const tallies = [
+    { number: '2026', photos: 1145, sampleThumb: 'https://cdn/arch.jpg' },
+    { number: '700', photos: 508, sampleThumb: 'https://cdn/board.jpg' },
+    { number: '2188', photos: 61, sampleThumb: 'https://cdn/runner.jpg' },
+  ]
+
+  it('keeps an excluded number, with its count and its photograph', () => {
+    const rows = exclusionRows(tallies, ['2026'])
+    const row = rows.find((r) => r.number === '2026')
+    expect(row).toBeTruthy()
+    expect(row!.photos).toBe(1145)
+    expect(row!.sampleThumb).toBe('https://cdn/arch.jpg')
+  })
+
+  it('orders excluded and offered numbers together, so a row does not move when it is tapped', () => {
+    // Appending the excluded set sent the loudest number on the album -- always the first thing an
+    // owner excludes -- to the far end of the list on the next open, which reads as "gone".
+    expect(exclusionRows(tallies, ['2026']).map((r) => r.number)).toEqual(['2026', '700', '2188'])
+    expect(exclusionRows(tallies, []).map((r) => r.number)).toEqual(['2026', '700', '2188'])
+  })
+
+  it('shows a number ONCE, however it is spelled in the stored list', () => {
+    // The bug the owner photographed in the first version: one number rendered twice, dark and
+    // again beside it still offering its count.
+    const rows = exclusionRows(tallies, ['02026'])
+    expect(rows.filter((r) => numericKey(r.number) === '2026')).toHaveLength(1)
+  })
+
+  it('shows it once even when the stored list holds two spellings of it', () => {
+    // The route normalises before storing, but the column is guarded only by a length limit, and
+    // a list written before that normalisation existed can hold both. Two rows for one number is
+    // the exact thing the owner photographed -- and tapping one would not switch the other off.
+    const rows = exclusionRows(tallies, ['2026', '02026', '#2026'])
+    expect(rows.filter((r) => numericKey(r.number) === '2026')).toHaveLength(1)
+  })
+
+  it('labels that row with the STORED spelling, never the one OCR read', () => {
+    // Anything comparing text -- and the panel's own aria-pressed did -- would not recognise a row
+    // labelled "02026" as the excluded "2026", so it would render as still switched on.
+    const rows = exclusionRows([{ number: '02026', photos: 1145 }], ['2026'])
+    expect(rows.map((r) => r.number)).toEqual(['2026'])
+    expect(rows[0].photos).toBe(1145)
+  })
+
+  it('still gives a row to an exclusion with no photographs behind it', () => {
+    // An exclusion made before this panel existed, or one whose photographs have been deleted.
+    // Dropping it would make it permanent and invisible.
+    const rows = exclusionRows(tallies, ['9999'])
+    const row = rows.find((r) => r.number === '9999')
+    expect(row).toBeTruthy()
+    expect(row!.photos).toBe(0)
+    expect(row!.sampleThumb).toBeNull()
+  })
+
+  it('ignores an unparseable entry in the stored list rather than rowing it', () => {
+    expect(exclusionRows(tallies, ['not-a-number']).map((r) => r.number))
+      .toEqual(['2026', '700', '2188'])
+  })
+
+  it('caps the numbers it OFFERS, and never caps what is already excluded', () => {
+    // The cap is a floor on the question, not on the answer: a hidden exclusion is unremovable.
+    const many = Array.from({ length: 40 }, (_, i) => ({ number: String(i + 1), photos: 100 - i }))
+    const excluded = ['31', '32', '33']
+    const rows = exclusionRows(many, excluded)
+    expect(rows).toHaveLength(CANDIDATE_MAX + excluded.length)
+    for (const e of excluded) expect(rows.map((r) => r.number)).toContain(e)
+  })
+
+  it('applies the same floor as the candidate list to what it offers', () => {
+    expect(exclusionRows([{ number: '5', photos: CANDIDATE_MIN_PHOTOS - 1 }], [])).toHaveLength(0)
+  })
+
+  it('does not mutate the tallies it was given', () => {
+    const input = [{ number: '2188', photos: 61 }, { number: '2026', photos: 1145 }]
+    exclusionRows(input, ['700'])
+    expect(input.map((t) => t.number)).toEqual(['2188', '2026'])
+  })
+})
+
+describe('mergeTalliesByValue — the tallies count spellings, the panel counts numbers', () => {
+  // The RPC groups by the literal string OCR read, and OCR keeps leading zeros. An arch year read
+  // as "2026" on most frames and "02026" on the rest arrives as two tallies of one number.
+
+  it('collapses two spellings into one row', () => {
+    const out = mergeTalliesByValue([{ number: '2026', photos: 1105 }, { number: '02026', photos: 40 }])
+    expect(out).toHaveLength(1)
+  })
+
+  it('adds their counts, because the count is the argument the owner decides on', () => {
+    const out = mergeTalliesByValue([{ number: '2026', photos: 1105 }, { number: '02026', photos: 40 }])
+    expect(out[0].photos).toBe(1145)
+  })
+
+  it('labels the row with the spelling seen on the most photographs', () => {
+    const out = mergeTalliesByValue([{ number: '02026', photos: 40 }, { number: '2026', photos: 1105 }])
+    expect(out[0].number).toBe('2026')
+  })
+
+  it('takes a photograph from whichever spelling has one', () => {
+    const out = mergeTalliesByValue([
+      { number: '2026', photos: 1105, sampleThumb: null },
+      { number: '02026', photos: 40, sampleThumb: 'https://cdn/arch.jpg' },
+    ])
+    expect(out[0].sampleThumb).toBe('https://cdn/arch.jpg')
+  })
+
+  it('drops a non-finite count BEFORE summing, so one bad row cannot poison a number', () => {
+    const out = mergeTalliesByValue([
+      { number: '2026', photos: Number.NaN }, { number: '02026', photos: 40 },
+    ])
+    expect(out[0].photos).toBe(40)
+  })
+
+  it('leaves unrelated numbers alone', () => {
+    const out = mergeTalliesByValue([{ number: '2026', photos: 10 }, { number: '2027', photos: 10 }])
+    expect(out).toHaveLength(2)
+  })
+
+  it('feeds the candidate list, so one number never takes two of the twenty slots', () => {
+    const out = exclusionCandidates([{ number: '2026', photos: 1105 }, { number: '02026', photos: 40 }])
+    expect(out).toHaveLength(1)
+    expect(out[0].photos).toBe(1145)
+  })
+
+  it('feeds an EXCLUDED row too, so it shows the same count it was offered with', () => {
+    const rows = exclusionRows(
+      [{ number: '2026', photos: 1105 }, { number: '02026', photos: 40 }], ['2026'])
+    expect(rows).toHaveLength(1)
+    expect(rows[0].photos).toBe(1145)
   })
 })

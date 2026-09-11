@@ -23,7 +23,7 @@ export default {
     },
     {
       name: 'additions are detected by LENGTH, so swapping one number for another slips past',
-      from: '  const addsSomething = next.some((n) => !current.includes(n))',
+      from: '  const addsSomething = next.some((n) => !isExcludedNumber(n, current))',
       to: '  const addsSomething = next.length > current.length',
     },
     {
@@ -56,8 +56,38 @@ export default {
     },
     {
       name: 'the candidate list is returned unranked and unfiltered, straight from SQL',
-      from: '    { candidates: exclusionCandidates(tallies, excluded), excluded },',
-      to: '    { candidates: tallies, excluded },',
+      from: '    { rows: exclusionRows(tallies, excluded), excluded },',
+      to: '    { rows: tallies, excluded },',
+    },
+    {
+      name: 'the thumbnail is dropped in transit, so every row is a bare number again',
+      from: '    number: r.number, photos: Number(r.photos), sampleThumb: r.sample_thumb,',
+      to: '    number: r.number, photos: Number(r.photos), sampleThumb: null,',
+    },
+    {
+      name: 'the excluded list is not passed in, so an excluded number is offered as a candidate forever',
+      from: '    { rows: exclusionRows(tallies, excluded), excluded },',
+      to: '    { rows: exclusionRows(tallies, []), excluded },',
+    },
+    {
+      name: 'the gate compares numbers as TEXT, so a removal is refused below plan (rule 19, wrong way)',
+      from: '  const addsSomething = next.some((n) => !isExcludedNumber(n, current))',
+      to: '  const addsSomething = next.some((n) => !current.includes(n))',
+    },
+    {
+      name: 'a list past the ceiling is truncated silently, so the tapped number springs back on',
+      from: '  if (distinctKeys > MAX_EXCLUSIONS) {',
+      to: '  if (false) {',
+    },
+    {
+      name: 'the ceiling refuses a list that exactly fits, blocking a legitimate save',
+      from: '  if (distinctKeys > MAX_EXCLUSIONS) {',
+      to: '  if (distinctKeys >= MAX_EXCLUSIONS) {',
+    },
+    {
+      name: 'the ceiling counts SPELLINGS, so a padded resend is refused over a limit not reached',
+      from: '      .map(numericKey).filter((k): k is string => k !== null),',
+      to: '      .map((n) => n),',
     },
     {
       name: 'a failed tally is presented as an album with no signage',
