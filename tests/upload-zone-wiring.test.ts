@@ -118,6 +118,22 @@ describe('UploadZone files a refusal as a refusal, and only a fault as an error'
     expect(text, 'the fields are read by the module, once').not.toMatch(/\(e as \{ nudge\?: unknown \}\)/)
   })
 
+  it('a new attempt clears a wall that has nothing held, so it cannot outlive what it describes', () => {
+    const text = src()
+    expect(text).toMatch(/setPendingSaveReason\(prev => wallOnNewAttempt\(prev, pendingSaveRef\.current\.length\)\)/)
+    // At the START of an attempt, not at its end: the banner must be gone while the photos upload,
+    // not corrected afterwards.
+    const start = text.indexOf('const startUploads = useCallback')
+    expect(start).toBeGreaterThan(-1)
+    expect(text.indexOf('wallOnNewAttempt', start) - start, 'the clear belongs in the first lines of startUploads').toBeLessThan(600)
+  })
+
+  it('the action row is not rendered when it would hold no buttons', () => {
+    // A full album on a plan that cannot be upgraded, refused before anything was queued, offered
+    // neither an account nor "Finish saving" -- and still drew the empty row they would have sat in.
+    expect(src()).toMatch(/\{\(wall\.offersAccount \|\| wall\.canFinish\) && \(/)
+  })
+
   it('the wall asks lib/upload/retry-plan what to say, and keeps no ternary of its own', () => {
     const text = src()
     expect(text).toMatch(/const wall = pendingSaveReason \? wallCopy\(pendingSaveReason, pendingSaveCount\) : null/)

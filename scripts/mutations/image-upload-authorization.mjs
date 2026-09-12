@@ -100,9 +100,10 @@ export default {
 
   // ── a full album is refused as full, before the budget (2026-09-07 and 2026-09-08) ────────────
   { name: 'A FULL ALBUM IS HANDED A SLOT AGAIN, and its bytes go to R2 to be refused a step later',
-    from: "  if (full && tierRes.authoritative) {", to: "  if (false) {" },
-  { name: 'A GUESSED TIER ENFORCES THE CAP: a Max album is called full at the free allowance',
-    from: "  if (full && tierRes.authoritative) {", to: "  if (full) {" },
+    from: "  if (full && capIsSafeToEnforce) {", to: "  if (false) {" },
+  // NOT REPEATED -- "a guessed tier enforces the cap" is now the `capIsSafeToEnforce = true` mutation
+  // below, which is the same break said once: with the guard gone, a degraded 'free' answer refuses a
+  // Max album at 500.
   { name: 'a cap that stopped being enforced is not reported, so nobody learns it stopped',
     from: "    reportServerError('image-upload-auth'", to: "    void ('image-upload-auth'" },
   { name: 'the album is called full one photo early',
@@ -122,5 +123,12 @@ export default {
   // output-identical here. Both stay, because nothing guarantees a real client pairs them.
   // NOT MUTATED -- the ORDER (full check before the budget). A move is not a one-line replacement;
   // the test asserting the budget is never consulted for a full album is what holds it.
+
+  { name: 'THE GATE ASKS THE WRONG QUESTION AGAIN: an override album is not enforced on a degraded lookup',
+    from: "  const capIsSafeToEnforce = tierRes.authoritative || !capDependsOnTier(capInput)",
+    to: "  const capIsSafeToEnforce = tierRes.authoritative" },
+  { name: 'the tier is ignored entirely, so a guessed free cap refuses a Max album',
+    from: "  const capIsSafeToEnforce = tierRes.authoritative || !capDependsOnTier(capInput)",
+    to: "  const capIsSafeToEnforce = true" },
   ],
 }

@@ -230,7 +230,8 @@ export default function LightboxOverlay({
   // replaced only if the answer comes back "not ready", so the only case that waits is the one that
   // was going to show an error anyway.
   const [encodingPct, setEncodingPct] = React.useState<number | null>(null)
-  // Only the ASKING is an effect. The key is that effect's own dependency list, so a row whose
+  // Only the ASKING is an effect; the key is that effect's own dependency list, so a stream_uid
+  // that arrives once encoding starts still clears the previous answer.
   useOnValueChange(`${current.id}|${current.media_type}|${current.stream_uid ?? ''}`, () => setEncodingPct(null))
   React.useEffect(() => {
     const uid = current.stream_uid
@@ -249,6 +250,8 @@ export default function LightboxOverlay({
       .catch(() => { /* unknown reads as playable */ })
     return () => { cancelled = true }
   }, [current.id, current.media_type, current.stream_uid])
+  // Five parts, again the effect's own dependency list: either poster URL can arrive late, and
+  // hasStoredDims flips when the row learns its own dimensions.
   useOnValueChange(`${current.id}|${current.media_type}|${current.poster_url ?? ''}|${current.stream_thumbnail_url ?? ''}|${hasStoredDims}`, () => setVideoAspect(null))
   React.useEffect(() => {
     if (current.media_type !== 'video' || hasStoredDims) return

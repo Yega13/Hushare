@@ -50,5 +50,10 @@ export default {
   { name: 'the guest is shown our endpoint name when a save times out',
     from: "showAppToast(e instanceof Error ? friendlyUploadError(e) : t('common.errorGeneric'), 'error')",
     to: "showAppToast(e instanceof Error ? e.message : t('common.errorGeneric'), 'error')" },
+
+  { name: 'the wall is never cleared, so it outlives the refusal it describes',
+    from: "    setPendingSaveReason(prev => wallOnNewAttempt(prev, pendingSaveRef.current.length))\n", to: "" },
+  { name: 'the empty action row comes back on a wall with no buttons',
+    from: "          {(wall.offersAccount || wall.canFinish) && (", to: "          {true && (" },
   ],
 }

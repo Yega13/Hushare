@@ -1,8 +1,8 @@
 // @vitest-environment jsdom
 import { describe, it, expect, afterEach } from 'vitest'
 import { render, screen, cleanup, act } from '@testing-library/react'
-import { useState } from 'react'
-import { readFileSync } from 'node:fs'
+import { StrictMode, useState } from 'react'
+import { readFileSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { stripJsComments } from './helpers/source-text'
 import { useOnValueChange } from '@/lib/use-on-value-change'
@@ -100,5 +100,47 @@ describe('it adjusts DURING render, not in an effect', () => {
     const src = stripJsComments(readFileSync(join(process.cwd(), 'src', 'lib', 'use-on-value-change.ts'), 'utf8'))
     expect(src, 'this must not become an effect').not.toMatch(/useEffect|useLayoutEffect/)
     expect(src, 'the guard is what stops an infinite render').toContain('Object.is(value, seen)')
+  })
+})
+
+describe('the two ways this hook is dangerous', () => {
+  it('fires once per change under Strict Mode, where every render runs twice', () => {
+    // React double-invokes render in Strict Mode. The callback is a setter, so a second invocation
+    // is harmless -- but "once per change" was only ever proven for single-invoke rendering.
+    let calls = 0
+    function Counter({ id }: { id: string }) {
+      const [n, setN] = useState(0)
+      useOnValueChange(id, () => { calls++; setN((x) => x + 1) })
+      return <p data-testid="s">{`${id}:${n}`}</p>
+    }
+    const { rerender } = render(<StrictMode><Counter id="a" /></StrictMode>)
+    rerender(<StrictMode><Counter id="b" /></StrictMode>)
+    expect(screen.getByTestId('s').textContent).toBe('b:1')
+    expect(calls, 'a double-invoked render must not double the reset').toBe(1)
+  })
+
+  it('NO CALL SITE PASSES AN OBJECT OR ARRAY as the value -- that is an infinite render loop', () => {
+    // A fresh object every render is never Object.is-equal to the last one, so the guard never
+    // converges and the page hangs. The mutation set cannot catch this: the fault is at the caller.
+    // Scanned as source because that is where the mistake would be made.
+    const files: string[] = []
+    const walk = (dir: string) => {
+      for (const e of readdirSync(join(process.cwd(), dir), { withFileTypes: true })) {
+        if (e.name === 'node_modules' || e.name.startsWith('.')) continue
+        if (e.isDirectory()) walk(`${dir}/${e.name}`)
+        else if (/\.(ts|tsx)$/.test(e.name)) files.push(`${dir}/${e.name}`)
+      }
+    }
+    walk('src')
+    const bad: string[] = []
+    let callers = 0
+    for (const f of files) {
+      const text = stripJsComments(readFileSync(join(process.cwd(), f), 'utf8'))
+      for (const m of text.matchAll(/useOnValueChange\(\s*([[{])/g)) { bad.push(`${f}: starts with ${m[1]}`) }
+      callers += (text.match(/useOnValueChange\(/g) ?? []).length
+    }
+    expect(bad, 'an object or array key never settles').toEqual([])
+    // ...and the scan really found the call sites, rather than proving nothing.
+    expect(callers, 'the walker found no callers at all').toBeGreaterThanOrEqual(5)
   })
 })

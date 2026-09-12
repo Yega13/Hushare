@@ -107,6 +107,22 @@ export function wallCopy(wall: Wall, heldRows: number): WallCopy {
 }
 
 /**
+ * THE BANNER DESCRIBES THE LAST ATTEMPT, so a new attempt clears one that has nothing left to say.
+ *
+ * The wall used to be raised only where rows were queued, and finishing those rows took it down. A
+ * full album refused at PRESIGN raises it with nothing queued -- and then nothing could ever clear
+ * it: the only reset lives behind "Finish saving", which is neither rendered nor reachable when the
+ * queue is empty. The owner frees space, the guest re-adds the same photos, they upload and save,
+ * and "This album has no room left" sits above the green tiles (rule 20).
+ *
+ * A wall with rows still held survives, because those rows are still waiting and the sentence is
+ * still true. Everything else goes, and the attempt that follows re-raises whatever it earns.
+ */
+export function wallOnNewAttempt(prev: Wall | null, heldRows: number): Wall | null {
+  return heldRows > 0 ? prev : null
+}
+
+/**
  * The queue of rows waiting for "Finish saving", with each entry held ONCE. Without the key a
  * second refusal for the same file appended a second pair, the banner counted the same photo
  * twice, and finishing the job posted both.

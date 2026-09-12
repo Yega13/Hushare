@@ -178,7 +178,12 @@ const SIZE_BUDGET: Record<string, number> = {
   // hand-written narrowings that read a refusal's code became one refusalFields() in
   // lib/upload/failure. A behaviour added, a decision moved out, and the number recorded where it
   // lands rather than left as slack.
-  'src/components/UploadZone.tsx': 2037,
+  // +5 (2026-09-12, round two of the circle): a reviewer found the wall I had just added could never
+  // come down. Its only reset lives behind "Finish saving", which is not rendered when nothing is
+  // queued — so a banner raised at presign sat over the photos that later uploaded fine (rule 20).
+  // The decision is pure in lib/upload/retry-plan (wallOnNewAttempt); these lines are the call at the
+  // start of an attempt and the guard that stops an action row rendering with no buttons in it.
+  'src/components/UploadZone.tsx': 2042,
   // +3 on 2026-08-30: the branding toggle gained a real plan check (it was dimmed but still
   // clickable), and Face Finder and bib search stopped riding on the collections flag. Three
   // lines of reasoning for three gates that were wrong. Deliberate.
@@ -339,7 +344,10 @@ const SIZE_BUDGET: Record<string, number> = {
   // which a filled animation silently overrode — to padding on the overlay root.
   // +7 (2026-09-01, incident): the swipe pane carries its own LB_PAD — absolute inset-0 does
   // NOT inherit the root's padding, so the arriving photo rode up to 44px high on phones.
-  'src/components/photo-grid/LightboxOverlay.tsx': 731,
+  // +3 (2026-09-12): one comment restored after my own line-count trim cut it off mid-sentence, and
+  // one written for the five-part reset key that had none. Both explain WHY a key is the effect's
+  // whole dependency list, which is the part a reader cannot check against anything.
+  'src/components/photo-grid/LightboxOverlay.tsx': 734,
   // 518, down from 645: validatePhoto, hasTraversal and r2UrlPrefix moved to lib/photo-input,
   // where 22 tests now cover the boundary between a guest and this album's storage — including the
   // poisoned-thumbnail attack, which the mutation run confirmed they catch.

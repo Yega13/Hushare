@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { stripJsComments } from './helpers/source-text'
 import {
-  albumCap, registeringWouldHelp, upgradingWouldHelp, capNudge, albumFullRefusal, MAX_MEDIA_CAP_OVERRIDE,
+  albumCap, registeringWouldHelp, upgradingWouldHelp, capNudge, albumFullRefusal, capDependsOnTier, MAX_MEDIA_CAP_OVERRIDE,
   LEGACY_ALL_BEFORE,
 } from '../src/lib/album-entitlements'
 import { GRANDFATHER_FREE_BEFORE } from '../src/lib/media'
@@ -261,6 +261,40 @@ describe('albumFullRefusal -- the one thing a full album says, at either door', 
       expect(text, `${file} must refuse a full album with 403`).toMatch(/albumFullRefusal\([^)]*\), \{ status: 403/)
       expect(text, file).not.toMatch(/reached this album's upload limit/)
       expect(text, file).not.toMatch(/'album_full'/)
+    }
+  })
+})
+
+describe('capDependsOnTier -- was the tier what decided this cap?', () => {
+  // A gate that will not enforce a cap "because the tier lookup was not authoritative" must first ask
+  // whether the tier was an input at all. It made presign ALLOW an override album that photos/create
+  // refused: bytes in R2 with no row.
+  it('an override decides on its own, whatever the tier says', () => {
+    expect(capDependsOnTier({ ownerTier: 'studio', override: 5000 })).toBe(false)
+    expect(capDependsOnTier({ ownerTier: null, override: 5000 })).toBe(false)
+    // ...and albumCap really does return before reading the tier, which is the fact this rests on.
+    expect(albumCap({ ownerTier: 'studio', createdAt: NEW, override: 5000 }).cap)
+      .toBe(albumCap({ ownerTier: null, createdAt: NEW, override: 5000 }).cap)
+  })
+
+  it('an anonymous album never uses one either', () => {
+    expect(capDependsOnTier({ ownerTier: null, override: null })).toBe(false)
+    expect(albumCap({ ownerTier: null, createdAt: NEW, override: null }).cap)
+      .toBe(albumCap({ ownerTier: null, createdAt: NEW, override: 0 }).cap)
+  })
+
+  it('an owned album with no override is decided by the tier, so a guess must not enforce it', () => {
+    expect(capDependsOnTier({ ownerTier: 'free', override: null })).toBe(true)
+    expect(capDependsOnTier({ ownerTier: 'studio', override: 0 })).toBe(true)
+    // The difference this protects: the same album judged free vs studio.
+    expect(albumCap({ ownerTier: 'free', createdAt: NEW, override: null }).cap)
+      .not.toBe(albumCap({ ownerTier: 'studio', createdAt: NEW, override: null }).cap)
+  })
+
+  it('both doors ask it, so neither can enforce a cap the other will not', () => {
+    for (const file of ['src/app/api/album/photos/create/route.ts', 'src/lib/server/image-upload-authorization.ts']) {
+      const text = stripJsComments(readFileSync(join(process.cwd(), file), 'utf8'))
+      expect(text, file).toMatch(/capDependsOnTier\(/)
     }
   })
 })

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { freshEntryFor, mergeWall, queuePendingRows, retryMode, shouldPark, wallCopy, wallFor, type FileStatus } from '@/lib/upload/retry-plan'
+import { freshEntryFor, mergeWall, queuePendingRows, retryMode, shouldPark, wallCopy, wallFor, wallOnNewAttempt, type FileStatus } from '@/lib/upload/retry-plan'
 
 // WHAT A RETRY MEANS. The headline case is the duplicate: a file whose bytes are already in R2 and
 // whose row is waiting for "Finish saving" must be RE-SAVED, never re-uploaded.
@@ -136,5 +136,33 @@ describe('wallCopy -- what the banner says when nothing is held', () => {
   it('a transient save failure keeps its own words, and its button while rows are held', () => {
     expect(wallCopy('failed', 2)).toEqual({ title: 'uploadWall.failedTitle', body: 'uploadWall.failedBody', offersAccount: false, canFinish: true })
     expect(wallCopy('failed', 0).canFinish).toBe(false)
+  })
+})
+
+describe('wallOnNewAttempt -- the banner describes the LAST attempt', () => {
+  // The defect this exists for: a wall raised at presign queues no rows, and the only reset lives
+  // behind "Finish saving", which is not rendered when the queue is empty. So "This album has no
+  // room left" stayed up after the owner freed space and the guest's re-added photos uploaded fine.
+  it('a wall with nothing held is cleared when another attempt starts', () => {
+    expect(wallOnNewAttempt('full', 0)).toBeNull()
+    expect(wallOnNewAttempt('fullOther', 0)).toBeNull()
+    expect(wallOnNewAttempt('failed', 0)).toBeNull()
+  })
+
+  it('a wall with rows still held survives, because those rows are still waiting', () => {
+    expect(wallOnNewAttempt('full', 3)).toBe('full')
+    expect(wallOnNewAttempt('fullOther', 1)).toBe('fullOther')
+    expect(wallOnNewAttempt('failed', 2)).toBe('failed')
+  })
+
+  it('no wall stays no wall', () => {
+    expect(wallOnNewAttempt(null, 0)).toBeNull()
+    expect(wallOnNewAttempt(null, 5)).toBeNull()
+  })
+
+  it('and the attempt that follows re-raises whatever it earns', () => {
+    // Cleared, then refused again: the banner comes back, which is the whole reason clearing is safe.
+    const cleared = wallOnNewAttempt('full', 0)
+    expect(mergeWall(cleared, wallFor('album_full', 'register'))).toBe('full')
   })
 })

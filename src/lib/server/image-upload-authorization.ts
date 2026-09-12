@@ -7,7 +7,7 @@ import { isAllowedImage, safeExtForMime } from '@/lib/cloudflare/r2'
 import { checkRateLimit, clientIpKey } from '@/lib/rate-limit'
 import { presignBudget } from '@/lib/presign-budget'
 import { uploadCapsForTier, tooLargeMessage } from '@/lib/media'
-import { albumCap as albumCapFor, albumEffectiveTier, albumFullRefusal } from '@/lib/album-entitlements'
+import { albumCap as albumCapFor, albumEffectiveTier, albumFullRefusal, capDependsOnTier } from '@/lib/album-entitlements'
 import { getUserTierResolved } from '@/lib/subscriptions'
 import { reportServerError } from '@/lib/report-server-error'
 import { gateAllowsContribution, signedInUserForGate, ALBUM_GATE_COLS } from '@/lib/server/album-access'
@@ -159,22 +159,21 @@ export async function authorizeImageUpload(
   // refusal that stands until somebody deletes something: four per-IP limiter slots (one venue is one
   // IP), four album reads, four tier lookups and four count(*) scans, per photo.
   //
-  // Only on an AUTHORITATIVE tier and a KNOWN count. Both uncertain branches ALLOW (rule 19): the cap
-  // bounds cost, the presign budget still bounds bytes, and photos/create still enforces the cap when
-  // the tier is known -- whereas refusing on a guess costs a paying customer the album they bought.
+  // Enforced on a KNOWN count, and on a tier only when the tier is what decided the cap.
+  //
+  // `capDependsOnTier` is the whole point: albumCap returns on an override before reading the tier,
+  // and an anonymous album never uses one — so gating those on `authoritative` refused to enforce a
+  // cap on the strength of an answer that was never an input. It made this door ALLOW an override
+  // album that photos/create then refused: bytes in R2 with no row, which is the defect this refusal
+  // exists to prevent.
+  //
+  // Where the tier DOES decide the cap and the lookup was a guess, the uncertain branch allows (rule
+  // 19): the cap bounds cost, the presign budget still bounds bytes, and photos/create enforces on a
+  // known tier — whereas refusing on a guess costs a paying customer the album they bought.
   const full = !countRes.error && countRes.count !== null && countRes.count >= albumCap
-  if (full && tierRes.authoritative) {
+  const capIsSafeToEnforce = tierRes.authoritative || !capDependsOnTier(capInput)
+  if (full && capIsSafeToEnforce) {
     return { ok: false, response: NextResponse.json(albumFullRefusal(capInput), { status: 403, headers: NO_STORE }) }
-  }
-  if (full) {
-    // The album looks full, but the tier that sized that cap was a guess, so nothing is enforced
-    // here. Same direction as the failed count, and reported for the same reason the video budget
-    // reports its own: a cap that has silently stopped being enforced belongs in the panel.
-    console.error('[image-upload-auth] media cap NOT enforced — the tier lookup degraded for album', params.albumId)
-    reportServerError('image-upload-auth', 'Media cap NOT enforced — the tier lookup degraded', {
-      albumId: params.albumId,
-      context: { items: countRes.count, capFromGuessedTier: albumCap },
-    })
   }
 
   const albumRl = await checkRateLimit(
@@ -195,6 +194,23 @@ export async function authorizeImageUpload(
   if (tierRes.tier === null) {
     console.error('[image-upload-auth] getUserTierResolved failed:', tierRes.error instanceof Error ? tierRes.error.message : String(tierRes.error))
     return { ok: false, response: NextResponse.json({ error: 'Service temporarily unavailable' }, { status: 503, headers: NO_STORE }) }
+  }
+
+  // REPORTED HERE, PAST EVERY REFUSAL, because a request that authorized nothing is not a cap that
+  // stopped being enforced. Filed above, it described the 503 and the rate-limit refusals as unmetered
+  // uploads — the reverse of what happened, on the screen an operator reads during an event (rule 20).
+  //
+  // Known costs, stated rather than discovered later: one report per authorized request (coalesced by
+  // level+source+message+album within 5 minutes, so it is one row per album, not a flood), and enough
+  // occurrences to arm the error-spike alarm on a busy album. Both are correct — a cap that has
+  // silently stopped being enforced IS an incident — but they are a cost, and the same database whose
+  // lookup is failing takes the write.
+  if (full) {
+    console.error('[image-upload-auth] media cap NOT enforced — the tier lookup degraded for album', params.albumId)
+    reportServerError('image-upload-auth', 'Media cap NOT enforced — the tier lookup degraded', {
+      albumId: params.albumId,
+      context: { items: countRes.count, capFromGuessedTier: albumCap },
+    })
   }
 
   const caps = uploadCapsForTier(albumEffectiveTier(album.user_id ? tierRes.tier : null, {

@@ -356,10 +356,12 @@ export const hy: Partial<Record<DictKey, string>> = {
   "uploadWall.body": "{n} լուսանկար վերբեռնված է, բայց դեռ պահպանված չէ։ Ստեղծեք անվճար հաշիվ — դրանք ինքնաշխատ կպահպանվեն, նորից վերբեռնել պետք չէ։",
   "uploadWall.fullTitle": "Ալբոմը լցված է",
   "uploadWall.fullBody": "{n} լուսանկար վերբեռնված է, բայց դեռ պահպանված չէ։",
-  // Both sentences are copied verbatim from strings already in this file (uploadWall.fullTitle and
-  // uploadWall.cta). uploadWall.fullBodyNone is deliberately absent: it needs words this dictionary
-  // does not contain, and an absent key falls back to English rather than to a guess.
-  "uploadWall.bodyNone": "Ալբոմը լցված է։ Ստեղծեք անվճար հաշիվ։",
+  // uploadWall.bodyNone and uploadWall.fullBodyNone are deliberately absent, so both fall back to
+  // English. The Armenian I could build from sentences already in this file said "the album is full,
+  // create a free account" and stopped -- it dropped "then add your photos again", and on THAT banner
+  // the body is the only instruction there is (nothing is queued, so no button is rendered). A
+  // reviewer also caught the citation I wrote for it being wrong: the imperative Ստեղծեք comes from
+  // uploadWall.body, not from uploadWall.cta, which is the infinitive Ստեղծել. Both need a translator.
   "uploadWall.cta": "Ստեղծել անվճար հաշիվ",
   "uploadWall.retry": "Պահպանել",
   "uploadWall.saving": "Պահպանվում է…",

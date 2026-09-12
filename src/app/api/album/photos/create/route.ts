@@ -15,7 +15,7 @@ import { timingSafeEqual } from '@/lib/timing-safe'
 import { getUserTierResolved } from '@/lib/subscriptions'
 import type { Tier } from '@/types'
 import { ANON_ALBUM_MEDIA } from '@/lib/media'
-import { albumCap, albumFullRefusal, registeringWouldHelp, chargeableDurationSeconds } from '@/lib/album-entitlements'
+import { albumCap, albumFullRefusal, capDependsOnTier, registeringWouldHelp, chargeableDurationSeconds } from '@/lib/album-entitlements'
 import { gateAllowsContribution } from '@/lib/server/album-access'
 import { queueBibIndex } from '@/lib/server/bib-index'
 import { cookies } from 'next/headers'
@@ -250,7 +250,9 @@ export async function POST(req: Request) {
     const input = { ownerTier, createdAt: album.created_at, override: album.media_cap_override, pkg }
     const { cap } = albumCap(input)
 
-    if (tierKnown && photoCount >= cap) {
+    // The same question the presign door asks: an override album's cap never read the tier, so a
+    // lookup this route deliberately skipped must not make the cap unenforceable (lib/album-entitlements).
+    if ((tierKnown || !capDependsOnTier(input)) && photoCount >= cap) {
       // The words, the code and the nudge are lib/album-entitlements' albumFullRefusal, shared with
       // the presign route so a full album says the same thing at either door. `nudge` travels to the
       // client so the upload banner shows the SAME advice; it used to infer from `code` alone that an

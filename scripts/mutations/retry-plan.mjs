@@ -59,5 +59,10 @@ export default {
   { name: 'the full-album wall stops offering the account it exists for',
     from: "    return { title: 'uploadWall.title', body: canFinish ? 'uploadWall.body' : 'uploadWall.bodyNone', offersAccount: true, canFinish }",
     to: "    return { title: 'uploadWall.title', body: canFinish ? 'uploadWall.body' : 'uploadWall.bodyNone', offersAccount: false, canFinish }" },
+
+  { name: 'A WALL WITH NOTHING HELD SURVIVES THE NEXT ATTEMPT, so it sits over photos that uploaded fine',
+    from: "  return heldRows > 0 ? prev : null", to: "  return prev" },
+  { name: 'every new attempt clears the wall, including one whose rows are still waiting',
+    from: "  return heldRows > 0 ? prev : null", to: "  return null" },
   ],
 }

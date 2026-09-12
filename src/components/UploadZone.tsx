@@ -9,7 +9,7 @@ import {
   type VideoResume,
   refusalFrom, refusalFields,
 } from '@/lib/upload/failure'
-import { freshEntryFor, mergeWall, queuePendingRows, retryMode, shouldPark, wallCopy, wallFor } from '@/lib/upload/retry-plan'
+import { freshEntryFor, mergeWall, queuePendingRows, retryMode, shouldPark, wallCopy, wallFor, wallOnNewAttempt } from '@/lib/upload/retry-plan'
 import { createRowSaver } from '@/lib/upload/row-saver'
 import { createVideoLane, videoOutcomeOf } from '@/lib/upload/video-lane'
 import { batchThroughputKbps, lostCount } from '@/lib/upload/throughput'
@@ -1237,6 +1237,9 @@ export default function UploadZone({ album, onPhotosUploaded, isOwner }: Props) 
   const startUploads = useCallback(async (toUpload: FileEntry[]) => {
     if (toUpload.length === 0) return
     trackUploadStep('started', toUpload.length, album.id)
+    // The banner describes the last attempt. A wall with nothing held has no way to clear itself
+    // otherwise, and would sit over the photos this attempt is about to upload (lib/upload/retry-plan).
+    setPendingSaveReason(prev => wallOnNewAttempt(prev, pendingSaveRef.current.length))
     // Bytes and clock for this batch, so the throughput reported at the end is a measurement rather
     // than an impression. "Uploads feel slow" fits a slow connection, a slow phone and a slow server
     // equally well, and those are three completely different fixes.
@@ -1799,6 +1802,7 @@ export default function UploadZone({ album, onPhotosUploaded, isOwner }: Props) 
         <div style={{ marginBottom: 12, padding: 14, borderRadius: 14, background: '#F6E9EE', border: '1px solid #E3C9D3' }}>
           <p style={{ margin: '0 0 4px', fontSize: 15, fontWeight: 700, color: '#630826' }}>{t(wall.title, { n: pendingSaveCount })}</p>
           <p style={{ margin: '0 0 12px', fontSize: 13.5, lineHeight: 1.5, color: '#5C4A3C' }}>{t(wall.body, { n: pendingSaveCount })}</p>
+          {(wall.offersAccount || wall.canFinish) && (
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
             {wall.offersAccount && (
             <a
@@ -1817,6 +1821,7 @@ export default function UploadZone({ album, onPhotosUploaded, isOwner }: Props) 
             </button>
             )}
           </div>
+          )}
         </div>
       )}
       {/* Drop zone — compact on mobile, roomier on desktop */}

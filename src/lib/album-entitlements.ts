@@ -157,6 +157,24 @@ export function upgradingWouldHelp(input: AlbumCapInput): boolean {
 }
 
 /**
+ * DID THE OWNER'S TIER ACTUALLY DECIDE THIS CAP?
+ *
+ * albumCap returns on the override before it ever reads `ownerTier`, and an anonymous album is sized
+ * by ANON_ALBUM_MEDIA whatever any lookup says. So for those two shapes the tier is not an input at
+ * all, and a gate that refuses to enforce the cap "because the tier lookup was not authoritative" is
+ * refusing on the strength of an answer it never used.
+ *
+ * That is not hypothetical: it made the presign door ALLOW an override album that photos/create then
+ * refused, which is bytes in R2 with no row to reference them -- the permanent-bytes defect the
+ * presign refusal exists to prevent. photos/create already skipped the lookup for override albums;
+ * this is the same knowledge, said once, where albumCap's own early return can be seen next to it.
+ */
+export function capDependsOnTier({ ownerTier, override }: Pick<AlbumCapInput, 'ownerTier' | 'override'>): boolean {
+  if (typeof override === 'number' && override > 0) return false
+  return ownerTier !== null && ownerTier !== undefined
+}
+
+/**
  * WHICH NUDGE, IF ANY, A FULL ALBUM HAS EARNED — the single answer, so the server message and the
  * client's banner cannot disagree about it.
  *

@@ -1764,3 +1764,44 @@ comment giving a reason that was not true.
 the end of its failure path. "Degrades to a default" and "throws" are different failures and only
 one of them is visible at the call site — and if a module exports a resolved/authoritative variant,
 that is the author telling you the default one lies about certainty.
+
+### 106. I GATED ON WHETHER THE ANSWER WAS TRUSTWORTHY, NOT ON WHETHER IT WAS USED
+
+Fixing 105, I made the cap enforceable only on an `authoritative` tier. Correct question, wrong
+scope. `albumCap` returns on an override **before it ever reads `ownerTier`**, and an anonymous
+album is sized by `ANON_ALBUM_MEDIA` whatever any lookup says. For those two shapes the tier is not
+an input at all — so refusing to enforce the cap "because the lookup was not authoritative" is
+refusing on the strength of an answer that was never consulted.
+
+The consequence was the defect the whole commit existed to close, reopened by its own fix: on an
+override album during a degraded lookup, presign ALLOWED and photos/create still refused. Bytes in
+R2, no row, nothing that can ever find them.
+
+The knowledge was one file away, in the code I was copying. photos/create wraps its lookup in
+`if (!hasOverride && album.user_id)` — it skips the tier entirely for exactly these shapes. I read
+that block closely enough to mirror its `tierKnown` flag and not closely enough to ask why its
+condition was there.
+
+**Habit to build:** when you copy a guard from a sibling, copy its CONDITION and find out what the
+condition is protecting — an unconditional version of a conditional guard is a different rule
+wearing the same name. And keep the two questions apart: "can I trust this value?" is not "does
+this value decide anything here?", and only the second one licenses skipping enforcement.
+
+### 107. I ADDED A SECOND DOOR INTO A STATE, AND NOT AN EXIT FROM IT
+
+The upload wall was only ever raised where rows had been queued, and finishing those rows took it
+down — one producer, one terminator, and they were the same code path. I added a second producer
+(a full album refused at presign, which queues nothing) and never asked what would take it down.
+Nothing could: the only reset lives inside `retryBlockedRows`, behind an empty-queue early return,
+behind a button that is not rendered when the queue is empty. The owner frees space, the guest
+re-adds the photos, they upload and save — and "This album has no room left" sits above the green
+tiles until the page is closed. Rule 20, written by me, in the same week I quoted it.
+
+What hid it: `wallCopy` is pure and exhaustively tested, and every one of those tests passes. The
+lifecycle — when the reason is set, when it is cleared — lived in the component, where nothing tests
+anything. A reviewer found it in the one place rule 14 says to look.
+
+**Habit to build:** adding a producer of a state means finding its terminator in the same change.
+Ask literally "what takes this down, and can that thing run from here?" — if the answer is a control
+this new path does not render, the state has no exit. And a pure function tested to exhaustion says
+nothing about the machine that calls it.

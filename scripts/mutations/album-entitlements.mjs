@@ -122,5 +122,14 @@ export default {
     from: "Register on Hushare — it's free — for more space.", to: "Upgrade your plan for more space." },
   { name: 'the nudge is not attached, so the banner guesses',
     from: "  return { code: 'album_full', nudge, error:", to: "  return { code: 'album_full', nudge: 'none' as const, error:" },
+
+  // ── was the tier what decided this cap (2026-09-12, round two) ───────────────────────────────
+  { name: 'AN OVERRIDE ALBUM IS SAID TO DEPEND ON ITS TIER, so a degraded lookup stops enforcing it',
+    from: "  if (typeof override === 'number' && override > 0) return false\n  return ownerTier !== null && ownerTier !== undefined",
+    to: "  return ownerTier !== null && ownerTier !== undefined" },
+  { name: 'an anonymous album is said to depend on a tier it never reads',
+    from: "  return ownerTier !== null && ownerTier !== undefined", to: "  return true" },
+  { name: 'no cap depends on the tier, so a guessed tier enforces every cap',
+    from: "  return ownerTier !== null && ownerTier !== undefined", to: "  return false" },
   ],
 }

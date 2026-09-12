@@ -623,6 +623,42 @@ describe('a FULL album is refused as full, before it is handed a slot', () => {
     expect(cfg.reports, 'a refusal is not a cap that stopped being enforced').toEqual([])
   })
 
+  it('AN OVERRIDE ALBUM IS ENFORCED EVEN ON A DEGRADED LOOKUP -- its cap never read the tier', () => {
+    // The regression a reviewer found in the first fix: gating on `authoritative` alone made this
+    // door allow what photos/create refuses, which is bytes in R2 with no row to reference them.
+    cfg.album = { ...OWNED, media_cap_override: 400 }
+    cfg.tierAuthoritative = false
+    cfg.photoCount = 400
+    return authorizeImageUpload(req, params()).then(async (res) => {
+      expect(res.ok).toBe(false)
+      if (res.ok) return
+      expect(res.response.status).toBe(403)
+      expect((await res.response.json()).code).toBe('album_full')
+      expect(cfg.reports, 'nothing stopped being enforced here').toEqual([])
+    })
+  })
+
+  it('an ANONYMOUS album is enforced on a degraded lookup too: its cap never read the tier', async () => {
+    cfg.album = { ...OK_ALBUM }          // user_id null
+    cfg.tierAuthoritative = false
+    cfg.photoCount = capOf(OK_ALBUM)
+    const res = await authorizeImageUpload(req, params())
+    expect(res.ok).toBe(false)
+    if (!res.ok) expect(res.response.status).toBe(403)
+  })
+
+  it('a request that ends in 503 is NOT reported as a cap that stopped being enforced', async () => {
+    // The report used to run before the refusals below it, so it described a request that authorized
+    // nothing as an unmetered upload -- backwards, on the screen an operator reads during an event.
+    cfg.album = { ...OWNED }
+    cfg.tierThrows = true
+    cfg.photoCount = capOf(OWNED)
+    const res = await authorizeImageUpload(req, params())
+    expect(res.ok).toBe(false)
+    if (!res.ok) expect(res.response.status).toBe(503)
+    expect(cfg.reports.map((r) => r.message)).toEqual([])
+  })
+
   it('an UNKNOWN tier is never called full at the free allowance: the 503, not album_full', async () => {
     cfg.album = { ...OWNED }
     cfg.tierThrows = true
