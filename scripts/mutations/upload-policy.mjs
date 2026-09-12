@@ -135,5 +135,9 @@ export default {
     from: "  TYPE_NOT_ALLOWED,\n", to: "" },
   { name: 'the words are retyped instead of imported, so a reword stops being recognised',
     from: "  TYPE_NOT_ALLOWED,", to: "  'File type is not allowed'," },
+  { name: 'AN OWNER SWITCHING UPLOADS OFF GOES BACK TO BEING A FAULT in the Errors tab',
+    from: "  UPLOADS_DISABLED,\n", to: "" },
+  { name: 'the uploads-disabled words are retyped instead of imported',
+    from: "  UPLOADS_DISABLED,", to: "  'Uploads are disabled for this album'," },
   ],
 }

@@ -214,6 +214,20 @@ export function albumFullRefusal(input: AlbumCapInput): { code: 'album_full'; nu
   return { code: 'album_full', nudge, error: `You've reached this album's upload limit.${suffix}` }
 }
 
+/**
+ * The refusal every upload door sends when the owner has switched guest uploads off.
+ *
+ * ONE constant because it was three: photos/create, image-upload-authorization and
+ * video-upload-authorization each typed the sentence out, and the client decides whether a refusal
+ * is a fault by matching the MESSAGE (isExpectedRefusal, lib/upload-policy). Nothing matched it, so
+ * on 2026-09-12 an owner turning uploads off for two minutes put two `error` rows in the Errors tab
+ * -- the product working exactly as designed, filed next to the real failures.
+ *
+ * No `code` beside it, unlike albumFullRefusal: that one carries a code because the upload wall
+ * reads it, and a code nothing consumes is surface that can only drift.
+ */
+export const UPLOADS_DISABLED = 'Uploads disabled for this album'
+
 // ── HOW MUCH VIDEO MAY THIS ALBUM HOLD ───────────────────────────────────────────
 //
 // Until this shipped there was NO limit on video at all — not on how long a clip could be, not on

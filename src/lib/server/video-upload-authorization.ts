@@ -8,7 +8,7 @@ import { uploadCapsForTier, tooLargeMessage, STUDIO_VIDEO_BYTES, TYPE_NOT_ALLOWE
 import { getUserTierById } from '@/lib/subscriptions'
 import { resolveMaxDurationSeconds } from '@/lib/stream-duration'
 import { reportServerError } from '@/lib/report-server-error'
-import { videoCaps, videoBudgetExceeded, videoAlbumFullMessage, albumEffectiveTier } from '@/lib/album-entitlements'
+import { videoCaps, videoBudgetExceeded, videoAlbumFullMessage, albumEffectiveTier, UPLOADS_DISABLED } from '@/lib/album-entitlements'
 import { gateAllowsContribution, signedInUserForGate, ALBUM_GATE_COLS } from '@/lib/server/album-access'
 import type { Tier } from '@/types'
 
@@ -98,7 +98,7 @@ export async function authorizeVideoUpload(
     return { ok: false, response: NextResponse.json({ error: 'Album not found' }, { status: 404, headers: NO_STORE }) }
   }
   if (!album.guest_uploads_enabled) {
-    return { ok: false, response: NextResponse.json({ error: 'Uploads disabled for this album' }, { status: 403, headers: NO_STORE }) }
+    return { ok: false, response: NextResponse.json({ error: UPLOADS_DISABLED }, { status: 403, headers: NO_STORE }) }
   }
 
   // A password or reveal gate applies to contributing, not just to viewing — same check the image

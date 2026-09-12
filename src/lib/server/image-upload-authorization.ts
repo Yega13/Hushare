@@ -7,7 +7,7 @@ import { isAllowedImage, safeExtForMime } from '@/lib/cloudflare/r2'
 import { checkRateLimit, clientIpKey } from '@/lib/rate-limit'
 import { presignBudget } from '@/lib/presign-budget'
 import { uploadCapsForTier, tooLargeMessage, TYPE_NOT_ALLOWED } from '@/lib/media'
-import { albumCap as albumCapFor, albumEffectiveTier, albumFullRefusal, capDependsOnTier } from '@/lib/album-entitlements'
+import { albumCap as albumCapFor, albumEffectiveTier, albumFullRefusal, capDependsOnTier, UPLOADS_DISABLED } from '@/lib/album-entitlements'
 import { getUserTierResolved } from '@/lib/subscriptions'
 import { reportServerError } from '@/lib/report-server-error'
 import { gateAllowsContribution, signedInUserForGate, ALBUM_GATE_COLS } from '@/lib/server/album-access'
@@ -93,7 +93,7 @@ export async function authorizeImageUpload(
     return { ok: false, response: NextResponse.json({ error: 'Album not found' }, { status: 404, headers: NO_STORE }) }
   }
   if (!album.guest_uploads_enabled) {
-    return { ok: false, response: NextResponse.json({ error: 'Uploads disabled for this album' }, { status: 403, headers: NO_STORE }) }
+    return { ok: false, response: NextResponse.json({ error: UPLOADS_DISABLED }, { status: 403, headers: NO_STORE }) }
   }
 
   // A password or reveal gate applies to contributing, not just to viewing — see

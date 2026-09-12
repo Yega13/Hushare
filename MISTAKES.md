@@ -1942,3 +1942,28 @@ because the log says the test is strong.
 and that thing must exist and have been watched to fail before the sentence is allowed to stand. If
 the enforcement is not written yet, the comment says what is true today -- or it is not written yet
 either. And check both halves of a mutation after any rename, not just the anchor.
+
+### 112. I BLAMED ANOTHER COMMIT FOR MY OWN CHANGE ALREADY BEING THERE
+
+A patch script aborted on a missing anchor: the import line it wanted to edit was not in
+`upload-policy.ts`. I said the cause was almost certainly that a commit made outside my context had
+edited that line, and went off to re-read the file and rebuild the anchor.
+
+Wrong. My own script had already run four minutes earlier and applied the whole change. The anchor
+was missing because it had been consumed -- by me. `git diff` showed all seven files carrying my own
+comment text, and every mtime identical to the second.
+
+What made the wrong answer feel like the careful one: the session had restarted, three commits HAD
+landed outside my context, and `git status` HAD reported a clean tree a few minutes before. Every
+one of those was true, and not one of them was evidence for the conclusion I drew from them. It also
+wore the costume of good practice -- "re-read rather than adjust by guess" is the right instinct, and
+I used it to justify skipping the one command that would have answered the question.
+
+A missing anchor has exactly two causes: someone else moved it, or you already applied it. The second
+is the one you can confirm instantly, from your own working tree, and it is the one to check first.
+
+**Habit to build:** when a patch anchor does not match, run `git diff` BEFORE forming any theory about
+why. Not `git status` -- the diff, because it shows whether the new text is already sitting there in
+your own words. And note what saved this from becoming real damage: the script defers every write
+until all anchors match, so the failed second run wrote nothing at all. Without that, the re-run would
+have appended a second copy of the constant to a file the first run had already finished editing.

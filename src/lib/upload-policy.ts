@@ -1,5 +1,5 @@
 import { TYPE_NOT_ALLOWED } from '@/lib/media'
-import { VIDEO_ALBUM_FULL_PREFIX } from '@/lib/album-entitlements'
+import { UPLOADS_DISABLED, VIDEO_ALBUM_FULL_PREFIX } from '@/lib/album-entitlements'
 import { monotonicNow } from '@/lib/clock'
 // THE DECISIONS THE UPLOADER MAKES ABOUT SOMEONE ELSE'S PHOTO.
 //
@@ -287,6 +287,9 @@ export const EXPECTED_REFUSAL_PREFIXES = [
   // upload doors answer 415 with this when a file is a type we do not accept -- a decision, not a
   // failure. It reached the Errors tab on 2026-09-12 because nothing here recognised it.
   TYPE_NOT_ALLOWED,
+  // Fourth of the same shape, and the same import rule. An owner switching guest uploads off is a
+  // decision they made on purpose; all three doors answer 403 with this constant.
+  UPLOADS_DISABLED,
 ] as const
 
 export function isExpectedRefusal(message: string): boolean {

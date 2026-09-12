@@ -10,6 +10,7 @@ import {
   createRelayPolicy, verdictForResponse, verdictForThrow,
 } from '@/lib/upload-policy'
 import { TYPE_NOT_ALLOWED } from '@/lib/media'
+import { UPLOADS_DISABLED } from '@/lib/album-entitlements'
 
 // THE UPLOADER'S JUDGEMENTS ABOUT SOMEONE ELSE'S PHOTO.
 //
@@ -206,6 +207,37 @@ describe('a refusal the product made on purpose is not an error', () => {
 // because losing connectivity looks exactly like a blocked domain. Only a relay that SUCCEEDED
 // where the direct path failed is evidence. And the belief expires, because phones move between
 // wifi and cellular mid-event.
+describe('an owner switching uploads off is a decision, not a fault', () => {
+  // Measured on 2026-09-12: album 2c049589 refused for about two minutes (rows 1229 and 1230, one
+  // per door), accepted 25 photos immediately afterwards, and was retired later the same evening.
+  // Both rows landed at `error` because nothing here recognised the sentence. Fourth instance of
+  // this shape after the full album, the video minutes and the file type.
+  it('the refusal all three doors send is recognised as one', () => {
+    expect(isExpectedRefusal(UPLOADS_DISABLED)).toBe(true)
+    expect(isExpectedRefusal('Uploads disabled for this album')).toBe(true)
+  })
+
+  it('the prefix is IMPORTED from where the decision is made, never retyped here', () => {
+    expect(EXPECTED_REFUSAL_PREFIXES).toContain(UPLOADS_DISABLED)
+    const src = stripJsComments(readFileSync(join(process.cwd(), 'src', 'lib', 'upload-policy.ts'), 'utf8'))
+    expect(src, 'the words must not be typed again in this file').not.toMatch(/'Uploads disabled for this album'/)
+  })
+
+  it('all THREE doors send exactly that constant, and none of them types the words', () => {
+    // Three, not two: the video door refuses with the same sentence, and a fix that reached only
+    // the two image doors would leave the video lane filing it as a fault on its own.
+    for (const file of [
+      'src/app/api/album/photos/create/route.ts',
+      'src/lib/server/image-upload-authorization.ts',
+      'src/lib/server/video-upload-authorization.ts',
+    ]) {
+      const text = stripJsComments(readFileSync(join(process.cwd(), file), 'utf8'))
+      expect(text, `${file} must send the imported constant`).toMatch(/error: UPLOADS_DISABLED/)
+      expect(text, `${file} must not retype the words`).not.toMatch(/'Uploads disabled for this album'/)
+    }
+  })
+})
+
 describe('a type we do not accept is a refusal, not a fault', () => {
   // Measured on 2026-09-12: a 9 MB video in an unsupported format was refused with 415 by
   // video-upload-authorization and filed in the Errors tab, because nothing recognised the sentence.

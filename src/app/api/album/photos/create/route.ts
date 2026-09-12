@@ -15,7 +15,7 @@ import { timingSafeEqual } from '@/lib/timing-safe'
 import { getUserTierResolved } from '@/lib/subscriptions'
 import type { Tier } from '@/types'
 import { ANON_ALBUM_MEDIA } from '@/lib/media'
-import { albumCap, albumFullRefusal, capDependsOnTier, registeringWouldHelp, chargeableDurationSeconds } from '@/lib/album-entitlements'
+import { albumCap, albumFullRefusal, capDependsOnTier, registeringWouldHelp, chargeableDurationSeconds, UPLOADS_DISABLED } from '@/lib/album-entitlements'
 import { gateAllowsContribution } from '@/lib/server/album-access'
 import { queueBibIndex } from '@/lib/server/bib-index'
 import { cookies } from 'next/headers'
@@ -118,7 +118,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: 'Album not found' }, { status: 404, headers: NO_STORE })
   }
   if (!album.guest_uploads_enabled) {
-    return NextResponse.json({ error: 'Uploads disabled for this album' }, { status: 403, headers: NO_STORE })
+    return NextResponse.json({ error: UPLOADS_DISABLED }, { status: 403, headers: NO_STORE })
   }
 
   // The album's password/reveal gate applies to CONTRIBUTING, not just to viewing.
