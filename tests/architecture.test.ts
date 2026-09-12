@@ -212,7 +212,12 @@ const SIZE_BUDGET: Record<string, number> = {
   // upload refuses an empty blob, the thumbnail is skipped when empty — and fourteen of comment,
   // because each one names the incident it exists for and the next reader needs to know that
   // `if (blob)` was the whole defect. The classification itself is lib/file-read's readFailure.
-  'src/components/UploadZone.tsx': 2085,
+  // 2085 -> 2032: THE ENCODER LEFT. dataUrlToBlob, encodeCanvas and bitmapToBlob are
+  // lib/upload/image-encode now, behind an injected surface, with 17 tests and 13 mutations on the
+  // failures only a real device produces. What stayed is the two adapters that need the DOM. This
+  // is the first repayment on the gap rule 14 measured on 2026-08-30, and it is the half that can
+  // destroy a photograph rather than mislabel a row.
+  'src/components/UploadZone.tsx': 2032,
   // +3 on 2026-08-30: the branding toggle gained a real plan check (it was dimmed but still
   // clickable), and Face Finder and bib search stopped riding on the collections flag. Three
   // lines of reasoning for three gates that were wrong. Deliberate.

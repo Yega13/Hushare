@@ -78,8 +78,11 @@ describe('UploadZone writes its rows through lib/upload/row-saver and keeps no c
     // AN EMPTY BLOB IS TRUTHY, and that is how album dm1ybi7j came to hold twelve rows pointing at
     // twelve empty objects. The encoder must accept a blob only if it has bytes, and nothing may be
     // PUT to R2 without them. Both refuse as READ failures so the file is parked and tried again.
-    expect(text, 'the encoder must check the size, not the truthiness').toMatch(/if \(blob && blob\.size > 0\) return blob/)
-    expect(text, 'the encoder must never accept a blob on truthiness alone').not.toMatch(/\n  if \(blob\) return blob/)
+    // The encoder itself lives in lib/upload/image-encode now, tested and mutated there. What this
+    // file must still prove is that the component drives it rather than growing its own again.
+    expect(text, 'the component must use the lib encoder').toMatch(/createImageEncoder\(\{/)
+    expect(text, 'and must not re-implement an encode loop here').not.toMatch(/toBlob\(resolve, mimeType/)
+    expect(text, 'the offscreen surface is tried first').toMatch(/offscreen: typeof OffscreenCanvas !== 'undefined'/)
     // What it THROWS, not just that it checks. A plain Error here does not start with the
     // read-failure prefix, so isFileReadFailure says no: the photo is never parked, never tried a
     // second time, and is filed as a fault. The check would still be present and the guest would

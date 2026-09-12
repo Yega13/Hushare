@@ -48,6 +48,7 @@ setFallbackDecodeReporter((reason) => {
   })
 })
 import { snapshotFileRobust, readFileRobust, readFailure } from '@/lib/file-read'
+import { createImageEncoder, MAIN_QUALITY, THUMB_QUALITY, THUMB_MAX_DIM, type Surface } from '@/lib/upload/image-encode'
 import { trackUploadStep } from '@/lib/engagement'
 import { showAppToast } from '@/components/AppToast'
 import { useT } from '@/i18n/LocaleProvider'
@@ -123,83 +124,54 @@ async function convertHeicMainThread(file: File): Promise<Blob> {
 
 // ─── Image processing helpers ─────────────────────────────────────────────────
 
-// A data: URL back into bytes. Needed because toDataURL is the only encoder left when toBlob
-// refuses, and every caller downstream wants a Blob.
-function dataUrlToBlob(dataUrl: string): Blob | null {
-  const comma = dataUrl.indexOf(',')
-  if (comma < 0) return null
-  const header = dataUrl.slice(0, comma)
-  if (!header.startsWith('data:') || !header.includes(';base64')) return null
-  const mime = header.slice(5, header.indexOf(';')) || 'image/jpeg'
-  const binary = atob(dataUrl.slice(comma + 1))
-  const bytes = new Uint8Array(binary.length)
-  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i)
-  return new Blob([bytes], { type: mime })
+// ─── The browser's encoders, behind the interface lib/upload/image-encode drives ─────────────
+//
+// The DECISIONS moved out on 2026-09-12, the day the old version of this code stored twelve photos
+// as zero-byte objects: retry once under memory pressure, fall back to toDataURL, and refuse an
+// empty result however successful it looks. They are tested and mutated in lib now. What stays here
+// is the part that genuinely needs the DOM -- making a surface and asking the platform to encode it.
+
+function elementSurface(w: number, h: number): Surface {
+  const canvas = document.createElement('canvas')
+  canvas.width = w
+  canvas.height = h
+  return {
+    draw(source, dw, dh) {
+      const ctx = canvas.getContext('2d')
+      if (!ctx) throw new Error('Could not get 2D canvas context')
+      ctx.imageSmoothingQuality = 'high'
+      ctx.drawImage(source, 0, 0, dw, dh)
+    },
+    // toBlob hands back NULL rather than throwing when WebKit cannot allocate the encode buffer,
+    // which happens on iPhones part-way through a large batch. The retry that answers it is in lib.
+    encode: (mime, quality) => new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, mime, quality)),
+    encodeDataUrl: (mime, quality) => canvas.toDataURL(mime, quality),
+  }
 }
 
-async function encodeCanvas(
-  canvas: HTMLCanvasElement | OffscreenCanvas,
-  mimeType: string,
-  quality: number,
-): Promise<Blob> {
-  if (canvas instanceof OffscreenCanvas) {
-    const encoded = await canvas.convertToBlob({ type: mimeType, quality })
-    // Same rule as the toBlob path below: an encoder that hands back an empty image has failed,
-    // however successful it looks. Throwing here falls through to the HTMLCanvas encoder in
-    // bitmapToBlob, which is a genuinely different code path and often succeeds.
-    if (encoded.size === 0) throw readFailure('the encoder produced an empty image')
-    return encoded
+function offscreenSurface(w: number, h: number): Surface {
+  const oc = new OffscreenCanvas(w, h)
+  return {
+    draw(source, dw, dh) {
+      const ctx = oc.getContext('2d')
+      if (!ctx) throw new Error('OffscreenCanvas 2D context unavailable')
+      ctx.imageSmoothingQuality = 'high'
+      ctx.drawImage(source, 0, 0, dw, dh)
+    },
+    encode: (mime, quality) => oc.convertToBlob({ type: mime, quality }),
+    // No toDataURL on an OffscreenCanvas. The DOM canvas is the fallback for both surfaces.
   }
-  const el = canvas as HTMLCanvasElement
-  const once = () => new Promise<Blob | null>(resolve => el.toBlob(resolve, mimeType, quality))
-
-  // toBlob hands back NULL rather than throwing when WebKit cannot allocate the encode buffer,
-  // which happens on iPhones part-way through a large batch. One null used to end the photo.
-  let blob = await once()
-
-  // Memory pressure is a moment, not a verdict: the previous file's buffers are released between
-  // these two attempts, and the retry usually lands.
-  if (!blob) {
-    await new Promise(r => setTimeout(r, 150))
-    blob = await once()
-  }
-
-  // A genuinely different encoder path in WebKit, not a repeat of the same one -- toDataURL
-  // allocates a string rather than a Blob and regularly succeeds where toBlob has just returned
-  // null. It costs a base64 round trip, which is why it is third and not first.
-  if (!blob) {
-    try {
-      const fallback = dataUrlToBlob(el.toDataURL(mimeType, quality))
-      if (fallback && fallback.size > 0) blob = fallback
-    } catch { /* fall through to the throw below */ }
-  }
-
-  // `blob.size > 0`, NOT `blob`. An empty Blob is truthy, and that one word is how album dm1ybi7j
-  // came to hold twelve rows pointing at twelve empty objects on 2026-09-12. The toDataURL fallback
-  // three lines up had checked the size since the day it was written; the two encoders in front of
-  // it never did, so the check was present in the branch that almost never runs and absent from the
-  // two that always do.
-  if (blob && blob.size > 0) return blob
-  // Deliberately carries no dimensions or sizes: /admin groups by exact message text, so a number
-  // that changes per photo would scatter one recurring problem across a column of single rows.
-  throw new Error('Could not process this photo on this device — try again, or with fewer photos at once.')
 }
+
+// OffscreenCanvas first (convertToBlob is missing on Safari < 16.4), DOM canvas second.
+const { bitmapToBlob } = createImageEncoder({
+  surfaces: {
+    offscreen: typeof OffscreenCanvas !== 'undefined' ? offscreenSurface : null,
+    element: elementSurface,
+  },
+})
 
 // ─── Single-decode pipeline constants ────────────────────────────────────────
-
-// 0.92, up from 0.86. Above ~0.90 JPEG artefacts stop being visible on a photograph; 0.86 was
-// low enough to soften skin and flatten gradients on every photo the site stored.
-//
-// Not 1.0 and not "keep the original bytes": full originals were measured at roughly 4 MB a photo,
-// which for the 5,000-photo event this was sized against is ~20 GB to push up a single connection —
-// a couple of hours of uploading. Storage is not the constraint (20 GB is about $0.30/month); the
-// photographer's time is.
-const MAIN_QUALITY = 0.92
-const THUMB_QUALITY = 0.85
-// 600px longest edge: sharp on the grid even at 2–3× DPR (a 3-col mobile tile is
-// ~120 CSS px = ~360 physical px on a 3× screen). Small enough to stay a fast-loading
-// thumbnail. The lightbox still swaps in the full-resolution original.
-const THUMB_MAX_DIM = 600
 
 // Decoding a 48MP photo briefly holds a full-resolution bitmap (~190MB RGBA). Bound how many
 // decodes run at once — independently of upload concurrency — so network slots stay saturated
@@ -208,31 +180,6 @@ const decodeSem = new Semaphore(
   typeof navigator !== 'undefined' && /Mobi|Android/i.test(navigator.userAgent) ? 2 : 4,
 )
 
-async function bitmapToBlob(bitmap: CanvasImageSource, w: number, h: number, mime: string, quality: number): Promise<Blob> {
-  // OffscreenCanvas first (convertToBlob missing on Safari < 16.4) — HTMLCanvas fallback.
-  if (typeof OffscreenCanvas !== 'undefined') {
-    try {
-      const oc = new OffscreenCanvas(w, h)
-      const octx = oc.getContext('2d')
-      if (!octx) throw new Error('OffscreenCanvas 2D context unavailable')
-      octx.imageSmoothingQuality = 'high'
-      octx.drawImage(bitmap, 0, 0, w, h)
-      return await encodeCanvas(oc, mime, quality)
-    } catch { /* fall through */ }
-  }
-  const canvas = document.createElement('canvas')
-  canvas.width = w
-  canvas.height = h
-  const ctx = canvas.getContext('2d')
-  if (!ctx) throw new Error('Could not get 2D canvas context')
-  ctx.imageSmoothingQuality = 'high'
-  ctx.drawImage(bitmap, 0, 0, w, h)
-  return encodeCanvas(canvas, mime, quality)
-}
-
-// Downscale to fit maxDim (never upscales) and encode. Prefers the fused high-quality
-// resample (createImageBitmap resize options — throws on Safari < 17.4), falling back to a
-// plain smoothed canvas draw. The caller owns `bitmap` and closes it.
 async function scaleAndEncode(
   bitmap: ImageBitmap,
   maxDim: number,
