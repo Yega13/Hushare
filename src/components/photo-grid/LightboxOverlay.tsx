@@ -6,6 +6,7 @@ import type { Photo } from '@/types'
 import { unmuteStreamVideo } from '@/lib/cloudflare/stream-player'
 import { stripWindow } from '@/lib/lightbox-plan'
 import { useT } from '@/i18n/LocaleProvider'
+import { useOnValueChange } from '@/lib/use-on-value-change'
 
 function streamFrameSrc(photo: Photo, autoplay: boolean): string {
   const base = photo.stream_iframe_url || (photo.stream_uid ? `https://iframe.videodelivery.net/${photo.stream_uid}` : '')
@@ -229,8 +230,9 @@ export default function LightboxOverlay({
   // replaced only if the answer comes back "not ready", so the only case that waits is the one that
   // was going to show an error anyway.
   const [encodingPct, setEncodingPct] = React.useState<number | null>(null)
+  // Only the ASKING is an effect. The key is that effect's own dependency list, so a row whose
+  useOnValueChange(`${current.id}|${current.media_type}|${current.stream_uid ?? ''}`, () => setEncodingPct(null))
   React.useEffect(() => {
-    setEncodingPct(null)
     const uid = current.stream_uid
     if (current.media_type !== 'video' || !uid) return
     let cancelled = false
@@ -247,8 +249,8 @@ export default function LightboxOverlay({
       .catch(() => { /* unknown reads as playable */ })
     return () => { cancelled = true }
   }, [current.id, current.media_type, current.stream_uid])
+  useOnValueChange(`${current.id}|${current.media_type}|${current.poster_url ?? ''}|${current.stream_thumbnail_url ?? ''}|${hasStoredDims}`, () => setVideoAspect(null))
   React.useEffect(() => {
-    setVideoAspect(null)
     if (current.media_type !== 'video' || hasStoredDims) return
     const posterSrc = current.poster_url || current.stream_thumbnail_url
     if (!posterSrc) return

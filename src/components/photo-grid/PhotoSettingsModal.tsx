@@ -1,9 +1,10 @@
 import { X } from 'lucide-react'
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { MEDIA_DISPLAY_FILTER_OPTIONS } from '@/lib/media-display'
 import type { PhotoFilterChoice } from '@/lib/media-display'
 import type { Album, Photo } from '@/types'
 import { useT } from '@/i18n/LocaleProvider'
+import { useOnValueChange } from '@/lib/use-on-value-change'
 
 type Props = {
   album: Album
@@ -48,9 +49,9 @@ export default function PhotoSettingsModal({
   const [radiusDraft, setRadiusDraft] = useState(String(radius))
   const [radiusEditing, setRadiusEditing] = useState(false)
 
-  useEffect(() => {
-    if (!radiusEditing) setRadiusDraft(String(radius))
-  }, [radius, radiusEditing])
+  // The box follows the real radius unless the person is typing in it -- and resyncs when they stop,
+  // which is why radiusEditing is part of the key and not only of the condition.
+  useOnValueChange(`${radius}|${radiusEditing}`, () => { if (!radiusEditing) setRadiusDraft(String(radius)) })
 
   function parseRadiusDraft(value: string): number | null {
     const trimmed = value.trim()

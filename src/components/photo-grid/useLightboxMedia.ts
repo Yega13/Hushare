@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react'
 import type { Photo } from '@/types'
 import { PREFETCH_DELTAS } from '@/lib/lightbox-plan'
+import { useOnValueChange } from '@/lib/use-on-value-change'
 
 type Options = {
   lightbox: number | null
@@ -24,11 +25,14 @@ export function useLightboxMedia({ lightbox, currentId, viewerPhotos }: Options)
   const [lightboxRadiusMax, setLightboxRadiusMax] = useState<number | null>(null)
   const [lightboxOriginalLoadedIds, setLightboxOriginalLoadedIds] = useState<Set<string>>(new Set())
 
-  // Reset media node + radius cap when the photo changes (node is replaced by a new DOM element).
-  useEffect(() => {
+  // Reset the media node and its measured cap when the photo changes: the node is a different DOM
+  // element, and the cap was measured from the old one. During render rather than in an effect --
+  // an effect commits the previous photo's cap first, which is one frame of the old corner radius
+  // on the new photo (lib/use-on-value-change).
+  useOnValueChange(currentId, () => {
     setLightboxMediaNode(null)
     setLightboxRadiusMax(null)
-  }, [currentId])
+  })
 
   // Measure and track the radius cap as the lightbox media node resizes.
   useEffect(() => {

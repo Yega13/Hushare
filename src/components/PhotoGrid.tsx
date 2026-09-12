@@ -11,6 +11,7 @@ import { MEDIA_AUTHOR_MAX, MEDIA_CAPTION_MAX, SUPPRESS_CLICK_AFTER_REORDER_MS, B
 import { showAppToast } from '@/components/AppToast'
 import { savePhotoHiddenRequest } from '@/components/owner-toolbar/api'
 import { useT } from '@/i18n/LocaleProvider'
+import { useOnValueChange } from '@/lib/use-on-value-change'
 import PhotoSettingsModal from '@/components/photo-grid/PhotoSettingsModal'
 import SlideshowPickerModal from '@/components/SlideshowPickerModal'
 import { usePhotoGridObservers } from '@/components/photo-grid/usePhotoGridObservers'
@@ -494,9 +495,8 @@ export default function PhotoGrid({ album, photos, albumPhotoCount, isOwner, slu
     return () => window.removeEventListener('popstate', onPopState)
   }, [closeLightbox])
 
-  useEffect(() => {
-    setFlippedPhotoId(null)
-  }, [current?.id])
+  // A flipped card belongs to the photo it was flipped on, and is dropped during render, not after.
+  useOnValueChange(current?.id, () => setFlippedPhotoId(null))
 
   useEffect(() => {
     if (lightbox === null || current) return
