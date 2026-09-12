@@ -5,6 +5,7 @@ import { createStreamUpload, deleteStreamVideo } from '@/lib/cloudflare/stream'
 import { videoAlbumFullMessage, videoCaps } from '@/lib/album-entitlements'
 import { checkRateLimit, clientIpKey } from '@/lib/rate-limit'
 import { forbidCrossSiteRequest } from '@/lib/request-security'
+import { fileNameValid, contentTypeValid, fileSizeValid } from '@/lib/upload/presign-fields'
 import { authorizeVideoUpload } from '@/lib/server/video-upload-authorization'
 
 export const runtime = 'nodejs'
@@ -56,9 +57,7 @@ export async function POST(req: Request) {
 
   if (
     typeof albumId !== 'string' || !UUID_RE.test(albumId) ||
-    typeof fileName !== 'string' || !fileName || fileName.length > 255 ||
-    typeof contentType !== 'string' || !contentType ||
-    typeof fileSize !== 'number' || !Number.isFinite(fileSize) || !Number.isInteger(fileSize) || fileSize <= 0
+    !fileNameValid(fileName) || !contentTypeValid(contentType) || !fileSizeValid(fileSize)
   ) {
     return NextResponse.json({ error: 'Missing or invalid fields' }, { status: 400, headers: NO_STORE })
   }

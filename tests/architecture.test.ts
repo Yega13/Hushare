@@ -183,7 +183,24 @@ const SIZE_BUDGET: Record<string, number> = {
   // queued — so a banner raised at presign sat over the photos that later uploaded fine (rule 20).
   // The decision is pure in lib/upload/retry-plan (wallOnNewAttempt); these lines are the call at the
   // start of an attempt and the guard that stops an action row rendering with no buttons in it.
-  'src/components/UploadZone.tsx': 2042,
+  // +11 (2026-09-12): a file the device never handed over reached presign as a zero-byte
+  // declaration and came back "Missing or invalid fields" -- six words about a request, shown to a
+  // guest about their own photograph, and counted as a fault (error_events 1226). The DECISION is
+  // unusableUpload in lib/upload/presign-fields; these lines are the call and the comment naming
+  // the incident it came from.
+  // +8 (2026-09-12, round one of the review): the VIDEO door had the identical hole. A video is
+  // sent raw, so its type is whatever the picker declared -- and an Android content-provider pick
+  // can declare nothing while detectKind still admits the file on its extension. /api/upload/stream
+  // enforces the same rules and answers with the same six words, so the same guest would have read
+  // them about her video. Two lines and the comment saying why the video path differs from the
+  // image one in what it passes (a raw File, not a processed blob).
+  //
+  // The earlier version of this note said the doors' rules "now live, once". That was not true when
+  // I wrote it -- all three routes still held hand-written copies and nothing tested that they
+  // agreed. It is true now: presign, stream and image-relay import the predicates, presign's
+  // paired-thumbnail check included, and tests/presign-fields.test.ts fails if a second copy
+  // reappears. It found the fourth copy on its first run.
+  'src/components/UploadZone.tsx': 2061,
   // +3 on 2026-08-30: the branding toggle gained a real plan check (it was dimmed but still
   // clickable), and Face Finder and bib search stopped riding on the collections flag. Three
   // lines of reasoning for three gates that were wrong. Deliberate.

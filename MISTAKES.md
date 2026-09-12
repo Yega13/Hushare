@@ -1878,3 +1878,67 @@ enough to be sure, not so much that I re-derive it and re-attach to my own versi
 before trusting its name -- `grep -n <name> <file>` is the whole cost. And when a comment states the
 rule ("only while it is still the latest"), check that the code implements THAT rule rather than one
 that merely agrees with it in the example you had in your head.
+
+### 110. I READ A ROUNDED FIELD AS A RAW ONE, AND STARTED BUILDING ON IT
+
+Investigating error_events 1226 -- "Missing or invalid fields", a message this product had never
+emitted before -- I saw `sizeMB: 0` in the context and read it as "the file was zero bytes". It fit
+so well: a decode failure seconds earlier on the same device, presign refusing `fileSize <= 0`, six
+photos saved with no dimensions. I had a chain, and I said so out loud before checking the field.
+
+`sizeMB` is `Math.round(entry.file.size / 1024 / 1024)` (UploadZone.tsx:1390). It is the ORIGINAL
+file the guest picked, not the processed blob presign is told about, and it is rounded to whole
+megabytes. `sizeMB: 0` means "under half a megabyte". It does not mean empty, and it says nothing
+whatever about the number presign actually rejected.
+
+Two things saved this. First, I traced the field to where it is computed instead of continuing --
+one grep. Second, the fix I had already designed did not depend on the guess: the guard covers every
+condition presign refuses on (size, name, type), so it is correct whichever of them fired. That is
+luck standing in for method, and the commit message says so rather than claiming the diagnosis is
+proven.
+
+This is MISTAKES 100 in a smaller costume. There I read a grouped COUNT as a cause; here I read a
+ROUNDED, DERIVED field as a measurement. Both times the number was real, the arithmetic behind it
+was invisible, and the story it seemed to tell was the one I was already looking for.
+
+**Habit to build:** a telemetry field becomes evidence only after you have found the line that
+COMPUTES it. Rounded, derived and renamed values answer a different question than the one being
+asked of them -- and the more neatly a number fits the theory, the more it is worth the one grep it
+takes to learn what it measures.
+
+### 111. I WROTE THE COMMENT FOR THE CODE I MEANT TO WRITE -- TWICE, THE SECOND TIME INSIDE THE FIX
+
+A new module, lib/upload/presign-fields, opened with: the rules live here "once... both sides can
+import" them. A review checked, and they did not. All three upload doors still carried hand-written
+copies of the same four conditions, nothing imported the module but the uploader, and no test
+asserted they agreed. The reviewer's reproduction was one line: change MAX_FILE_NAME_LEN to 280 and
+every test stays green while the client waves through names all three doors refuse.
+
+That is entry 109 again -- a comment stating a stronger rule than the code implements -- one circle
+later.
+
+Then I did it a second time in the patch that fixed it. I adopted the predicates in the three routes
+and wrote, in the same breath: "tests/presign-fields.test.ts reads the three route sources and fails
+if one grows its own copy again". I had not written that test. I caught it re-reading my own patch
+before running it, which is luck rather than method -- the comment would have shipped as another
+claim with nothing behind it.
+
+WHY IT KEEPS HAPPENING. I write the comment while thinking about the finished shape, and the comment
+is finished before the code is. It then reads as true to me forever after, because it describes what
+I meant. The only reader it misleads is the next one -- including me, later.
+
+The test I eventually wrote found a FOURTH copy on its first run: presign's paired-thumbnail check
+retypes the same size rule and adds a ceiling of its own. That is what a claim is worth once
+something can check it, and what it is worth before then.
+
+A smaller lesson from the same hour: my anchor checker (scratchpad/check-anchors-guard.mjs) validates
+every mutation's `from:` and nothing else. A rename left one mutation with a `from:` on the new
+identifier and a `to:` still on the old one -- so it applied cleanly, produced code referencing a
+name that does not exist, and would have been reported KILLED for a compile error rather than for
+the reordering it claims to prove. A mutation that dies for the wrong reason is worse than none,
+because the log says the test is strong.
+
+**Habit to build:** a comment that asserts something is ENFORCED must name the thing enforcing it,
+and that thing must exist and have been watched to fail before the sentence is allowed to stand. If
+the enforcement is not written yet, the comment says what is true today -- or it is not written yet
+either. And check both halves of a mutation after any rename, not just the anchor.

@@ -7,6 +7,9 @@ import { r2PublicUrl } from '@/lib/cloudflare/r2'
 import { IMMUTABLE_CACHE_CONTROL } from '@/lib/media'
 import { authorizeImageUpload, deriveImageKey } from '@/lib/server/image-upload-authorization'
 import { forbidCrossSiteRequest } from '@/lib/request-security'
+// The size rule is deliberately NOT imported here: a missing Content-Length is not a reason to
+// refuse somebody's photo on the last-resort path (see the note below).
+import { fileNameValid, contentTypeValid } from '@/lib/upload/presign-fields'
 
 // The ceiling for a body whose length the browser did not declare. 64 MB: larger than any photo
 // this uploader can produce (6000px long edge re-encoded), smaller than a Worker's memory limit.
@@ -74,7 +77,7 @@ export async function POST(req: Request): Promise<Response> {
   const contentType = url.searchParams.get('contentType') ?? ''
   const isThumb = parseBoolParam(url.searchParams.get('isThumb'))
 
-  if (!UUID_RE.test(albumId) || !fileName || fileName.length > 255 || !contentType) {
+  if (!UUID_RE.test(albumId) || !fileNameValid(fileName) || !contentTypeValid(contentType)) {
     return NextResponse.json({ error: 'Missing or invalid fields' }, { status: 400, headers: NO_STORE })
   }
 

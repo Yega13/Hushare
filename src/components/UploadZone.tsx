@@ -16,6 +16,7 @@ import { batchThroughputKbps, lostCount } from '@/lib/upload/throughput'
 import { reportClientEvent } from '@/lib/upload/report'
 import { reachability } from '@/lib/upload/reachability'
 import { fetchWithRetry, putImageWithRelay, FETCH_DEADLINE_SAVE_MS } from '@/lib/upload/retry'
+import { unusableUpload } from '@/lib/upload/presign-fields'
 import * as tus from 'tus-js-client'
 import type { Album } from '@/types'
 import { stripExifFromJpeg, jpegOrientation, stripMetadataFromPng, stripMetadataFromWebp } from '@/lib/exif'
@@ -46,7 +47,7 @@ setFallbackDecodeReporter((reason) => {
     message: `Decoded without EXIF orientation — a photo may be stored rotated (${reason})`,
   })
 })
-import { snapshotFileRobust, readFileRobust } from '@/lib/file-read'
+import { snapshotFileRobust, readFileRobust, readFailure } from '@/lib/file-read'
 import { trackUploadStep } from '@/lib/engagement'
 import { showAppToast } from '@/components/AppToast'
 import { useT } from '@/i18n/LocaleProvider'
@@ -736,6 +737,16 @@ async function uploadImageToR2(
     throw new Error(tooLargeMessage('image', imageCapBytes))
   }
 
+  // ...and the other end of the same measurement. processImage's last resort hands back the
+  // ORIGINAL File when every decode and every re-encode has failed, which is right -- the PUT reads
+  // it through XMLHttpRequest, a path that sometimes succeeds where the others did not. But a file
+  // the device never materialised arrives with size 0, and presign refuses that as "Missing or
+  // invalid fields": six words about a request, shown to somebody about their own photograph, and
+  // filed in /admin as a fault. Asked here instead, in words the uploader understands -- the file
+  // parks and is read again, which is what saves a cloud-backed photo (error_events 1226).
+  const unusable = unusableUpload({ size: processed.blob.size, name: processed.name, mimeType: processed.mimeType })
+  if (unusable) throw readFailure(unusable)
+
   // ONE presign round trip covers both the image and its thumbnail (the old flow made two,
   // each paying the server's full rate-limit + album + tier lookup cost).
   const presignRes = await fetchWithRetry('/api/upload/presign', {
@@ -1011,6 +1022,14 @@ async function uploadVideoToStream(
     posterPromise = posterBlob
       ? uploadPosterToR2(albumId, posterBlob, signal).catch(() => null)
       : Promise.resolve(null)
+
+    // The same question, at the other door. A video is sent RAW -- no processing at all -- so
+    // file.type is whatever the picker declared, and an Android content-provider pick can declare
+    // nothing while detectKind still admits the file on its extension (lib/media). /api/upload/stream
+    // enforces the identical rules and answers with the identical six words, so without this the
+    // guest reads "Missing or invalid fields" about their video exactly as she did about her photo.
+    const unusableVideo = unusableUpload({ size: file.size, name: file.name, mimeType: file.type })
+    if (unusableVideo) throw readFailure(unusableVideo)
 
     // Init Cloudflare Stream TUS upload (fetchWithRetry gives 20s-per-attempt timeout + retries)
     const initRes = await fetchWithRetry('/api/upload/stream', {

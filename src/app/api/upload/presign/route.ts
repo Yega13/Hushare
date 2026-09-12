@@ -3,6 +3,7 @@ import { reportServerError } from '@/lib/report-server-error'
 import { createPresignedPut, r2PublicUrl } from '@/lib/cloudflare/r2'
 import { authorizeImageUpload, deriveImageKey } from '@/lib/server/image-upload-authorization'
 import { forbidCrossSiteRequest } from '@/lib/request-security'
+import { fileNameValid, contentTypeValid, fileSizeValid } from '@/lib/upload/presign-fields'
 import { v4 as uuid } from 'uuid'
 
 export const runtime = 'nodejs'
@@ -32,20 +33,16 @@ export async function POST(req: Request) {
 
   if (
     typeof albumId !== 'string' || !UUID_RE.test(albumId) ||
-    typeof fileName !== 'string' || !fileName || fileName.length > 255 ||
-    typeof contentType !== 'string' || !contentType ||
-    typeof fileSize !== 'number' || !Number.isFinite(fileSize) || !Number.isInteger(fileSize) || fileSize <= 0
+    !fileNameValid(fileName) || !contentTypeValid(contentType) || !fileSizeValid(fileSize)
   ) {
     return NextResponse.json({ error: 'Missing or invalid fields' }, { status: 400, headers: NO_STORE })
   }
 
   // Optional paired-thumbnail presign: one round trip covers the image AND its ~30KB thumbnail
   // (the client used to make a second full presign call per photo just for the thumb).
-  if (
-    thumbSize !== undefined &&
-    (typeof thumbSize !== 'number' || !Number.isFinite(thumbSize) || !Number.isInteger(thumbSize) ||
-      thumbSize <= 0 || thumbSize > MAX_THUMB_BYTES)
-  ) {
+  // The same size rule as every other door (lib/upload/presign-fields), plus a ceiling that belongs
+  // to this one: MAX_THUMB_BYTES stops the thumb slot being used as a second full-size channel.
+  if (thumbSize !== undefined && (!fileSizeValid(thumbSize) || thumbSize > MAX_THUMB_BYTES)) {
     return NextResponse.json({ error: 'Invalid thumbSize' }, { status: 400, headers: NO_STORE })
   }
 

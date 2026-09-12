@@ -61,7 +61,19 @@ export function isFileReadFailure(e: unknown): boolean {
 // reading a report, and it cannot smuggle the wrong story in with it.
 function asReadFailure(cause: unknown): Error {
   const name = cause instanceof Error && cause.name ? cause.name : 'Error'
-  return new Error(`${READ_FAILURE} (${name})`)
+  return readFailure(name)
+}
+
+/**
+ * The same failure, raised by a caller that has no exception to convert -- a check that found the
+ * bytes missing rather than a read that threw.
+ *
+ * Exported so the wording lives in ONE place. isFileReadFailure matches on this exact prefix, and a
+ * caller that typed its own sentence would produce the right words for the guest and the wrong
+ * classification underneath: not parked, not retried, filed as a fault (rule 13).
+ */
+export function readFailure(detail: string): Error {
+  return new Error(`${READ_FAILURE} (${detail})`)
 }
 
 export async function readFileRobust(file: Blob, attempts = 7): Promise<ArrayBuffer> {

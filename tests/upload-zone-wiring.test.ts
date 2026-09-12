@@ -79,6 +79,57 @@ describe('UploadZone writes its rows through lib/upload/row-saver and keeps no c
   })
 })
 
+describe('UploadZone asks the door its question BEFORE presigning, and keeps no copy of the rules', () => {
+  it('imports the predicate and the failure factory instead of checking the fields inline', () => {
+    const text = src()
+    expect(text).toMatch(new RegExp(String.raw`import \{[^}]*\bunusableUpload\b[^}]*\} from '@/lib/upload/presign-fields'`, 's'))
+    expect(text).toMatch(new RegExp(String.raw`import \{[^}]*\breadFailure\b[^}]*\} from '@/lib/file-read'`, 's'))
+  })
+
+  it('keeps no copy of the rules or of the failure wording', () => {
+    const text = src()
+    // 255 is the doors' name ceiling and lives in presign-fields as MAX_FILE_NAME_LEN.
+    expect(text, 'the name-length rule was retyped here').not.toMatch(/length > 255/)
+    // The prefix isFileReadFailure matches on. A copy here would classify correctly today and stop
+    // the day lib/file-read rewords it -- with the guest still reading a sensible sentence.
+    expect(text, 'the read-failure wording was retyped here').not.toMatch(/Could not be read from this device/)
+  })
+
+  it('THE GUARD RUNS BEFORE THE PRESIGN REQUEST, INSIDE THE FUNCTION THAT UPLOADS', () => {
+    // The assertion that carries the point, and the first version of it was file-scoped -- which a
+    // review broke in one move: cut the two lines into a helper defined above the fetch and never
+    // called, and every assertion here stayed green while nothing was guarded. Scoped to the
+    // function now, the way the retryFailedUploads test above scopes to its own.
+    const fn = src().slice(src().indexOf('async function uploadImageToR2'))
+    const guard = fn.indexOf('unusableUpload(')
+    const presign = fn.indexOf("fetchWithRetry('/api/upload/presign'")
+    expect(guard, 'the guard is not called inside uploadImageToR2').toBeGreaterThan(-1)
+    expect(presign, 'the presign call site moved or was renamed').toBeGreaterThan(-1)
+    expect(guard, 'the guard runs after the request it exists to prevent').toBeLessThan(presign)
+  })
+
+  it('and the VIDEO door is asked the same question, before its own request', () => {
+    // The image path was fixed and the video path left with the identical hole: a raw File whose
+    // type the picker never set reaches /api/upload/stream, which enforces the same rules and
+    // answers with the same six words.
+    const fn = src().slice(src().indexOf('async function uploadVideo'))
+    const guard = fn.indexOf('unusableUpload(')
+    const init = fn.indexOf("fetchWithRetry('/api/upload/stream'")
+    expect(guard, 'the video path never asks').toBeGreaterThan(-1)
+    expect(init, 'the stream init call moved or was renamed').toBeGreaterThan(-1)
+    expect(guard, 'the video guard runs after the request it exists to prevent').toBeLessThan(init)
+    // ...and that it still THROWS. Position is not enough: a mutation turning this into `if (false)`
+    // left every other assertion in this block green while the guard did nothing, because the call
+    // it looks for is on the line above. Found by scripts/mutations/upload-zone-presign-guard.mjs,
+    // which is the only reason this line exists.
+    expect(fn, 'the video guard is asked and its answer discarded').toMatch(/if \(unusableVideo\) throw readFailure\(unusableVideo\)/)
+  })
+
+  it('throws the failure the classifiers already recognise, so the file parks and is read again', () => {
+    expect(src()).toMatch(/if \(unusable\) throw readFailure\(unusable\)/)
+  })
+})
+
 describe('UploadZone files a refusal as a refusal, and only a fault as an error', () => {
   // The classifiers are proven in their own modules; these pin the lines that decide whether they
   // are asked, and of what. On 2026-09-07 and 2026-09-08 presign refused two full albums, and the
