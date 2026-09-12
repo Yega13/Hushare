@@ -98,3 +98,8 @@ scripts/_tmp-*
 # the next `npm run mutate` reads them and puts the file back. A pair belonging to a LIVE process is
 # another session working right now, and is left alone.
 scripts/mutations/.in-flight.*
+
+# Fixture directory for tests/mutation-runner.test.ts. Those cases mutate a file and restore it, and
+# the victim must be one that tests/helpers/source-text.test.ts does NOT scan -- a real source file
+# made the two flaky against each other. Written and removed by the test itself.
+tests/.tmp/

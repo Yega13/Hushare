@@ -1,6 +1,6 @@
-import { describe, it, expect, afterEach } from 'vitest'
+import { describe, it, expect, afterEach, beforeEach, afterAll } from 'vitest'
 import { execFileSync, spawnSync } from 'node:child_process'
-import { readFileSync, writeFileSync, existsSync, rmSync, readdirSync } from 'node:fs'
+import { readFileSync, writeFileSync, existsSync, rmSync, readdirSync, mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { selectSets } from '../scripts/mutations/select.mjs'
 
@@ -139,8 +139,29 @@ describe('--shard covers the suite exactly once', () => {
   })
 })
 
+// THE VICTIM IS A FIXTURE, NOT A FILE THE REPOSITORY READS.
+//
+// These cases mutate a file on disk and restore it. The victim used to be scripts/mutations/run.mjs,
+// a real source file -- and tests/helpers/source-text.test.ts walks every file in src, tests and
+// scripts asserting no comment survives its stripper. In one full run on 2026-09-12 that scan read
+// run.mjs inside the window where this test had appended a comment to it, and failed. The suite
+// passed on the next run, which is the expensive kind of failure: nobody believes it, and the next
+// real one is re-run away as well.
+//
+// tests/.tmp is invisible to that walker (it skips names starting with a dot) and is not inside
+// scripts/mutations, so it cannot be picked up as a mutation set either. The note carries the
+// repo-relative path, which is what the runner resolves against the repository root.
+const VICTIM_DIR = join(REPO, 'tests', '.tmp')
+const VICTIM_REL = 'tests/.tmp/victim.mjs'
+const victim = join(REPO, 'tests', '.tmp', 'victim.mjs')
+const VICTIM_SOURCE = 'export const untouched = 1' + String.fromCharCode(10)
+
 describe('a killed run does not leave a mutant on disk', () => {
-  const victim = join(MUT, 'run.mjs')
+  beforeEach(() => {
+    mkdirSync(VICTIM_DIR, { recursive: true })
+    writeFileSync(victim, VICTIM_SOURCE)
+  })
+  afterAll(() => { rmSync(VICTIM_DIR, { recursive: true, force: true }) })
 
   it('the pid used for the dead-process cases really is dead', () => {
     // The whole describe rests on this. If DEAD were alive, every recovery case below would be
@@ -152,7 +173,7 @@ describe('a killed run does not leave a mutant on disk', () => {
     const original = readFileSync(victim)
     try {
       writeFileSync(backupPath(DEAD), original)
-      writeFileSync(notePath(DEAD), note('scripts/mutations/run.mjs', 'a mutant nobody meant to keep'))
+      writeFileSync(notePath(DEAD), note(VICTIM_REL, 'a mutant nobody meant to keep'))
       writeFileSync(victim, `${original.toString('utf8')}// LEFT BEHIND BY A KILLED RUN`)
       expect(readFileSync(victim).equals(original), 'the file must really differ first').toBe(false)
 
@@ -175,7 +196,7 @@ describe('a killed run does not leave a mutant on disk', () => {
     const mutated = `${original.toString('utf8')}// A LIVE RUN IS TESTING THIS RIGHT NOW`
     try {
       writeFileSync(backupPath(alive), original)
-      writeFileSync(notePath(alive), note('scripts/mutations/run.mjs', 'mid-flight'))
+      writeFileSync(notePath(alive), note(VICTIM_REL, 'mid-flight'))
       writeFileSync(victim, mutated)
 
       const out = run('--recover-only')
@@ -199,7 +220,7 @@ describe('a killed run does not leave a mutant on disk', () => {
   it('refuses to continue when an abandoned note has no backup', () => {
     // Erring toward stopping: the file on disk may be a mutant with nothing to restore it from, so
     // running more mutations over it would bury the evidence (rule 19).
-    writeFileSync(notePath(DEAD), note('scripts/mutations/run.mjs', 'x'))
+    writeFileSync(notePath(DEAD), note(VICTIM_REL, 'x'))
     rmSync(backupPath(DEAD), { force: true })
     expect(() => run('--recover-only')).toThrow()
   })

@@ -1698,3 +1698,24 @@ checking, and it would have defended the code's order for a reason that does not
 
 **Habit to build:** a comment that says WHY is a claim, and gets the treatment code gets: write the
 test that would fail if it were false. If no such test can be written, the comment should say less.
+
+### 103. A TEST THAT MUTATED A FILE ANOTHER TEST WAS READING
+
+tests/mutation-runner.test.ts proves the runner puts back a file that a killed run left mutated. To
+do that it mutated a real one — scripts/mutations/run.mjs — appending a comment and restoring it a
+moment later. tests/helpers/source-text.test.ts walks every file in src, tests and scripts asserting
+that no comment survives its stripper. On 2026-09-12 the two ran in parallel workers, the scan read
+run.mjs inside that window, and the suite failed pointing at a file nobody had touched.
+
+The next run was green, and that is the expensive part. A suite that fails at random teaches
+everybody to run it again, and the day a real failure lands, it gets re-run too. I nearly did
+exactly that: my first thought was that the multi-line JSX comment I had just written was somehow
+unstrippable, which would have been a fix aimed at the wrong file.
+
+The victim is now a fixture under tests/.tmp — a directory that walker skips, because it ignores
+names beginning with a dot, and one that is not inside scripts/mutations, so it cannot be mistaken
+for a mutation set either.
+
+**Habit to build:** a test that writes to a path inside the repository shares that path with every
+other test in the suite. Write to a fixture nothing else reads, and when something must be proven
+about a real file, prove it against a copy.
