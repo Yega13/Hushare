@@ -207,7 +207,12 @@ const SIZE_BUDGET: Record<string, number> = {
   // 2066 -> 2068: the failed-files panel takes its label and body from failurePanel (also lib, also
   // mutated) instead of hardcoding the sentence about a dropped connection over a list of refusals.
   // Two lines: the memo and the comment pointing at the module that decides it.
-  'src/components/UploadZone.tsx': 2068,
+  // 2068 -> 2085: the zero-byte guards, after album dm1ybi7j stored twelve empty objects behind
+  // twelve green tiles. Three lines of code — the encoder checks size instead of truthiness, the
+  // upload refuses an empty blob, the thumbnail is skipped when empty — and fourteen of comment,
+  // because each one names the incident it exists for and the next reader needs to know that
+  // `if (blob)` was the whole defect. The classification itself is lib/file-read's readFailure.
+  'src/components/UploadZone.tsx': 2085,
   // +3 on 2026-08-30: the branding toggle gained a real plan check (it was dimmed but still
   // clickable), and Face Finder and bib search stopped riding on the collections flag. Three
   // lines of reasoning for three gates that were wrong. Deliberate.

@@ -75,6 +75,17 @@ describe('UploadZone writes its rows through lib/upload/row-saver and keeps no c
     const text = src()
     expect(text).toMatch(/onSaved: \(ids\) => \{ for \(const id of ids\) patchEntry\(id, \{ status: 'done', progress: 100 \}\) \}/)
     expect(text).toMatch(/onFailed: \(ids, msg, code, rows, nudge\) => \{/)
+    // AN EMPTY BLOB IS TRUTHY, and that is how album dm1ybi7j came to hold twelve rows pointing at
+    // twelve empty objects. The encoder must accept a blob only if it has bytes, and nothing may be
+    // PUT to R2 without them. Both refuse as READ failures so the file is parked and tried again.
+    expect(text, 'the encoder must check the size, not the truthiness').toMatch(/if \(blob && blob\.size > 0\) return blob/)
+    expect(text, 'the encoder must never accept a blob on truthiness alone').not.toMatch(/\n  if \(blob\) return blob/)
+    // What it THROWS, not just that it checks. A plain Error here does not start with the
+    // read-failure prefix, so isFileReadFailure says no: the photo is never parked, never tried a
+    // second time, and is filed as a fault. The check would still be present and the guest would
+    // still lose the photo, which is the mutation that survived until this line existed.
+    expect(text, 'nothing may be uploaded with zero bytes').toMatch(/if \(processed\.blob\.size === 0\) throw readFailure\(/)
+    expect(text, 'an empty thumbnail must not be uploaded beside a good image').toMatch(/processed\.thumbBlob\.size > 0/)
     // The failed panel takes BOTH its label and its body from lib, and no longer hardcodes the
     // sentence about a dropped connection -- which was the last surface still saying that over a
     // list of deliberate refusals, and the only one a phone can read.

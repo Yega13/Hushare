@@ -13,6 +13,15 @@ import { NETWORK_FAILURE_TEXT as NETWORK_CLASSIFIER, FILE_READ_FAILURE_TEXT as R
 // A file whose bytes are gone: arrayBuffer() rejects the way Android's content provider does. The
 // two later fallbacks (FileReader, blob: URL) are absent in this environment and fail on their own,
 // which is exactly the production shape — every read exhausted.
+// A device that hands the file over SUCCESSFULLY and hands over nothing. This is what album
+// dm1ybi7j got on 2026-09-12: twelve reads that "worked", twelve empty buffers, twelve zero-byte
+// objects in R2 behind twelve green tiles. The photos were gone and nothing reported anything.
+function readsEmpty(): Blob {
+  return {
+    arrayBuffer: () => Promise.resolve(new ArrayBuffer(0)),
+  } as unknown as Blob
+}
+
 function unreadable(name: string): Blob {
   return {
     arrayBuffer: () => Promise.reject(Object.assign(new Error('boom'), { name })),
@@ -79,5 +88,32 @@ describe('isFileReadFailure', () => {
     expect(isFileReadFailure(new Error('Failed to fetch (/api/upload/presign)'))).toBe(false)
     expect(isFileReadFailure(new Error('File too large (max 50 MB for videos in this album).'))).toBe(false)
     expect(isFileReadFailure(null)).toBe(false)
+  })
+})
+
+describe('a read that succeeds and returns nothing is not a successful read', () => {
+  // The defect this closes lost twelve photos. Every layer downstream behaved correctly on the
+  // information it had: an empty ArrayBuffer makes a valid 0-byte File, which makes a valid 0-byte
+  // Blob, which R2 stores as a valid empty object. Only the read knows the difference.
+  it('rejects, rather than handing back an empty buffer', async () => {
+    await expect(readFileRobust(readsEmpty(), 1)).rejects.toThrow()
+  })
+
+  it('and rejects AS A READ FAILURE, so the file is parked and tried again', async () => {
+    // Classified, not just refused. A cloud-backed photo whose bytes have not landed yet is exactly
+    // the case the retry loop exists for, and the classification is what buys the second attempt --
+    // plus the honest "re-add the file" sentence instead of a story about the network.
+    const err = await readFileRobust(readsEmpty(), 1).then(() => null, (e: unknown) => e)
+    expect(err, 'an empty read must reject').not.toBeNull()
+    expect(isFileReadFailure(err), 'an empty read must classify as a device read failure').toBe(true)
+    expect(READ_CLASSIFIER.test((err as Error).message), 'and must match the shared read classifier').toBe(true)
+    expect(NETWORK_CLASSIFIER.test((err as Error).message), 'it is NOT a network failure').toBe(false)
+    // AND IT SAYS WHICH read failure it was. readFileRobust re-wraps whatever it remembers through
+    // asReadFailure, which keeps only the error's NAME -- so raising a plain Error here still
+    // arrives correctly classified and arrives saying "(Error)". /admin then cannot tell a file
+    // that read as empty from a reference that was dead, which are different problems with
+    // different fixes. A mutation that swapped readFailure for a plain Error survived until this
+    // line existed.
+    expect((err as Error).message, 'the detail must survive to /admin').toContain('empty file')
   })
 })

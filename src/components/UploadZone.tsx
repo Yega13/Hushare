@@ -143,7 +143,12 @@ async function encodeCanvas(
   quality: number,
 ): Promise<Blob> {
   if (canvas instanceof OffscreenCanvas) {
-    return canvas.convertToBlob({ type: mimeType, quality })
+    const encoded = await canvas.convertToBlob({ type: mimeType, quality })
+    // Same rule as the toBlob path below: an encoder that hands back an empty image has failed,
+    // however successful it looks. Throwing here falls through to the HTMLCanvas encoder in
+    // bitmapToBlob, which is a genuinely different code path and often succeeds.
+    if (encoded.size === 0) throw readFailure('the encoder produced an empty image')
+    return encoded
   }
   const el = canvas as HTMLCanvasElement
   const once = () => new Promise<Blob | null>(resolve => el.toBlob(resolve, mimeType, quality))
@@ -169,7 +174,12 @@ async function encodeCanvas(
     } catch { /* fall through to the throw below */ }
   }
 
-  if (blob) return blob
+  // `blob.size > 0`, NOT `blob`. An empty Blob is truthy, and that one word is how album dm1ybi7j
+  // came to hold twelve rows pointing at twelve empty objects on 2026-09-12. The toDataURL fallback
+  // three lines up had checked the size since the day it was written; the two encoders in front of
+  // it never did, so the check was present in the branch that almost never runs and absent from the
+  // two that always do.
+  if (blob && blob.size > 0) return blob
   // Deliberately carries no dimensions or sizes: /admin groups by exact message text, so a number
   // that changes per photo would scatter one recurring problem across a column of single rows.
   throw new Error('Could not process this photo on this device — try again, or with fewer photos at once.')
@@ -736,6 +746,13 @@ async function uploadImageToR2(
   if (processed.blob.size > imageCapBytes) {
     throw new Error(tooLargeMessage('image', imageCapBytes))
   }
+  // THE LAST GATE BEFORE THE BYTES LEAVE, and the one that would have saved album dm1ybi7j on its
+  // own. Everything above can fail and still produce an empty blob -- a device that hands over an
+  // unreadable file, an encoder that returns an empty image, a passthrough of the original File
+  // when every read has already failed. R2 accepts an empty object without complaint, the row is
+  // written, the tile goes green, and the photo is gone. Refused as a READ failure so the file is
+  // parked and tried once more, which is the recovery this actually needs.
+  if (processed.blob.size === 0) throw readFailure('the photo arrived empty from this device')
 
   // ...and the other end of the same measurement. processImage's last resort hands back the
   // ORIGINAL File when every decode and every re-encode has failed, which is right -- the PUT reads
@@ -782,7 +799,7 @@ async function uploadImageToR2(
   // go un-awaited — a rejection here would surface as an unhandled rejection. An abort during
   // the thumb phase also resolves null: the main image is already in R2 at that point, so
   // saving its row (thumb-less) beats orphaning the uploaded bytes.
-  const thumbPut: Promise<string | null> = (processed.thumbBlob && thumb)
+  const thumbPut: Promise<string | null> = (processed.thumbBlob && processed.thumbBlob.size > 0 && thumb)
     ? putImageWithRelay(
         { key: thumb.key, publicUrl: thumb.publicUrl }, thumb.presignedUrl,
         { albumId, fileName: processed.name, contentType: 'image/jpeg', isThumb: true },

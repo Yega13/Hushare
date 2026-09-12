@@ -30,5 +30,12 @@ export default {
       from: 'return new Error(`${READ_FAILURE} (${detail})`)', to: 'return new Error(READ_FAILURE)' },
     { name: "the original error's NAME is replaced by a constant, losing what the device actually said",
       from: '  return readFailure(name)', to: "  return readFailure('Error')" },
+  { name: 'AN EMPTY READ IS TREATED AS A SUCCESSFUL ONE -- twelve photos lost exactly this way',
+    from: "  if (buf.byteLength === 0) throw readFailure('the device returned an empty file')\n", to: "" },
+  { name: 'the empty check can never fire',
+    from: "  if (buf.byteLength === 0)", to: "  if (buf.byteLength < 0)" },
+  { name: 'an empty read is refused but NOT as a read failure, so it is never retried or parked',
+    from: "throw readFailure('the device returned an empty file')",
+    to: "throw new Error('the device returned an empty file')" },
   ],
 }

@@ -2074,3 +2074,49 @@ a number -- look it up before writing it. Specifically: before writing "X is the
 grep for Y's name and count the callers. Before writing "nothing consumes Z", grep for Z. It is one
 command, it takes ten seconds, and it is the difference between a commit message that teaches and
 one that misleads with confidence.
+
+### 116. AN EMPTY BLOB IS TRUTHY, AND I SPENT THE DAY HARDENING THE OTHER HALF OF THE CODEBASE
+
+Album dm1ybi7j, "Марина", 2026-09-12 14:14-14:18. Twelve photos, twelve rows, twelve ZERO-BYTE
+objects in R2. `Content-Length: 0`. ETag `d41d8cd98f00b204e9800998ecf8427e`, which is the MD5 of
+nothing. Every tile went green. The photos are gone -- the bytes never left the phone, so there is
+nothing to recover.
+
+The chain was written down in our own error rows and nobody was reading them together:
+
+    14:14:31  warn   InvalidStateError ... reading the Blob argument to createImageBitmap
+    14:14:40  error  upload:image "Missing or invalid fields", sizeMB: 0, failedFiles: 2
+
+`sizeMB: 0`. The client knew the file was empty, said so in telemetry, and uploaded it anyway.
+
+The defect is one word. `encodeCanvas` ends:
+
+    if (blob) return blob
+
+An empty Blob is truthy. And the same function, three lines above, already had the right check on
+its LAST-RESORT path -- `if (fallback && fallback.size > 0)`. So the guard existed in the branch
+that almost never runs and was missing from the two that always do. Whoever wrote the fallback knew
+an encoder can hand back an empty blob. That knowledge just never travelled three lines up.
+
+R2 then did nothing wrong: an empty object is a valid object, so the PUT succeeded, the row was
+written, and every layer downstream behaved correctly on the information it had.
+
+**THE PART THAT IS ABOUT ME, NOT THE CODE.** I spent this entire session on `src/lib` -- more tests,
+more mutations, four review rounds, a refusal classification made honest in four places. All of it
+real, none of it able to touch this. `bitmapToBlob`, `encodeCanvas` and `processImage` live INSIDE
+UploadZone.tsx, and 2,490 tests cannot find a missing size check in a file none of them execute.
+Rule 14 measured this exact gap on 2026-08-30 -- lib 6,616 lines behind 139 tests, components 18,914
+behind 7 -- and I read it, quoted it, and then spent the day improving the half that was already
+good. The panel being honest is worth much less than the photo not being silently discarded, and I
+did them in that order.
+
+Also worth keeping: when I first tightened the test for this, one assertion failed on CLEAN code --
+and the mutation run then reported ALL MUTATIONS KILLED, because a test that fails on the unmutated
+tree kills every mutant for free. A green mutation run means nothing unless the suite is green
+first.
+
+**Habit to build:** when a guard is found missing, grep the same function for the same guard before
+writing it -- if a sibling branch already has it, the question is not "add a check" but "why did
+this one not have it", and the answer usually names more sites. And when choosing what to harden
+next, rank by WHAT IS LOST when it breaks, not by what is convenient to test. Everything that can
+silently destroy a customer's photo outranks everything that can only mislabel a row in /admin.

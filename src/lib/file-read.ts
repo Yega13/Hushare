@@ -60,6 +60,13 @@ export function isFileReadFailure(e: unknown): boolean {
 // waiting can possibly help. The name is enough to tell NotReadableError from a decode failure when
 // reading a report, and it cannot smuggle the wrong story in with it.
 function asReadFailure(cause: unknown): Error {
+  // OUR OWN failures pass through untouched. The name-only rule above exists to stop a FOREIGN
+  // message -- the blob-URL fallback's bare "Failed to fetch" -- from surviving and telling the
+  // wrong story. A readFailure raised by this module has already said something specific and true
+  // ("the device returned an empty file"), and re-wrapping it replaced that with the bare name
+  // "Error", which is how the empty-file case became indistinguishable from a dead reference in
+  // /admin. Caught by a test asserting the detail survived; it did not.
+  if (cause instanceof Error && isFileReadFailure(cause)) return cause
   const name = cause instanceof Error && cause.name ? cause.name : 'Error'
   return readFailure(name)
 }
@@ -76,6 +83,23 @@ export function readFailure(detail: string): Error {
   return new Error(`${READ_FAILURE} (${detail})`)
 }
 
+/**
+ * A read that SUCCEEDS and hands back nothing is not a successful read.
+ *
+ * On 2026-09-12 an iPhone handed over twelve photos this way. Every read "worked" and returned zero
+ * bytes, so nothing here objected, snapshotFileRobust wrapped the emptiness into a perfectly valid
+ * 0-byte File, the encoder produced a 0-byte blob, and R2 stored twelve empty objects behind twelve
+ * green tiles. An empty object is a valid object; nothing downstream had any way to know.
+ *
+ * Raised as a READ failure on purpose, not a new error class: this is the cloud-backed photo whose
+ * bytes have not arrived on the device yet, which is exactly the case the retry loop below exists
+ * for. Treated as a failure, the next attempt is made, and it very often lands.
+ */
+function nonEmpty(buf: ArrayBuffer): ArrayBuffer {
+  if (buf.byteLength === 0) throw readFailure('the device returned an empty file')
+  return buf
+}
+
 export async function readFileRobust(file: Blob, attempts = 7): Promise<ArrayBuffer> {
   // The FIRST error, not the last. The three reads are tried in order of how much they are trusted,
   // so the earliest failure is the one that describes what is actually wrong with the file; the
@@ -86,20 +110,20 @@ export async function readFileRobust(file: Blob, attempts = 7): Promise<ArrayBuf
 
   for (let i = 0; i < attempts; i++) {
     try {
-      return await file.arrayBuffer()
+      return nonEmpty(await file.arrayBuffer())
     } catch (e) {
       remember(e)
     }
     // Same read via the older API — occasionally succeeds when arrayBuffer() does not.
     try {
-      return await readViaFileReader(file)
+      return nonEmpty(await readViaFileReader(file))
     } catch (e) {
       remember(e)
     }
     // Last resort: the blob: URL loader path (what makes the photo's preview render even when the
     // two direct reads fail). Kept last because it's the heaviest of the three.
     try {
-      return await readViaObjectUrl(file)
+      return nonEmpty(await readViaObjectUrl(file))
     } catch (e) {
       remember(e)
     }
