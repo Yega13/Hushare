@@ -131,5 +131,9 @@ export default {
     from: "  if (state.aborted) return 'give-up'\n", to: "" },
   { name: 'a throw past the deadline keeps retrying',
     from: "  if (!state.withinDeadline) return 'give-up'\n  return 'retry'", to: "  return 'retry'" },
+  { name: 'A TYPE WE DO NOT ACCEPT GOES BACK TO BEING A FAULT in the Errors tab',
+    from: "  TYPE_NOT_ALLOWED,\n", to: "" },
+  { name: 'the words are retyped instead of imported, so a reword stops being recognised',
+    from: "  TYPE_NOT_ALLOWED,", to: "  'File type is not allowed'," },
   ],
 }

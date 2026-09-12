@@ -4,7 +4,7 @@ import { cookies } from 'next/headers'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { isAllowedVideo } from '@/lib/cloudflare/r2'
 import { checkRateLimit } from '@/lib/rate-limit'
-import { uploadCapsForTier, tooLargeMessage, STUDIO_VIDEO_BYTES } from '@/lib/media'
+import { uploadCapsForTier, tooLargeMessage, STUDIO_VIDEO_BYTES, TYPE_NOT_ALLOWED } from '@/lib/media'
 import { getUserTierById } from '@/lib/subscriptions'
 import { resolveMaxDurationSeconds } from '@/lib/stream-duration'
 import { reportServerError } from '@/lib/report-server-error'
@@ -71,7 +71,7 @@ export async function authorizeVideoUpload(
   // As in the image path: isAllowedVideo lowercases its own argument, so normalising here first
   // is a line that cannot change an answer.
   if (!isAllowedVideo(params.contentType)) {
-    return { ok: false, response: NextResponse.json({ error: 'File type not allowed' }, { status: 415, headers: NO_STORE }) }
+    return { ok: false, response: NextResponse.json({ error: TYPE_NOT_ALLOWED }, { status: 415, headers: NO_STORE }) }
   }
 
   if (params.fileSize > MAX_VIDEO_HARD_CAP) {

@@ -1,3 +1,4 @@
+import { TYPE_NOT_ALLOWED } from '@/lib/media'
 import { VIDEO_ALBUM_FULL_PREFIX } from '@/lib/album-entitlements'
 import { monotonicNow } from '@/lib/clock'
 // THE DECISIONS THE UPLOADER MAKES ABOUT SOMEONE ELSE'S PHOTO.
@@ -282,6 +283,10 @@ export const EXPECTED_REFUSAL_PREFIXES = [
   // refusal cannot quietly stop being recognised here — which would put it in the Errors tab and
   // collapse the guest's video lane at the same time.
   VIDEO_ALBUM_FULL_PREFIX,
+  // Imported for the same reason, from lib/media, where the predicates that produce it live. Both
+  // upload doors answer 415 with this when a file is a type we do not accept -- a decision, not a
+  // failure. It reached the Errors tab on 2026-09-12 because nothing here recognised it.
+  TYPE_NOT_ALLOWED,
 ] as const
 
 export function isExpectedRefusal(message: string): boolean {

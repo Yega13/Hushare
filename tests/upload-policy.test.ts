@@ -9,6 +9,7 @@ import {
   backoffDelay, isNetworkClass, isExpectedRefusal, EXPECTED_REFUSAL_PREFIXES,
   createRelayPolicy, verdictForResponse, verdictForThrow,
 } from '@/lib/upload-policy'
+import { TYPE_NOT_ALLOWED } from '@/lib/media'
 
 // THE UPLOADER'S JUDGEMENTS ABOUT SOMEONE ELSE'S PHOTO.
 //
@@ -205,6 +206,36 @@ describe('a refusal the product made on purpose is not an error', () => {
 // because losing connectivity looks exactly like a blocked domain. Only a relay that SUCCEEDED
 // where the direct path failed is evidence. And the belief expires, because phones move between
 // wifi and cellular mid-event.
+describe('a type we do not accept is a refusal, not a fault', () => {
+  // Measured on 2026-09-12: a 9 MB video in an unsupported format was refused with 415 by
+  // video-upload-authorization and filed in the Errors tab, because nothing recognised the sentence.
+  // Third instance of this exact shape after the full album and the video minutes.
+  it('the refusal both doors send is recognised as one', () => {
+    expect(isExpectedRefusal(TYPE_NOT_ALLOWED)).toBe(true)
+    expect(isExpectedRefusal('File type not allowed')).toBe(true)
+  })
+
+  it('the prefix is IMPORTED from where the decision is made, never retyped here', () => {
+    // A reword at lib/media must not be able to leave this list matching the old words.
+    expect(EXPECTED_REFUSAL_PREFIXES).toContain(TYPE_NOT_ALLOWED)
+    const src = stripJsComments(readFileSync(join(process.cwd(), 'src', 'lib', 'upload-policy.ts'), 'utf8'))
+    expect(src, 'the words must not be typed again in this file').not.toMatch(/'File type not allowed'/)
+  })
+
+  it('both doors send exactly that constant, and neither types the words', () => {
+    for (const file of ['src/lib/server/image-upload-authorization.ts', 'src/lib/server/video-upload-authorization.ts']) {
+      const text = stripJsComments(readFileSync(join(process.cwd(), file), 'utf8'))
+      expect(text, file).toMatch(/error: TYPE_NOT_ALLOWED/)
+      expect(text, file).not.toMatch(/'File type not allowed'/)
+    }
+  })
+
+  it('and a real failure is still a failure', () => {
+    expect(isExpectedRefusal('Failed to fetch (/api/upload/presign)')).toBe(false)
+    expect(isExpectedRefusal('File type')).toBe(false)
+  })
+})
+
 describe('the expensive upload path is only taken on proof', () => {
   const at = (t: number) => () => t
 

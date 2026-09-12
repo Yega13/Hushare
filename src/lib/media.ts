@@ -45,6 +45,20 @@ export const ALLOWED_VIDEO_TYPES = new Set([
   'video/x-m4v',
 ])
 
+/**
+ * WHAT BOTH DOORS SAY WHEN A FILE IS A TYPE WE DO NOT ACCEPT.
+ *
+ * A refusal the product makes on purpose: nothing failed, we looked at the file and declined it. It
+ * was typed by hand at the image door and again at the video door, and matched by neither
+ * upload-policy nor anything else -- so on 2026-09-12 a guest's unsupported video landed in the
+ * Errors tab, next to real failures, exactly like the full album and the video minutes before it.
+ *
+ * Here rather than in upload-policy because this is the message for the decision the two predicates
+ * below make; upload-policy imports it into EXPECTED_REFUSAL_PREFIXES the same way it imports
+ * VIDEO_ALBUM_FULL_PREFIX, so a reword cannot quietly stop being recognised.
+ */
+export const TYPE_NOT_ALLOWED = 'File type not allowed'
+
 export function isAllowedImage(mimeType: string): boolean {
   return ALLOWED_IMAGE_TYPES.has(mimeType.toLowerCase())
 }

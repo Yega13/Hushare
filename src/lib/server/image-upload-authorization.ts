@@ -6,7 +6,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { isAllowedImage, safeExtForMime } from '@/lib/cloudflare/r2'
 import { checkRateLimit, clientIpKey } from '@/lib/rate-limit'
 import { presignBudget } from '@/lib/presign-budget'
-import { uploadCapsForTier, tooLargeMessage } from '@/lib/media'
+import { uploadCapsForTier, tooLargeMessage, TYPE_NOT_ALLOWED } from '@/lib/media'
 import { albumCap as albumCapFor, albumEffectiveTier, albumFullRefusal, capDependsOnTier } from '@/lib/album-entitlements'
 import { getUserTierResolved } from '@/lib/subscriptions'
 import { reportServerError } from '@/lib/report-server-error'
@@ -60,7 +60,7 @@ export async function authorizeImageUpload(
   // it cannot change an answer. It was here, it looked like the case-insensitivity guard, and
   // deleting it changed no test -- which is the shape that makes a real guard look optional.
   if (!isAllowedImage(params.contentType)) {
-    return { ok: false, response: NextResponse.json({ error: 'File type not allowed' }, { status: 415, headers: NO_STORE }) }
+    return { ok: false, response: NextResponse.json({ error: TYPE_NOT_ALLOWED }, { status: 415, headers: NO_STORE }) }
   }
   if (params.fileSize !== null && params.fileSize > MAX_FILESIZE_HARD_CAP) {
     return { ok: false, response: NextResponse.json({ error: 'File too large' }, { status: 413, headers: NO_STORE }) }
