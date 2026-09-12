@@ -9,7 +9,7 @@ import {
   FREE_ALBUM_MEDIA, LEGACY_FREE_ALBUM_MEDIA,
 } from '@/lib/media'
 import * as mediaModule from '@/lib/media'
-import { looksLikeStaleDeploy, looksLikeDomCorruption, isForeignError } from '@/lib/report-error'
+import { looksLikeStaleDeploy, looksLikeDomCorruption, isForeignError, isOutsideOurDocument, DOCUMENT_LINE_SLACK } from '@/lib/report-error'
 import { validateCustomSlug, RESERVED_SLUGS } from '@/lib/custom-slug'
 
 // Tier limits decide what a paying customer actually receives, and the classifiers decide what
@@ -376,5 +376,35 @@ describe('cap sizes carry the units of the language they appear in', () => {
     expect(formatCapSize(25 * MB)).toBe('25 MB')
     expect(formatCapSize(4 * GB)).toBe('4 GB')
     expect(formatCapSize(25 * MB, 'de'), 'an unknown locale falls back to English, never throws').toBe('25 MB')
+  })
+})
+
+describe('an error from a line our document does not have', () => {
+  // Both rows from 2026-09-10, one iPhone running Chrome, twenty seconds apart. The album page was
+  // 12 lines of HTML; Chrome's injected scripts report their errors against it.
+  const doc = { url: 'https://hushare.space/kg3zf2vl', lineCount: () => 12 }
+
+  it('drops the two that arrived: a line past the end of the page, and a file named "undefined"', () => {
+    expect(isOutsideOurDocument('https://hushare.space/kg3zf2vl', 425, doc)).toBe(true)
+    expect(isOutsideOurDocument('undefined', 198, doc)).toBe(true)
+  })
+  it('recognises the page through a fragment, on either side', () => {
+    const owner = { url: 'https://hushare.space/jkzvi0aa#owner=FAKE', lineCount: () => 12 }
+    expect(isOutsideOurDocument('https://hushare.space/jkzvi0aa#owner=FAKE', 425, owner)).toBe(true)
+    expect(isOutsideOurDocument('https://hushare.space/jkzvi0aa', 425, owner)).toBe(true)
+  })
+  it('KEEPS an error in one of our own inline scripts, including near the end of the page', () => {
+    expect(isOutsideOurDocument('https://hushare.space/kg3zf2vl', 5, doc)).toBe(false)
+    expect(isOutsideOurDocument('https://hushare.space/kg3zf2vl', 12 + DOCUMENT_LINE_SLACK, doc), 'the slack is inclusive').toBe(false)
+    expect(isOutsideOurDocument('https://hushare.space/kg3zf2vl', 12 + DOCUMENT_LINE_SLACK + 1, doc)).toBe(true)
+  })
+  it('KEEPS errors from our bundles, from other pages, and from anything it cannot place', () => {
+    expect(isOutsideOurDocument('https://hushare.space/_next/static/chunks/x.js', 9999, doc)).toBe(false)
+    expect(isOutsideOurDocument('https://hushare.space/other-album', 425, doc)).toBe(false)
+    expect(isOutsideOurDocument('', 425, doc)).toBe(false)
+    expect(isOutsideOurDocument(undefined, 425, doc)).toBe(false)
+    expect(isOutsideOurDocument('blob:https://hushare.space/1234', 425, doc), 'a scheme it does not know is kept').toBe(false)
+    expect(isOutsideOurDocument('https://hushare.space/kg3zf2vl', undefined, doc)).toBe(false)
+    expect(isOutsideOurDocument('https://hushare.space/kg3zf2vl', 425, { ...doc, lineCount: () => Number.MAX_SAFE_INTEGER }), 'a count it cannot take filters nothing').toBe(false)
   })
 })

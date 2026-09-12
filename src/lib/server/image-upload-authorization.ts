@@ -7,7 +7,7 @@ import { isAllowedImage, safeExtForMime } from '@/lib/cloudflare/r2'
 import { checkRateLimit, clientIpKey } from '@/lib/rate-limit'
 import { presignBudget } from '@/lib/presign-budget'
 import { uploadCapsForTier, tooLargeMessage } from '@/lib/media'
-import { albumCap as albumCapFor, albumEffectiveTier } from '@/lib/album-entitlements'
+import { albumCap as albumCapFor, albumEffectiveTier, albumFullRefusal } from '@/lib/album-entitlements'
 import { getUserTierById } from '@/lib/subscriptions'
 import { gateAllowsContribution, signedInUserForGate, ALBUM_GATE_COLS } from '@/lib/server/album-access'
 import type { Tier } from '@/types'
@@ -126,7 +126,7 @@ export async function authorizeImageUpload(
   // A failed tier lookup is treated as 'free' HERE ON PURPOSE: this value only sizes a rate-limit
   // budget, and the request is refused a few lines below when the tier is unknown. Sizing it small
   // is the safe direction; the refusal is what actually protects the album.
-  const { cap: albumCap } = albumCapFor({
+  const capInput = {
     // `album.user_id ? ... : null` matters: getUserTierById(null) returns 'free' rather than
     // throwing, so passing the tier straight through told albumCap that an ANONYMOUS album was a
     // free-account album — 500 instead of 250, or 1,000 once the free grandfathering applied.
@@ -137,7 +137,26 @@ export async function authorizeImageUpload(
     createdAt: album.created_at,
     override: album.media_cap_override,
     pkg: { tier: asPackageTier(album.package_tier), expiresAt: album.package_expires_at },
-  })
+  }
+  const { cap: albumCap } = albumCapFor(capInput)
+
+  // A FULL ALBUM IS REFUSED HERE, AS FULL, and is not handed a slot it cannot use.
+  //
+  // Measured 2026-09-07 and 2026-09-08: two owners filled their albums and kept uploading. Every
+  // photo after that still got a slot here, sent its bytes to R2, and was refused one step later at
+  // photos/create -- an object no row will ever reference, the exact permanent-bytes problem the
+  // budget below exists to bound. Once 300 of those had gone through in an hour the budget refused
+  // the rest as "Album upload rate limit reached": the wrong words, filed as an error, and the owner
+  // never saw the upgrade the real refusal carries.
+  //
+  // Only on a KNOWN tier and a KNOWN count. A failed tier lookup sizes the budget as free (above),
+  // and treating that as the cap would call a Max album full at a free album's allowance; a failed
+  // count refuses nothing either. Both uncertain branches fall through (rule 19), and photos/create
+  // still enforces the cap on the row.
+  if (tierRes.tier !== null && !countRes.error && countRes.count !== null && countRes.count >= albumCap) {
+    return { ok: false, response: NextResponse.json(albumFullRefusal(capInput), { status: 429, headers: NO_STORE }) }
+  }
+
   const albumRl = await checkRateLimit(
     `presign_album:${params.albumId}`,
     3600,

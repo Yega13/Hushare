@@ -7,6 +7,7 @@ import { readJson, HttpError } from '@/lib/upload/http'
 import {
   VideoUploadError, errText, friendlyUploadError, isDeterministicTusError, isRecoverableNetworkFailure, tusHttpStatus,
   type VideoResume,
+  refusalFrom,
 } from '@/lib/upload/failure'
 import { freshEntryFor, mergeWall, queuePendingRows, retryMode, shouldPark, wallFor } from '@/lib/upload/retry-plan'
 import { createRowSaver } from '@/lib/upload/row-saver'
@@ -748,10 +749,9 @@ async function uploadImageToR2(
       ...(processed.thumbBlob ? { thumbSize: processed.thumbBlob.size } : {}),
     }),
   }, { signal })
-  if (!presignRes.ok) {
-    const err = await presignRes.json().catch(() => ({})) as { error?: string }
-    throw new Error(err.error ?? `Presign failed (${presignRes.status})`)
-  }
+  // The refusal's code travels with it (refusalFrom): presign refuses a full album now, and without
+  // its code that refusal would be filed as an upload fault.
+  if (!presignRes.ok) throw await refusalFrom(presignRes, 'Presign failed')
   const { presignedUrl, key, publicUrl, thumb, contentType: signedContentType } = await readJson<{
     presignedUrl: string
     key: string
@@ -1108,14 +1108,10 @@ async function saveUploadedRows(albumId: string, rows: PhotoRow[]): Promise<{ wa
     // reconciles server-side. Closing the tab mid-save should still finish the save. Do not "finish
     // the job" by threading the abort signal in here.
   }, { deadlineMs: FETCH_DEADLINE_SAVE_MS })
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({})) as { error?: string; code?: string; nudge?: string }
-    // Carry the server's code so callers can tell an expected refusal (album full) from a genuine
-    // failure, without string-matching an English message. `nudge` says WHICH advice the server
-    // gave, so the banner cannot offer an account to someone who already has one — it used to
-    // infer "offer an account" from `code` alone.
-    throw Object.assign(new Error(err.error ?? `Save failed (${res.status})`), { code: err.code, nudge: err.nudge })
-  }
+  // The server's code and nudge ride on the error (refusalFrom), so callers tell an expected refusal
+  // from a genuine failure without matching English, and the banner cannot offer an account to
+  // someone who already has one.
+  if (!res.ok) throw await refusalFrom(res, 'Save failed')
   const data = await res.json().catch(() => ({})) as { warning?: string; rejected?: string[] }
   return { warning: data.warning, rejected: data.rejected }
 }
@@ -1310,7 +1306,7 @@ export default function UploadZone({ album, onPhotosUploaded, isOwner }: Props) 
     // viewport, 98 rows in the admin dashboard, and 98 counts against the error-alert threshold —
     // three different surfaces all saying one thing 98 times. Failures are collected here and
     // summarised once the batch settles.
-    const batchFailures: { msg: string; kind: string; sizeMB: number; status?: number; parked: boolean; waitedMs?: number; directCause?: string; relayCause?: string }[] = []
+    const batchFailures: { msg: string; kind: string; sizeMB: number; status?: number; parked: boolean; waitedMs?: number; directCause?: string; relayCause?: string; code?: string }[] = []
     // Which reasons have already been shown to the user in THIS batch. A toast per file turned one
     // dropped connection into a wall of identical messages; a single toast at the end of the batch
     // said nothing until everything had finished failing, which on a long queue is a minute of
@@ -1384,6 +1380,8 @@ export default function UploadZone({ album, onPhotosUploaded, isOwner }: Props) 
               kind: kind === 'video' ? 'upload:video' : 'upload:image',
               sizeMB: Math.round(entry.file.size / 1024 / 1024),
               status: e instanceof HttpError ? e.status : undefined,
+              // A refusal's code (album_full from presign), so the report files it as that refusal.
+              code: typeof (e as { code?: unknown })?.code === 'string' ? (e as { code: string }).code : undefined,
               parked,
               // How long the control plane fought before giving up (see fetchWithRetry). Reported
               // as context rather than message text so it cannot fragment the grouping.
@@ -1431,7 +1429,9 @@ export default function UploadZone({ album, onPhotosUploaded, isOwner }: Props) 
         // which is already logged at warn. Logged as errors they sat in the admin Errors tab
         // implying something was broken: a 103 MB video refused twice on 2026-08-18 was two of
         // the four "errors" outstanding, and nothing was wrong.
-        const expected = isExpectedRefusal(sample.msg)
+        // A full album refused at presign is the same refusal as one refused at save: same source, same level.
+        const full = sample.code === 'album_full'
+        const expected = full || isExpectedRefusal(sample.msg)
         // A parked failure is not (yet) a lost photo — the uploader is going to retry it by itself.
         // Reporting it at error level would put a row in the Errors tab, and a count against the
         // error-alert threshold, for an incident the product is in the middle of handling
@@ -1439,7 +1439,7 @@ export default function UploadZone({ album, onPhotosUploaded, isOwner }: Props) 
         // still reported, at warn, because how often guests hit this is worth knowing. If auto-
         // resume then fails, that second failure is not parked and lands as a real error.
         const level = expected || sample.parked ? 'warn' : 'error'
-        reportClientEvent(level, sample.kind, sample.msg, album.id, {
+        reportClientEvent(level, full ? 'album-full' : sample.kind, sample.msg, album.id, {
           failedFiles: n,
           sizeMB: sample.sizeMB,
           status: sample.status,

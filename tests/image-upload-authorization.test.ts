@@ -118,6 +118,7 @@ vi.mock('@/lib/report-server-error', () => ({ reportServerError: () => {} }))
 
 import { authorizeImageUpload, deriveImageKey } from '@/lib/server/image-upload-authorization'
 import { uploadCapsForTier } from '@/lib/media'
+import { albumCap, albumFullRefusal } from '@/lib/album-entitlements'
 
 const ALBUM_ID = '11111111-2222-3333-4444-555555555555'
 const OK_ALBUM = {
@@ -532,5 +533,64 @@ describe('deriveImageKey never lets the client choose where bytes go', () => {
 
   it('a full-size upload keeps its own type, normalised', () => {
     expect(deriveImageKey(ALBUM_ID, 'image/PNG', 'x.png', false).finalContentType).toBe('image/png')
+  })
+})
+
+describe('a FULL album is refused as full, before it is handed a slot', () => {
+  // 2026-09-07 and 2026-09-08: two owners filled their albums and kept uploading. Every photo after
+  // that still got a slot here, put its bytes in R2, and was refused at photos/create -- an object no
+  // row will ever reference. Once 300 of those had gone through, the budget refused the rest as
+  // "Album upload rate limit reached", filed as an error, and the owner never saw the upgrade.
+  type AlbumShape = { user_id: string | null; created_at: string; media_cap_override: number | null }
+  const capInputOf = (a: AlbumShape) => ({
+    ownerTier: a.user_id ? ('free' as const) : null,
+    createdAt: a.created_at,
+    override: a.media_cap_override,
+    pkg: { tier: null, expiresAt: null },
+  })
+  const capOf = (a: AlbumShape) => albumCap(capInputOf(a)).cap
+  const OWNED = { ...OK_ALBUM, user_id: 'owner-1' as string | null }
+
+  it("at the cap: photos/create's own refusal, word for word, and the hourly budget is not touched", async () => {
+    cfg.photoCount = capOf(OK_ALBUM)
+    const res = await authorizeImageUpload(req, params())
+    expect(res.ok).toBe(false)
+    if (res.ok) return
+    expect(res.response.status).toBe(429)
+    expect(await res.response.json()).toEqual(albumFullRefusal(capInputOf(OK_ALBUM)))
+    // Refused BEFORE the budget: a full album spending its allowance on refusals is how the
+    // rate-limit error appeared in the first place.
+    expect(cfg.rateLimitCalls.map((c) => c[0]), 'the per-album budget was consulted for a full album').not.toContain(`presign_album:${ALBUM_ID}`)
+  })
+
+  it('one below the cap is still allowed', async () => {
+    cfg.photoCount = capOf(OK_ALBUM) - 1
+    expect((await authorizeImageUpload(req, params())).ok).toBe(true)
+  })
+
+  it("an OWNED album is judged against its owner's cap, not the anonymous one", async () => {
+    cfg.album = { ...OWNED }
+    cfg.tier = 'free'
+    expect(capOf(OWNED), 'the test needs the two caps to differ').not.toBe(capOf(OK_ALBUM))
+    cfg.photoCount = capOf(OWNED) - 1
+    expect((await authorizeImageUpload(req, params())).ok).toBe(true)
+    cfg.photoCount = capOf(OWNED)
+    const res = await authorizeImageUpload(req, params())
+    expect(res.ok).toBe(false)
+    if (!res.ok) expect((await res.response.json()).code).toBe('album_full')
+  })
+
+  it('a FAILED count refuses nothing as full (rule 19)', async () => {
+    cfg.countError = true
+    expect((await authorizeImageUpload(req, params())).ok).toBe(true)
+  })
+
+  it('an UNKNOWN tier is never called full at the free allowance: the 503, not album_full', async () => {
+    cfg.album = { ...OWNED }
+    cfg.tierThrows = true
+    cfg.photoCount = capOf(OWNED)
+    const res = await authorizeImageUpload(req, params())
+    expect(res.ok).toBe(false)
+    if (!res.ok) expect(res.response.status).toBe(503)
   })
 })

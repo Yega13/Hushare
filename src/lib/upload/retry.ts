@@ -67,14 +67,22 @@ export const PUT_DEADLINE_MS = 120_000
  */
 export function withTimeoutSignal(caller: AbortSignal | undefined, timeoutMs: number) {
   const ctrl = new AbortController()
+  // Whether OUR timer is what ended this attempt. Held here rather than read back off the error,
+  // because the error is the browser's to word -- see fetchWithRetry. Only set when the timer is
+  // what aborted: a caller's cancel that landed first stays a cancel.
+  let timedOut = false
   const onCallerAbort = () => ctrl.abort(caller?.reason)
-  const timer = setTimeout(() => ctrl.abort(new DOMException('Timed out', 'TimeoutError')), timeoutMs)
+  const timer = setTimeout(() => {
+    if (!ctrl.signal.aborted) timedOut = true
+    ctrl.abort(new DOMException('Timed out', 'TimeoutError'))
+  }, timeoutMs)
   if (caller) {
     if (caller.aborted) ctrl.abort(caller.reason)
     else caller.addEventListener('abort', onCallerAbort, { once: true })
   }
   return {
     signal: ctrl.signal,
+    timedOut: () => timedOut,
     cleanup: () => {
       clearTimeout(timer)
       caller?.removeEventListener('abort', onCallerAbort)
@@ -123,6 +131,8 @@ export function createUploadTransport(deps: TransportDeps) {
     // waiting out a delay we already spent probing is exactly the wasted patience described above.
     let skipBackoff = false
     let lastErr: Error | null = null
+    // Whether the last failure was the network's. Handed on with the final error as `unreachable`.
+    let lastWasNetwork = false
     // The most recent 5xx, held so that running out of time still returns the server's own response
     // rather than throwing a generic error. Callers read the real message -- and the `code` that
     // tells an expected refusal from a genuine failure -- out of that body. At most one is retained.
@@ -174,13 +184,22 @@ export function createUploadTransport(deps: TransportDeps) {
           void lastServerRes?.body?.cancel()
           throw new DOMException('Upload aborted', 'AbortError')
         }
-        lastErr = e instanceof Error ? e : new Error(String(e))
+        // OUR TIMER, WHATEVER THE BROWSER CALLS IT. Chrome rejects the fetch with the reason we
+        // aborted with -- the TimeoutError that isNetworkClass keys on. On 2026-09-11 an iPhone
+        // (Safari 26.6) reported the same abort as a plain "Fetch is aborted": not network-class,
+        // so the loop never waited for the connection, and the photo failed as "Fetch is aborted
+        // (/api/upload/presign)" after 31 seconds -- the 30-second budget every Chrome "Timed out"
+        // row shows. The caller's own cancel is handled above, so if our timer fired, this attempt
+        // timed out, and it is named here by what happened.
+        const failure = attemptSignal.timedOut() ? new DOMException('Timed out', 'TimeoutError') : e
+        lastErr = failure instanceof Error ? failure : new Error(String(failure))
+        lastWasNetwork = isNetworkClass(failure)
         if (throwVerdict === 'give-up') break
         // Nothing came back. Before spending another attempt (and another timeout) on a connection
         // that may simply be gone, ask whether we can reach ourselves at all -- and while we cannot,
         // wait on the page-wide probe rather than hammering the real endpoint. This is the part that
         // turns "the batch died" into "the batch paused".
-        if (isNetworkClass(e)) {
+        if (lastWasNetwork) {
           const remaining = deadline.remaining()
           if (remaining <= 0) break
           const recovered = await deps.reachability.awaitRecovery({ remainingMs: remaining, signal: opts.signal })
@@ -215,7 +234,11 @@ export function createUploadTransport(deps: TransportDeps) {
     // column of one-count chips. It rides in the report context instead.
     const path = (() => { try { return new URL(url, 'http://origin.invalid').pathname } catch { return url } })()
     const err = new Error(`${lastErr?.message ?? 'Network request failed'} (${path})`)
-    throw Object.assign(err, { waitedMs: elapsedSince(startedAt) })
+    // `unreachable`: every attempt threw and the last was the network's -- the loop's own verdict,
+    // handed on so the park decision (lib/upload/failure) reads what happened instead of guessing it
+    // back out of the wording. "Timed out" matches no network phrase, so before this a photo whose
+    // every attempt timed out was never parked for the reconnect.
+    throw Object.assign(err, { waitedMs: elapsedSince(startedAt), unreachable: lastWasNetwork })
   }
 
   /**

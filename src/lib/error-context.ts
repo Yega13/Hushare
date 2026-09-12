@@ -31,6 +31,33 @@ export const MAX_CONTEXT_CHARS = 1400
 export const MAX_CONTEXT_KEYS = 24
 
 /**
+ * NOTHING AFTER A `?` OR A `#` IN A URL IS STORED.
+ *
+ * An owner's link carries their capability in the fragment -- `/<slug>#owner=<token>` -- precisely
+ * because browsers never send a fragment to a server (rule 25). Error reporting sent it anyway: a
+ * window error's filename is the full page URL, and on 2026-09-10 an owner opening their own album
+ * on Chrome for iPhone put a live owner token into error_events, readable by anyone who can read the
+ * admin panel. Query strings are no better: a presigned R2 URL carries its signature there, and an
+ * auth callback carries a one-time code.
+ *
+ * So every URL in a stored string loses its query and fragment, and the secret-bearing keys are
+ * redacted wherever they appear, in case one arrives without a URL around it. Applied on the
+ * SERVER, because a tab still running an older bundle keeps sending whatever it sends; the client
+ * runs the same function over what it sends, so the secret does not leave the browser either.
+ *
+ * Backslashes and quotes end a match, so running this over serialized JSON cannot break an escape
+ * or cross a string boundary. Errs toward removing (rule 19): a stack frame from an inline script
+ * loses its line and column along with the fragment. That costs a location we could have read;
+ * keeping it costs a key to somebody's album.
+ */
+const URL_QUERY_OR_FRAGMENT = /(\b[a-z][a-z0-9+.-]*:\/\/[^\s?#"'<>()\\]*)[?#][^\s"'<>()\\]*/gi
+const SECRET_PAIR = /\b(owner|access_token|refresh_token|provider_token|token_hash)=[^\s&#"'<>()\\]*/gi
+
+export function stripUrlSecrets(text: string): string {
+  return text.replace(URL_QUERY_OR_FRAGMENT, '$1').replace(SECRET_PAIR, '$1=[redacted]')
+}
+
+/**
  * Returns the context to store, or null when there is nothing worth storing.
  *
  * Errs toward keeping a trimmed object rather than dropping a whole one: a truncated stack is still
@@ -50,7 +77,10 @@ export function boundedContext(input: unknown): Record<string, string | number |
     if (keys >= MAX_CONTEXT_KEYS) break
     if (v === null || v === undefined) continue
     if (typeof v === 'string') {
-      out[k] = v.length > MAX_VALUE_CHARS ? v.slice(0, MAX_VALUE_CHARS) : v
+      // Stripped BEFORE the clamp. Either order removes the secret; this one gives the room the
+      // fragment took to whatever follows it, instead of cutting that off.
+      const clean = stripUrlSecrets(v)
+      out[k] = clean.length > MAX_VALUE_CHARS ? clean.slice(0, MAX_VALUE_CHARS) : clean
     } else if (typeof v === 'number' || typeof v === 'boolean') {
       // A non-finite number is not JSON — JSON.stringify turns it into null, so the key would
       // survive with a meaningless value. Drop it instead of storing a lie.
@@ -65,7 +95,7 @@ export function boundedContext(input: unknown): Record<string, string | number |
       } catch {
         continue   // circular or otherwise unserializable: not worth a 500 on a logging endpoint
       }
-      if (s) out[k] = s.slice(0, MAX_VALUE_CHARS)
+      if (s) out[k] = stripUrlSecrets(s).slice(0, MAX_VALUE_CHARS)
     }
     keys++
   }

@@ -113,5 +113,14 @@ export default {
     from: "  return TIER_RANK[bought] > TIER_RANK[owner] ? bought : owner", to: "  return owner" },
   { name: 'a null owner tier is not defaulted, so an anonymous album reads as no tier at all',
     from: "  const owner: Tier = ownerTier ?? 'free'", to: "  const owner: Tier = ownerTier as Tier" },
+
+  // ── the refusal a full album gives, at either door (2026-09-11) ─────────────────────────────
+  { name: 'the full-album refusal loses its code, so the banner cannot tell it from a failure',
+    from: "  return { code: 'album_full', nudge, error: `You've reached this album's upload limit.${suffix}` }",
+    to: "  return { code: 'full', nudge, error: `You've reached this album's upload limit.${suffix}` }" },
+  { name: 'the register advice is swapped for the upgrade advice',
+    from: "Register on Hushare — it's free — for more space.", to: "Upgrade your plan for more space." },
+  { name: 'the nudge is not attached, so the banner guesses',
+    from: "  return { code: 'album_full', nudge, error:", to: "  return { code: 'album_full', nudge: 'none' as const, error:" },
   ],
 }

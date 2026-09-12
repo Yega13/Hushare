@@ -1641,3 +1641,60 @@ I knew the mechanism and did not look for it one file away.
 the contract, not decoration — assert it. And when any string is matched on by prefix somewhere
 else, its test asserts the match too, in the same breath: `expect(isExpectedRefusal(res.error))`
 costs one line and is the only thing that connects the two files.
+
+## 2026-09-12 — The panel's 23 errors, read properly this time
+
+### 100. I RECLASSIFIED WHAT I SHOULD HAVE FIXED, AND NAMED CAUSES WITHOUT READING THE ROWS
+
+The user asked why the panel held 23 errors. I read the grouped counts, saw "Fetch is aborted" and
+"Album upload rate limit reached", and within minutes had a story for each: guests closing a tab,
+and our own limiter saying slow down. Both stories led to the same fix, filing them as warnings, and
+I built it, tested it, mutation-tested it (every mutant killed), and told the user "four of the 23
+were cancels".
+
+Neither story survived the raw rows. The "cancels" carried a path suffix that fetchWithRetry only
+ever adds when the caller did NOT cancel, and one had waited 31 seconds: the 30-second budget every
+Chrome "Timed out" row shows. They were our own timeout, which that iPhone reported as a bare abort,
+and the misreading meant the loop never waited for the connection and never parked the photo. The
+rate limit fired on two albums that had filed album-full refusals minutes earlier: presign was
+handing slots to full albums, the bytes went to R2 with no row to reference them, and the budget
+eventually refused the rest with the wrong words. Filing either as a warning would have hidden a
+real defect behind a quieter label. That is rule 9, verbatim.
+
+What made it worse is that everything I ran was green. The mutation run proved my classifier did
+what I said; it could not prove that what I said was true.
+
+**Habit to build:** before naming the cause of a panel row, read the whole row (context,
+waitedSeconds, UA, album) and the rows beside it in time. A grouped count is a headline, not
+evidence. And when a fix makes an error quieter rather than making it not happen, stop: that is the
+shape rule 9 forbids, and it needs evidence that nothing failed, not an absence of evidence that
+something did.
+
+### 101. MY OWN ERROR REPORTER SENT AN OWNER'S KEY TO THE DATABASE
+
+Rule 25 rests on one fact: an owner token lives in the URL fragment, and browsers never send a
+fragment to a server. The error reporter sent it anyway. A window error's `filename` is the whole
+page URL, fragment included, and it was stored in error_events verbatim. Found by accident while
+reading an unrelated row: a live `#owner=` token, readable by anyone with the admin panel.
+
+No test looked at what leaves the browser. Every reporter test asked whether a report was sent and
+at what level; none asked what was in it. The rule and the reporter were each written knowing
+nothing of the other.
+
+**Habit to build:** anything that sends browser state to a server (telemetry, analytics, error
+context) is an exfiltration path, and gets a test that reads the actual request body for secrets.
+Strip at the server as well: a tab running last week's bundle keeps sending what that bundle sent.
+
+### 102. A COMMENT OF MINE GAVE A REASON THAT WAS NOT TRUE
+
+In the URL-stripping fix I wrote that stripping before the clamp meant "a cut can never leave half a
+fragment behind for the strip to miss". Writing its test, I found that false: the strip removes
+everything from the `#` onward, so a clamped half-fragment goes just the same, and either order is
+safe. The real reason is smaller (the room the fragment took goes to whatever follows it), and that
+is what the test now proves.
+
+A wrong reason in a comment is worse than none. It is the sentence the next person trusts instead of
+checking, and it would have defended the code's order for a reason that does not exist.
+
+**Habit to build:** a comment that says WHY is a claim, and gets the treatment code gets: write the
+test that would fail if it were false. If no such test can be written, the comment should say less.

@@ -177,6 +177,25 @@ export function capNudge(input: AlbumCapInput): CapNudge {
   return 'none'
 }
 
+/**
+ * THE REFUSAL A FULL ALBUM GIVES -- the same words and the same code wherever it is refused.
+ *
+ * photos/create refused a full album with this; the presign route did not refuse it at all and
+ * handed out a slot, so the bytes went to R2 and were turned away one step later. Now both refuse,
+ * and both refuse with THIS, so the guest reads one sentence and the uploader's banner reads one
+ * code whichever door they were stopped at.
+ *
+ * The nudge is only attached when it is TRUE (capNudge). Telling a grandfathered guest album to
+ * register, when registering leads back into the same ceiling, sends someone to do something useless.
+ */
+export function albumFullRefusal(input: AlbumCapInput): { code: 'album_full'; nudge: CapNudge; error: string } {
+  const nudge = capNudge(input)
+  const suffix = nudge === 'register' ? " Register on Hushare — it's free — for more space."
+    : nudge === 'upgrade' ? ' Upgrade your plan for more space.'
+    : ''
+  return { code: 'album_full', nudge, error: `You've reached this album's upload limit.${suffix}` }
+}
+
 // ── HOW MUCH VIDEO MAY THIS ALBUM HOLD ───────────────────────────────────────────
 //
 // Until this shipped there was NO limit on video at all — not on how long a clip could be, not on

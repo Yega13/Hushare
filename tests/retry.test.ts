@@ -32,7 +32,7 @@ async function outcome<T>(p: Promise<T>): Promise<{ ok: T } | { err: unknown }> 
   return r
 }
 
-type FetchStep = number | 'down' | 'hang' | 'boom'
+type FetchStep = number | 'down' | 'hang' | 'safari-hang' | 'boom'
 /** Scripted fetch: a status -> Response with that status; 'down' -> TypeError; 'hang' -> waits for the signal; 'boom' -> a non-network Error. Repeats its last step. */
 function scriptedFetch(script: FetchStep[]) {
   let i = 0
@@ -48,6 +48,16 @@ function scriptedFetch(script: FetchStep[]) {
       return new Promise<Response>((_, reject) => {
         if (signal.aborted) { reject(signal.reason); return }
         signal.addEventListener('abort', () => reject(signal.reason), { once: true })
+      })
+    }
+    if (step === 'safari-hang') {
+      // What an iPhone did on 2026-09-11: the attempt is aborted, and the fetch rejects with the
+      // browser's own generic AbortError instead of the reason it was aborted with.
+      const signal = init.signal as AbortSignal
+      return new Promise<Response>((_, reject) => {
+        const fail = () => reject(new DOMException('Fetch is aborted', 'AbortError'))
+        if (signal.aborted) { fail(); return }
+        signal.addEventListener('abort', fail, { once: true })
       })
     }
     const res = new Response(`body-${i}`, { status: step })
@@ -576,5 +586,71 @@ describe('withTimeoutSignal', () => {
     expect(vi.getTimerCount()).toBe(0)
     caller.abort()
     expect(signal.aborted, 'the caller-abort listener survived cleanup').toBe(false)
+  })
+})
+
+// ─── the attempt timeout, whatever the browser calls it ─────────────────────────────────────────
+
+describe('OUR timer is a timeout, whatever the browser calls it', () => {
+  // 2026-09-11, an iPhone: our 20-second timer aborted a presign, Safari rejected the fetch with
+  // "Fetch is aborted", isNetworkClass said that was not the network, and the loop spent its budget
+  // without once asking whether the connection was back. Chrome words the same abort as our
+  // TimeoutError, which is why only iPhones ever showed it.
+
+  it('an attempt our timer cut off waits for the connection, even when the browser calls it a bare abort', async () => {
+    const f = scriptedFetch(['safari-hang', 200])
+    const reach = scriptedReach(true)
+    const { t } = transport({ fetch: f.fetch, reachability: reach })
+    const res = await outcome(t.fetchWithRetry('/api/upload/presign', {}))
+    expect('ok' in res && res.ok.status).toBe(200)
+    expect(reach.awaitRecovery, 'a timed-out attempt must wait for the origin like any dead connection').toHaveBeenCalledTimes(1)
+  })
+
+  it('when every attempt times out, the error says so in every browser, and carries the verdict', async () => {
+    const f = scriptedFetch(['safari-hang'])
+    const { t } = transport({ fetch: f.fetch, reachability: scriptedReach(false) })
+    const res = await outcome(t.fetchWithRetry('/api/upload/presign', {}))
+    if (!('err' in res)) throw new Error('expected a failure')
+    const err = res.err as Error & { unreachable?: unknown }
+    expect(err.message).toBe('Timed out (/api/upload/presign)')
+    expect(err.unreachable).toBe(true)
+  })
+
+  it("a caller's cancel is still a cancel, even through the same bare-abort wording", async () => {
+    const f = scriptedFetch(['safari-hang'])
+    const { t } = transport({ fetch: f.fetch })
+    const ctrl = new AbortController()
+    const r = t.fetchWithRetry('/x', {}, { signal: ctrl.signal }).then(() => 'resolved', (e: DOMException) => e.name)
+    await vi.advanceTimersByTimeAsync(1000)
+    ctrl.abort()
+    await vi.advanceTimersByTimeAsync(100_000)
+    expect(await r).toBe('AbortError')
+  })
+
+  it('unreachable is the NETWORK verdict: a dropped connection sets it, a failure of another kind does not', async () => {
+    const down = await outcome(transport({ fetch: scriptedFetch(['down']).fetch, reachability: scriptedReach(false) }).t.fetchWithRetry('/x', {}))
+    expect('err' in down && (down.err as { unreachable?: unknown }).unreachable).toBe(true)
+    const boom = await outcome(transport({ fetch: scriptedFetch(['boom']).fetch }).t.fetchWithRetry('/x', {}))
+    expect('err' in boom && (boom.err as { unreachable?: unknown }).unreachable).toBe(false)
+  })
+})
+
+describe('withTimeoutSignal knows whether IT is what fired', () => {
+  it('timedOut is false until the budget passes, then true', async () => {
+    const s = withTimeoutSignal(undefined, 1000)
+    expect(s.timedOut()).toBe(false)
+    await vi.advanceTimersByTimeAsync(1000)
+    expect(s.timedOut()).toBe(true)
+    s.cleanup()
+  })
+
+  it("a caller's cancel that landed first is never reported as a timeout", async () => {
+    const caller = new AbortController()
+    const s = withTimeoutSignal(caller.signal, 1000)
+    caller.abort()
+    // The timer still fires if nobody cleaned up; it must not rewrite what already happened.
+    await vi.advanceTimersByTimeAsync(5000)
+    expect(s.timedOut()).toBe(false)
+    s.cleanup()
   })
 })

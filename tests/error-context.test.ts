@@ -1,5 +1,8 @@
 import { describe, it, expect } from 'vitest'
-import { boundedContext, MAX_VALUE_CHARS, MAX_CONTEXT_CHARS } from '@/lib/error-context'
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
+import { stripJsComments } from './helpers/source-text'
+import { boundedContext, stripUrlSecrets, MAX_VALUE_CHARS, MAX_CONTEXT_CHARS } from '@/lib/error-context'
 import { stackFrames, STACK_CHARS } from '@/lib/report-error'
 
 // WHAT A CRASH REPORT IS ALLOWED TO CARRY — and why it stopped carrying the useful part.
@@ -112,5 +115,63 @@ describe('an oversized context is trimmed, never thrown away whole', () => {
     const ctx = boundedContext({ digest: 'd', nested: { a: 'x'.repeat(5_000) } })
     expect(typeof ctx!.nested).toBe('string')
     expect((ctx!.nested as string).length).toBeLessThanOrEqual(MAX_VALUE_CHARS)
+  })
+})
+
+describe('nothing after a ? or # in a URL is ever stored', () => {
+  // 2026-09-10: an owner opened their own album on Chrome for iPhone, an injected script threw, and
+  // the window error's filename -- the full page URL, fragment and all -- put a live owner token into
+  // error_events. The shape below is that row's; the token is not.
+  const OWNER_URL = 'https://hushare.space/jkzvi0aa#owner=' + 'F'.repeat(60)
+
+  it('an owner link loses its fragment', () => {
+    expect(stripUrlSecrets(OWNER_URL)).toBe('https://hushare.space/jkzvi0aa')
+  })
+  it('a presigned URL loses its signature, and an auth callback its code', () => {
+    expect(stripUrlSecrets('PUT https://r2.example/bucket/k.jpg?X-Amz-Signature=abc&X-Amz-Credential=def failed'))
+      .toBe('PUT https://r2.example/bucket/k.jpg failed')
+    expect(stripUrlSecrets('at https://hushare.space/auth/callback?code=123456')).toBe('at https://hushare.space/auth/callback')
+  })
+  it('every URL in the string, not only the first', () => {
+    expect(stripUrlSecrets(`${OWNER_URL} then ${OWNER_URL}`)).toBe('https://hushare.space/jkzvi0aa then https://hushare.space/jkzvi0aa')
+  })
+  it('a secret key is redacted even with no URL around it', () => {
+    expect(stripUrlSecrets('hash was owner=FAKE&x=1')).toBe('hash was owner=[redacted]&x=1')
+    expect(stripUrlSecrets('#access_token=eyJ.a.b&refresh_token=r1')).toBe('#access_token=[redacted]&refresh_token=[redacted]')
+  })
+  it('leaves what is not a secret exactly as it was', () => {
+    for (const keep of [
+      'Failed to load chunk /_next/static/chunks/2dycde-otmjsa.js from module 81276',
+      '@https://hushare.space/_next/static/chunks/turbopack-12s2khum8utun.js:1:6134',
+      'Minified React error #310; visit https://react.dev/errors/310 for the full message',
+      'isOwner=true',
+      'Timed out (/api/upload/presign)',
+    ]) expect(stripUrlSecrets(keep), keep).toBe(keep)
+  })
+  it('is safe over serialized JSON: it cannot break an escape or cross a string', () => {
+    const out = stripUrlSecrets(JSON.stringify({ file: OWNER_URL, note: 'see https://x.test/a#frag"q' }))
+    const parsed = JSON.parse(out)
+    expect(parsed.file).toBe('https://hushare.space/jkzvi0aa')
+    expect(parsed.note).toBe('see https://x.test/a"q')
+  })
+  it('boundedContext strips every value it stores, strings and serialized objects alike', () => {
+    const ctx = boundedContext({ file: OWNER_URL, nested: { href: OWNER_URL }, line: 425 })
+    expect(ctx?.file).toBe('https://hushare.space/jkzvi0aa')
+    expect(String(ctx?.nested)).not.toContain('FFFF')
+    expect(ctx?.line).toBe(425)
+  })
+  it('strips BEFORE clamping, so what follows the URL keeps the room the fragment took', () => {
+    // 723 characters as sent, 657 once stripped. Clamped first, the cut at 700 lands inside the
+    // fragment and TAIL is lost; stripped first, everything that is not a secret survives.
+    const long = 'a'.repeat(620) + ' ' + OWNER_URL + ' TAIL'
+    expect(long.length).toBeGreaterThan(MAX_VALUE_CHARS)
+    const ctx = boundedContext({ stack: long })
+    expect(String(ctx?.stack).endsWith(' TAIL')).toBe(true)
+    expect(String(ctx?.stack)).not.toContain('owner=')
+  })
+  it('the sink strips the message as well as the context', () => {
+    const route = stripJsComments(readFileSync(join(process.cwd(), 'src', 'app', 'api', 'log', 'client-error', 'route.ts'), 'utf8'))
+    expect(route).toMatch(/const message = typeof body\.message === 'string' \? stripUrlSecrets\(body\.message\.trim\(\)\)\.slice\(0, 500\) : ''/)
+    expect(route).toMatch(/const context = boundedContext\(body\.context\)/)
   })
 })

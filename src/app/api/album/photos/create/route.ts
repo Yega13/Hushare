@@ -15,7 +15,7 @@ import { timingSafeEqual } from '@/lib/timing-safe'
 import { getUserTierById } from '@/lib/subscriptions'
 import type { Tier } from '@/types'
 import { ANON_ALBUM_MEDIA } from '@/lib/media'
-import { albumCap, capNudge, registeringWouldHelp, chargeableDurationSeconds } from '@/lib/album-entitlements'
+import { albumCap, albumFullRefusal, registeringWouldHelp, chargeableDurationSeconds } from '@/lib/album-entitlements'
 import { gateAllowsContribution } from '@/lib/server/album-access'
 import { queueBibIndex } from '@/lib/server/bib-index'
 import { cookies } from 'next/headers'
@@ -242,21 +242,11 @@ export async function POST(req: Request) {
     const { cap } = albumCap(input)
 
     if (tierKnown && photoCount >= cap) {
-      // The nudge is only attached when it is TRUE. The old code told a grandfathered guest album
-      // "Register on Hushare to get more space" at the moment it filled — and registering led back
-      // into the same 1,000 ceiling, so nothing arrived. A message that sends someone to do
-      // something useless is worse than no message at all.
-      const nudge = capNudge(input)
-      const suffix = nudge === 'register' ? " Register on Hushare — it's free — for more space."
-        : nudge === 'upgrade' ? ' Upgrade your plan for more space.'
-        : ''
-      // `nudge` travels to the client so the upload banner shows the SAME advice. It used to infer
-      // from `code` alone that an account was the answer, and offered one to owners who already
-      // had one.
-      return NextResponse.json(
-        { code: 'album_full', nudge, error: `You've reached this album's upload limit.${suffix}` },
-        { status: 429, headers: NO_STORE },
-      )
+      // The words, the code and the nudge are lib/album-entitlements' albumFullRefusal, shared with
+      // the presign route so a full album says the same thing at either door. `nudge` travels to the
+      // client so the upload banner shows the SAME advice; it used to infer from `code` alone that an
+      // account was the answer, and offered one to owners who already had one.
+      return NextResponse.json(albumFullRefusal(input), { status: 429, headers: NO_STORE })
     }
 
     // Filling up, not full: nag only where signing up genuinely adds room, and never on an album

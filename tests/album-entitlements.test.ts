@@ -1,6 +1,9 @@
 import { describe, it, expect } from 'vitest'
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
+import { stripJsComments } from './helpers/source-text'
 import {
-  albumCap, registeringWouldHelp, upgradingWouldHelp, capNudge, MAX_MEDIA_CAP_OVERRIDE,
+  albumCap, registeringWouldHelp, upgradingWouldHelp, capNudge, albumFullRefusal, MAX_MEDIA_CAP_OVERRIDE,
   LEGACY_ALL_BEFORE,
 } from '../src/lib/album-entitlements'
 import { GRANDFATHER_FREE_BEFORE } from '../src/lib/media'
@@ -233,6 +236,28 @@ describe('capNudge — what a full album may tell someone to do', () => {
     // space" for an account they already have. That is the sentence this file exists to prevent.
     for (const tier of ['free', 'pro', 'studio'] as const) {
       expect(albumMediaCapForTier('free'), `free must not exceed ${tier}`).toBeLessThanOrEqual(albumMediaCapForTier(tier))
+    }
+  })
+})
+
+describe('albumFullRefusal -- the one thing a full album says, at either door', () => {
+  it('says exactly what photos/create always said, for each nudge', () => {
+    const register = { ownerTier: null, createdAt: NEW, override: null }
+    const upgrade = { ownerTier: 'free' as const, createdAt: NEW, override: null }
+    const none = { ownerTier: null, createdAt: OLD, override: null }
+    // The inputs really do earn those three nudges -- otherwise the strings below prove nothing.
+    expect([capNudge(register), capNudge(upgrade), capNudge(none)]).toEqual(['register', 'upgrade', 'none'])
+    expect(albumFullRefusal(register)).toEqual({ code: 'album_full', nudge: 'register', error: "You've reached this album's upload limit. Register on Hushare — it's free — for more space." })
+    expect(albumFullRefusal(upgrade)).toEqual({ code: 'album_full', nudge: 'upgrade', error: "You've reached this album's upload limit. Upgrade your plan for more space." })
+    expect(albumFullRefusal(none)).toEqual({ code: 'album_full', nudge: 'none', error: "You've reached this album's upload limit." })
+  })
+
+  it('both doors use it, and neither keeps its own copy of the words or the code (rule 13)', () => {
+    for (const file of ['src/app/api/album/photos/create/route.ts', 'src/lib/server/image-upload-authorization.ts']) {
+      const text = stripJsComments(readFileSync(join(process.cwd(), file), 'utf8'))
+      expect(text, file).toMatch(/albumFullRefusal\(/)
+      expect(text, file).not.toMatch(/reached this album's upload limit/)
+      expect(text, file).not.toMatch(/'album_full'/)
     }
   })
 })

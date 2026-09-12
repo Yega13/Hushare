@@ -88,6 +88,10 @@ export function isRecoverableNetworkFailure(e: unknown): boolean {
   // A deliberate cancel, and a server that answered (even badly), are both out of scope.
   if (e instanceof DOMException && e.name === 'AbortError') return false
   if (e instanceof HttpError) return false
+  // The control plane's own verdict (lib/upload/retry): no attempt was answered and the last one
+  // failed at the network. Read as a fact rather than from the text, because a timeout's text is
+  // "Timed out (/api/...)", which matches none of the network wording below.
+  if ((e as { unreachable?: unknown } | null)?.unreachable === true) return true
   // Videos: httpStatus null means no HTTP response ever arrived on ANY attempt, direct or relayed.
   if (e instanceof VideoUploadError) return e.httpStatus === null
   const raw = errText(e)
@@ -121,6 +125,9 @@ export function friendlyUploadError(e: unknown): string {
   // The presign or save request never reached the server, and this shows only AFTER the retry
   // loop is exhausted, so the network itself is blocking us: venue Wi-Fi, a VPN, an ad-blocker.
   if (/failed to fetch|\bload failed|network request failed|networkerror/i.test(raw)) return UNREACHABLE_MESSAGE
+  // The same situation stated structurally: every attempt timed out or dropped. It used to reach the
+  // guest as the raw "Timed out (/api/upload/presign)".
+  if ((e as { unreachable?: unknown } | null)?.unreachable === true) return UNREACHABLE_MESSAGE
   // Video (tus): a real server rejection versus a pure network failure.
   const status = e instanceof VideoUploadError ? e.httpStatus : tusHttpStatus(e)
   if (status !== null) {
@@ -131,4 +138,22 @@ export function friendlyUploadError(e: unknown): string {
   // No HTTP response on ANY attempt: the direct path AND the relay both failed, true connectivity loss.
   if (e instanceof VideoUploadError || /^tus:|stalled/i.test(raw)) return VIDEO_UNREACHABLE_MESSAGE
   return raw.length > 160 ? `${raw.slice(0, 157)}…` : raw
+}
+
+/**
+ * THE SERVER'S REFUSAL, AS AN ERROR THAT STILL KNOWS WHAT IT WAS.
+ *
+ * The save path carried the server's `code` and `nudge` with the message, so a full album could be
+ * told from a failure without matching English. The presign path threw the message alone -- and
+ * presign now refuses a full album too (lib/server/image-upload-authorization), so without the code
+ * that refusal would be filed as an upload fault. One reader for both, so they cannot disagree
+ * about what a refusal carries.
+ */
+export async function refusalFrom(res: Response, fallback: string): Promise<Error & { code?: string; nudge?: string }> {
+  const body = await res.json().catch(() => ({})) as { error?: unknown; code?: unknown; nudge?: unknown }
+  const message = typeof body.error === 'string' && body.error ? body.error : `${fallback} (${res.status})`
+  return Object.assign(new Error(message), {
+    code: typeof body.code === 'string' ? body.code : undefined,
+    nudge: typeof body.nudge === 'string' ? body.nudge : undefined,
+  })
 }

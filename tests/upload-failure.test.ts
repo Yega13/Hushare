@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   READ_FAILURE_MESSAGE, UNREACHABLE_MESSAGE, VIDEO_UNREACHABLE_MESSAGE, VideoUploadError,
-  friendlyUploadError, isDeterministicTusError, isRecoverableNetworkFailure, tusHttpStatus,
+  friendlyUploadError, isDeterministicTusError, isRecoverableNetworkFailure, tusHttpStatus, refusalFrom,
 } from '@/lib/upload/failure'
 import { HttpError } from '@/lib/upload/http'
 import { readFileRobust } from '@/lib/file-read'
@@ -97,5 +97,54 @@ describe('friendlyUploadError -- what the guest reads', () => {
     expect(friendlyUploadError(new Error(long))).toBe('x'.repeat(157) + '…')
     expect(friendlyUploadError(new Error('short and odd'))).toBe('short and odd')
     expect(friendlyUploadError('nope')).toBe('Upload failed')
+  })
+})
+
+describe('a control-plane call that no attempt ever reached', () => {
+  // lib/upload/retry hands its own verdict on as `unreachable`. When every attempt timed out, the
+  // TEXT of that failure is "Timed out (/api/...)" -- no network phrase at all -- so before the flag
+  // existed such a photo was never parked for the reconnect, and the guest read our endpoint name.
+  const timedOut = (unreachable: boolean) => Object.assign(new Error('Timed out (/api/upload/presign)'), { unreachable })
+
+  it('parks when the loop says the network never answered', () => {
+    expect(isRecoverableNetworkFailure(timedOut(true))).toBe(true)
+  })
+  it('and it is the verdict that parks, not the words: the same text without it stays an error', () => {
+    expect(isRecoverableNetworkFailure(timedOut(false))).toBe(false)
+    expect(isRecoverableNetworkFailure(new Error('Timed out (/api/upload/presign)'))).toBe(false)
+  })
+  it('only the verdict itself counts, not any truthy value', () => {
+    expect(isRecoverableNetworkFailure(Object.assign(new Error('x'), { unreachable: 'yes' }))).toBe(false)
+  })
+  it('a cancel stays a cancel, and a server answer stays an answer, whatever else is attached', () => {
+    expect(isRecoverableNetworkFailure(Object.assign(new DOMException('x', 'AbortError'), { unreachable: true }))).toBe(false)
+    expect(isRecoverableNetworkFailure(Object.assign(new HttpError(500, 'x'), { unreachable: true }))).toBe(false)
+  })
+  it('the guest is told to change network, not shown our endpoint', () => {
+    expect(friendlyUploadError(timedOut(true))).toBe(UNREACHABLE_MESSAGE)
+    expect(friendlyUploadError(timedOut(false))).toBe('Timed out (/api/upload/presign)')
+  })
+})
+
+describe('refusalFrom -- a refusal keeps what it was', () => {
+  const res = (status: number, body: unknown) => new Response(typeof body === 'string' ? body : JSON.stringify(body), { status })
+
+  it("carries the server's words, code and nudge", async () => {
+    const e = await refusalFrom(res(429, { code: 'album_full', nudge: 'upgrade', error: "You've reached this album's upload limit. Upgrade your plan for more space." }), 'Presign failed')
+    expect(e).toBeInstanceOf(Error)
+    expect(e.message).toBe("You've reached this album's upload limit. Upgrade your plan for more space.")
+    expect(e.code).toBe('album_full')
+    expect(e.nudge).toBe('upgrade')
+  })
+  it('names the step and the status when the body says nothing usable', async () => {
+    expect((await refusalFrom(res(502, 'not json'), 'Presign failed')).message).toBe('Presign failed (502)')
+    expect((await refusalFrom(res(500, { error: '' }), 'Save failed')).message).toBe('Save failed (500)')
+    expect((await refusalFrom(res(500, { error: 42 }), 'Save failed')).message).toBe('Save failed (500)')
+  })
+  it('drops a code or nudge that is not a string, rather than handing the banner garbage', async () => {
+    const e = await refusalFrom(res(429, { error: 'x', code: 7, nudge: { a: 1 } }), 'Save failed')
+    expect(e.message).toBe('x')
+    expect(e.code).toBeUndefined()
+    expect(e.nudge).toBeUndefined()
   })
 })

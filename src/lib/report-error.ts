@@ -1,3 +1,5 @@
+import { stripUrlSecrets } from '@/lib/error-context'
+
 // Client-side error reporting into the existing error_events sink (/api/log/client-error), which
 // /admin already reads and groups.
 //
@@ -282,6 +284,54 @@ export function isForeignError(message: string, file?: string): boolean {
   return WALLET_NAME_RE.test(message) && GLOBAL_PROP_RE.test(message)
 }
 
+/**
+ * AN ERROR FROM A LINE OUR DOCUMENT DOES NOT HAVE.
+ *
+ * Chrome on iPhone injects its own scripts into every page, and when one of them throws, the
+ * browser attributes the error to OUR page. Two arrived on 2026-09-10 from one iPhone, twenty
+ * seconds apart: "Error: ta" at line 425 of the album page, and "RangeError: Maximum call stack
+ * size exceeded." from a file named, literally, "undefined". The album page is 12 lines of HTML
+ * (measured against production on 2026-09-11), so line 425 of it does not exist, and every script
+ * this site runs has a real URL. Neither was ours; neither message names its source the way the
+ * identifiers in FOREIGN_INJECTED_RE do, so both landed in the Errors tab.
+ *
+ * Two structural facts rather than another message pattern, because the message is whatever the
+ * injected script happened to throw:
+ *
+ *   - a filename with no URL scheme at all is not a script we served;
+ *   - a line more than DOCUMENT_LINE_SLACK past the end of this document is not in this document.
+ *
+ * The slack exists because the DOM is not the source: the HTML parser drops whitespace in a few
+ * places (before <head>, between </head> and <body>), so the serialised document can have a few
+ * fewer lines than what was sent. Without it, a real error in one of our own inline scripts near
+ * the end of the page could be filed as foreign. Errs toward keeping (rule 19), as does a count
+ * that cannot be taken.
+ */
+export const DOCUMENT_LINE_SLACK = 20
+
+export function isOutsideOurDocument(
+  file: string | undefined,
+  line: number | undefined,
+  doc: { url: string; lineCount: () => number },
+): boolean {
+  if (!file) return false
+  if (!/^[a-z][a-z0-9+.-]*:/i.test(file)) return true
+  if (typeof line !== 'number' || !Number.isFinite(line) || line <= 0) return false
+  if (withoutQueryOrFragment(file) !== withoutQueryOrFragment(doc.url)) return false
+  return line > doc.lineCount() + DOCUMENT_LINE_SLACK
+}
+
+function withoutQueryOrFragment(url: string): string {
+  const cut = url.search(/[?#]/)
+  return cut === -1 ? url : url.slice(0, cut)
+}
+
+// Counted only when an error claims to come from this document, so a page that never errors never
+// pays for it. A count that cannot be taken filters nothing.
+function documentLineCount(): number {
+  try { return (document.documentElement?.outerHTML ?? '').split('\n').length } catch { return Number.MAX_SAFE_INTEGER }
+}
+
 // What was actually done to the DOM, collected at the moment it broke.
 //
 // The diagnosis above has been a THEORY since 2026-08-17 — page translation or an extension — and
@@ -393,7 +443,9 @@ export function reportClientError(input: ReportInput): void {
       // keepalive lets the report survive the page being torn down, which is exactly when a fatal
       // error tends to happen.
       keepalive: true,
-      body: JSON.stringify({
+      // The whole body goes through stripUrlSecrets, so no URL's query or fragment leaves the
+      // browser -- whichever field it arrived in. An owner token rode out in `file` on 2026-09-10.
+      body: stripUrlSecrets(JSON.stringify({
         source: input.source.slice(0, 60),
         message,
         level: (recoverable || translatedDom) ? 'warn' : (input.level ?? 'error'),
@@ -408,7 +460,7 @@ export function reportClientError(input: ReportInput): void {
           build: process.env.NEXT_PUBLIC_BUILD_ID ?? 'unknown',
           ...(recoverable ? { autoReloaded: true } : {}),
         },
-      }),
+      })),
     }).catch(() => { /* telemetry is best-effort by definition */ })
 
     // Reload AFTER the report is in flight — keepalive keeps it alive across the navigation.
@@ -428,7 +480,10 @@ export function installGlobalErrorReporting(): () => void {
     const message = e.message || String(e.error ?? 'unknown error')
     // looksLikeStaleDeploy first: filtering a chunk error would drop not just the log row but the
     // one-shot reload that is the entire fix for it.
-    if (!looksLikeStaleDeploy(message) && isForeignError(message, e.filename)) return
+    if (!looksLikeStaleDeploy(message) && (
+      isForeignError(message, e.filename) ||
+      isOutsideOurDocument(e.filename, e.lineno, { url: window.location.href, lineCount: documentLineCount })
+    )) return
     reportClientError({
       source: 'window.onerror',
       message,

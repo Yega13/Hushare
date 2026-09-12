@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { checkRateLimit, clientIpKey } from '@/lib/rate-limit'
 import { forbidCrossSiteRequest } from '@/lib/request-security'
-import { boundedContext } from '@/lib/error-context'
+import { boundedContext, stripUrlSecrets } from '@/lib/error-context'
 
 export const runtime = 'nodejs'
 
@@ -56,7 +56,8 @@ export async function POST(req: Request) {
   if (!body) return new NextResponse(null, { status: 204, headers: NO_STORE })
 
   const source = typeof body.source === 'string' ? body.source.slice(0, 60) : ''
-  const message = typeof body.message === 'string' ? body.message.trim().slice(0, 500) : ''
+  // Stripped here as well as in boundedContext: a message can quote a URL too (lib/error-context).
+  const message = typeof body.message === 'string' ? stripUrlSecrets(body.message.trim()).slice(0, 500) : ''
   if (!source || !message) return new NextResponse(null, { status: 204, headers: NO_STORE })
 
   const level = body.level === 'warn' ? 'warn' : 'error'

@@ -79,6 +79,38 @@ describe('UploadZone writes its rows through lib/upload/row-saver and keeps no c
   })
 })
 
+describe('UploadZone files a refusal as a refusal, and only a fault as an error', () => {
+  // The classifiers are proven in their own modules; these pin the lines that decide whether they
+  // are asked, and of what. On 2026-09-07 and 2026-09-08 presign refused two full albums, and the
+  // refusal reached the report with no code -- so it could only ever be filed as an upload fault.
+  it('both refusals are read by the one reader, so presign and save carry the same code', () => {
+    const text = src()
+    expect(text).toMatch(/import \{[^}]*\brefusalFrom\b[^}]*\} from '@\/lib\/upload\/failure'/)
+    expect(text).toMatch(/if \(!presignRes\.ok\) throw await refusalFrom\(presignRes, 'Presign failed'\)/)
+    expect(text).toMatch(/if \(!res\.ok\) throw await refusalFrom\(res, 'Save failed'\)/)
+    // ...and neither reads a refusal by hand any more.
+    expect(text).not.toMatch(/const err = await presignRes\.json\(\)/)
+    expect(text).not.toMatch(/Save failed \(\$\{res\.status\}\)/)
+  })
+  it('the batch report carries the code and files a full album as the refusal it is', () => {
+    const text = src()
+    expect(text).toMatch(/code: typeof \(e as \{ code\?: unknown \}\)\?\.code === 'string' \? \(e as \{ code: string \}\)\.code : undefined/)
+    expect(text).toMatch(/const full = sample\.code === 'album_full'/)
+    expect(text).toMatch(/const expected = full \|\| isExpectedRefusal\(sample\.msg\)/)
+    expect(text).toMatch(/const level = expected \|\| sample\.parked \? 'warn' : 'error'/)
+    expect(text).toMatch(/reportClientEvent\(level, full \? 'album-full' : sample\.kind, sample\.msg, album\.id, \{/)
+  })
+  it('the save path asks the same questions of the real message and code', () => {
+    const text = src()
+    expect(text).toMatch(/const full = code === 'album_full'/)
+    expect(text).toMatch(/const expectedSave = full \|\| isExpectedRefusal\(msg\)/)
+    expect(text).toMatch(/reportClientEvent\(expectedSave \? 'warn' : 'error', full \? 'album-full' : 'save', msg, album\.id/)
+  })
+  it('a cancel never reaches the batch report: the upload path drops it by the error object', () => {
+    expect(src()).toMatch(/if \(!\(e instanceof DOMException && e\.name === 'AbortError'\)\) \{\s+batchFailures\.push\(/)
+  })
+})
+
 describe('UploadZone runs its video lane from lib/upload/video-lane and decides nothing about it here', () => {
   it('imports the rule and the classifier from the module', () => {
     const text = src()

@@ -61,6 +61,7 @@ directions). This is the registry. The third column is what holds every consumer
 | The one rate-limit window not derived from code | `wrangler.toml` (the Cloudflare binding) | `tests/ratelimit-window.test.ts` parses the file and pins the constant to it |
 | Time, in the client | `lib/clock.ts` — `Millis` is a branded reading of `performance.now()` | `elapsedSince(Date.now())` is a compile error |
 | Who is past an album's gate | `albumGateVerdict` in `lib/server/album-access.ts` — the reveal date, then the password cookie verified against THIS album | `scripts/mutations/album-gate-verdict.mjs` runs each break against all three callers' tests at once; the callers keep only their own ownership rule and answer shape |
+| What a full album says, at either door | `albumFullRefusal` in `lib/album-entitlements.ts` — the code, the nudge and the sentence | presign and photos/create both return it, and `tests/album-entitlements.test.ts` reads both files and fails on a retyped sentence or code; on the client `refusalFrom` in `lib/upload/failure.ts` is the one reader of any refusal, so the code survives from either door |
 | Which crons exist | `worker.ts` schedules them | `tests/architecture.test.ts` checks every scheduled name has a route and every route is scheduled |
 | Which RPCs the code calls | `REQUIRED_FUNCTIONS` in `scripts/check-db.mjs` | `tests/architecture.test.ts` greps every `.rpc()` and compares; deploy runs `db:check` against the live database |
 
@@ -77,19 +78,6 @@ An invariant that is only a sentence in a document is a hope. Each of these name
 | No duration is a difference of wall-clock readings | `Millis` brand in `lib/clock.ts`; `createDeadline`, `createStallWatch`, `settleWithin` own the arithmetic | compile error |
 | The largest files only shrink | `SIZE_BUDGET` in `tests/architecture.test.ts`; a reduction must be recorded, slack is a failure | red test |
 | A lint finding is either fixed or has a written reason | `scripts/check-hooks.mjs` budget may only fall; anything suppressed in place carries why on the line | red test either way |
-
-**The two suppressions that recur, and why they are not debt.** Both are `react-hooks` rules
-modelling a client render, applied where no client render happens.
-
-`react-hooks/purity` on `Date.now()` in a **Server Component**. It renders once, on the server, per
-request, and the request's own clock is the right one to read — the two-passes-disagree failure the
-rule exists for cannot occur. Suppressed on the line in `app/account`, `app/admin` and `app/c/[slug]`.
-
-`react-hooks/set-state-in-effect` for a **browser-only value read after hydration** — the query
-string, `localStorage`, a random pick. None can be read while the server renders, and reading one
-during the client's first render is the hydration mismatch that throws the subtree away. That idiom
-is `lib/use-browser-value.ts` now, so the rule fires once, inside it, beside the explanation,
-instead of once per component. Anything still flagged elsewhere is a real finding again.
 | Every `lib` module has a test | `tests/architecture.test.ts` walks `src/lib` one level down; `UNTESTED_LEGACY` may only shrink | red test |
 | Every database read is typed against the live schema | generated `Database` type on all three clients; no `.returns<>()` on `single`/`maybeSingle` | `tsc`, and the deploy drift check |
 | A nullable column is never treated as present without a check | `withNonNull()` in `lib/non-null.ts` (a tested predicate, not a cast) | `tsc` at the call site, the body's own test |
@@ -103,6 +91,22 @@ instead of once per component. Anything still flagged elsewhere is a real findin
 | A deletion that cannot decide does nothing | `r2KeyFromUrl` returns `null` rather than guessing; `collectDeletionTargets` is the only path to a delete | orphaned file ($0.015/GB/month) instead of a destroyed one |
 | The nightly backup never lands somewhere public | `scripts/backup-upload.mjs` writes a random canary and refuses if it is readable anonymously, before the dump is uploaded | the job fails loudly |
 | The client never asserts absence while still searching | `searchPhase()` in `lib/search-answer.ts` — `off / searching / failed / answered` — and only `answered` may say "nothing found" | tested; the component renders the phase it is given |
+| No URL query or fragment is stored from a browser report | `stripUrlSecrets` in `lib/error-context.ts`: the sink strips the message and every context value, and the client strips the whole body before it leaves | `tests/error-report-secrets.test.ts` fires a real `ErrorEvent` on an owner link and reads the request actually sent; mutation sets `error-context`, `report-error`, `client-error-route` |
+| A timeout is named by what happened, not by how a browser words it | `withTimeoutSignal().timedOut()` in `lib/upload/retry.ts`; the final error carries `unreachable`, which the park decision in `lib/upload/failure.ts` reads | tested with a fetch that rejects the way that iPhone did; mutation set `retry` |
+| A script we did not serve is not filed as our error | `isForeignError` (injected identifiers, extension schemes) and `isOutsideOurDocument` (no URL scheme; a line past the end of this document) in `lib/report-error.ts`; anything unrecognised is kept | filtered at the listener and tested through a real `ErrorEvent`; the slack that protects our own inline scripts is mutated both ways |
+
+**The two suppressions that recur, and why they are not debt.** Both are `react-hooks` rules
+modelling a client render, applied where no client render happens.
+
+`react-hooks/purity` on `Date.now()` in a **Server Component**. It renders once, on the server, per
+request, and the request's own clock is the right one to read — the two-passes-disagree failure the
+rule exists for cannot occur. Suppressed on the line in `app/account`, `app/admin` and `app/c/[slug]`.
+
+`react-hooks/set-state-in-effect` for a **browser-only value read after hydration** — the query
+string, `localStorage`, a random pick. None can be read while the server renders, and reading one
+during the client's first render is the hydration mismatch that throws the subtree away. That idiom
+is `lib/use-browser-value.ts` now, so the rule fires once, inside it, beside the explanation,
+instead of once per component. Anything still flagged elsewhere is a real finding again.
 
 ## 4. The upload path, as the worked example
 
@@ -167,6 +171,22 @@ Before any deploy, `.github/workflows/deploy.yml` runs: `npm test` (through `run
 
 Stated plainly, because a map that hides the swamps is not a map.
 
+- **A guest's dead connection still lands in the Errors tab.** Read row by row on 2026-09-12, 9
+  of the week's 23 errors were this: presign timeouts, both upload routes dying, a save that
+  never reached us. A person's upload did fail, but the cause was their connection and there is
+  nothing in our code to fix. They stay errors because the same rows are also what OUR outage
+  would look like, and telling the two apart needs a rate across many guests at once, which the
+  panel does not compute. Until it does, the Errors tab carries noise that has to be read to be
+  dismissed. The other 14 were four real defects, fixed in the same circle (a full album handed
+  upload slots; a timeout misread on iPhone; an owner token stored by the reporter; scripts that
+  were not ours filed as ours), plus five still open: a video that died on a 400 from the relay's
+  resume request, two photos a Mac could not encode, and two chunk loads that failed on a file
+  that exists.
+- **The video relay's success rate is unknown.** 23 videos switched to the relay between
+  2026-08-14 and 2026-09-12, and 5 of them landed under that same upload session. Most of the rest
+  show no bytes moved at all (`offset 0`), which is a dead network and not a broken relay, and some
+  landed later under a fresh session -- but the relay records nothing when it succeeds, so the
+  number that would settle it does not exist.
 - **Components are still where decisions hide -- two of them.** `AlbumPageClient.tsx` went 1,789
   -> 1,577 on 2026-09-09/10: the resolve outcome, the grid's review-queue split, the freshness
   seed and delta merge, the leave-intent predicates, the owner-link reader and login retry, the

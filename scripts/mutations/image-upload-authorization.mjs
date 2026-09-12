@@ -73,8 +73,8 @@ export default {
   { name: 'the budget ignores grandfathering and the override again',
     from: "    createdAt: album.created_at,\n    override: album.media_cap_override,", to: "    createdAt: null,\n    override: null," },
   { name: 'a bought package does not raise the budget it was bought for',
-    from: "    pkg: { tier: asPackageTier(album.package_tier), expiresAt: album.package_expires_at },\n  })",
-    to: "    pkg: null,\n  })" },
+    from: "    pkg: { tier: asPackageTier(album.package_tier), expiresAt: album.package_expires_at },\n  }\n  const { cap: albumCap } = albumCapFor(capInput)",
+    to: "    pkg: null,\n  }\n  const { cap: albumCap } = albumCapFor(capInput)" },
   { name: 'the file-size cap treats every package as expired, so a Max-package album is judged as free',
     from: "  const caps = uploadCapsForTier(albumEffectiveTier(album.user_id ? tierRes.tier : null, {\n    tier: asPackageTier(album.package_tier), expiresAt: album.package_expires_at,\n  }))",
     to: "  const caps = uploadCapsForTier(albumEffectiveTier(album.user_id ? tierRes.tier : null, {\n    tier: asPackageTier(album.package_tier), expiresAt: null,\n  }))" },
@@ -97,5 +97,26 @@ export default {
     from: "  const ext = isThumb ? 'jpg' : safeExtForMime(normalizedType, rawExt)", to: "  const ext = isThumb ? 'jpg' : rawExt" },
   { name: 'a thumbnail is stored under the original content type rather than as JPEG',
     from: "  const finalContentType = isThumb ? 'image/jpeg' : normalizedType", to: "  const finalContentType = normalizedType" },
+
+  // ── a full album is refused as full, before the budget (2026-09-07 and 2026-09-08) ────────────
+  { name: 'A FULL ALBUM IS HANDED A SLOT AGAIN, and its bytes go to R2 to be refused a step later',
+    from: "  if (tierRes.tier !== null && !countRes.error && countRes.count !== null && countRes.count >= albumCap) {", to: "  if (false) {" },
+  { name: 'an unknown tier is judged at the free allowance, so a Max album is called full at 500',
+    from: "  if (tierRes.tier !== null && !countRes.error && countRes.count !== null && countRes.count >= albumCap) {",
+    to: "  if (!countRes.error && countRes.count !== null && countRes.count >= albumCap) {" },
+  { name: 'the album is called full one photo early',
+    from: "countRes.count >= albumCap) {", to: "countRes.count >= albumCap - 1) {" },
+  { name: 'the album is called full one photo late',
+    from: "countRes.count >= albumCap) {", to: "countRes.count > albumCap) {" },
+  { name: 'the refusal is not the shared one, so the two doors say different things',
+    from: "NextResponse.json(albumFullRefusal(capInput), { status: 429, headers: NO_STORE })",
+    to: "NextResponse.json({ error: 'Album is full' }, { status: 429, headers: NO_STORE })" },
+  { name: "the refusal is worded for a different album's plan",
+    from: "albumFullRefusal(capInput)", to: "albumFullRefusal({ ...capInput, ownerTier: 'studio' })" },
+  // NOT MUTATED -- `!countRes.error` on its own. The mocked failed count also answers count null, so
+  // `countRes.count !== null` already refuses nothing and deleting either half alone is
+  // output-identical here. Both stay, because nothing guarantees a real client pairs them.
+  // NOT MUTATED -- the ORDER (full check before the budget). A move is not a one-line replacement;
+  // the test asserting the budget is never consulted for a full album is what holds it.
   ],
 }
