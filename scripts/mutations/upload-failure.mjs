@@ -55,5 +55,10 @@ export default {
     from: "    code: typeof r?.code === 'string' ? r.code : undefined,", to: "    code: r?.code as string | undefined," },
   { name: 'the nudge is dropped by the reader, so the account offer never appears',
     from: "    nudge: typeof r?.nudge === 'string' ? r.nudge : undefined,", to: "    nudge: undefined," },
+
+  { name: 'a refusal body is read unbounded, so a stalled refusal hangs the file',
+    from: "  const body = await readWithin(res.json().catch(() => ({})))", to: "  const body = await res.json().catch(() => ({}))" },
+  { name: 'A STALLED BODY IS SWALLOWED AS AN EMPTY REFUSAL, telling a guest their photo was declined',
+    from: "await readWithin(res.json().catch(() => ({})))", to: "await readWithin(res.json()).catch(() => ({}))" },
   ],
 }

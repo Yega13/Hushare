@@ -1,4 +1,4 @@
-import { HttpError } from '@/lib/upload/http'
+import { HttpError, readWithin } from '@/lib/upload/http'
 import { isFileReadFailure } from '@/lib/file-read'
 
 // WHAT A FAILED UPLOAD MEANS: does the tile park and wait for the network, or fail with a manual
@@ -166,7 +166,11 @@ export function refusalFields(e: unknown): { code?: string; nudge?: string } {
 }
 
 export async function refusalFrom(res: Response, fallback: string): Promise<Error & { code?: string; nudge?: string }> {
-  const body = await res.json().catch(() => ({})) as { error?: unknown; code?: unknown; nudge?: unknown }
+  // Bounded, and the two failures are kept apart: a body that is not JSON gives an empty object and
+  // the caller still gets the step and the status, while a body that never ARRIVES rejects with a
+  // TimeoutError and parks the file. Inventing a refusal out of a stalled connection would tell a
+  // guest their photo was declined when nothing was ever read.
+  const body = await readWithin(res.json().catch(() => ({}))) as { error?: unknown; code?: unknown; nudge?: unknown }
   const message = typeof body.error === 'string' && body.error ? body.error : `${fallback} (${res.status})`
   return Object.assign(new Error(message), {
     code: typeof body.code === 'string' ? body.code : undefined,

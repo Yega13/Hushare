@@ -42,5 +42,17 @@ export default {
   { name: 'readJson truncated-body message drifts (/admin groups by exact string)',
     from: "    throw new Error('Incomplete response from the server — please retry')",
     to:   "    throw new Error('Unreadable response from the server — please retry')" },
+
+  // ── the body read that could hang forever (2026-09-12) ───────────────────────────────────────
+  { name: 'THE BODY READ IS UNBOUNDED AGAIN: a stalled body holds an upload slot for the life of the page',
+    from: "    return await Promise.race([read, timeout])", to: "    return await read" },
+  { name: 'the timer is never cleared, so every control-plane call leaves a live rejection behind',
+    from: "    clearTimeout(timer)\n", to: "" },
+  { name: 'the bound rejects with a name the park decision does not recognise, so the file never resumes',
+    from: "reject(new DOMException('Timed out', 'TimeoutError'))", to: "reject(new DOMException('Timed out', 'AbortError'))" },
+  { name: 'a body gets three times the patience of the request that fetched it',
+    from: "export const BODY_READ_TIMEOUT_MS = 20_000", to: "export const BODY_READ_TIMEOUT_MS = 60_000" },
+  { name: 'readJson goes back to an unbounded read',
+    from: "  const text = await readWithin(res.text())", to: "  const text = await res.text()" },
   ],
 }

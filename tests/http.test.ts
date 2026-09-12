@@ -1,5 +1,7 @@
 import { describe, it, expect, vi, afterEach } from 'vitest'
-import { xhrPut, readJson, HttpError, STALL_TIMEOUT_MS, type XhrLike } from '@/lib/upload/http'
+import { xhrPut, readJson, readWithin, BODY_READ_TIMEOUT_MS, HttpError, STALL_TIMEOUT_MS, type XhrLike } from '@/lib/upload/http'
+import { isNetworkClass } from '@/lib/upload-policy'
+import { FETCH_ATTEMPT_TIMEOUT_MS } from '@/lib/upload/retry'
 import { IMMUTABLE_CACHE_CONTROL } from '@/lib/media'
 
 // THE FUNCTION THAT CARRIES A GUEST'S PHOTO BYTES OFF THEIR PHONE, tested for the first time.
@@ -223,5 +225,56 @@ describe('HttpError', () => {
     expect(e.name).toBe('HttpError')
     expect(e.status).toBe(429)
     expect(e.message).toBe('slow down')
+  })
+})
+
+describe('a body that never arrives', () => {
+  // THE SILENT FREEZE. lib/upload/retry cleans up its per-attempt signal the moment the Response is
+  // returned -- timer cleared, abort listener removed, no abort -- so the body that arrives after
+  // that is bounded by nothing and deaf to Cancel. A response whose headers came and whose body then
+  // stalled left this await pending forever: the upload slot was never released, the tile sat on
+  // "preparing", saver.finish() was never reached, and NOTHING was reported. Six freeze the uploader.
+  const stalledBody = () => new Response(new ReadableStream({ start() { /* never enqueues, never closes */ } }))
+
+  afterEach(() => { vi.useRealTimers() })
+
+  it('resolves what arrives in time, and leaves no timer behind', async () => {
+    vi.useFakeTimers()
+    await expect(readWithin(Promise.resolve('body'), 1000)).resolves.toBe('body')
+    expect(vi.getTimerCount(), 'an uncleared timer holds a rejection nobody will ever read').toBe(0)
+  })
+
+  it('rejects with the TimeoutError the PARK decision keys on, not a generic error', async () => {
+    vi.useFakeTimers()
+    const settled = readWithin(new Promise<string>(() => {})).then(() => 'resolved', (e: unknown) => e)
+    await vi.advanceTimersByTimeAsync(BODY_READ_TIMEOUT_MS)
+    const err = await settled
+    expect(err).toBeInstanceOf(DOMException)
+    expect((err as DOMException).name).toBe('TimeoutError')
+    // The whole reason for that name: the file parks and auto-resumes like any dead connection,
+    // with no new concept anywhere in the upload path.
+    expect(isNetworkClass(err), 'a stalled body must be network-class').toBe(true)
+  })
+
+  it('gives a body the same patience as the request that fetched it', () => {
+    // The comment says "matched to FETCH_ATTEMPT_TIMEOUT_MS", which is a claim, so it is asserted.
+    expect(BODY_READ_TIMEOUT_MS).toBe(FETCH_ATTEMPT_TIMEOUT_MS)
+  })
+
+  it('readJson on a stalled body rejects instead of holding the upload slot forever', async () => {
+    vi.useFakeTimers()
+    const settled = readJson(stalledBody()).then(() => 'resolved', (e: unknown) => (e as Error).name)
+    await vi.advanceTimersByTimeAsync(BODY_READ_TIMEOUT_MS)
+    expect(await settled).toBe('TimeoutError')
+  })
+
+  it('...and a body that arrives late but within the budget is still read', async () => {
+    vi.useFakeTimers()
+    const slow = new Response(new ReadableStream({
+      start(c) { setTimeout(() => { c.enqueue(new TextEncoder().encode('{"ok":true}')); c.close() }, BODY_READ_TIMEOUT_MS - 1000) },
+    }))
+    const read = readJson<{ ok: boolean }>(slow)
+    await vi.advanceTimersByTimeAsync(BODY_READ_TIMEOUT_MS)
+    expect(await read).toEqual({ ok: true })
   })
 })

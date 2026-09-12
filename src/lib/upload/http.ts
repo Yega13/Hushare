@@ -32,8 +32,44 @@ export class HttpError extends Error {
  * the cryptic "Unexpected end of JSON input". Reading text first turns that into a clean, retryable
  * error the guest actually understands.
  */
+/**
+ * How long a control-plane body may take to arrive AFTER its headers already did.
+ *
+ * Matched to FETCH_ATTEMPT_TIMEOUT_MS: the same patience the request itself gets, for the same
+ * reason -- long enough for a slow venue connection to deliver a few hundred bytes, short enough
+ * that a file does not hold an upload slot on a connection that has stopped answering.
+ */
+export const BODY_READ_TIMEOUT_MS = 20_000
+
+/**
+ * A BODY READ THAT CANNOT HANG.
+ *
+ * lib/upload/retry's per-attempt signal is cleaned up the moment the Response is returned -- the
+ * timer cleared, the caller's abort listener removed -- and cleanup() does not abort. So the body
+ * that arrives afterwards is bounded by nothing and deaf to Cancel. A response whose headers arrive
+ * and whose body then stalls left this await pending forever: the upload slot was never released
+ * (`release()` lives in a finally that never runs), the tile sat on "preparing", saver.finish() was
+ * never reached, and nothing was reported at all. Six of those freeze the uploader in silence.
+ *
+ * Rejects with a TimeoutError DOMException on purpose: isNetworkClass already treats that as
+ * network-class, so the file parks and auto-resumes exactly as it would on a dead connection.
+ */
+export async function readWithin<T>(read: Promise<T>, ms: number = BODY_READ_TIMEOUT_MS): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new DOMException('Timed out', 'TimeoutError')), ms)
+  })
+  try {
+    return await Promise.race([read, timeout])
+  } finally {
+    // Always, including when the read won the race: an uncleared timer keeps the page alive holding
+    // a rejection nobody will ever look at, one per control-plane call.
+    clearTimeout(timer)
+  }
+}
+
 export async function readJson<T>(res: Response): Promise<T> {
-  const text = await res.text()
+  const text = await readWithin(res.text())
   if (!text) throw new Error('Empty response from the server — please retry')
   try {
     return JSON.parse(text) as T

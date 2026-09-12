@@ -1,9 +1,9 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
 import {
   READ_FAILURE_MESSAGE, UNREACHABLE_MESSAGE, VIDEO_UNREACHABLE_MESSAGE, VideoUploadError,
   friendlyUploadError, isDeterministicTusError, isRecoverableNetworkFailure, tusHttpStatus, refusalFrom, refusalFields,
 } from '@/lib/upload/failure'
-import { HttpError } from '@/lib/upload/http'
+import { HttpError, BODY_READ_TIMEOUT_MS } from '@/lib/upload/http'
 import { readFileRobust } from '@/lib/file-read'
 
 // WHAT A FAILED UPLOAD MEANS: park and wait for the network, or fail with Retry, and what the
@@ -141,6 +141,22 @@ describe('refusalFrom -- a refusal keeps what it was', () => {
     expect((await refusalFrom(res(500, { error: '' }), 'Save failed')).message).toBe('Save failed (500)')
     expect((await refusalFrom(res(500, { error: 42 }), 'Save failed')).message).toBe('Save failed (500)')
   })
+  it('a body that never ARRIVES rejects, rather than inventing a refusal nobody sent', async () => {
+    // The two failures are different and must stay different: a body that is not JSON is a refusal
+    // whose words we could not read (name the step and the status), while a body that never arrives
+    // is a dead connection -- and telling a guest their photo was declined, when nothing was read at
+    // all, is a false statement about their photo.
+    vi.useFakeTimers()
+    try {
+      const stalled = new Response(new ReadableStream({ start() { /* never closes */ } }), { status: 403 })
+      const settled = refusalFrom(stalled, 'Presign failed').then(() => 'resolved', (e: unknown) => (e as Error).name)
+      await vi.advanceTimersByTimeAsync(BODY_READ_TIMEOUT_MS)
+      expect(await settled).toBe('TimeoutError')
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('drops a code or nudge that is not a string, rather than handing the banner garbage', async () => {
     const e = await refusalFrom(res(429, { error: 'x', code: 7, nudge: { a: 1 } }), 'Save failed')
     expect(e.message).toBe('x')
