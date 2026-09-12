@@ -94,5 +94,8 @@ export default {
   { name: 'the reservation is the clip length itself, with no headroom',
     from: "    maxDurationSeconds: resolveMaxDurationSeconds(params.durationSeconds),",
     to: "    maxDurationSeconds: Number(params.durationSeconds) || 900," },
+  { name: 'THE SWITCHED-OFF REFUSAL SENDS THE WRONG SENTENCE, so it is filed as a fault again',
+    from: "return { ok: false, response: NextResponse.json({ error: UPLOADS_DISABLED }, { status: 403, headers: NO_STORE }) }",
+    to: "return { ok: false, response: NextResponse.json({ error: 'Album not found' }, { status: 403, headers: NO_STORE }) }" },
   ],
 }

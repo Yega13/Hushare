@@ -65,5 +65,8 @@ export default {
     { name: 'A FAILED COUNT NOW BLOCKS THE UPLOAD instead of allowing it (rule 19, reversed)',
       from: "  if (countErr) {\n    console.error('[photos/create] media cap NOT enforced — count failed for album', albumId, ':', countErr.message)\n  }",
       to:   "  if (countErr) {\n    return NextResponse.json({ error: 'Service error' }, { status: 503, headers: NO_STORE })\n  }" },
+  { name: 'THE SWITCHED-OFF REFUSAL SENDS THE WRONG SENTENCE, so it is filed as a fault again',
+    from: "return NextResponse.json({ error: UPLOADS_DISABLED }, { status: 403, headers: NO_STORE })",
+    to: "return NextResponse.json({ error: 'Album not found' }, { status: 403, headers: NO_STORE })" },
   ],
 }

@@ -220,7 +220,7 @@ describe('an owner switching uploads off is a decision, not a fault', () => {
   it('the prefix is IMPORTED from where the decision is made, never retyped here', () => {
     expect(EXPECTED_REFUSAL_PREFIXES).toContain(UPLOADS_DISABLED)
     const src = stripJsComments(readFileSync(join(process.cwd(), 'src', 'lib', 'upload-policy.ts'), 'utf8'))
-    expect(src, 'the words must not be typed again in this file').not.toMatch(/'Uploads disabled for this album'/)
+    expect(src, 'the words must not be typed again in this file').not.toMatch(/['"`]Uploads disabled for this album/)
   })
 
   it('all THREE doors send exactly that constant, and none of them types the words', () => {
@@ -233,7 +233,7 @@ describe('an owner switching uploads off is a decision, not a fault', () => {
     ]) {
       const text = stripJsComments(readFileSync(join(process.cwd(), file), 'utf8'))
       expect(text, `${file} must send the imported constant`).toMatch(/error: UPLOADS_DISABLED/)
-      expect(text, `${file} must not retype the words`).not.toMatch(/'Uploads disabled for this album'/)
+      expect(text, `${file} must not retype the words`).not.toMatch(/['"`]Uploads disabled for this album/)
     }
   })
 })
@@ -251,7 +251,7 @@ describe('a type we do not accept is a refusal, not a fault', () => {
     // A reword at lib/media must not be able to leave this list matching the old words.
     expect(EXPECTED_REFUSAL_PREFIXES).toContain(TYPE_NOT_ALLOWED)
     const src = stripJsComments(readFileSync(join(process.cwd(), 'src', 'lib', 'upload-policy.ts'), 'utf8'))
-    expect(src, 'the words must not be typed again in this file').not.toMatch(/'File type not allowed'/)
+    expect(src, 'the words must not be typed again in this file').not.toMatch(/['"`]File type not allowed/)
   })
 
   it('both doors send exactly that constant, and neither types the words', () => {

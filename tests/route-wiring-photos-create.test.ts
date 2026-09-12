@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { UPLOADS_DISABLED } from '@/lib/album-entitlements'
 
 // THE ROUTE THAT WRITES EVERY PHOTO ROW, EXECUTED BY A TEST FOR THE FIRST TIME.
 //
@@ -240,10 +241,15 @@ describe('photos/create -- the refusal ladder, executed', () => {
     expect(upserts).toHaveLength(0)
   })
 
-  it('an album with guest uploads switched off is a 403, and writes nothing', async () => {
+  it('an album with guest uploads switched off is a 403 carrying the shared refusal, and writes nothing', async () => {
     cfg.album = albumRow({ guest_uploads_enabled: false })
     const res = await POST(post({ albumId: ALBUM_ID, photos: [photo()] }))
     expect(res.status).toBe(403)
+    // THE BODY, not just the status. A source scan proves the constant appears somewhere in the
+    // door; it cannot prove THIS branch sends it. Swapping this refusal with the adjacent 404 left
+    // every status assertion green while a switched-off album answered "Album not found" -- the
+    // fault row the constant exists to prevent, restored with the suite passing.
+    expect(await res.json()).toEqual({ error: UPLOADS_DISABLED })
     expect(upserts).toHaveLength(0)
   })
 

@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { UPLOADS_DISABLED } from '@/lib/album-entitlements'
 
 // THE ONLY THING BOUNDING VIDEO COST, FINALLY TESTED.
 //
@@ -350,11 +351,18 @@ describe('the guards in front of the budget, in order', () => {
     if (!res.ok) expect(res.response.status).toBe(404)
   })
 
-  it('refuses when guest uploads are switched off', async () => {
+  it('refuses when guest uploads are switched off, with the shared refusal in the body', async () => {
     cfg.album = { ...OK_ALBUM, guest_uploads_enabled: false }
     const res = await authorizeVideoUpload(req())
     expect(res.ok).toBe(false)
-    if (!res.ok) expect(res.response.status).toBe(403)
+    if (!res.ok) {
+      expect(res.response.status).toBe(403)
+      // THE BODY, not just the status. A source scan proves the constant appears somewhere in the
+      // door; it cannot prove THIS branch sends it. Swapping this refusal with the adjacent 404 left
+      // every status assertion green while a switched-off album answered "Album not found" -- the
+      // fault row the constant exists to prevent, restored with the suite passing.
+      expect(await res.response.json()).toEqual({ error: UPLOADS_DISABLED })
+    }
   })
 
   it('honours the password/reveal gate — contributing is gated, not just viewing', async () => {

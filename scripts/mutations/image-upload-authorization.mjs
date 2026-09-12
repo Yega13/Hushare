@@ -130,5 +130,8 @@ export default {
   { name: 'the tier is ignored entirely, so a guessed free cap refuses a Max album',
     from: "  const capIsSafeToEnforce = tierRes.authoritative || !capDependsOnTier(capInput)",
     to: "  const capIsSafeToEnforce = true" },
+  { name: 'THE SWITCHED-OFF REFUSAL SENDS THE WRONG SENTENCE, so it is filed as a fault again',
+    from: "return { ok: false, response: NextResponse.json({ error: UPLOADS_DISABLED }, { status: 403, headers: NO_STORE }) }",
+    to: "return { ok: false, response: NextResponse.json({ error: 'Album not found' }, { status: 403, headers: NO_STORE }) }" },
   ],
 }
