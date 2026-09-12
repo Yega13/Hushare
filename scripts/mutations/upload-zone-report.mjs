@@ -55,5 +55,10 @@ export default {
     from: "    setPendingSaveReason(prev => wallOnNewAttempt(prev, pendingSaveRef.current.length))\n", to: "" },
   { name: 'the empty action row comes back on a wall with no buttons',
     from: "          {(wall.offersAccount || wall.canFinish) && (", to: "          {true && (" },
+  { name: 'A DELIBERATE REFUSAL IS SHOWN TO THE GUEST AS A FAILURE ("saving to the album failed")',
+    from: "error: expectedSave ? msg : `Uploaded, but saving to the album failed: ${msg}`",
+    to: "error: full ? msg : `Uploaded, but saving to the album failed: ${msg}`" },
+  { name: 'the wall is never told the refusal was deliberate, so it blames the connection',
+    from: "wallFor(code, nudge, expectedSave)", to: "wallFor(code, nudge)" },
   ],
 }

@@ -391,6 +391,11 @@ export const en = {
   "uploadWall.saved": "Saved {n} photos.",
   "uploadWall.failedTitle": "{n} photos uploaded, not saved yet",
   "uploadWall.failedBody": "Their files reached us safely — only the last step didn't go through, usually a brief connection drop. Tap Finish saving and they'll appear. Nothing needs uploading again.",
+  // A REFUSAL, not a failure: the album declined the save on purpose — uploads switched off, a
+  // password gate, a reveal date still ahead. Deliberately says no cause: one wall covers all of
+  // them, and the specific reason is already on each tile. Naming one would misdescribe the others.
+  "uploadWall.refusedBody": "{n} photos are uploaded and safe — the album turned the last step down, and each photo says why. Nothing needs uploading again: if that changes, tap Finish saving.",
+  "uploadWall.refusedBodyNone": "The album turned these photos down, and each one says why.",
   'bib.tryFaceFinder': 'Find me by face',
   'ad.zoom': 'Zoom',
   'ad.videoPlayback': 'Video playback',

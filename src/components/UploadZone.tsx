@@ -9,7 +9,7 @@ import {
   type VideoResume,
   refusalFrom, refusalFields,
 } from '@/lib/upload/failure'
-import { freshEntryFor, mergeWall, queuePendingRows, retryMode, shouldPark, wallCopy, wallFor, wallOnNewAttempt } from '@/lib/upload/retry-plan'
+import { freshEntryFor, mergeWall, queuePendingRows, retryMode, shouldPark, wallCopy, wallFor, wallOnNewAttempt, type Wall } from '@/lib/upload/retry-plan'
 import { createRowSaver } from '@/lib/upload/row-saver'
 import { createVideoLane, videoOutcomeOf } from '@/lib/upload/video-lane'
 import { batchThroughputKbps, lostCount } from '@/lib/upload/throughput'
@@ -1168,7 +1168,10 @@ export default function UploadZone({ album, onPhotosUploaded, isOwner }: Props) 
   const pendingSaveRef = useRef<{ entryId: string; row: PhotoRow }[]>([])
   // Why they are pending. 'full' is a refusal the guest can clear by registering; 'failed' is a
   // genuine save failure they can simply retry. Null means nothing is waiting.
-  const [pendingSaveReason, setPendingSaveReason] = useState<'full' | 'fullOther' | 'failed' | null>(null)
+  // Wall, not a second copy of its union. It WAS a copy -- 'full' | 'fullOther' | 'failed' typed
+  // out here -- and adding a fourth wall to the type in lib/upload/retry-plan left this one behind.
+  // tsc caught it, which is the only reason it was not a silent divergence (rule 13).
+  const [pendingSaveReason, setPendingSaveReason] = useState<Wall | null>(null)
   // Mirrored into state purely so the banner re-renders when it changes. Reading the ref during
   // render would show whatever count happened to be there at the last unrelated render.
   const [pendingSaveCount, setPendingSaveCount] = useState(0)
@@ -1296,8 +1299,13 @@ export default function UploadZone({ album, onPhotosUploaded, isOwner }: Props) 
         // simply full, and (b) flooded /admin -- 39 of ~60 events in one day were this, burying
         // the genuine failures. Real save errors still report as errors.
         const full = code === 'album_full'
+        // HOISTED. This used to be computed twenty lines below, where it decided only what /admin
+        // was told -- so the guest-facing half still recognised nothing but a full album. An owner
+        // switching uploads off put "Uploaded, but saving to the album failed: Uploads disabled for
+        // this album" on every tile: a decision and a fault welded into one sentence.
+        const expectedSave = full || isExpectedRefusal(msg)
         for (const id of ids) {
-          patchEntry(id, { status: 'error', error: full ? msg : `Uploaded, but saving to the album failed: ${msg}` })
+          patchEntry(id, { status: 'error', error: expectedSave ? msg : `Uploaded, but saving to the album failed: ${msg}` })
         }
         // Hold the rows so the job can be finished. Their bytes are already in R2; only the insert
         // was turned away, so "retry" is one request, not a re-upload.
@@ -1314,11 +1322,8 @@ export default function UploadZone({ album, onPhotosUploaded, isOwner }: Props) 
           pendingSaveRef.current = queuePendingRows(pendingSaveRef.current, pairs)
           setPendingSaveCount(pendingSaveRef.current.length)
           // Which banner, and which refusal outranks which, is lib/upload/retry-plan.
-          setPendingSaveReason(prev => mergeWall(prev, wallFor(code, nudge)))
+          setPendingSaveReason(prev => mergeWall(prev, wallFor(code, nudge, expectedSave)))
         }
-        // Same rule on the save path: a gate refusal arrives here as a plain message, and it is
-        // not a failure of ours any more than a full album is.
-        const expectedSave = full || isExpectedRefusal(msg)
         reportClientEvent(expectedSave ? 'warn' : 'error', full ? 'album-full' : 'save', msg, album.id, { count: ids.length })
       },
       // Over-limit nag (once per upload session): the server flags albums past the free allowance.

@@ -62,23 +62,38 @@ export function freshEntryFor<E extends { status: FileStatus; autoResumed?: bool
 }
 
 /** Which banner a refused save puts up. */
-export type Wall = 'full' | 'fullOther' | 'failed'
+export type Wall = 'full' | 'fullOther' | 'refused' | 'failed'
 
 /**
  * 'full' is the state that OFFERS AN ACCOUNT, so it is only correct when the server actually said
  * registering would help: inferring it from the code alone showed a signed-in Max owner "Your
  * album is full -- create a free account", above a button that would be refused forever.
  */
-export function wallFor(code: string | undefined, nudge: string | undefined): Wall {
-  if (code !== 'album_full') return 'failed'
+export function wallFor(code: string | undefined, nudge: string | undefined, expected = false): Wall {
+  // `expected` is isExpectedRefusal's answer about the message, passed in rather than recomputed:
+  // the album turned this save down ON PURPOSE (uploads switched off, a password gate, a reveal
+  // date). It is not 'failed', whose words promise a brief connection drop and tell the guest to
+  // retry a step that will be declined again. It is deliberately ONE wall for every such reason --
+  // the specific one is already on each tile, and a wall that named a cause would name the wrong
+  // one for the other two.
+  if (code !== 'album_full') return expected ? 'refused' : 'failed'
   return nudge === 'register' ? 'full' : 'fullOther'
 }
 
-/** A cap refusal outranks a transient failure, and the one that offers an account outranks both. */
+/**
+ * A cap refusal outranks a refusal of another kind, which outranks a transient failure, and the one
+ * that offers an account outranks all three.
+ *
+ * A RANK, not a chain of pairs. With three walls the pairs were readable; the fourth is where a
+ * hand-written chain stops being a total order without anyone noticing -- the old code returned
+ * `next` for every case it had not enumerated, so adding 'refused' to it would have let a later
+ * plain failure quietly demote a refusal, and nothing would have said so.
+ */
+const WALL_RANK: Record<Wall, number> = { full: 3, fullOther: 2, refused: 1, failed: 0 }
+
 export function mergeWall(prev: Wall | null, next: Wall): Wall {
-  if (prev === 'full') return 'full'
-  if (prev === 'fullOther' && next === 'failed') return 'fullOther'
-  return next
+  if (prev === null) return next
+  return WALL_RANK[next] > WALL_RANK[prev] ? next : prev
 }
 
 /**
@@ -100,6 +115,14 @@ export function wallCopy(wall: Wall, heldRows: number): WallCopy {
   const canFinish = heldRows > 0
   // Registering only helps when the server said it would (see wallFor), so only 'full' offers it.
   if (wall === 'failed') return { title: 'uploadWall.failedTitle', body: 'uploadWall.failedBody', offersAccount: false, canFinish }
+  if (wall === 'refused') {
+    // The TITLE is failedTitle on purpose: "{n} photos uploaded, not saved yet" is exactly as true
+    // of a refusal, and it is already translated in all three languages -- so an Armenian guest
+    // keeps an Armenian heading instead of falling back to English for the whole banner. Only the
+    // BODY had to change, because failedBody explains the cause as a connection drop and tells them
+    // to tap a button the album will decline again.
+    return { title: 'uploadWall.failedTitle', body: canFinish ? 'uploadWall.refusedBody' : 'uploadWall.refusedBodyNone', offersAccount: false, canFinish }
+  }
   if (wall === 'full') {
     return { title: 'uploadWall.title', body: canFinish ? 'uploadWall.body' : 'uploadWall.bodyNone', offersAccount: true, canFinish }
   }

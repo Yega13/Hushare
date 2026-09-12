@@ -59,7 +59,7 @@ describe('UploadZone retries through lib/upload/retry-plan, and never re-uploads
   it('the pending-save queue is keyed, and the banner reducer is the module\'s', () => {
     const text = src()
     expect(text).toMatch(/pendingSaveRef\.current = queuePendingRows\(pendingSaveRef\.current, pairs\)/)
-    expect(text).toMatch(/setPendingSaveReason\(prev => mergeWall\(prev, wallFor\(code, nudge\)\)\)/)
+    expect(text).toMatch(/setPendingSaveReason\(prev => mergeWall\(prev, wallFor\(code, nudge, expectedSave\)\)\)/)
   })
 })
 
@@ -75,6 +75,13 @@ describe('UploadZone writes its rows through lib/upload/row-saver and keeps no c
     const text = src()
     expect(text).toMatch(/onSaved: \(ids\) => \{ for \(const id of ids\) patchEntry\(id, \{ status: 'done', progress: 100 \}\) \}/)
     expect(text).toMatch(/onFailed: \(ids, msg, code, rows, nudge\) => \{/)
+    // ORDER, not just presence. expectedSave decided only what /admin was told while it sat below
+    // the loop that writes the tiles; the guest was still shown every refusal as a failure. It has
+    // to be computed before that loop, and the loop has to use it.
+    const decl = text.indexOf('const expectedSave = full || isExpectedRefusal(msg)')
+    const tiles = text.indexOf("patchEntry(id, { status: 'error', error: expectedSave")
+    expect(decl, 'expectedSave must still be computed from the message').toBeGreaterThan(-1)
+    expect(tiles, 'the tile text must be chosen by expectedSave, not by full alone').toBeGreaterThan(decl)
     expect(text).toMatch(/onWarning: \(msg\) => showAppToast\(msg, 'success'\)/)
   })
 })

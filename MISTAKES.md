@@ -1998,3 +1998,39 @@ lives in is a test waiting to be written -- and in this repo, every other guard 
 `tests/ci-workflows.test.ts` now holds four: the secrets check precedes the dump, the recovery-file
 check runs last, the dump is never published as an artifact, and deploy.yml's deliberate asymmetry
 (database.ts drift is fatal, schema.sql drift is not) stays deliberate in both directions.
+
+### 114. I FIXED THE CLASSIFICATION FOR THE ADMIN PANEL AND LEFT THE GUEST BEING TOLD THE OPPOSITE
+
+"An owner switching uploads off is a decision, not a fault" (03e8759) moved that refusal from
+`error` to `warn` so it would stop filling the Errors tab. It did. On the same screen, in the same
+callback, the guest was still reading:
+
+    "Uploaded, but saving to the album failed: Uploads disabled for this album."
+
+and above it a banner explaining that this is "usually a brief connection drop. Tap Finish saving
+and they'll appear." Nothing had dropped, and Finish saving re-posts into the same closed door for
+as long as the switch is off. Rule 20, on the primary path, in the same incident I had just
+finished measuring.
+
+The variable that knew better already existed. `expectedSave = full || isExpectedRefusal(msg)` sat
+TWENTY LINES BELOW the loop that writes the tiles, because it had been added for the admin report
+and nothing else. The tile and the banner asked a narrower question -- `code === 'album_full'` --
+and got the wrong answer for every other refusal.
+
+Two things worth keeping from this:
+
+ONE. A classification usually has more than one audience. This one had two -- /admin and the person
+holding the phone -- and I fixed the one I had been staring at, in a commit whose entire subject was
+that the classification was wrong. "Is this a fault?" was answered correctly for the dashboard and
+incorrectly for the customer, eleven lines apart.
+
+TWO. I wrote a reason I had not checked. The commit says no `code` field was added because "nothing
+would consume this one". Something did: `full` at the tile and `full` at the wall are exactly that
+consumer. The conclusion survived -- no code was needed, because the message classifier was already
+computed in the same function -- but I had stated as fact something I had not looked for, and the
+review found the consumer in one grep.
+
+**Habit to build:** when changing how something is CLASSIFIED, list every audience of that
+classification before writing the fix -- the panel, the tile, the banner, the toast, the alert
+threshold -- and check each one. And before writing "nothing consumes this", grep for it. It takes
+one command, and it is the difference between a reason and a guess in a commit message people trust.

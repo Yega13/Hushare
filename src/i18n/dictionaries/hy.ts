@@ -368,6 +368,13 @@ export const hy: Partial<Record<DictKey, string>> = {
   "uploadWall.saved": "Պահպանվեց {n} լուսանկար։",
   "uploadWall.failedTitle": "{n} լուսանկար վերբեռնվել է, բայց դեռ չի պահպանվել",
   "uploadWall.failedBody": "Ֆայլերը հասել են մեզ — չի անցել միայն վերջին քայլը, սովորաբար կապի կարճ ընդհատման պատճառով։ Սեղմեք «Ավարտել պահպանումը», և դրանք կհայտնվեն։ Կրկին վերբեռնելու կարիք չկա։",
+  // uploadWall.refusedBody and uploadWall.refusedBodyNone are deliberately absent, for the same
+  // reason as bodyNone above, and after the same mistake. The sentence has to say "the album
+  // declined this on purpose, and the reason is on each photo" WITHOUT naming a cause, because one
+  // wall covers uploads-switched-off, the password gate and the reveal date. Every Armenian I could
+  // assemble from sentences already in this file named one of them. The title is fine -- 'refused'
+  // reuses uploadWall.failedTitle, which is translated -- so only the body falls back to English.
+  // A translator is needed.
   'bib.tryFaceFinder': 'Գտնել ինձ դեմքով',
   'ad.zoom': 'Խոշորացում',
   'ad.videoPlayback': 'Տեսանյութի նվագարկում',

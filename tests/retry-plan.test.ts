@@ -71,6 +71,25 @@ describe('wallFor and mergeWall -- which banner a refused save puts up', () => {
     expect(wallFor(undefined, 'register')).toBe('failed')
     expect(wallFor('rate_limited', undefined)).toBe('failed')
   })
+  it('a refusal the album MEANT to make is not a plain failure', () => {
+    // 'failed' promises "usually a brief connection drop... tap Finish saving and they'll appear".
+    // For an owner who switched uploads off, both halves are false, and the button they are being
+    // sent to is refused again for as long as the switch is off.
+    expect(wallFor(undefined, undefined, true)).toBe('refused')
+    expect(wallFor('rate_limited', undefined, true)).toBe('refused')
+    // A full album still wins, because only that wall can honestly offer an account.
+    expect(wallFor('album_full', 'register', true)).toBe('full')
+  })
+  it('a refusal outranks a transient failure, and is never demoted by one', () => {
+    // Two files can fail in one batch for different reasons. The refusal is the one that explains
+    // why nothing in the batch will work, so it must survive a later network blip.
+    expect(mergeWall('refused', 'failed')).toBe('refused')
+    expect(mergeWall('failed', 'refused')).toBe('refused')
+    expect(mergeWall('refused', 'full')).toBe('full')
+    expect(mergeWall('full', 'refused')).toBe('full')
+    expect(mergeWall('fullOther', 'refused')).toBe('fullOther')
+    expect(mergeWall(null, 'refused')).toBe('refused')
+  })
   it('full outranks everything, fullOther outranks failed, and neither is demoted', () => {
     expect(mergeWall('full', 'failed')).toBe('full')
     expect(mergeWall('full', 'fullOther')).toBe('full')
@@ -112,6 +131,21 @@ describe('queuePendingRows -- each file waits once', () => {
   })
 })
 
+describe('the refusal banner keeps the honest heading and drops the connection-drop excuse', () => {
+  it('reuses the translated title and says nothing about a dropped connection', () => {
+    // failedTitle is "{n} photos uploaded, not saved yet" -- true of a refusal too, and already
+    // translated, so the heading does not fall back to English.
+    expect(wallCopy('refused', 3)).toEqual({ title: 'uploadWall.failedTitle', body: 'uploadWall.refusedBody', offersAccount: false, canFinish: true })
+    expect(wallCopy('refused', 0)).toEqual({ title: 'uploadWall.failedTitle', body: 'uploadWall.refusedBodyNone', offersAccount: false, canFinish: false })
+  })
+  it('still offers Finish saving while rows are held, because the owner may reopen the album', () => {
+    // The measured incident: uploads were refused at 15:06 and the same album accepted 25 photos at
+    // 15:08. Dropping the banner would stand the held rows up with no way to finish them (MISTAKES
+    // 107); the rows are held precisely because that second minute happens.
+    expect(wallCopy('refused', 4).canFinish).toBe(true)
+  })
+})
+
 describe('wallCopy -- what the banner says when nothing is held', () => {
   // Presign refuses a full album BEFORE any bytes move. The save-path copy promises that "{n} photos
   // are uploaded but not saved yet" and offers "Finish saving"; with nothing held, both are false.
@@ -130,6 +164,7 @@ describe('wallCopy -- what the banner says when nothing is held', () => {
     // refused forever; wallFor decides that, and this must not widen it.
     expect(wallCopy('fullOther', 2).offersAccount).toBe(false)
     expect(wallCopy('failed', 2).offersAccount).toBe(false)
+    expect(wallCopy('refused', 2).offersAccount).toBe(false)
     expect(wallCopy('full', 2).offersAccount).toBe(true)
   })
 

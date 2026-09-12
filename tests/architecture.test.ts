@@ -200,7 +200,11 @@ const SIZE_BUDGET: Record<string, number> = {
   // agreed. It is true now: presign, stream and image-relay import the predicates, presign's
   // paired-thumbnail check included, and tests/presign-fields.test.ts fails if a second copy
   // reappears. It found the fourth copy on its first run.
-  'src/components/UploadZone.tsx': 2061,
+  // 2061 -> 2066: the save callback now decides the guest's words from isExpectedRefusal, not from
+  // album_full alone, and says why in a comment naming the incident. Every decision it added is in
+  // lib (isExpectedRefusal, wallFor, mergeWall, wallCopy, all tested and mutated); what landed here
+  // is the call, one hoisted line, and the reason it is hoisted.
+  'src/components/UploadZone.tsx': 2066,
   // +3 on 2026-08-30: the branding toggle gained a real plan check (it was dimmed but still
   // clickable), and Face Finder and bib search stopped riding on the collections flag. Three
   // lines of reasoning for three gates that were wrong. Deliberate.
