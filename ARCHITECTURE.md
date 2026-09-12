@@ -213,12 +213,22 @@ Stated plainly, because a map that hides the swamps is not a map.
   it. `subscriptions.tier` IS held by the database (`subscriptions_tier_check`, read from
   `pg_constraint` on 2026-09-07 after this map had claimed the opposite from an empty grep --
   MISTAKES 58); `subscriptions.status` is still free text, narrowed by code at its boundary.
-- **Lint debt is frozen, not paid.** `npx eslint src` reports 86 findings, 79 of them React-hooks
-  rules (`set-state-in-effect`, `refs`, `immutability`) inside the largest components. Since
-  2026-09-07 `scripts/check-hooks.mjs` holds every rule to the count in `scripts/lint-budget.json`
-  -- a rise fails the deploy, a fall must be recorded -- so the number can only go down. Paying it
-  means rewriting render timing in UI that cannot be verified on a phone here (see memory:
-  iPhone testing blocked); it is deliberately not done blind.
+- **Lint debt is being paid, not frozen.** 53 findings across 4 rules on 2026-09-12, measured by
+  `npm run check:hooks` (which walks `src scripts tests`), down from 64 that day: the four
+  `no-img-element`, the three `no-html-link-for-pages` and four `immutability` findings were closed.
+  Eight of those eleven were code changes -- the two language switchers now share one `switchLocale`
+  helper instead of each writing the locale cookie by hand, `AccountRenewals` navigates with
+  `location.assign`, the statement page and the photo wall use `next/image` -- and three are
+  suppressions carrying their reason on the line, where the rule's premise does not hold: a
+  `global-error` boundary has to navigate with a full page load, because the app shell a `<Link>`
+  would re-enter is the thing that just crashed, and a guest's own thumbnail in the slideshow picker
+  is served straight from the CDN like every other tile. What is left is 23 `set-state-in-effect`,
+  20 `refs`, 6 `immutability` and 4 `exhaustive-deps`, nearly all inside PhotoGrid, AlbumPageClient,
+  CardEditorClient and the photo-grid hooks. The shapes are known -- a browser value read after
+  hydration (`lib/use-browser-value`), a draft that follows its source (`lib/use-draft-of`), a reset
+  when the shown item changes, a clamp that should be derived rather than stored -- but each one
+  changes render timing in UI that cannot be checked on a phone here (see memory: iPhone testing
+  blocked), so they go one cluster at a time, each with tests.
 - **The schema gates degrade to a warning without their secret.** Migrations, `db:check` and
   the types drift check run when `SUPABASE_DB_URL` is set in CI -- it is (verified in the
   2026-09-07 deploy log: "matches the live database") -- but a missing or rotated secret turns
@@ -227,12 +237,12 @@ Stated plainly, because a map that hides the swamps is not a map.
   the whole suite every Monday, sharded six ways (`--shard k/6`), and fails if any mutation survives
   or if the working tree is dirty afterwards. It is not on the deploy path: each mutation runs a
   real vitest, so a full pass is over an hour even sharded, and a gate nobody waits for is a gate
-  somebody disables. What that costs is a week's latency on a test that quietly weakens. As of
-  2026-09-11 the suite is 822 mutations across 53 sets; before 2026-09-10 nothing re-ran any of
-  them at all. The older `lib` modules are being given sets in order of what a customer loses when
-  they are wrong — the plan table, the upload policy, the entitlement maths, the album password, the
-  owner gate and both upload-authorization modules have them now; `lib/server/album-access.ts` (772
-  lines), `polar.ts` and the package-reconcile path do not yet.
+  somebody disables. What that costs is a week's latency on a test that quietly weakens. Counted
+  from the set files on 2026-09-12: 885 mutations across 75 sets, covering 69 distinct source files;
+  before 2026-09-10 nothing re-ran any of them at all. The three modules this list named as
+  uncovered have sets now — `lib/server/album-access.ts` has four, one per gate, and `polar.ts` and
+  the package-reconcile path have one each. The sets still cluster in `lib`: most components are
+  held instead by the call-site pins described in section 5, which are cheaper and prove less.
 - **The restore is rehearsed, and rehearsing it found the backup was not one -- twice.** `npm run
   restore:rehearse` boots a real Postgres in-process, builds it from `schema.sql` (the file a
   recovery actually runs, generated from the live database and guarded against drift by the deploy),

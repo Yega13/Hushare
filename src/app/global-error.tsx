@@ -69,6 +69,11 @@ export default function GlobalError({
           >
             Try again
           </button>
+          {/* A FULL PAGE LOAD, deliberately not <Link>. This boundary only renders when the root
+              layout itself has crashed, and a client navigation would re-enter the same app shell
+              that just failed. Loading the document again is the one navigation that rebuilds
+              everything, including whatever module state the crash left behind. */}
+          {/* eslint-disable-next-line @next/next/no-html-link-for-pages */}
           <a
             href="/"
             style={{

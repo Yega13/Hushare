@@ -114,6 +114,10 @@ export default function SlideshowPickerModal({
                   // lazy + async, exactly as PhotoTile does it. Without them, opening this picker
                   // fired one image request PER PHOTO at once — 4,566 requests and 4,566 decodes
                   // from a single tap.
+                  // A plain <img> for the same reason as PhotoTile: this is a guest's own thumbnail,
+                  // already sized at upload and served straight from the CDN, and routing it through
+                  // /_next/image would put a request to our Worker in front of every tile.
+                  // eslint-disable-next-line @next/next/no-img-element
                   <img
                     src={thumbSrc}
                     alt=""

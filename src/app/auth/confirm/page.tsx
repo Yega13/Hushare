@@ -1,3 +1,4 @@
+import Link from 'next/link'
 import { getServerLocale } from '@/i18n/server'
 import { getDictionary } from '@/i18n/get-dictionary'
 
@@ -75,7 +76,7 @@ export default async function ConfirmPage({
             </button>
           </form>
         ) : (
-          <a
+          <Link
             href="/login"
             style={{
               display: 'inline-block', padding: '13px 22px', fontSize: 16, fontWeight: 700,
@@ -83,7 +84,7 @@ export default async function ConfirmPage({
             }}
           >
             {t['authConfirm.backToLogin']}
-          </a>
+          </Link>
         )}
       </div>
     </main>

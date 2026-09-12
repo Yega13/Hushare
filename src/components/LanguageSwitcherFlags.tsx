@@ -1,7 +1,8 @@
 'use client'
 
 import { useT } from '@/i18n/LocaleProvider'
-import { LOCALES, LOCALE_COOKIE, LOCALE_LABELS, type Locale } from '@/i18n/config'
+import { LOCALES, LOCALE_LABELS, type Locale } from '@/i18n/config'
+import { switchLocale } from '@/lib/switch-locale'
 import LocaleFlag from '@/components/LocaleFlag'
 
 // Flag + native-name buttons for the account settings page. Sets the locale cookie and reloads so
@@ -11,8 +12,7 @@ export default function LanguageSwitcherFlags() {
 
   function choose(next: Locale) {
     if (next === locale) return
-    document.cookie = `${LOCALE_COOKIE}=${next}; path=/; max-age=${60 * 60 * 24 * 365}; SameSite=Lax`
-    window.location.reload()
+    switchLocale(next)
   }
 
   return (

@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { RealtimeChannel } from '@supabase/supabase-js'
+import Image from 'next/image'
 import QRCode from 'qrcode'
 import { createClient } from '@/lib/supabase/client'
 import type { Photo } from '@/types'
@@ -161,7 +162,9 @@ export default function PhotoWall({
 
         <div style={{ textAlign: 'center' }}>
           {qr && (
-            <img src={qr} alt="Scan to add your photos" width={220} height={220} style={{ width: 220, height: 220, borderRadius: 16, background: '#FFF', padding: 10 }} />
+            // A data: URL generated on this page: nothing to optimise, and the same idiom as every other
+            // QR code in the app (GuestActionsBar, GuestShareButton, ShareMenu).
+            <Image src={qr} alt="Scan to add your photos" width={220} height={220} unoptimized style={{ width: 220, height: 220, borderRadius: 16, background: '#FFF', padding: 10 }} />
           )}
           <p style={{ fontSize: 16, fontWeight: 600, marginTop: 14, color: '#FDFAF5' }}>Scan to add your photos</p>
           <p style={{ fontSize: 12, opacity: 0.6, marginTop: 4, wordBreak: 'break-all' }}>{albumUrl.replace(/^https?:\/\//, '')}</p>

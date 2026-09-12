@@ -3,7 +3,8 @@
 import { useEffect, useRef, useState } from 'react'
 import { Globe, Check, ChevronDown } from 'lucide-react'
 import { useT } from '@/i18n/LocaleProvider'
-import { LOCALES, LOCALE_LABELS, LOCALE_COOKIE, type Locale } from '@/i18n/config'
+import { LOCALES, LOCALE_LABELS, type Locale } from '@/i18n/config'
+import { switchLocale } from '@/lib/switch-locale'
 import LocaleFlag from '@/components/LocaleFlag'
 
 // Custom (not native <select>) language dropdown for the footer. Sets the locale cookie and reloads
@@ -33,8 +34,7 @@ export default function LanguageSwitcher({ className }: { className?: string }) 
   function choose(next: Locale) {
     setOpen(false)
     if (next === locale) return
-    document.cookie = `${LOCALE_COOKIE}=${next}; path=/; max-age=${60 * 60 * 24 * 365}; SameSite=Lax`
-    window.location.reload()
+    switchLocale(next)
   }
 
   return (

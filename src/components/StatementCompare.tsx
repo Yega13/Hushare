@@ -1,6 +1,7 @@
 'use client'
 
 import { useCallback, useRef, useState } from 'react'
+import Image from 'next/image'
 
 // Draggable before/after reveal (the Aceternity "Compare" pattern) contrasting today's thin header
 // bar with the proposed cover banner. Self-contained — no external deps, works on touch + mouse.
@@ -43,7 +44,7 @@ export default function StatementCompare() {
       {/* Base layer — PROPOSED (cover banner) */}
       <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column' }}>
         <div style={{ flex: '0 0 62%', position: 'relative', display: 'flex', flexDirection: 'column', justifyContent: 'flex-end', padding: 16, background: 'linear-gradient(135deg, #e9c6b3, #d98c93 55%, #a85c6e)' }}>
-          <img src="/logo/logo-light-transparent.png" alt="" aria-hidden="true" style={{ position: 'absolute', top: 12, left: 14, height: 14, width: 'auto', zIndex: 2 }} />
+          <Image src="/logo/logo-light-transparent.png" alt="" aria-hidden="true" width={618} height={146} unoptimized style={{ position: 'absolute', top: 12, left: 14, height: 14, width: 'auto', zIndex: 2 }} />
           <div aria-hidden="true" style={{ position: 'absolute', inset: 0, background: 'linear-gradient(180deg, rgba(20,10,14,0) 42%, rgba(20,10,14,0.62) 100%)' }} />
           <div style={{ position: 'relative', zIndex: 1, color: '#FDFAF5' }}>
             <div style={{ fontFamily: 'var(--font-serif)', fontStyle: 'italic', fontSize: 'clamp(18px, 3.6vw, 30px)', lineHeight: 1 }}>Aram &amp; Ani</div>
@@ -57,7 +58,7 @@ export default function StatementCompare() {
       <div style={{ position: 'absolute', inset: 0, clipPath: `inset(0 ${100 - pos}% 0 0)`, display: 'flex', flexDirection: 'column' }}>
         <div style={{ flex: '0 0 62%', position: 'relative', display: 'flex', flexDirection: 'column', background: '#FDFAF5' }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 14px', borderBottom: '1px solid #E7DDCC' }}>
-            <img src="/logo/logo-dark-transparent.png" alt="" aria-hidden="true" style={{ height: 14, width: 'auto' }} />
+            <Image src="/logo/logo-dark-transparent.png" alt="" aria-hidden="true" width={618} height={146} unoptimized style={{ height: 14, width: 'auto' }} />
             <div style={{ textAlign: 'center' }}>
               <div style={{ fontFamily: 'var(--font-serif)', fontSize: 15, fontWeight: 700, color: '#630826' }}>Aram &amp; Ani</div>
               <div style={{ fontSize: 10, color: '#8B6F4E' }}>212 photos · 12 Sep 2026</div>

@@ -28,13 +28,15 @@ export default function AccountRenewals({ notices, highlightSlug }: Props) {
     setBusySlug(slug)
     setFailed(null)
     const result = await startPackageCheckoutRequest(slug, tier === 'studio' ? 'renewal_max' : 'renewal_pro')
+    // assign() rather than writing to location.href: the same navigation, stated as a call, so the
+    // component does not assign to a global from inside a render-scoped function.
     if (result.ok) {
-      window.location.href = result.url
+      window.location.assign(result.url)
       return
     }
     // Signed out mid-page (an expired session): back through login, returning here.
     if (result.signInRequired) {
-      window.location.href = `/login?next=${encodeURIComponent(`/account?renew=${slug}`)}`
+      window.location.assign(`/login?next=${encodeURIComponent(`/account?renew=${slug}`)}`)
       return
     }
     setFailed(result.error)
