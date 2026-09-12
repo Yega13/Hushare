@@ -94,7 +94,8 @@ describe('UploadZone files a refusal as a refusal, and only a fault as an error'
   })
   it('the batch report carries the code and files a full album as the refusal it is', () => {
     const text = src()
-    expect(text).toMatch(/code: typeof \(e as \{ code\?: unknown \}\)\?\.code === 'string' \? \(e as \{ code: string \}\)\.code : undefined/)
+    expect(text).toMatch(/const refusal = refusalFields\(e\)/)
+    expect(text).toMatch(/code: refusal\.code,/)
     expect(text).toMatch(/const full = sample\.code === 'album_full'/)
     expect(text).toMatch(/const expected = full \|\| isExpectedRefusal\(sample\.msg\)/)
     expect(text).toMatch(/const level = expected \|\| sample\.parked \? 'warn' : 'error'/)
@@ -106,6 +107,29 @@ describe('UploadZone files a refusal as a refusal, and only a fault as an error'
     expect(text).toMatch(/const expectedSave = full \|\| isExpectedRefusal\(msg\)/)
     expect(text).toMatch(/reportClientEvent\(expectedSave \? 'warn' : 'error', full \? 'album-full' : 'save', msg, album\.id/)
   })
+  it('a full album refused at PRESIGN raises the same wall as one refused at save', () => {
+    // Before this, the wall was set only in the save handler, so a presign refusal left a red tile
+    // and a toast -- no "Create a free account" at the moment of highest intent.
+    const text = src()
+    expect(text).toMatch(/import \{[^}]*\brefusalFields\b[^}]*\} from '@\/lib\/upload\/failure'/)
+    expect(text).toMatch(/if \(refusal\.code === 'album_full'\) setPendingSaveReason\(prev => mergeWall\(prev, wallFor\(refusal\.code, refusal\.nudge\)\)\)/)
+    // The NUDGE travels with the code: without it every presign refusal reads as 'fullOther' and the
+    // account offer never appears -- and the component must not narrow it by hand a second time.
+    expect(text, 'the fields are read by the module, once').not.toMatch(/\(e as \{ nudge\?: unknown \}\)/)
+  })
+
+  it('the wall asks lib/upload/retry-plan what to say, and keeps no ternary of its own', () => {
+    const text = src()
+    expect(text).toMatch(/const wall = pendingSaveReason \? wallCopy\(pendingSaveReason, pendingSaveCount\) : null/)
+    expect(text).toMatch(/\{wall\.offersAccount && \(/)
+    expect(text, 'Finish saving must not be offered for rows that do not exist').toMatch(/\{wall\.canFinish && \(/)
+    expect(text).not.toMatch(/pendingSaveReason === 'full' \? t\('uploadWall\.title'\)/)
+  })
+
+  it('the wall\'s own button says what to do, not which endpoint timed out', () => {
+    expect(src()).toMatch(/showAppToast\(e instanceof Error \? friendlyUploadError\(e\) : t\('common\.errorGeneric'\), 'error'\)/)
+  })
+
   it('a cancel never reaches the batch report: the upload path drops it by the error object', () => {
     expect(src()).toMatch(/if \(!\(e instanceof DOMException && e\.name === 'AbortError'\)\) \{\s+batchFailures\.push\(/)
   })

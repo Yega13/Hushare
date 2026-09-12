@@ -8,7 +8,8 @@ import { checkRateLimit, clientIpKey } from '@/lib/rate-limit'
 import { presignBudget } from '@/lib/presign-budget'
 import { uploadCapsForTier, tooLargeMessage } from '@/lib/media'
 import { albumCap as albumCapFor, albumEffectiveTier, albumFullRefusal } from '@/lib/album-entitlements'
-import { getUserTierById } from '@/lib/subscriptions'
+import { getUserTierResolved } from '@/lib/subscriptions'
+import { reportServerError } from '@/lib/report-server-error'
 import { gateAllowsContribution, signedInUserForGate, ALBUM_GATE_COLS } from '@/lib/server/album-access'
 import type { Tier } from '@/types'
 
@@ -113,9 +114,13 @@ export async function authorizeImageUpload(
   // The count runs alongside the tier lookup rather than after it, so this costs no extra latency
   // on the upload path. lib/presign-budget.ts owns the arithmetic and errs open on a failed count.
   const [tierRes, countRes] = await Promise.all([
-    getUserTierById(album.user_id)
-      .then(tier => ({ tier, error: null as unknown }))
-      .catch((error: unknown) => ({ tier: null, error })),
+    // AUTHORITATIVE, not merely a tier. getUserTierById degrades a failed subscriptions query to
+    // 'free' (lib/subscriptions logs the error and refuses to cache the answer), which is right for
+    // display and wrong for a refusal: a Max album holding 600 of its 10,000 would be called full at
+    // the free cap of 500, and told to upgrade the plan it already pays for.
+    getUserTierResolved(album.user_id)
+      .then(r => ({ tier: r.tier as Tier | null, authoritative: r.authoritative, error: null as unknown }))
+      .catch((error: unknown) => ({ tier: null as Tier | null, authoritative: false, error })),
     admin.from('photos').select('id', { count: 'exact', head: true }).eq('album_id', params.albumId),
   ])
   // ONE answer to "how many items may this album hold" — shared with photos/create, which
@@ -127,7 +132,7 @@ export async function authorizeImageUpload(
   // budget, and the request is refused a few lines below when the tier is unknown. Sizing it small
   // is the safe direction; the refusal is what actually protects the album.
   const capInput = {
-    // `album.user_id ? ... : null` matters: getUserTierById(null) returns 'free' rather than
+    // `album.user_id ? ... : null` matters: getUserTierResolved(null) answers 'free' rather than
     // throwing, so passing the tier straight through told albumCap that an ANONYMOUS album was a
     // free-account album — 500 instead of 250, or 1,000 once the free grandfathering applied.
     // Every anonymous album alive today predates that date, so it doubled the hourly presign
@@ -149,12 +154,27 @@ export async function authorizeImageUpload(
   // the rest as "Album upload rate limit reached": the wrong words, filed as an error, and the owner
   // never saw the upgrade the real refusal carries.
   //
-  // Only on a KNOWN tier and a KNOWN count. A failed tier lookup sizes the budget as free (above),
-  // and treating that as the cap would call a Max album full at a free album's allowance; a failed
-  // count refuses nothing either. Both uncertain branches fall through (rule 19), and photos/create
-  // still enforces the cap on the row.
-  if (tierRes.tier !== null && !countRes.error && countRes.count !== null && countRes.count >= albumCap) {
-    return { ok: false, response: NextResponse.json(albumFullRefusal(capInput), { status: 429, headers: NO_STORE }) }
+  // 403, NOT 429 -- the same choice video-upload-authorization made and wrote down. lib/upload-policy
+  // treats a 429 as retryable, so this whole route would run four more times behind a backoff for a
+  // refusal that stands until somebody deletes something: four per-IP limiter slots (one venue is one
+  // IP), four album reads, four tier lookups and four count(*) scans, per photo.
+  //
+  // Only on an AUTHORITATIVE tier and a KNOWN count. Both uncertain branches ALLOW (rule 19): the cap
+  // bounds cost, the presign budget still bounds bytes, and photos/create still enforces the cap when
+  // the tier is known -- whereas refusing on a guess costs a paying customer the album they bought.
+  const full = !countRes.error && countRes.count !== null && countRes.count >= albumCap
+  if (full && tierRes.authoritative) {
+    return { ok: false, response: NextResponse.json(albumFullRefusal(capInput), { status: 403, headers: NO_STORE }) }
+  }
+  if (full) {
+    // The album looks full, but the tier that sized that cap was a guess, so nothing is enforced
+    // here. Same direction as the failed count, and reported for the same reason the video budget
+    // reports its own: a cap that has silently stopped being enforced belongs in the panel.
+    console.error('[image-upload-auth] media cap NOT enforced — the tier lookup degraded for album', params.albumId)
+    reportServerError('image-upload-auth', 'Media cap NOT enforced — the tier lookup degraded', {
+      albumId: params.albumId,
+      context: { items: countRes.count, capFromGuessedTier: albumCap },
+    })
   }
 
   const albumRl = await checkRateLimit(
@@ -173,7 +193,7 @@ export async function authorizeImageUpload(
     }
   }
   if (tierRes.tier === null) {
-    console.error('[image-upload-auth] getUserTierById failed:', tierRes.error instanceof Error ? tierRes.error.message : String(tierRes.error))
+    console.error('[image-upload-auth] getUserTierResolved failed:', tierRes.error instanceof Error ? tierRes.error.message : String(tierRes.error))
     return { ok: false, response: NextResponse.json({ error: 'Service temporarily unavailable' }, { status: 503, headers: NO_STORE }) }
   }
 

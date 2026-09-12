@@ -1,3 +1,5 @@
+import type { DictKey } from '@/i18n/dictionaries/en'
+
 // WHAT A RETRY MEANS, AND WHAT A REFUSED SAVE IS OWED.
 //
 // Three rules that were written in four places each inside UploadZone.
@@ -77,6 +79,31 @@ export function mergeWall(prev: Wall | null, next: Wall): Wall {
   if (prev === 'full') return 'full'
   if (prev === 'fullOther' && next === 'failed') return 'fullOther'
   return next
+}
+
+/**
+ * WHAT THE BANNER SAYS, AND WHICH BUTTONS BELONG ON IT.
+ *
+ * The wall began as the answer to a refused SAVE, where the bytes are already in R2 and the rows are
+ * held -- so every sentence promises that "{n} photos are uploaded but not saved yet" and every wall
+ * offers "Finish saving". Presign refuses a full album now, BEFORE any bytes move, and that wall has
+ * nothing held: the same copy would claim photos were uploaded that never left the phone, and the
+ * button would post an empty list.
+ *
+ * So the words follow the number of rows actually held, and the buttons follow what there is to do.
+ * Pure, and here rather than in the component, because a three-way ternary inside JSX is a decision
+ * no test can reach.
+ */
+export type WallCopy = { title: DictKey; body: DictKey; offersAccount: boolean; canFinish: boolean }
+
+export function wallCopy(wall: Wall, heldRows: number): WallCopy {
+  const canFinish = heldRows > 0
+  // Registering only helps when the server said it would (see wallFor), so only 'full' offers it.
+  if (wall === 'failed') return { title: 'uploadWall.failedTitle', body: 'uploadWall.failedBody', offersAccount: false, canFinish }
+  if (wall === 'full') {
+    return { title: 'uploadWall.title', body: canFinish ? 'uploadWall.body' : 'uploadWall.bodyNone', offersAccount: true, canFinish }
+  }
+  return { title: 'uploadWall.fullTitle', body: canFinish ? 'uploadWall.fullBody' : 'uploadWall.fullBodyNone', offersAccount: false, canFinish }
 }
 
 /**

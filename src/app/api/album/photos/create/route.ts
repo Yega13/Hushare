@@ -12,7 +12,7 @@ import { streamVideoUrls } from '@/lib/cloudflare/stream'
 import { queueAlbumChangedBroadcast, runAfterResponse } from '@/lib/broadcast'
 import { track } from '@/lib/analytics'
 import { timingSafeEqual } from '@/lib/timing-safe'
-import { getUserTierById } from '@/lib/subscriptions'
+import { getUserTierResolved } from '@/lib/subscriptions'
 import type { Tier } from '@/types'
 import { ANON_ALBUM_MEDIA } from '@/lib/media'
 import { albumCap, albumFullRefusal, registeringWouldHelp, chargeableDurationSeconds } from '@/lib/album-entitlements'
@@ -229,7 +229,16 @@ export async function POST(req: Request) {
     let tierKnown = true
     if (!hasOverride && album.user_id) {
       try {
-        ownerTier = await getUserTierById(album.user_id)
+        // AUTHORITATIVE, not just present: a failed subscriptions query answers 'free'
+        // (lib/subscriptions), and enforcing a cap on that guess tells a Max owner their album is
+        // full at a twentieth of what they bought. The uncertain branch allows, exactly as a failed
+        // count does, and says so.
+        const resolved = await getUserTierResolved(album.user_id)
+        ownerTier = resolved.tier
+        tierKnown = resolved.authoritative
+        if (!resolved.authoritative) {
+          console.error('[photos/create] media cap NOT enforced — tier lookup degraded for album', albumId)
+        }
       } catch (err) {
         tierKnown = false
         console.error('[photos/create] media cap NOT enforced — tier lookup threw for album', albumId, ':', err)
@@ -246,7 +255,9 @@ export async function POST(req: Request) {
       // the presign route so a full album says the same thing at either door. `nudge` travels to the
       // client so the upload banner shows the SAME advice; it used to infer from `code` alone that an
       // account was the answer, and offered one to owners who already had one.
-      return NextResponse.json(albumFullRefusal(input), { status: 429, headers: NO_STORE })
+      // 403, NOT 429: our own client retries a 429 (lib/upload-policy), and this refusal stands
+      // until somebody deletes something. Same status as the presign door and the video door.
+      return NextResponse.json(albumFullRefusal(input), { status: 403, headers: NO_STORE })
     }
 
     // Filling up, not full: nag only where signing up genuinely adds room, and never on an album

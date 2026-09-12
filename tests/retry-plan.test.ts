@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { freshEntryFor, mergeWall, queuePendingRows, retryMode, shouldPark, wallFor, type FileStatus } from '@/lib/upload/retry-plan'
+import { freshEntryFor, mergeWall, queuePendingRows, retryMode, shouldPark, wallCopy, wallFor, type FileStatus } from '@/lib/upload/retry-plan'
 
 // WHAT A RETRY MEANS. The headline case is the duplicate: a file whose bytes are already in R2 and
 // whose row is waiting for "Finish saving" must be RE-SAVED, never re-uploaded.
@@ -109,5 +109,32 @@ describe('queuePendingRows -- each file waits once', () => {
   })
   it('nothing incoming leaves the queue as it was', () => {
     expect(queuePendingRows([{ entryId: 'a' }], [])).toEqual([{ entryId: 'a' }])
+  })
+})
+
+describe('wallCopy -- what the banner says when nothing is held', () => {
+  // Presign refuses a full album BEFORE any bytes move. The save-path copy promises that "{n} photos
+  // are uploaded but not saved yet" and offers "Finish saving"; with nothing held, both are false.
+  it('a full album with rows held keeps the promise it can keep', () => {
+    expect(wallCopy('full', 3)).toEqual({ title: 'uploadWall.title', body: 'uploadWall.body', offersAccount: true, canFinish: true })
+    expect(wallCopy('fullOther', 3)).toEqual({ title: 'uploadWall.fullTitle', body: 'uploadWall.fullBody', offersAccount: false, canFinish: true })
+  })
+
+  it('with NOTHING held it says so, and offers nothing to finish', () => {
+    expect(wallCopy('full', 0)).toEqual({ title: 'uploadWall.title', body: 'uploadWall.bodyNone', offersAccount: true, canFinish: false })
+    expect(wallCopy('fullOther', 0)).toEqual({ title: 'uploadWall.fullTitle', body: 'uploadWall.fullBodyNone', offersAccount: false, canFinish: false })
+  })
+
+  it('only the wall the server said registering would help offers an account', () => {
+    // A signed-in Max owner was once shown "create a free account" above a button that would be
+    // refused forever; wallFor decides that, and this must not widen it.
+    expect(wallCopy('fullOther', 2).offersAccount).toBe(false)
+    expect(wallCopy('failed', 2).offersAccount).toBe(false)
+    expect(wallCopy('full', 2).offersAccount).toBe(true)
+  })
+
+  it('a transient save failure keeps its own words, and its button while rows are held', () => {
+    expect(wallCopy('failed', 2)).toEqual({ title: 'uploadWall.failedTitle', body: 'uploadWall.failedBody', offersAccount: false, canFinish: true })
+    expect(wallCopy('failed', 0).canFinish).toBe(false)
   })
 })

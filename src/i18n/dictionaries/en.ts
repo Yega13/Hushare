@@ -381,6 +381,10 @@ export const en = {
   "uploadWall.body": "{n} photos are uploaded but not saved yet. Create a free account and they'll finish saving — you won't lose them, and you won't need to upload again.",
   "uploadWall.fullTitle": "This album is full",
   "uploadWall.fullBody": "{n} photos are uploaded but not saved yet. They'll finish saving once there is room — free up space in the album, then tap Finish saving.",
+  // NOTHING IS HELD in these two: presign refused before any bytes moved, so the wall must not say
+  // photos are uploaded, and there is nothing to finish saving.
+  "uploadWall.bodyNone": "This album has no room left. Create a free account and it gets more space — then add your photos again.",
+  "uploadWall.fullBodyNone": "This album has no room left. Free up space in it — delete a few photos — then add yours again.",
   "uploadWall.cta": "Create a free account",
   "uploadWall.retry": "Finish saving",
   "uploadWall.saving": "Saving…",

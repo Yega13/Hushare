@@ -172,7 +172,13 @@ const SIZE_BUDGET: Record<string, number> = {
   // bytes the batch ATTEMPTED, summed up front. On a batch where nine of ten files fail -- the
   // batches this metric exists to explain -- that reads about ten times too fast. Bytes are counted
   // as each file lands now, which needs one statement where the sum used to be a one-line reduce.
-  'src/components/UploadZone.tsx': 2039,
+  // -2 (2026-09-12): the upload wall gained a case (a full album refused at PRESIGN, where nothing
+  // is uploaded and there is nothing to finish saving) and the file still shrank -- the three-way
+  // ternaries that chose its words became wallCopy() in lib/upload/retry-plan, and the two
+  // hand-written narrowings that read a refusal's code became one refusalFields() in
+  // lib/upload/failure. A behaviour added, a decision moved out, and the number recorded where it
+  // lands rather than left as slack.
+  'src/components/UploadZone.tsx': 2037,
   // +3 on 2026-08-30: the branding toggle gained a real plan check (it was dimmed but still
   // clickable), and Face Finder and bib search stopped riding on the collections flag. Three
   // lines of reasoning for three gates that were wrong. Deliberate.

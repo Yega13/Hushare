@@ -1719,3 +1719,48 @@ for a mutation set either.
 **Habit to build:** a test that writes to a path inside the repository shares that path with every
 other test in the suite. Write to a fixture nothing else reads, and when something must be proven
 about a real file, prove it against a copy.
+
+### 104. I PICKED A STATUS OUR OWN CLIENT RETRIES, AND THIS CODEBASE HAD ALREADY DECIDED IT TWICE
+
+The new full-album refusal at presign returned 429, because photos/create returned 429 and I matched
+it without asking whether that number was right. `lib/upload-policy` treats a 429 as retryable, so
+every photo added to a full album ran the whole route four times behind a backoff: four per-IP
+limiter slots on a venue that shares one IP, four album reads, four tier lookups, four `count(*)`
+scans — four times the fuel that produced the wrong "Album upload rate limit reached" I was fixing.
+
+The answer was already in the repository, written twice. `video-upload-authorization` refuses the
+same class with **403** and the comment says exactly why: *"429, NOT 403. lib/upload-policy treats
+429 as retryable and runs the whole route four more times behind a backoff — for a refusal that is
+permanent until somebody deletes something."* The stream route repeats it. I grepped for the
+refusal's WORDS (rule 13) and never grepped for its STATUS, so I copied the one door that had it
+wrong and left three doors disagreeing.
+
+Two reviewers found it independently, which is the part worth remembering: it was not subtle.
+
+**Habit to build:** a status code is part of the contract, not decoration. Before choosing one for a
+refusal, grep for the same refusal elsewhere and match the door that wrote down its reasoning — and
+ask what OUR OWN client does with that number, because for anything the uploader calls, we are the
+other side of the contract too.
+
+### 105. I WROTE A COMMENT CLAIMING A GUARD WAS AUTHORITATIVE, IN THE SAME CIRCLE AS MISTAKES 102
+
+The cap check read `if (tierRes.tier !== null && ...)` and my comment said it therefore only ran on a
+KNOWN tier — that a failed tier lookup could not call a Max album full at the free allowance. It
+could. `getUserTierById` returns `'free'` when the subscriptions query ERRORS (it logs, refuses to
+cache, and answers the default); it throws only when the client itself throws. So during one
+database blip a Max album holding 600 of its 10,000 photos would be refused as full at 500, with an
+"Upgrade your plan for more space" nudge shown to somebody already on the top plan.
+
+`lib/subscriptions` even exports `getUserTierResolved`, whose docblock names this exact class — *"any
+gate whose refusal is silent must use this and treat `authoritative: false` as a failure to answer
+rather than as a no"* — and nothing in the codebase used it. The existing test for the case drove a
+`throw` that the function never performs, so the hole was covered by a test that could not see it.
+
+I checked that the lookup COULD throw and stopped there. I never read what it does when the query
+merely fails. And I wrote the false comment in the same circle in which I recorded 102, about a
+comment giving a reason that was not true.
+
+**Habit to build:** when a comment claims a branch cannot happen, read the function it rests on to
+the end of its failure path. "Degrades to a default" and "throws" are different failures and only
+one of them is visible at the call site — and if a module exports a resolved/authoritative variant,
+that is the author telling you the default one lies about certainty.

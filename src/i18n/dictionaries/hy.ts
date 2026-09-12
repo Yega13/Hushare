@@ -356,6 +356,10 @@ export const hy: Partial<Record<DictKey, string>> = {
   "uploadWall.body": "{n} լուսանկար վերբեռնված է, բայց դեռ պահպանված չէ։ Ստեղծեք անվճար հաշիվ — դրանք ինքնաշխատ կպահպանվեն, նորից վերբեռնել պետք չէ։",
   "uploadWall.fullTitle": "Ալբոմը լցված է",
   "uploadWall.fullBody": "{n} լուսանկար վերբեռնված է, բայց դեռ պահպանված չէ։",
+  // Both sentences are copied verbatim from strings already in this file (uploadWall.fullTitle and
+  // uploadWall.cta). uploadWall.fullBodyNone is deliberately absent: it needs words this dictionary
+  // does not contain, and an absent key falls back to English rather than to a guess.
+  "uploadWall.bodyNone": "Ալբոմը լցված է։ Ստեղծեք անվճար հաշիվ։",
   "uploadWall.cta": "Ստեղծել անվճար հաշիվ",
   "uploadWall.retry": "Պահպանել",
   "uploadWall.saving": "Պահպանվում է…",

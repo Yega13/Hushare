@@ -7,9 +7,9 @@ import { readJson, HttpError } from '@/lib/upload/http'
 import {
   VideoUploadError, errText, friendlyUploadError, isDeterministicTusError, isRecoverableNetworkFailure, tusHttpStatus,
   type VideoResume,
-  refusalFrom,
+  refusalFrom, refusalFields,
 } from '@/lib/upload/failure'
-import { freshEntryFor, mergeWall, queuePendingRows, retryMode, shouldPark, wallFor } from '@/lib/upload/retry-plan'
+import { freshEntryFor, mergeWall, queuePendingRows, retryMode, shouldPark, wallCopy, wallFor } from '@/lib/upload/retry-plan'
 import { createRowSaver } from '@/lib/upload/row-saver'
 import { createVideoLane, videoOutcomeOf } from '@/lib/upload/video-lane'
 import { batchThroughputKbps, lostCount } from '@/lib/upload/throughput'
@@ -1153,6 +1153,8 @@ export default function UploadZone({ album, onPhotosUploaded, isOwner }: Props) 
   // Mirrored into state purely so the banner re-renders when it changes. Reading the ref during
   // render would show whatever count happened to be there at the last unrelated render.
   const [pendingSaveCount, setPendingSaveCount] = useState(0)
+  // Which sentences and which buttons: lib/upload/retry-plan, not a ternary in the JSX below.
+  const wall = pendingSaveReason ? wallCopy(pendingSaveReason, pendingSaveCount) : null
   const [retrying, setRetrying] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
   // Separate input for the in-app camera: `capture` opens the phone's native camera directly.
@@ -1366,6 +1368,10 @@ export default function UploadZone({ album, onPhotosUploaded, isOwner }: Props) 
           // refusal say nothing, and counting either used to collapse the lane to serial for the
           // whole session on a connection that was fine.
           if (kind === 'video') videoLane.note(videoOutcomeOf(e))
+          // A full album refused HERE is the same refusal as one refused at save, and this is the
+          // moment of highest intent. Nothing is queued yet, so wallCopy drops "Finish saving".
+          const refusal = refusalFields(e)
+          if (refusal.code === 'album_full') setPendingSaveReason(prev => mergeWall(prev, wallFor(refusal.code, refusal.nudge)))
           // Surface the real error (it was previously hidden in a title tooltip, invisible on
           // mobile). AbortError is a deliberate cancel, not worth toasting.
           if (!(e instanceof DOMException && e.name === 'AbortError')) {
@@ -1380,8 +1386,7 @@ export default function UploadZone({ album, onPhotosUploaded, isOwner }: Props) 
               kind: kind === 'video' ? 'upload:video' : 'upload:image',
               sizeMB: Math.round(entry.file.size / 1024 / 1024),
               status: e instanceof HttpError ? e.status : undefined,
-              // A refusal's code (album_full from presign), so the report files it as that refusal.
-              code: typeof (e as { code?: unknown })?.code === 'string' ? (e as { code: string }).code : undefined,
+              code: refusal.code,
               parked,
               // How long the control plane fought before giving up (see fetchWithRetry). Reported
               // as context rather than message text so it cannot fragment the grouping.
@@ -1585,7 +1590,8 @@ export default function UploadZone({ album, onPhotosUploaded, isOwner }: Props) 
       onPhotosUploaded?.()
       if (saved.size > 0) showAppToast(t('uploadWall.saved', { n: saved.size }), 'success')
     } catch (e) {
-      showAppToast(e instanceof Error ? e.message : t('common.errorGeneric'), 'error')
+      // The sentence, not the endpoint name: a timed-out save reads "Timed out (/api/album/...)".
+      showAppToast(e instanceof Error ? friendlyUploadError(e) : t('common.errorGeneric'), 'error')
     } finally {
       setRetrying(false)
     }
@@ -1789,22 +1795,12 @@ export default function UploadZone({ album, onPhotosUploaded, isOwner }: Props) 
           red failure that lost their place. One guest retried 39 times and never registered.
           Sign-up opens in a NEW TAB so this page, its queue and the already-uploaded bytes all
           survive; coming back and pressing Finish saving costs one request. */}
-      {pendingSaveReason && (
+      {wall && (
         <div style={{ marginBottom: 12, padding: 14, borderRadius: 14, background: '#F6E9EE', border: '1px solid #E3C9D3' }}>
-          <p style={{ margin: '0 0 4px', fontSize: 15, fontWeight: 700, color: '#630826' }}>
-            {pendingSaveReason === 'full' ? t('uploadWall.title')
-              : pendingSaveReason === 'fullOther' ? t('uploadWall.fullTitle')
-              : t('uploadWall.failedTitle', { n: pendingSaveCount })}
-          </p>
-          <p style={{ margin: '0 0 12px', fontSize: 13.5, lineHeight: 1.5, color: '#5C4A3C' }}>
-            {pendingSaveReason === 'full' ? t('uploadWall.body', { n: pendingSaveCount })
-              : pendingSaveReason === 'fullOther' ? t('uploadWall.fullBody', { n: pendingSaveCount })
-              : t('uploadWall.failedBody', { n: pendingSaveCount })}
-          </p>
+          <p style={{ margin: '0 0 4px', fontSize: 15, fontWeight: 700, color: '#630826' }}>{t(wall.title, { n: pendingSaveCount })}</p>
+          <p style={{ margin: '0 0 12px', fontSize: 13.5, lineHeight: 1.5, color: '#5C4A3C' }}>{t(wall.body, { n: pendingSaveCount })}</p>
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-            {/* Registering only helps when the album is FULL. Offering an account to someone whose
-                save merely hit a network blip would be noise in front of the button they need. */}
-            {pendingSaveReason === 'full' && (
+            {wall.offersAccount && (
             <a
               href="/login" target="_blank" rel="noopener noreferrer" className="hush-press"
               style={{ padding: '10px 18px', fontSize: 14, fontWeight: 700, color: '#FDFAF5', background: '#630826', borderRadius: 10, textDecoration: 'none' }}
@@ -1812,12 +1808,14 @@ export default function UploadZone({ album, onPhotosUploaded, isOwner }: Props) 
               {t('uploadWall.cta')}
             </a>
             )}
+            {wall.canFinish && (
             <button
               type="button" onClick={() => void retryBlockedRows()} disabled={retrying} className="hush-press"
               style={{ padding: '10px 18px', fontSize: 14, fontWeight: 700, color: '#630826', background: '#FFFFFF', border: '1.5px solid #E3C9D3', borderRadius: 10, cursor: retrying ? 'wait' : 'pointer' }}
             >
               {retrying ? t('uploadWall.saving') : t('uploadWall.retry')}
             </button>
+            )}
           </div>
         </div>
       )}

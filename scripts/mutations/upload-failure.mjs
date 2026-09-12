@@ -51,5 +51,9 @@ export default {
     from: "typeof body.error === 'string' && body.error ? body.error", to: "false ? body.error" },
   { name: 'the status is dropped from the fallback, so a 502 and a 413 read the same',
     from: "`${fallback} (${res.status})`", to: "fallback" },
+  { name: 'a refusal code that is not a string is passed on, so anything truthy raises the full-album wall',
+    from: "    code: typeof r?.code === 'string' ? r.code : undefined,", to: "    code: r?.code as string | undefined," },
+  { name: 'the nudge is dropped by the reader, so the account offer never appears',
+    from: "    nudge: typeof r?.nudge === 'string' ? r.nudge : undefined,", to: "    nudge: undefined," },
   ],
 }

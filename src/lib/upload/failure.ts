@@ -149,6 +149,22 @@ export function friendlyUploadError(e: unknown): string {
  * that refusal would be filed as an upload fault. One reader for both, so they cannot disagree
  * about what a refusal carries.
  */
+/**
+ * The `code` and `nudge` a refusal carries, read off an error that is `unknown` by then.
+ *
+ * refusalFrom attaches both, but a failure reaching the uploader's catch has lost its type, and the
+ * same two narrowings were written twice there -- once to raise the banner, once to file the admin
+ * report. Two copies of one narrowing is how one of them ends up narrower than the other: the report
+ * checked `typeof === 'string'` while the banner would have taken anything truthy.
+ */
+export function refusalFields(e: unknown): { code?: string; nudge?: string } {
+  const r = e as { code?: unknown; nudge?: unknown } | null
+  return {
+    code: typeof r?.code === 'string' ? r.code : undefined,
+    nudge: typeof r?.nudge === 'string' ? r.nudge : undefined,
+  }
+}
+
 export async function refusalFrom(res: Response, fallback: string): Promise<Error & { code?: string; nudge?: string }> {
   const body = await res.json().catch(() => ({})) as { error?: unknown; code?: unknown; nudge?: unknown }
   const message = typeof body.error === 'string' && body.error ? body.error : `${fallback} (${res.status})`

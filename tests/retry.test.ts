@@ -149,6 +149,17 @@ describe('fetchWithRetry -- the control plane', () => {
     expect(deps.reachability.awaitRecovery, 'a server that ANSWERED must not trigger the outage probe').not.toHaveBeenCalled()
   })
 
+  it('A REFUSAL THAT STANDS IS ASKED ONCE: a 403 is returned without a second attempt', async () => {
+    // The full-album refusal is a 403 at both doors precisely because of the test below it: a 429
+    // would make every photo added to a full album cost four presigns, four shared-IP limiter slots
+    // and four count(*) scans, which is the cost that produced the wrong "rate limit" error.
+    const f = scriptedFetch([403])
+    const { t } = transport({ fetch: f.fetch })
+    const res = await outcome(t.fetchWithRetry('/api/upload/presign', {}))
+    expect('ok' in res && res.ok.status).toBe(403)
+    expect(f.fetch, 'a refusal that stands until somebody deletes something must not be retried').toHaveBeenCalledTimes(1)
+  })
+
   it('a 429 is retried like a 5xx', async () => {
     const f = scriptedFetch([429, 200])
     const { t } = transport({ fetch: f.fetch })

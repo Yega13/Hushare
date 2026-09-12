@@ -27,6 +27,9 @@ const cfg: {
   albumRlOk: boolean
   tier: string
   tierThrows: boolean
+  /** What getUserTierResolved answers about its own confidence. False = the subscriptions query failed. */
+  tierAuthoritative: boolean
+  reports: Array<{ message: string }>
   rateLimitCalls: unknown[][]
   /** What the album lookup was actually filtered on, as `eq:col` / `is:col`. */
   albumFilters: Record<string, unknown>
@@ -37,7 +40,7 @@ const cfg: {
   gateCalls: Array<{ albumId: string | undefined; signedInUserId: string | null | undefined }>
 } = {
   album: null, albumError: false, photoCount: 0, countError: false,
-  gateOk: true, ipRlOk: true, albumRlOk: true, tier: 'free', tierThrows: false,
+  gateOk: true, ipRlOk: true, albumRlOk: true, tier: 'free', tierThrows: false, tierAuthoritative: true, reports: [],
   rateLimitCalls: [],
   albumFilters: {}, signedInLookups: [], signedInUserId: 'signed-in-account-id', gateCalls: [],
 }
@@ -94,6 +97,12 @@ vi.mock('@/lib/subscriptions', () => ({
     if (cfg.tierThrows) throw new Error('tier lookup down')
     return cfg.tier
   },
+  // The authorizer asks for the tier AND whether it is known. What the real function answers when a
+  // query fails is proven in tests/subscriptions.test.ts; this only scripts the two answers.
+  getUserTierResolved: async () => {
+    if (cfg.tierThrows) throw new Error('tier lookup down')
+    return { tier: cfg.tier, authoritative: cfg.tierAuthoritative }
+  },
 }))
 vi.mock('@/lib/server/album-access', async (orig) => {
   const actual = await orig() as Record<string, unknown>
@@ -114,7 +123,9 @@ vi.mock('@/lib/server/album-access', async (orig) => {
     },
   }
 })
-vi.mock('@/lib/report-server-error', () => ({ reportServerError: () => {} }))
+vi.mock('@/lib/report-server-error', () => ({
+  reportServerError: (_source: string, message: string) => { cfg.reports.push({ message }) },
+}))
 
 import { authorizeImageUpload, deriveImageKey } from '@/lib/server/image-upload-authorization'
 import { uploadCapsForTier } from '@/lib/media'
@@ -146,6 +157,8 @@ beforeEach(() => {
   cfg.albumRlOk = true
   cfg.tier = 'free'
   cfg.tierThrows = false
+  cfg.tierAuthoritative = true
+  cfg.reports = []
   cfg.rateLimitCalls = []
   cfg.albumFilters = {}
   cfg.signedInLookups = []
@@ -556,7 +569,9 @@ describe('a FULL album is refused as full, before it is handed a slot', () => {
     const res = await authorizeImageUpload(req, params())
     expect(res.ok).toBe(false)
     if (res.ok) return
-    expect(res.response.status).toBe(429)
+    // 403, not 429: lib/upload-policy retries a 429, so a full album would cost four presigns, four
+    // shared-IP limiter slots and four count(*) scans per photo. The video door made this call first.
+    expect(res.response.status).toBe(403)
     expect(await res.response.json()).toEqual(albumFullRefusal(capInputOf(OK_ALBUM)))
     // Refused BEFORE the budget: a full album spending its allowance on refusals is how the
     // rate-limit error appeared in the first place.
@@ -583,6 +598,29 @@ describe('a FULL album is refused as full, before it is handed a slot', () => {
   it('a FAILED count refuses nothing as full (rule 19)', async () => {
     cfg.countError = true
     expect((await authorizeImageUpload(req, params())).ok).toBe(true)
+  })
+
+  it('a DEGRADED tier lookup does not enforce the cap: it allows, and says the cap stopped being enforced', async () => {
+    // The real case (tests/subscriptions.test.ts): a failed subscriptions query answers 'free'
+    // without saying so. Enforcing that guess told a Max owner their album was full at a twentieth
+    // of what they bought. Allowing costs a bounded overshoot on an album that may be full; the
+    // presign budget still bounds the bytes and photos/create still enforces a known cap.
+    cfg.album = { ...OWNED }
+    cfg.tier = 'free'
+    cfg.tierAuthoritative = false
+    cfg.photoCount = capOf(OWNED)
+    expect((await authorizeImageUpload(req, params())).ok).toBe(true)
+    expect(cfg.reports.map((r) => r.message)).toContain('Media cap NOT enforced — the tier lookup degraded')
+  })
+
+  it('and when the tier IS known, the same count is refused', async () => {
+    cfg.album = { ...OWNED }
+    cfg.tier = 'free'
+    cfg.photoCount = capOf(OWNED)
+    const res = await authorizeImageUpload(req, params())
+    expect(res.ok).toBe(false)
+    if (!res.ok) expect(res.response.status).toBe(403)
+    expect(cfg.reports, 'a refusal is not a cap that stopped being enforced').toEqual([])
   })
 
   it('an UNKNOWN tier is never called full at the free allowance: the 503, not album_full', async () => {

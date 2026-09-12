@@ -16,6 +16,8 @@ export default {
   { name: 'prefer-higher-tier is lost (a stale newer pro hides a studio)',
     from: "  return active.find((s) => s.tier === 'studio') ?? active[0]\n}\n\ntype UserLike",
     to:   "  return active[0]\n}\n\ntype UserLike" },
+  { name: 'A DEGRADED LOOKUP CLAIMS TO BE AUTHORITATIVE, so a gate refuses on a guess',
+    from: "  return { tier, authoritative: cacheable }", to: "  return { tier, authoritative: true }" },
   { name: 'inactive rows are considered',
     from: "  for (const row of (data ?? []).filter(isSubActive)) {",
     to:   "  for (const row of (data ?? [])) {" },

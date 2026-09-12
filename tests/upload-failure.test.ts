@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   READ_FAILURE_MESSAGE, UNREACHABLE_MESSAGE, VIDEO_UNREACHABLE_MESSAGE, VideoUploadError,
-  friendlyUploadError, isDeterministicTusError, isRecoverableNetworkFailure, tusHttpStatus, refusalFrom,
+  friendlyUploadError, isDeterministicTusError, isRecoverableNetworkFailure, tusHttpStatus, refusalFrom, refusalFields,
 } from '@/lib/upload/failure'
 import { HttpError } from '@/lib/upload/http'
 import { readFileRobust } from '@/lib/file-read'
@@ -146,5 +146,34 @@ describe('refusalFrom -- a refusal keeps what it was', () => {
     expect(e.message).toBe('x')
     expect(e.code).toBeUndefined()
     expect(e.nudge).toBeUndefined()
+  })
+})
+
+describe('refusalFields -- what a refusal carries, read off an unknown error', () => {
+  // By the time a failure reaches the uploader's catch it is `unknown`, and the same two narrowings
+  // were written twice there: one raised the banner, the other filed the report. This is the reader
+  // both use, so they cannot disagree about what counts as a code.
+  it('reads the code and the nudge a refusal was built with', () => {
+    const e = Object.assign(new Error('full'), { code: 'album_full', nudge: 'register' })
+    expect(refusalFields(e)).toEqual({ code: 'album_full', nudge: 'register' })
+  })
+
+  it('a value that is not a string is not a code -- anything truthy would raise the wrong banner', () => {
+    expect(refusalFields(Object.assign(new Error('x'), { code: 7, nudge: { a: 1 } }))).toEqual({ code: undefined, nudge: undefined })
+    expect(refusalFields(Object.assign(new Error('x'), { code: true }))).toEqual({ code: undefined, nudge: undefined })
+  })
+
+  it('an ordinary failure carries neither, and nothing throws on null or a string', () => {
+    expect(refusalFields(new Error('Failed to fetch'))).toEqual({ code: undefined, nudge: undefined })
+    expect(refusalFields(null)).toEqual({ code: undefined, nudge: undefined })
+    expect(refusalFields('nope')).toEqual({ code: undefined, nudge: undefined })
+  })
+
+  it('what refusalFrom attaches is what this reads back', () => {
+    // The pair that matters: the two functions are the write and the read of one contract.
+    const body = { code: 'album_full', nudge: 'upgrade', error: 'You have reached this album upload limit.' }
+    return refusalFrom(new Response(JSON.stringify(body), { status: 403 }), 'Presign failed').then((e) => {
+      expect(refusalFields(e)).toEqual({ code: 'album_full', nudge: 'upgrade' })
+    })
   })
 })

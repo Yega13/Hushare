@@ -256,6 +256,9 @@ describe('albumFullRefusal -- the one thing a full album says, at either door', 
     for (const file of ['src/app/api/album/photos/create/route.ts', 'src/lib/server/image-upload-authorization.ts']) {
       const text = stripJsComments(readFileSync(join(process.cwd(), file), 'utf8'))
       expect(text, file).toMatch(/albumFullRefusal\(/)
+      // 403 at BOTH doors: our own client retries a 429 (lib/upload-policy), and this refusal stands
+      // until somebody deletes something.
+      expect(text, `${file} must refuse a full album with 403`).toMatch(/albumFullRefusal\([^)]*\), \{ status: 403/)
       expect(text, file).not.toMatch(/reached this album's upload limit/)
       expect(text, file).not.toMatch(/'album_full'/)
     }
