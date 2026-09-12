@@ -1805,3 +1805,44 @@ anything. A reviewer found it in the one place rule 14 says to look.
 Ask literally "what takes this down, and can that thing run from here?" — if the answer is a control
 this new path does not render, the state has no exit. And a pure function tested to exhaustion says
 nothing about the machine that calls it.
+
+### 108. I COMMITTED A MUTANT, BECAUSE MY GUARD ASKED THE WRONG QUESTION
+
+Three mutation sets were running in the background. Before committing I checked the log for
+`SURVIVED`, found none, and committed. The log said:
+
+```
+== upload-policy: ... (47 mutations)
+ALL MUTATIONS KILLED
+[exit 0 for upload-policy]
+== image-upload-authorization: ... (37 mutations)
+```
+
+No failure line — because that set had not finished. It had not even reached its first verdict. My
+guard could not tell "nothing failed" from "nothing has happened yet", and those two look identical
+in a log that only prints on failure. `git add` then staged `image-upload-authorization.ts` with
+mutation 12 live on disk, and the commit carried it:
+
+```
+-  const gate = await gateAllowsContribution(album, ...)
++  const gate = await gateAllowsContribution({ ...album, id: 'other' }, ...)
+```
+
+That is the password/reveal gate for contributing, evaluated against an album that does not exist,
+inside a commit whose message is about file types. It was caught before the push, so nothing reached
+a customer.
+
+What hid it, and this is the part worth remembering: the runner restored the file a few seconds
+later. So the working tree was CORRECT and HEAD was WRONG — the inverse of every other mistake in
+this file. `git status` was clean for that path, a `git diff` showed nothing to worry about, and the
+only copy of the mutant left anywhere was inside the commit. The evidence deletes itself.
+
+A second mutant from the same run cost time in the other direction: `tsc` reported
+`Property 'retryAfterSeconds' does not exist on type 'RateLimitResult'`, and I was one step from
+investigating a type error that did not exist. While a set is running, EVERY tool that reads source
+is reading fiction — the compiler included.
+
+**Habit to build:** a guard on a background job must test for COMPLETION, never for the absence of
+failure. For the mutation runner that is two concrete checks, both cheap: `scripts/mutations/.in-flight.*`
+must not exist, and the log must carry one `[exit N for <set>]` line for every set requested. Until
+both hold, there is no staging, no committing, no full suite, and no believing tsc.

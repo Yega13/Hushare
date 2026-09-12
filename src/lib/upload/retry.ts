@@ -224,7 +224,15 @@ export function createUploadTransport(deps: TransportDeps) {
     }
     // Out of time. A server that answered badly still told us something useful -- hand that back
     // rather than a generic network error.
-    if (lastServerRes) return lastServerRes
+    //
+    // ONLY WHILE IT IS STILL THE LATEST THING WE KNOW. On a mixed outage -- a proxy answers 502, then
+    // the Wi-Fi drops and every later attempt dies at the network -- returning that stale 502 throws
+    // away the verdict computed just below: the caller sees !res.ok, builds a plain Error with no
+    // `unreachable`, and isRecoverableNetworkFailure says no. The photo is not parked, and the guest
+    // gets a red tile and a manual Retry during precisely the outage auto-resume exists for.
+    if (lastServerRes && !lastWasNetwork) return lastServerRes
+    // Falling through instead: drain it, the same as every other exit that supersedes one.
+    void lastServerRes?.body?.cancel()
     // Name the endpoint. "Failed to fetch" on its own cannot distinguish a presign from a
     // stream-init from a save -- all three are the same TypeError from this one helper -- so an
     // /admin report of it said the network broke, never where. The message stays PREFIXED by the

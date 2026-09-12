@@ -160,6 +160,19 @@ describe('fetchWithRetry -- the control plane', () => {
     expect(f.fetch, 'a refusal that stands until somebody deletes something must not be retried').toHaveBeenCalledTimes(1)
   })
 
+  it('A SERVER ANSWER THAT THE NETWORK OUTLIVED is not handed back as the verdict', async () => {
+    // The mixed outage: one 502, then the connection dies. Returning the stale 502 loses the
+    // `unreachable` verdict, and the file is never parked for the reconnect it is waiting for.
+    const f = scriptedFetch([502, 'down'])
+    const { t } = transport({ fetch: f.fetch, reachability: scriptedReach(false) })
+    const res = await outcome(t.fetchWithRetry('/api/upload/presign', {}))
+    if (!('err' in res)) throw new Error('expected a failure, got a response')
+    expect((res.err as { unreachable?: unknown }).unreachable, 'the loop knew the connection was gone').toBe(true)
+    expect((res.err as Error).message).toContain('(/api/upload/presign)')
+    // ...and the response it decided not to hand back still had its connection freed.
+    expect(f.responses[0].bodyUsed, 'a superseded 5xx must be drained').toBe(true)
+  })
+
   it('a 429 is retried like a 5xx', async () => {
     const f = scriptedFetch([429, 200])
     const { t } = transport({ fetch: f.fetch })
@@ -260,11 +273,20 @@ describe('fetchWithRetry -- the control plane', () => {
   })
 
   it('out of time with a retained 5xx returns THAT response rather than throwing -- the caller reads the server’s reason from it', async () => {
-    const f = scriptedFetch([503, 'down'])
-    const reach = scriptedReach(false, 40_000)
-    const { t } = transport({ fetch: f.fetch, reachability: reach })
-    const res = await outcome(t.fetchWithRetry('/x', {}))
+    // Out of time WITH THE NETWORK STILL INTACT, which is the only way this branch is reached: a
+    // 503, and then not enough budget left for even the first backoff, so the loop stops before any
+    // further attempt. Nothing has happened since to supersede that answer, so it is handed back and
+    // the caller reads the server's own reason out of the body.
+    //
+    // This test used to script [503, 'down'] -- a 503 and then the connection dying. That is the
+    // mixed outage the loop must NOT hand a stale response back for (see the test above), so the
+    // scenario was quietly asserting the defect. The budget comes from backoffDelay itself rather
+    // than a number copied out of it (rule 17).
+    const f = scriptedFetch([503])
+    const { t } = transport({ fetch: f.fetch })
+    const res = await outcome(t.fetchWithRetry('/x', {}, { deadlineMs: Math.ceil(backoffDelay(1, () => 0.5)) - 1 }))
     if (!('ok' in res)) throw res.err
+    expect(f.fetch, 'it attempted again instead of stopping on the overrun').toHaveBeenCalledTimes(1)
     expect(res.ok.status).toBe(503)
     expect(await res.ok.text()).toBe('body-1')
   })
