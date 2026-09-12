@@ -42,12 +42,14 @@ jobs:
       # The dump and upload scripts need `pg` and the S3 client, both already dependencies.
       - run: npm ci
 
-      - name: Dump the database
-        env:
-          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
-        run: node scripts/backup-db.mjs
-
       # CHECKED BEFORE THE DUMP, not after it.
+      #
+      # It was not. This step was APPENDED after the dump when it was written on 2026-08-26 and
+      # sat there for seventeen days, while the comment below described the opposite. Steps run
+      # in file order, so every run made a full database dump before finding out a secret was
+      # missing -- the exact waste the comment says it prevents. The dangerous outcome was never
+      # reachable (backup-upload.mjs carries its own two guards, and upload runs last), so what
+      # was actually lost was the fast, honest signal.
       #
       # On 2026-08-25 and 2026-08-26 this job "ran" and failed, and nobody noticed for two days.
       # The dump succeeded, so the log looked like work was happening; the upload then exited
@@ -93,6 +95,11 @@ jobs:
           fi
           echo "All five secrets are present, and the backup bucket is not the public one."
 
+      - name: Dump the database
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: node scripts/backup-db.mjs
+
       - name: Upload to R2 and prune old copies
         env:
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
@@ -103,6 +110,30 @@ jobs:
           # so a silent failure shows up somewhere the owner actually looks.
           SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
         run: node scripts/backup-upload.mjs
+
+      # THE RECOVERY FILE ITSELF, checked in the one job where it is allowed to fail.
+      #
+      # deploy.yml runs this same check and deliberately does NOT fail on it, for a good reason: a
+      # stale recovery file must never block shipping a fix during an incident. The consequence went
+      # unnoticed -- the check then had nowhere to be fatal at all, so drift could persist for as
+      # long as it liked behind a red annotation on a green build, which deploy.yml's own comment
+      # calls "precisely the signal everyone learns to scroll past".
+      #
+      # This job is where it costs nothing to be strict: it blocks no deploy and no incident fix,
+      # and it is the job that exists to make recovery possible. A dump is only half a backup --
+      # schema.sql is what you load it into.
+      #
+      # LAST, after the upload, deliberately. A stale recovery file must not stop tonight's backup
+      # from being taken. The backup completes, and THEN the job goes red about the file.
+      - name: Verify schema.sql still matches the live database
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: |
+          node scripts/dump-schema.mjs --check || {
+            echo '::error::schema.sql has drifted from the live database. Run node scripts/dump-schema.mjs and commit it.'
+            echo 'The dump uploaded fine. This is the RECOVERY file, and it is now stale.'
+            exit 1
+          }
 
       # DELIBERATELY no actions/upload-artifact step. Artifacts on a public repository can be
       # downloaded by anyone, and a dump contains every owner token and album password hash — it

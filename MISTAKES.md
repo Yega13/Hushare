@@ -1967,3 +1967,34 @@ why. Not `git status` -- the diff, because it shows whether the new text is alre
 your own words. And note what saved this from becoming real damage: the script defers every write
 until all anchors match, so the failed second run wrote nothing at all. Without that, the re-run would
 have appended a second copy of the constant to a file the first run had already finished editing.
+
+### 113. THE COMMENT SAID THE STEP RAN FIRST. IT RAN FIFTH, FOR SEVENTEEN DAYS
+
+`.github/workflows/backup.yml` carried this, in capitals, directly above the step it describes:
+
+    # CHECKED BEFORE THE DUMP, not after it.
+    # ...Failing on the FIRST step names the actual problem in the first ten seconds of the log
+    # instead of at the last line, and it does not waste a database dump to tell you.
+
+The step was appended AFTER the dump. GitHub runs steps in file order, so every nightly run made a
+full database dump and only then discovered whether the R2 secrets it needed even existed. Written
+on 2026-08-26 by the commit whose subject is "Make a failed backup visible, because two nights of
+them were not" -- the fix for that incident, describing itself correctly and doing the opposite.
+
+The catastrophic outcome was never reachable: backup-upload.mjs carries its own two guards and the
+upload step still runs last, so no dump could reach the public bucket. What was lost was the fast,
+honest signal -- exactly the thing the commit had been written to buy.
+
+Third instance of entry 111's shape, and it adds something that one did not. This comment was not
+merely wrong, it was REASSURING. It read like a verification that had already been performed, in
+capitals, with a rationale attached. Anyone opening the file -- me, three times, while working on
+other things -- read the claim and stopped looking. A confident comment about the file it sits in is
+read as evidence, and it is not evidence.
+
+I found it by accident, seventeen days later, while reading the file for an unrelated reason.
+
+**Habit to build:** a comment that asserts an ORDER, a precedence, or any invariant about the file it
+lives in is a test waiting to be written -- and in this repo, every other guard already is one.
+`tests/ci-workflows.test.ts` now holds four: the secrets check precedes the dump, the recovery-file
+check runs last, the dump is never published as an artifact, and deploy.yml's deliberate asymmetry
+(database.ts drift is fatal, schema.sql drift is not) stays deliberate in both directions.
