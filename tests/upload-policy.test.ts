@@ -10,7 +10,7 @@ import {
   createRelayPolicy, verdictForResponse, verdictForThrow,
 } from '@/lib/upload-policy'
 import { TYPE_NOT_ALLOWED } from '@/lib/media'
-import { UPLOADS_DISABLED } from '@/lib/album-entitlements'
+import { NOT_REVEALED, PASSWORD_REQUIRED, UPLOADS_DISABLED } from '@/lib/album-entitlements'
 
 // THE UPLOADER'S JUDGEMENTS ABOUT SOMEONE ELSE'S PHOTO.
 //
@@ -207,6 +207,31 @@ describe('a refusal the product made on purpose is not an error', () => {
 // because losing connectivity looks exactly like a blocked domain. Only a relay that SUCCEEDED
 // where the direct path failed is evidence. And the belief expires, because phones move between
 // wifi and cellular mid-event.
+describe('the gate refusals are imported too, and the reveal one was typed THREE times', () => {
+  // These were the last two hand-copied entries in EXPECTED_REFUSAL_PREFIXES. Rewording either used
+  // to drop it silently out of the classifier; since the wall learned to tell a decision from a
+  // failure, it would also tell a guest at a locked album that their connection dropped.
+  it('the classifier recognises both, from the constant', () => {
+    expect(isExpectedRefusal(NOT_REVEALED)).toBe(true)
+    expect(isExpectedRefusal(PASSWORD_REQUIRED)).toBe(true)
+    expect(EXPECTED_REFUSAL_PREFIXES).toContain(NOT_REVEALED)
+    expect(EXPECTED_REFUSAL_PREFIXES).toContain(PASSWORD_REQUIRED)
+  })
+
+  it('no producer and not the classifier types either sentence out', () => {
+    const files = [
+      'src/lib/upload-policy.ts',
+      'src/lib/server/album-access.ts',
+      'src/app/api/download/photo/route.ts',
+    ]
+    for (const file of files) {
+      const text = stripJsComments(readFileSync(join(process.cwd(), file), 'utf8'))
+      expect(text, `${file} must not retype the reveal refusal`).not.toMatch(/['"`]This album has not been revealed yet/)
+      expect(text, `${file} must not retype the password refusal`).not.toMatch(/['"`]Enter the album password before adding photos/)
+    }
+  })
+})
+
 describe('an owner switching uploads off is a decision, not a fault', () => {
   // Measured on 2026-09-12: album 2c049589 refused for about two minutes (rows 1229 and 1230, one
   // per door), accepted 25 photos immediately afterwards, and was retired later the same evening.

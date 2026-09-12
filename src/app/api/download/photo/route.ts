@@ -6,6 +6,7 @@ import { timingSafeEqual } from '@/lib/timing-safe'
 import { cookieNameForAlbum, verifyAccessToken } from '@/lib/album-password'
 import { checkRateLimit, clientIpKey } from '@/lib/rate-limit'
 import { createPresignedGet } from '@/lib/cloudflare/r2'
+import { NOT_REVEALED } from '@/lib/album-entitlements'
 import { track } from '@/lib/analytics'
 import { cookies } from 'next/headers'
 
@@ -77,7 +78,7 @@ export async function GET(req: Request) {
     // A COUNTDOWN REVEAL is a promise that nobody sees the album before a set moment. Reading it
     // here costs one column that was already being fetched from the same row.
     if (album.reveal_at && new Date(album.reveal_at) > new Date()) {
-      return NextResponse.json({ error: 'This album has not been revealed yet' }, { status: 403, headers: NO_STORE })
+      return NextResponse.json({ error: NOT_REVEALED }, { status: 403, headers: NO_STORE })
     }
     // HIDDEN covers both photo moderation (waiting for the owner's approval) and a photo the owner
     // deliberately took down. The album grid already refuses to show these to a guest; without this

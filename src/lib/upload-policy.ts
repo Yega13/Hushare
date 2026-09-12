@@ -1,5 +1,5 @@
 import { TYPE_NOT_ALLOWED } from '@/lib/media'
-import { UPLOADS_DISABLED, VIDEO_ALBUM_FULL_PREFIX } from '@/lib/album-entitlements'
+import { NOT_REVEALED, PASSWORD_REQUIRED, UPLOADS_DISABLED, VIDEO_ALBUM_FULL_PREFIX } from '@/lib/album-entitlements'
 import { monotonicNow } from '@/lib/clock'
 // THE DECISIONS THE UPLOADER MAKES ABOUT SOMEONE ELSE'S PHOTO.
 //
@@ -277,8 +277,11 @@ export function isNetworkClass(e: unknown): boolean {
 export const EXPECTED_REFUSAL_PREFIXES = [
   'File too large',
   'Unsupported',
-  'Enter the album password before adding photos',
-  'This album has not been revealed yet',
+  // The last two that were typed out here rather than imported. Both are produced by
+  // lib/server/album-access, which the browser cannot import (server-only Supabase client), so the
+  // constants live in album-entitlements and both sides read them from there.
+  PASSWORD_REQUIRED,
+  NOT_REVEALED,
   // Imported, never retyped. Built from the same constant in album-entitlements, so a reworded
   // refusal cannot quietly stop being recognised here — which would put it in the Errors tab and
   // collapse the guest's video lane at the same time.

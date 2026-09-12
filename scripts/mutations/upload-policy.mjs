@@ -139,5 +139,11 @@ export default {
     from: "  UPLOADS_DISABLED,\n", to: "" },
   { name: 'the uploads-disabled words are retyped instead of imported',
     from: "  UPLOADS_DISABLED,", to: "  'Uploads are disabled for this album'," },
+  { name: 'A LOCKED ALBUM IS A FAULT AGAIN, and its guest is told the connection dropped',
+    from: "  PASSWORD_REQUIRED,\n", to: "" },
+  { name: 'AN UNREVEALED ALBUM IS A FAULT AGAIN, same two consequences',
+    from: "  NOT_REVEALED,\n", to: "" },
+  { name: 'the reveal refusal is retyped here instead of imported, so a reword loses it',
+    from: "  NOT_REVEALED,", to: "  'This album has not been revealed',"  },
   ],
 }

@@ -228,6 +228,20 @@ export function albumFullRefusal(input: AlbumCapInput): { code: 'album_full'; nu
  */
 export const UPLOADS_DISABLED = 'Uploads disabled for this album'
 
+/**
+ * The two GATE refusals, here for a reason worth stating: they are produced by
+ * lib/server/album-access, which imports the server-only Supabase admin client, so the browser
+ * cannot import them from where they are decided. They were typed out by hand instead -- the reveal
+ * sentence three times over (album-access, upload-policy's classifier, and the photo download
+ * route) -- and this file is the nearest home both sides already import.
+ *
+ * What a reword used to cost: the classifier stops recognising it, and a password gate becomes an
+ * error row in /admin. Since the refusal wall learned to tell a decision from a failure, it costs
+ * that AND the guest being told their connection dropped when the album is simply locked.
+ */
+export const NOT_REVEALED = 'This album has not been revealed yet'
+export const PASSWORD_REQUIRED = 'Enter the album password before adding photos'
+
 // ── HOW MUCH VIDEO MAY THIS ALBUM HOLD ───────────────────────────────────────────
 //
 // Until this shipped there was NO limit on video at all — not on how long a clip could be, not on

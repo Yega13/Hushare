@@ -56,8 +56,8 @@ export default {
     from: "      : ownerPresent ? 'owner-cookie-mismatch' : 'password-cookie-absent',",
     to: "      : 'password-cookie-absent'," },
   { name: 'the reveal refusal is worded as a password one',
-    from: "    return { ok: false, error: 'This album has not been revealed yet', reason: 'not-revealed' }",
-    to: "    return { ok: false, error: 'Enter the album password before adding photos', reason: 'not-revealed' }" },
+    from: "    return { ok: false, error: NOT_REVEALED, reason: 'not-revealed' }",
+    to: "    return { ok: false, error: PASSWORD_REQUIRED, reason: 'not-revealed' }" },
 
   // ── the columns the gate needs ───────────────────────────────────────────────────────────────
   { name: 'the gate columns lose the password hash, so every gated album reads as open',

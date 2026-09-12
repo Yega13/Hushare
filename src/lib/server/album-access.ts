@@ -9,7 +9,7 @@ import { createClient } from '@/lib/supabase/server'
 import { verifyAccessToken } from '@/lib/album-password'
 import { timingSafeEqual } from '@/lib/timing-safe'
 import { getUserTierById, getUserTierResolved } from '@/lib/subscriptions'
-import { albumEffectiveTier } from '@/lib/album-entitlements'
+import { albumEffectiveTier, NOT_REVEALED, PASSWORD_REQUIRED } from '@/lib/album-entitlements'
 import { uploadCapsForTier , GRANDFATHER_FREE_BEFORE } from '@/lib/media'
 import type { Album, Photo } from '@/types'
 
@@ -553,11 +553,11 @@ export async function gateAllowsContribution(
   const verdict = await albumGateVerdict(album, cookieStore, false)
   if (verdict.pass) return { ok: true }
   if (verdict.blockedBy === 'reveal') {
-    return { ok: false, error: 'This album has not been revealed yet', reason: 'not-revealed' }
+    return { ok: false, error: NOT_REVEALED, reason: 'not-revealed' }
   }
   return {
     ok: false,
-    error: 'Enter the album password before adding photos',
+    error: PASSWORD_REQUIRED,
     // Which of the three it is decides everything: absent means they never unlocked on this device,
     // stale means the password was changed underneath somebody who had, and an owner cookie that is
     // present but wrong means a stale management link -- three different things to say, and the
