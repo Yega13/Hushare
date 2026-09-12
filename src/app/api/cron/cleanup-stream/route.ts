@@ -7,9 +7,18 @@ export const runtime = 'nodejs'
 
 const NO_STORE = { 'Cache-Control': 'no-store' }
 
-// Daily sweep that deletes abandoned Cloudflare Stream uploads (non-ready, expiry already past),
-// each of which reserves storage quota until removed. Same auth model as the other cron routes:
-// invoked only by worker.ts's scheduled handler with the shared ALBUM_RETIREMENT_SECRET bearer.
+// THREE-HOURLY sweep that deletes abandoned Cloudflare Stream uploads (non-ready, expiry already
+// past), each of which reserves storage quota until removed. worker.ts runs it on EVERY_3_HOURS
+// ('0 */3 * * *' in wrangler.toml); this header said "daily" and was simply wrong, which is the same
+// class of defect as a comment giving a false reason — it just happened to be about a schedule.
+// Same auth model as the other cron routes: invoked only by worker.ts's scheduled handler with the
+// shared ALBUM_RETIREMENT_SECRET bearer.
+//
+// WHAT IT DOES NOT COVER, measured 2026-09-12: a video that uploaded COMPLETELY and was then refused
+// at photos/create stays `ready` and unreferenced, and both of this sweep's guards skip it on
+// purpose (non-ready only, and never a uid with a photos row). 45 such videos hold 14.6 minutes of
+// the purchased ceiling; reclaiming them is a reconciliation, not a sweep — see ARCHITECTURE
+// section 6, and note that a wrong deletion there destroys somebody's video with no backup.
 // See cleanupStaleStreamUploads for why Cloudflare's own expiry reclamation isn't enough.
 export async function POST(req: Request) {
   const secret = process.env.ALBUM_RETIREMENT_SECRET

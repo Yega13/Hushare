@@ -184,6 +184,17 @@ Stated plainly, because a map that hides the swamps is not a map.
   were not ours filed as ours), plus five still open: a video that died on a 400 from the relay's
   resume request, two photos a Mac could not encode, and two chunk loads that failed on a file
   that exists.
+- **A video that uploaded completely and was then refused is never reclaimed.** Measured against the
+  live account on 2026-09-12: 352 videos in Cloudflare Stream, all `ready`, 307 referenced by a
+  photos row — 45 unreferenced, holding 14.6 minutes, oldest 2026-09-01 and newest 2026-09-09 (so
+  nothing from the current day: today's uploads all got rows). `cleanupStaleStreamUploads` does not
+  cover them by design: it reclaims only NON-ready uploads whose expiry has passed, and refuses to
+  touch any uid that has a photos row. The uncovered case is a video whose bytes all landed and whose
+  batch was then refused at photos/create — `ready`, unreferenced, billed against the purchased
+  1,000-minute ceiling whose exhaustion fails video for every album. 14.6 minutes is ~1.5% of that
+  ceiling, so this is a real leak at a slow rate, not an emergency. It is NOT fixed by adding a
+  `deleteStreamVideo` call to the prune job: deciding that a completed video is unwanted is a
+  reconciliation, and getting it wrong destroys somebody's video with no backup (rule 19).
 - **The video relay's success rate is unknown.** 23 videos switched to the relay between
   2026-08-14 and 2026-09-12, and 5 of them landed under that same upload session. Most of the rest
   show no bytes moved at all (`offset 0`), which is a dead network and not a broken relay, and some
