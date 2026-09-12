@@ -2034,3 +2034,43 @@ review found the consumer in one grep.
 classification before writing the fix -- the panel, the tile, the banner, the toast, the alert
 threshold -- and check each one. And before writing "nothing consumes this", grep for it. It takes
 one command, and it is the difference between a reason and a guess in a commit message people trust.
+
+### 115. THE SAME MISS, ONE ROUND LATER -- AND A PATTERN OF CONFIDENT REASONS I HAD NOT CHECKED
+
+Entry 114 was "a classification has more than one audience, and I fixed the one I was staring at".
+The fix for it, eb5ee80, fixed three audiences -- /admin, the tile, the wall -- and missed the
+fourth in the same component. A review found it one round later.
+
+The fourth is the FAILED-FILES PANEL, and it is the one that matters most: the tile puts the reason
+in a `title=` attribute, which is a hover tooltip, and hover does not exist on a touch screen. So on
+a phone that panel is the entire explanation. It opened with:
+
+    "Your connection dropped while these were uploading."
+
+over a list of refusals the album had made deliberately -- the exact sentence eb5ee80 exists to
+delete -- rendered directly ABOVE the wall I had just corrected. Its chip read "12 did not upload"
+above the wall's "12 photos uploaded, not saved yet", about the same twelve files. I had written
+the habit "list every audience before writing the fix" into 114 and then not done it.
+
+THE SECOND THING IS WORSE, BECAUSE IT IS NOW A PATTERN. eb5ee80's message argued the banner could
+not simply be deleted because the held rows would have "no exit", citing entry 107. The reviewer
+checked: the failed panel's "Try these N again" and tapping a red tile BOTH reach retryBlockedRows.
+The rows had two other exits. The conclusion (keep a banner, fix its words) survived, but the reason
+I gave for it was false, and 107 was cited backwards -- 107 was a state with no terminator; this was
+a state with more actuators than I had looked for.
+
+That is the third time in two days:
+- 112: a patch anchor did not match, and I said another commit had moved it. My own change had
+  already applied. One `git diff` would have said so.
+- 114: "nothing would consume this code" -- something did, eleven lines away. One grep.
+- 115: "the rows would have no exit" -- they had two. One grep for the function name.
+
+Each time the CONCLUSION was right and the REASON was invented, which is what made them survive:
+nothing downstream broke, so nothing pushed back. A wrong reason in a commit message is worse than
+no reason, because these messages are what the next person reads instead of re-deriving the code.
+
+**Habit to build:** a causal claim in a commit message is a claim, and it gets the same treatment as
+a number -- look it up before writing it. Specifically: before writing "X is the only way to Y",
+grep for Y's name and count the callers. Before writing "nothing consumes Z", grep for Z. It is one
+command, it takes ten seconds, and it is the difference between a commit message that teaches and
+one that misleads with confidence.

@@ -394,8 +394,8 @@ export const en = {
   // A REFUSAL, not a failure: the album declined the save on purpose — uploads switched off, a
   // password gate, a reveal date still ahead. Deliberately says no cause: one wall covers all of
   // them, and the specific reason is already on each tile. Naming one would misdescribe the others.
-  "uploadWall.refusedBody": "{n} photos are uploaded and safe — the album turned the last step down, and each photo says why. Nothing needs uploading again: if that changes, tap Finish saving.",
-  "uploadWall.refusedBodyNone": "The album turned these photos down, and each one says why.",
+  "uploadWall.refusedBody": "{n} photos are uploaded and safe — the album turned the last step down. Nothing needs uploading again: if that changes, tap Finish saving.",
+  "uploadWall.refusedBodyNone": "The album turned these photos down.",
   'bib.tryFaceFinder': 'Find me by face',
   'ad.zoom': 'Zoom',
   'ad.videoPlayback': 'Video playback',
@@ -463,6 +463,11 @@ export const en = {
   'upload.retry.body': 'Your connection dropped while these were uploading. They are still here - nothing to find again, just tap below when you have signal.',
   'upload.retry.action': 'Try these {n} again',
   'upload.retry.chip': 'did not upload',
+  // The same panel when every reason is a refusal the album made on purpose. "did not upload" is
+  // wrong then -- the bytes are in R2 and only the row was turned down -- and the connection-drop
+  // sentence is wrong twice over. This panel is the only place a phone can read the reason at all.
+  'upload.retry.chipRefused': 'not saved',
+  'upload.retry.bodyRefused': 'The album turned these down on purpose, for the reasons below. Nothing needs uploading again — try once more if the album has changed since.',
   'upload.retry.unknown': 'Upload failed',
   'ot.faceConsent.title': 'Before you switch this on',
   'ot.faceConsent.b1': 'Face search works by computing a mathematical template of each face in your album. That is biometric data, and in Europe and several US states it is prohibited unless the people involved have given explicit consent.',

@@ -1,4 +1,5 @@
 import type { DictKey } from '@/i18n/dictionaries/en'
+import { isExpectedRefusal } from '@/lib/upload-policy'
 
 // WHAT A RETRY MEANS, AND WHAT A REFUSED SAVE IS OWED.
 //
@@ -109,6 +110,31 @@ export function mergeWall(prev: Wall | null, next: Wall): Wall {
  * Pure, and here rather than in the component, because a three-way ternary inside JSX is a decision
  * no test can reach.
  */
+/**
+ * WHAT THE FAILED-FILES PANEL CALLS ITSELF, AND WHAT IT SAYS ABOVE ITS LIST OF REASONS.
+ *
+ * This panel is the only place a guest on a PHONE can read why a file failed: the tile puts
+ * `entry.error` in a title= attribute, and a hover tooltip does not exist on touch. So it is the
+ * one surface that must not lie, and it was the one still saying "Your connection dropped while
+ * these were uploading" over a list of refusals the album made deliberately -- while the wall
+ * directly below it had just been fixed to say the opposite.
+ *
+ * The label matters for the same reason: "12 did not upload" sat above "12 photos uploaded, not
+ * saved yet". Both were about the same twelve files. For a refused SAVE the bytes did upload and
+ * only the row was turned down, so the panel says "not saved" instead.
+ *
+ * EVERY reason must be a refusal for the refusal wording. A batch that mixes a dead connection with
+ * a refusal is still, in part, a dead connection -- and that is the sentence with something
+ * actionable in it.
+ */
+export type FailurePanelCopy = { title: DictKey; body: DictKey }
+
+export function failurePanel(reasons: string[]): FailurePanelCopy {
+  return reasons.length > 0 && reasons.every(isExpectedRefusal)
+    ? { title: 'upload.retry.chipRefused', body: 'upload.retry.bodyRefused' }
+    : { title: 'upload.retry.chip', body: 'upload.retry.body' }
+}
+
 export type WallCopy = { title: DictKey; body: DictKey; offersAccount: boolean; canFinish: boolean }
 
 export function wallCopy(wall: Wall, heldRows: number): WallCopy {
@@ -120,7 +146,9 @@ export function wallCopy(wall: Wall, heldRows: number): WallCopy {
     // of a refusal, and it is already translated in all three languages -- so an Armenian guest
     // keeps an Armenian heading instead of falling back to English for the whole banner. Only the
     // BODY had to change, because failedBody explains the cause as a connection drop and tells them
-    // to tap a button the album will decline again.
+    // to tap a button the album will decline again. The body no longer claims each tile says why:
+    // the tile puts the reason in a title= attribute, which a phone cannot show. The failed panel
+    // above lists them, and it is the surface that carries that job.
     return { title: 'uploadWall.failedTitle', body: canFinish ? 'uploadWall.refusedBody' : 'uploadWall.refusedBodyNone', offersAccount: false, canFinish }
   }
   if (wall === 'full') {

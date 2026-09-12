@@ -368,6 +368,10 @@ export const hy: Partial<Record<DictKey, string>> = {
   "uploadWall.saved": "Պահպանվեց {n} լուսանկար։",
   "uploadWall.failedTitle": "{n} լուսանկար վերբեռնվել է, բայց դեռ չի պահպանվել",
   "uploadWall.failedBody": "Ֆայլերը հասել են մեզ — չի անցել միայն վերջին քայլը, սովորաբար կապի կարճ ընդհատման պատճառով։ Սեղմեք «Ավարտել պահպանումը», և դրանք կհայտնվեն։ Կրկին վերբեռնելու կարիք չկա։",
+  // upload.retry.chipRefused and upload.retry.bodyRefused are absent for the same reason as the two
+  // uploadWall keys below: the sentence must say "the album declined these on purpose" without
+  // naming which of the three reasons it was, and I cannot write that in Armenian and check it.
+  //
   // uploadWall.refusedBody and uploadWall.refusedBodyNone are deliberately absent, for the same
   // reason as bodyNone above, and after the same mistake. The sentence has to say "the album
   // declined this on purpose, and the reason is on each photo" WITHOUT naming a cause, because one

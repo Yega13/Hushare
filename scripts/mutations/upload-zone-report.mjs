@@ -60,5 +60,9 @@ export default {
     to: "error: full ? msg : `Uploaded, but saving to the album failed: ${msg}`" },
   { name: 'the wall is never told the refusal was deliberate, so it blames the connection',
     from: "wallFor(code, nudge, expectedSave)", to: "wallFor(code, nudge)" },
+  { name: 'the failed panel goes back to the hardcoded connection-drop sentence',
+    from: "{t(failedCopy.body)}", to: "{t('upload.retry.body')}" },
+  { name: 'the chip calls a refused save an upload that did not happen',
+    from: "{t(failedCopy.title)}", to: "{t('upload.retry.chip')}" },
   ],
 }

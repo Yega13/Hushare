@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
-import { freshEntryFor, mergeWall, queuePendingRows, retryMode, shouldPark, wallCopy, wallFor, wallOnNewAttempt, type FileStatus } from '@/lib/upload/retry-plan'
+import { failurePanel, freshEntryFor, mergeWall, queuePendingRows, retryMode, shouldPark, wallCopy, wallFor, wallOnNewAttempt, type FileStatus } from '@/lib/upload/retry-plan'
+import { UPLOADS_DISABLED } from '@/lib/album-entitlements'
 
 // WHAT A RETRY MEANS. The headline case is the duplicate: a file whose bytes are already in R2 and
 // whose row is waiting for "Finish saving" must be RE-SAVED, never re-uploaded.
@@ -128,6 +129,34 @@ describe('queuePendingRows -- each file waits once', () => {
   })
   it('nothing incoming leaves the queue as it was', () => {
     expect(queuePendingRows([{ entryId: 'a' }], [])).toEqual([{ entryId: 'a' }])
+  })
+})
+
+describe('the failed-files panel is the only place a phone can read WHY', () => {
+  // The tile puts entry.error in a title= attribute. Hover does not exist on touch, so on a phone
+  // this panel is the whole explanation -- and it opened with "Your connection dropped while these
+  // were uploading" above a list of refusals the album made on purpose, directly above a wall that
+  // had just been corrected to say the opposite.
+  it('keeps the connection wording when something really did fail at the network', () => {
+    expect(failurePanel(['Failed to fetch (/api/upload/presign)']))
+      .toEqual({ title: 'upload.retry.chip', body: 'upload.retry.body' })
+  })
+
+  it('a list of nothing but deliberate refusals says so, and stops calling them uploads that did not happen', () => {
+    // "did not upload" is wrong for a refused SAVE: the bytes are in R2, only the row was declined.
+    // It used to sit directly above the wall's "photos uploaded, not saved yet", about the same files.
+    expect(failurePanel([UPLOADS_DISABLED]))
+      .toEqual({ title: 'upload.retry.chipRefused', body: 'upload.retry.bodyRefused' })
+    expect(failurePanel(['Enter the album password before adding photos', UPLOADS_DISABLED]))
+      .toEqual({ title: 'upload.retry.chipRefused', body: 'upload.retry.bodyRefused' })
+  })
+
+  it('ONE genuine failure in the batch keeps the connection wording, because that is the actionable half', () => {
+    expect(failurePanel([UPLOADS_DISABLED, 'Failed to fetch (/api/upload/presign)']).body).toBe('upload.retry.body')
+  })
+
+  it('an empty list is not a refusal -- every() is true of nothing', () => {
+    expect(failurePanel([])).toEqual({ title: 'upload.retry.chip', body: 'upload.retry.body' })
   })
 })
 

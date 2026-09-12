@@ -75,6 +75,13 @@ describe('UploadZone writes its rows through lib/upload/row-saver and keeps no c
     const text = src()
     expect(text).toMatch(/onSaved: \(ids\) => \{ for \(const id of ids\) patchEntry\(id, \{ status: 'done', progress: 100 \}\) \}/)
     expect(text).toMatch(/onFailed: \(ids, msg, code, rows, nudge\) => \{/)
+    // The failed panel takes BOTH its label and its body from lib, and no longer hardcodes the
+    // sentence about a dropped connection -- which was the last surface still saying that over a
+    // list of deliberate refusals, and the only one a phone can read.
+    expect(text, 'the panel copy must be decided in lib').toMatch(/failurePanel\(failedByReason\.map/)
+    expect(text, 'the chip label must come from that decision').toMatch(/\{t\(failedCopy\.title\)\}/)
+    expect(text, 'the panel body must come from that decision').toMatch(/\{t\(failedCopy\.body\)\}/)
+    expect(text, 'the connection-drop sentence must not be chosen unconditionally').not.toMatch(/t\('upload\.retry\.body'\)/)
     // ORDER, not just presence. expectedSave decided only what /admin was told while it sat below
     // the loop that writes the tiles; the guest was still shown every refusal as a failure. It has
     // to be computed before that loop, and the loop has to use it.

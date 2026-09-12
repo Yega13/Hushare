@@ -204,7 +204,10 @@ const SIZE_BUDGET: Record<string, number> = {
   // album_full alone, and says why in a comment naming the incident. Every decision it added is in
   // lib (isExpectedRefusal, wallFor, mergeWall, wallCopy, all tested and mutated); what landed here
   // is the call, one hoisted line, and the reason it is hoisted.
-  'src/components/UploadZone.tsx': 2066,
+  // 2066 -> 2068: the failed-files panel takes its label and body from failurePanel (also lib, also
+  // mutated) instead of hardcoding the sentence about a dropped connection over a list of refusals.
+  // Two lines: the memo and the comment pointing at the module that decides it.
+  'src/components/UploadZone.tsx': 2068,
   // +3 on 2026-08-30: the branding toggle gained a real plan check (it was dimmed but still
   // clickable), and Face Finder and bib search stopped riding on the collections flag. Three
   // lines of reasoning for three gates that were wrong. Deliberate.

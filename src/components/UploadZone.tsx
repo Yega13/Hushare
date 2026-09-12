@@ -9,7 +9,7 @@ import {
   type VideoResume,
   refusalFrom, refusalFields,
 } from '@/lib/upload/failure'
-import { freshEntryFor, mergeWall, queuePendingRows, retryMode, shouldPark, wallCopy, wallFor, wallOnNewAttempt, type Wall } from '@/lib/upload/retry-plan'
+import { failurePanel, freshEntryFor, mergeWall, queuePendingRows, retryMode, shouldPark, wallCopy, wallFor, wallOnNewAttempt, type Wall } from '@/lib/upload/retry-plan'
 import { createRowSaver } from '@/lib/upload/row-saver'
 import { createVideoLane, videoOutcomeOf } from '@/lib/upload/video-lane'
 import { batchThroughputKbps, lostCount } from '@/lib/upload/throughput'
@@ -1689,6 +1689,8 @@ export default function UploadZone({ album, onPhotosUploaded, isOwner }: Props) 
     }
     return [...m.entries()].sort((x, y) => y[1] - x[1])
   }, [entries, t])
+  // Which words go above that list, and what the chip calls itself. lib/upload/retry-plan.
+  const failedCopy = useMemo(() => failurePanel(failedByReason.map(([reason]) => reason)), [failedByReason])
   // ── Auto-resume parked uploads ────────────────────────────────────────────────────────────────
   //
   // Deliberately NOT driven by the 'online' event. navigator.onLine reports whether the device is
@@ -1790,14 +1792,14 @@ export default function UploadZone({ album, onPhotosUploaded, isOwner }: Props) 
               minWidth: 18, height: 18, borderRadius: 999, background: '#7A4A1F', color: '#FDFAF5',
               fontSize: 11, fontWeight: 700, lineHeight: '18px', textAlign: 'center', padding: '0 5px',
             }}>{failedCount}</span>
-            {t('upload.retry.chip')}
+            {t(failedCopy.title)}
             <span aria-hidden="true" style={{ fontSize: 10, opacity: 0.7 }}>{failedOpen ? '▲' : '▼'}</span>
           </button>
 
           {failedOpen && (
             <div style={{ marginTop: 8, padding: 12, borderRadius: 12, background: '#FBF0E6', border: '1px solid #E8D3BC' }}>
               <p style={{ margin: '0 0 8px', fontSize: 13, lineHeight: 1.5, color: '#5C4A3C' }}>
-                {t('upload.retry.body')}
+                {t(failedCopy.body)}
               </p>
               <ul style={{ margin: '0 0 10px', padding: 0, listStyle: 'none' }}>
                 {failedByReason.map(([reason, n]) => (
