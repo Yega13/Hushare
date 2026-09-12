@@ -272,6 +272,24 @@ describe('fetchWithRetry -- the control plane', () => {
     expect((res.err as { waitedMs: number }).waitedMs).toBeLessThan(FETCH_DEADLINE_DEFAULT_MS)
   })
 
+  it('A NETWORK FAILURE THE SERVER OUTLIVED must not poison the answer that came after it', async () => {
+    // The mirror of the test above, and the ordering nothing covered in either direction.
+    //
+    // The connection drops, the probe spends almost the whole budget and gives up, one more attempt
+    // still fits -- and it comes back 503. That 503 is now the newest thing we know. The next
+    // backoff would overrun, so the loop stops holding a server answer while a network failure sits
+    // in its history. Handing back the 503 is right; throwing "Couldn't reach the server" at
+    // somebody the origin just answered is not.
+    const f = scriptedFetch(['down', 503])
+    const reach = scriptedReach(false, FETCH_DEADLINE_DEFAULT_MS - 1000)
+    const { t } = transport({ fetch: f.fetch, reachability: reach })
+    const res = await outcome(t.fetchWithRetry('/x', {}))
+    if (!('ok' in res)) throw res.err
+    expect(reach.awaitRecovery, 'the network really did fail first -- otherwise this proves nothing').toHaveBeenCalled()
+    expect(res.ok.status).toBe(503)
+    expect(await res.ok.text()).toBe('body-2')
+  })
+
   it('out of time with a retained 5xx returns THAT response rather than throwing -- the caller reads the server’s reason from it', async () => {
     // Out of time WITH THE NETWORK STILL INTACT, which is the only way this branch is reached: a
     // 503, and then not enough budget left for even the first backoff, so the loop stops before any

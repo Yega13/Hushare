@@ -163,6 +163,13 @@ export function createUploadTransport(deps: TransportDeps) {
         if (verdict === 'retry') {
           serverErrors++
           lastErr = new Error(`HTTP ${res.status}`)
+          // A RESPONSE IS THE LATEST EVIDENCE, AND IT WAS NOT THE NETWORK. Without this line the
+          // flag is only ever set, never cleared, so it means "some attempt in this call died at
+          // the network" rather than "the last thing that happened did" -- and the exit below,
+          // which hands back a retained answer only while it is still the newest thing we know,
+          // would discard a 503 that arrived AFTER the connection came back. The guest would be
+          // told to switch networks moments after the origin answered them.
+          lastWasNetwork = false
           // Keep only the newest; draining the one it replaces frees its connection instead of
           // leaving it pinned until garbage collection.
           void lastServerRes?.body?.cancel()

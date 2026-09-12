@@ -31,6 +31,8 @@ export default {
     from: "        attemptSignal.cleanup()\n", to: '' },
   { name: 'out of time with a retained 5xx throws instead of returning it',
     from: "    if (lastServerRes && !lastWasNetwork) return lastServerRes\n", to: '' },
+  { name: 'A RECOVERED NETWORK IS STILL CALLED DOWN: the flag is never cleared by a response, so a fresh 5xx is discarded',
+    from: "          lastWasNetwork = false\n", to: '' },
   { name: 'A STALE 5xx IS HANDED BACK AFTER THE NETWORK DIED, so the photo is never parked',
     from: "    if (lastServerRes && !lastWasNetwork) return lastServerRes", to: "    if (lastServerRes) return lastServerRes" },
   { name: 'the superseded 5xx is not drained, so its connection stays pinned',

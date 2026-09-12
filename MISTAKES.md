@@ -1846,3 +1846,35 @@ is reading fiction — the compiler included.
 failure. For the mutation runner that is two concrete checks, both cheap: `scripts/mutations/.in-flight.*`
 must not exist, and the log must carry one `[exit N for <set>]` line for every set requested. Until
 both hold, there is no staging, no committing, no full suite, and no believing tsc.
+
+### 109. A FLAG THAT IS ONLY EVER SET IS NOT A FLAG ABOUT NOW
+
+I added a guard that reads `lastWasNetwork` as "the last thing that happened was the network":
+
+    if (lastServerRes && !lastWasNetwork) return lastServerRes
+
+and wrote a comment above it saying the retained answer is good "ONLY WHILE IT IS STILL THE LATEST
+THING WE KNOW". But `lastWasNetwork` is initialised once and assigned in exactly ONE place -- inside
+the `catch`. The branch that receives a response never touches it. So it does not mean what I read
+it as; it means "at some point in this call, an attempt died at the network". Sticky, for the rest
+of the call.
+
+The case I was thinking about (5xx, then the network dies) works. The mirror does not: the
+connection drops, the reachability probe confirms the origin is back, the retry returns a 503 that
+is retained, the budget runs out -- and my guard throws that fresh 503 away and reports
+`unreachable: true`. The guest is told "Couldn't reach the server after several tries. Switch
+networks, or turn off any VPN" milliseconds after the origin answered them, the file is parked, and
+the auto-resume then spends a whole second upload against an origin that is already failing.
+
+I had written the correct rule in English directly above code that implemented a weaker one. The two
+coincide in the ordering I had in mind and part company in the other, which is why reading it back
+felt fine.
+
+A review agent found it. I confirmed it in one grep before believing it -- five lines of output,
+every mention of the variable -- which is the right amount of work to spend on an agent's diagnosis:
+enough to be sure, not so much that I re-derive it and re-attach to my own version.
+
+**Habit to build:** when a new condition leans on an existing variable, find EVERY assignment to it
+before trusting its name -- `grep -n <name> <file>` is the whole cost. And when a comment states the
+rule ("only while it is still the latest"), check that the code implements THAT rule rather than one
+that merely agrees with it in the example you had in your head.
