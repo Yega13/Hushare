@@ -2154,3 +2154,37 @@ evidence points at. The fix that matches the evidence is the relay refusing an e
 in a report is often rounded, bucketed or clamped so rows group together, and its displayed form is not
 its value. Then check WHICH rows it came from: the files that failed and the files that were saved are
 different populations, and a field from one says nothing about the other.
+
+### 118. I BUILT A FIX ON A COMMENT'S CLAIM ABOUT A BROWSER, AND IT WOULD HAVE PUBLISHED GPS LOCATIONS
+
+The panel held 14 "a photo may be stored rotated" warnings. Three were a TypeError: Chrome refusing
+`imageOrientation: 'from-image'`. A comment in lib/image-decode, written before me, asserted that
+an engine refusing the option decodes UN-rotated, so the retry's pixels are sideways and the
+re-encode bakes that in for good.
+
+I checked that the error text matched. I never checked the claim. Commit c25f8ae made the uploader
+skip the re-encode on such a browser and send the original file instead.
+
+The review, before deploy, found what that actually did. The re-encode path had THREE jobs and I
+had reasoned about one:
+- rotate -- the one I was thinking about;
+- strip metadata -- so skipping it sent every photo's GPS location to R2, and because those rows
+  had no thumbnail, the grid served the full original to every viewer. The privacy page promises
+  GPS is removed in the browser;
+- shrink to the album's byte cap -- so a large photo was refused instead of fitted, and AVIF/BMP
+  were refused instead of converted.
+
+And the premise was false. The cheapest check the review suggested took four minutes: the photos
+those three sessions actually stored had gone through the very retry I called broken, so I
+downloaded them and looked. Upright, all of them, portraits included. The sessions were Chrome 109
+on Windows 8.1 and 10. No photo was ever stored sideways by this path. The fix solved a problem
+that did not exist and created a privacy leak. Reverted in bcb9708; it never reached a guest.
+
+This is entry 113's lesson in its purest form -- "a confident comment about the file it sits in is
+read as evidence, and it is not evidence" -- except the comment was not mine, which is exactly why I
+trusted it. It is also the fifth unverified claim in a row (112, 114, 115, 117, 118).
+
+**Habit to build:** before acting on a claim about what a platform does, find a place in our OWN
+data where that behaviour would have left a visible trace, and look at it -- here, the stored
+photos. And before routing a file around a code path, write down every job that path performs.
+A branch that "only re-encodes" is also the branch that strips GPS and enforces the cap.

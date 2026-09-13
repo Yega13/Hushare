@@ -59,6 +59,20 @@ export async function decodeBitmapSafe(source: ImageBitmapSource): Promise<Image
     // its comment asserts the rotation was already baked in. The photo is stored sideways, for
     // good, and NOTHING errors: not the guest, not the panel, not us.
     //
+    // MEASURED on 2026-09-13, and the claim above does NOT hold for the only case that has occurred.
+    // All three rows this branch has produced with a TypeError about the option (09-10 and 09-11)
+    // were Chrome 109 on Windows 8.1 and 10 -- an engine that refuses 'from-image'. The photos those
+    // sessions stored went through this exact retry and were re-encoded, and viewed directly they
+    // are UPRIGHT, portraits included. The review of c25f8ae also cites Chromium 112's
+    // image_bitmap.cc and whatwg/html#8085 as saying the old 'none' default already applied EXIF
+    // rotation (not independently verified here). The old Android WebView case described above is
+    // still unmeasured.
+    //
+    // DO NOT "fix" this by skipping the re-encode when the option is refused. c25f8ae did exactly
+    // that, and the re-encode was also what STRIPS METADATA and SHRINKS TO THE ALBUM'S BYTE CAP: every
+    // photo would have reached R2 with its GPS location, and been served in full to every viewer.
+    // Reverted in bcb9708 before it deployed. MISTAKES entry 118.
+    //
     // Narrowing the retry to a TypeError would fix that and would turn a transient failure into a
     // failed upload, which is worse. So instead this makes the invisible case VISIBLE: if the line
     // below never appears, the case never happens and there is nothing to fix. If it does appear,
