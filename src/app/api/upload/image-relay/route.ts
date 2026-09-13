@@ -10,6 +10,7 @@ import { forbidCrossSiteRequest } from '@/lib/request-security'
 // The size rule is deliberately NOT imported here: a missing Content-Length is not a reason to
 // refuse somebody's photo on the last-resort path (see the note below).
 import { fileNameValid, contentTypeValid } from '@/lib/upload/presign-fields'
+import { READ_FAILURE_MESSAGE } from '@/lib/upload/failure'
 
 // The ceiling for a body whose length the browser did not declare. 64 MB: larger than any photo
 // this uploader can produce (6000px long edge re-encoded), smaller than a Worker's memory limit.
@@ -157,6 +158,25 @@ export async function POST(req: Request): Promise<Response> {
         { error: tooLargeMessage('image', unknownSizeLimit) },
         { status: 413, headers: NO_STORE },
       )
+    }
+    // ZERO BYTES IS NOT A PHOTO, and this branch was the one path left that would store one.
+    //
+    // The other two cannot. A direct presigned PUT binds content-length into its signature
+    // (tests/r2-presign.test.ts reads it out of a real URL), and the declared-size branch above
+    // pipes through FixedLengthStream, which Cloudflare documents as erroring on "too many, or too
+    // few bytes". This branch checked only that the body was not too BIG. An empty one -- no
+    // Content-Length, or a Content-Length of 0, which is read as unknown above -- became a zero-byte
+    // object, the response was 200 with a public URL, and the client wrote the row.
+    //
+    // R2's own listing on 2026-09-13 found 14 photo rows pointing at zero-byte objects, in albums
+    // dm1ybi7j and 19fdrk3n. Both uploads logged the relay taking over from a failed direct upload
+    // seconds before the empty rows were saved.
+    //
+    // 400, not a 5xx: the same empty body sent again is still empty, and the client's retry policy
+    // resends 5xx responses. The words are the client's own read-failure sentence, imported rather
+    // than retyped, because the remedy is the same one -- add the photo again from the device.
+    if (buffered.byteLength === 0) {
+      return NextResponse.json({ error: READ_FAILURE_MESSAGE }, { status: 400, headers: NO_STORE })
     }
     pipePromise = Promise.resolve()
     putPromise = bucket.put(key, buffered, {

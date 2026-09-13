@@ -2089,6 +2089,9 @@ The chain was written down in our own error rows and nobody was reading them tog
 
 `sizeMB: 0`. The client knew the file was empty, said so in telemetry, and uploaded it anyway.
 
+**CORRECTION (entry 117): that sentence is wrong.** `sizeMB` is rounded to the nearest megabyte, and
+that row described the two files that FAILED, not the twelve that were saved. It proves neither claim.
+
 The defect is one word. `encodeCanvas` ends:
 
     if (blob) return blob
@@ -2120,3 +2123,34 @@ writing it -- if a sibling branch already has it, the question is not "add a che
 this one not have it", and the answer usually names more sites. And when choosing what to harden
 next, rank by WHAT IS LOST when it breaks, not by what is convenient to test. Everything that can
 silently destroy a customer's photo outranks everything that can only mislabel a row in /admin.
+
+### 117. ENTRY 110 AGAIN, WORD FOR WORD: A ROUNDED FIELD READ AS A RAW ONE, IN A COMMIT MESSAGE
+
+Commit 636e7d1 and entry 116 both said the client "knew the file was empty, said so in telemetry, and
+uploaded it anyway", and both cited `sizeMB: 0` from error row 1226 as the proof.
+
+`sizeMB` is `Math.round(entry.file.size / 1024 / 1024)`. Anything under half a megabyte reports 0.
+And row 1226 described the TWO files that FAILED with "Missing or invalid fields" -- not the twelve
+that were saved empty. Neither half of the sentence was supported by the field it cited.
+
+Entry 110 is this exact mistake -- "I read a rounded field as a raw one, and started building on it"
+-- and I made it again seven entries later, in a commit message and in this file, which are the two
+places people read instead of re-deriving the code.
+
+What the evidence actually supports, established the next morning:
+- R2's own object listing (58,847 objects, not a sample): 14 photo rows point at zero-byte objects,
+  12 in dm1ybi7j and 2 in 19fdrk3n. No row points at a missing object.
+- Both incidents logged "Switched to relay after direct upload was network-blocked" seconds before
+  the empty rows were saved, and that warning is only emitted AFTER the relay has returned 200.
+- Of the three ways bytes reach R2, only the relay's buffered branch had no lower bound. The direct
+  PUT binds content-length into its signature; the declared-size relay branch errors on a short
+  body. A test built against the unfixed route got `expected 200 to be 400` for a zero-byte body.
+
+So the encoder guards in 636e7d1 close a real defect -- `if (blob)` on an empty Blob is a genuine
+hole -- but I never showed that defect is what emptied these photos, and the relay is the path the
+evidence points at. The fix that matches the evidence is the relay refusing an empty body.
+
+**Habit to build:** before citing a telemetry field as proof, open the line that computes it. A number
+in a report is often rounded, bucketed or clamped so rows group together, and its displayed form is not
+its value. Then check WHICH rows it came from: the files that failed and the files that were saved are
+different populations, and a field from one says nothing about the other.
