@@ -1,5 +1,8 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
-import { decodeBitmapSafe, decodeViaImageDecoder, decodeImageSource, setFallbackDecodeReporter } from '@/lib/image-decode'
+import {
+  decodeBitmapSafe, decodeViaImageDecoder, decodeImageSource, setFallbackDecodeReporter,
+  orientationApplied, rejectsOrientationOption, resetOrientationSupport,
+} from '@/lib/image-decode'
 
 // THE DECODE CHAIN A GUEST'S PHOTO ACTUALLY TAKES.
 //
@@ -22,7 +25,7 @@ const realImageDecoder = (globalThis as Record<string, unknown>).ImageDecoder
 /** Calls in the order they happened, so ordering is observable rather than assumed. */
 let log: string[] = []
 let cfg: {
-  bitmapFrom: (source: unknown, opts?: { imageOrientation?: string }) => Fake | 'throw'
+  bitmapFrom: (source: unknown, opts?: { imageOrientation?: string }) => Fake | 'throw' | 'throw-orientation'
   typeSupported: boolean
   isTypeSupportedThrows: boolean
   decodeThrows: boolean
@@ -39,6 +42,9 @@ function blob(type: string): Blob {
 }
 
 beforeEach(() => {
+  // Sticky by design, so it has to be cleared between tests or the first one that sets it decides
+  // the outcome of every test after it.
+  resetOrientationSupport()
   log = []
   cfg = {
     bitmapFrom: (source) => ({ closed: false, label: `bitmap-of-${(source as Fake)?.label ?? 'blob'}` }),
@@ -54,6 +60,12 @@ beforeEach(() => {
     log.push(`createImageBitmap(${(source as Fake)?.label ?? 'blob'}, ${opts?.imageOrientation ?? 'none'})`)
     const r = cfg.bitmapFrom(source, opts)
     if (r === 'throw') throw new Error('cannot decode')
+    // Verbatim from a production row, 2026-09-10, Windows. A TypeError about the OPTION, which is a
+    // different problem from a photo that will not decode -- and the only one that can end up
+    // stored sideways.
+    if (r === 'throw-orientation') {
+      throw new TypeError("Failed to execute 'createImageBitmap' on 'Window': Failed to read the 'imageOrientation' property from 'ImageBitmapOptions': The provided value 'from-image' is not a valid enum value of type ImageOrientation.")
+    }
     return r
   }) as unknown as typeof createImageBitmap
 
@@ -339,5 +351,47 @@ describe('the silent sideways-photo path reports itself', () => {
     let first = true
     cfg.bitmapFrom = () => { if (first) { first = false; return 'throw' } return { closed: false, label: 'x' } }
     expect(await decodeBitmapSafe(blob('image/jpeg'))).not.toBeNull()
+  })
+})
+
+describe('AN ENGINE THAT CANNOT ROTATE IS REMEMBERED, so nothing re-encodes un-rotated pixels', () => {
+  // Measured 14 times between 2026-09-04 and 09-12. Eleven were a source that would not decode at
+  // all -- harmless, because the bare retry fails too and returns null. Three, all on Windows, were
+  // the engine refusing the OPTION: the retry then succeeds and hands back the photo un-rotated,
+  // and re-encoding that stores it sideways permanently while dropping the EXIF tag that still
+  // described the truth. Nothing errors. Nobody finds out.
+
+  it('tells an option rejection apart from a decode failure', () => {
+    const real = new TypeError("Failed to execute 'createImageBitmap' on 'Window': Failed to read the 'imageOrientation' property from 'ImageBitmapOptions': The provided value 'from-image' is not a valid enum value of type ImageOrientation.")
+    expect(rejectsOrientationOption(real)).toBe(true)
+    // A TypeError about something else is not this. Neither is the decode failure that accounts for
+    // eleven of the fourteen rows, nor a bare string.
+    expect(rejectsOrientationOption(new TypeError('Failed to fetch'))).toBe(false)
+    expect(rejectsOrientationOption(Object.assign(new Error('nope'), { name: 'InvalidStateError' }))).toBe(false)
+    expect(rejectsOrientationOption('imageOrientation')).toBe(false)
+  })
+
+  it('a source that will not decode leaves orientation TRUSTED, because nothing gets re-encoded', async () => {
+    cfg.bitmapFrom = () => 'throw'
+    await decodeBitmapSafe(blob('image/jpeg'))
+    expect(orientationApplied(), 'a decode failure says nothing about the engine').toBe(true)
+  })
+
+  it('the option being refused is remembered -- and the bare retry still SUCCEEDS, which is the danger', async () => {
+    cfg.bitmapFrom = (_s, opts) => (opts?.imageOrientation ? 'throw-orientation' : { closed: false, label: 'un-rotated' })
+    const r = await decodeBitmapSafe(blob('image/jpeg'))
+    expect(r, 'the retry succeeds; these pixels are simply the wrong way up').not.toBeNull()
+    expect(orientationApplied()).toBe(false)
+  })
+
+  it('stays remembered for every later photo, because it is the engine and not the file', async () => {
+    cfg.bitmapFrom = (_s, opts) => (opts?.imageOrientation ? 'throw-orientation' : { closed: false, label: 'un-rotated' })
+    await decodeBitmapSafe(blob('image/jpeg'))
+    expect(orientationApplied()).toBe(false)
+    // A later photo decodes perfectly well. The engine still cannot rotate, so the answer must not
+    // quietly flip back and let the next photo be re-encoded sideways.
+    cfg.bitmapFrom = () => ({ closed: false, label: 'fine' })
+    await decodeBitmapSafe(blob('image/jpeg'))
+    expect(orientationApplied(), 'one good decode must not clear an engine limitation').toBe(false)
   })
 })

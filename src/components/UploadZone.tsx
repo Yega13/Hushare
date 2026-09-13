@@ -28,7 +28,7 @@ import {
   isMissingContentLengthFailure, tusFailureAction, isEvalBlockedByCsp,
   isExpectedRefusal,
 } from '@/lib/upload-policy'
-import { decodeBitmapSafe, decodeImageSource, setFallbackDecodeReporter } from '@/lib/image-decode'
+import { decodeBitmapSafe, decodeImageSource, orientationApplied, setFallbackDecodeReporter } from '@/lib/image-decode'
 import { reportClientError } from '@/lib/report-error'
 
 // A SIDEWAYS PHOTO IS THE ONE FAILURE HERE THAT NEVER ERRORS. decodeBitmapSafe falls back to a
@@ -397,6 +397,21 @@ async function processImageInner(file: File, capBytes: number, maxDim: number): 
   }
 
   const bitmap = await decodeBitmapSafe(file)
+
+  // THE ENGINE CANNOT ROTATE, SO WE MUST NOT RE-ENCODE. Measured on Windows three times between
+  // 09-10 and 09-11: createImageBitmap rejected `imageOrientation: 'from-image'` outright, the bare
+  // retry succeeded, and these pixels are the photo UN-rotated. Re-encoding them bakes the wrong
+  // orientation in AND drops the EXIF tag that still describes the right one -- sideways forever,
+  // with nothing on screen and nothing in the panel.
+  //
+  // The original bytes go up untouched instead. They are larger, and the browser rotates them on
+  // display from the tag we did not strip. No thumbnail: one made from this bitmap would be the
+  // sideways version, and the grid already falls back to the full image, which is correct.
+  if (bitmap && !orientationApplied()) {
+    bitmap.close()
+    return { blob: file, thumbBlob: null, mimeType, name: file.name, width: null, height: null }
+  }
+
   if (!bitmap) {
     // createImageBitmap failed. This is the Android "displayable but not byte-readable" case:
     // an <img> element can still render the file, so re-encode it through a canvas to get fresh,
