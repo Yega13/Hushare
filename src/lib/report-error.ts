@@ -80,7 +80,7 @@ export function reloadOnceForStaleDeploy(): boolean {
 // Is this build's one-shot reload still available? Asked BEFORE reporting, to decide whether a
 // chunk failure is an incident or a deploy doing what deploys do. Deliberately only reads the flag
 // — consuming it here would spend the recovery on a log line.
-function staleReloadStillAvailable(): boolean {
+export function staleReloadStillAvailable(): boolean {
   try { return !sessionStorage.getItem(RELOAD_FLAG) } catch { return false }
 }
 

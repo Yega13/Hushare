@@ -330,7 +330,12 @@ const SIZE_BUDGET: Record<string, number> = {
   // lib/delayed-once (replace-never-stack, testable). Locked in.
   // -27 (2026-09-10): what a bib search asks and what its answer means are lib/bib-request
   // (the stats reply that is not "no matches", the query tag, the retired failure). Locked in.
-  'src/app/[slug]/AlbumPageClient.tsx': 1577,
+  // 1577 -> 1587 (2026-09-13): each lazy panel now renders inside OptionalPanel, so one that will not
+  // load cannot replace the whole album with "Something went wrong" -- which 26 production rows since
+  // 2026-08-22 recorded. Ten lines: one import with its comment, and an open and close around each of
+  // the four panels. The decisions live in lib/optional-load and components/OptionalPanel, tested and
+  // mutated there.
+  'src/app/[slug]/AlbumPageClient.tsx': 1587,
   'src/app/card-editor/CardEditorClient.tsx': 873,
   // +1 (2026-08-31): pass collectionTotal to the lightbox counter.
   // +2 (2026-08-31): morphAllowed gate on open and close.

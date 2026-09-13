@@ -264,3 +264,28 @@ describe('AlbumPageClient asks searchPhase the question with the real state', ()
     }
   })
 })
+
+describe('AlbumPageClient contains every lazy panel, so one that will not load cannot blank the album', () => {
+  // 26 production rows since 2026-08-22: the upload panel's chunk group would not load on the
+  // guest's device, the rejection reached the route error boundary, and the whole album became
+  // "Something went wrong". ORDER, not presence: each component must sit after its own
+  // OptionalPanel opens and before that panel closes, and must appear exactly once.
+  const PANELS: Array<[string, string]> = [
+    ['owner-toolbar', '<OwnerToolbar'],
+    ['face-finder', '<FaceFinder'],
+    ['upload', '<UploadZone'],
+    ['designer', '<AlbumDesigner'],
+  ]
+  for (const [part, tag] of PANELS) {
+    it(`${tag.slice(1)} renders inside <OptionalPanel part="${part}">`, () => {
+      const text = src()
+      const open = text.indexOf(`<OptionalPanel part="${part}">`)
+      const at = text.indexOf(tag)
+      const close = text.indexOf('</OptionalPanel>', open)
+      expect(open, `no OptionalPanel for ${part}`).toBeGreaterThan(-1)
+      expect(at, `${tag} must come after its OptionalPanel opens`).toBeGreaterThan(open)
+      expect(close, `${tag} must come before that OptionalPanel closes`).toBeGreaterThan(at)
+      expect(text.indexOf(tag, at + 1), `a second ${tag} would sit outside this check`).toBe(-1)
+    })
+  }
+})

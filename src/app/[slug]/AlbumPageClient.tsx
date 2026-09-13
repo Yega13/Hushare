@@ -36,6 +36,8 @@ import PackageThanksBanner from '@/components/PackageThanksBanner'
 import BibSearchBar from '@/components/BibSearchBar'
 import { fontStack, isImageBackground, getBackgroundImageUrl, getBackgroundColorStyle, resolveHeaderImageUrl, resolveHeaderVideo } from '@/lib/album-design'
 import { retryImport } from '@/lib/lazy-retry'
+// Each lazy panel below renders inside OptionalPanel: one that will not load must not blank the album.
+import OptionalPanel from '@/components/OptionalPanel'
 
 // Code-split out of the shared album bundle: OwnerToolbar (+ tus/JSZip-adjacent upload code),
 // FaceFinder, and AlbumDesigner are only ever needed by the owner or by guests who opt in, never
@@ -1417,6 +1419,7 @@ export default function AlbumPageClient({ initialAlbum = null, initialPhotos, in
         />
 
         {effectiveIsOwner ? (
+          <OptionalPanel part="owner-toolbar">
           <OwnerToolbar
             album={album}
             photos={photos}
@@ -1433,6 +1436,7 @@ export default function AlbumPageClient({ initialAlbum = null, initialPhotos, in
             onToggleArrangeMode={() => setArrangeMode(m => !m)}
             onOpenDesigner={() => { designerOpenRef.current = true; setDesignerOpen(true) }}
           />
+          </OptionalPanel>
         ) : ownerUpgradePending ? (
           // Same-height neutral placeholder while the owner check resolves — no guest-bar flash,
           // no layout shift when the real toolbar lands.
@@ -1448,11 +1452,13 @@ export default function AlbumPageClient({ initialAlbum = null, initialPhotos, in
         )}
 
         {showFaceFinder && (
+          <OptionalPanel part="face-finder">
           <FaceFinder
             albumSlug={album.custom_slug ?? album.slug}
             photos={photos}
             onClose={() => setShowFaceFinder(false)}
           />
+          </OptionalPanel>
         )}
 
         {/* Race albums: the bib box goes ABOVE the upload zone. On a race album most visitors are
@@ -1477,7 +1483,9 @@ export default function AlbumPageClient({ initialAlbum = null, initialPhotos, in
         {(album.guest_uploads_enabled || effectiveIsOwner) && (
           // isOwner switches the owner's uploads to full camera quality (6000px vs the guest
           // 3500px). effectiveIsOwner, so a leftover cookie on the plain guest URL stays a guest.
+          <OptionalPanel part="upload">
           <UploadZone album={album} isOwner={effectiveIsOwner} onPhotosUploaded={handlePhotosUploaded} />
+          </OptionalPanel>
         )}
 
         {/* The renewal email's landing spot. Rendered from the URL param, NOT from owner
@@ -1560,7 +1568,9 @@ export default function AlbumPageClient({ initialAlbum = null, initialPhotos, in
         )}
 
         {effectiveIsOwner && designerOpen && (
+          <OptionalPanel part="designer">
           <AlbumDesigner album={album} photos={photos} onAlbumUpdated={handleAlbumUpdated} onClose={() => { designerOpenRef.current = false; setDesignerOpen(false) }} />
+          </OptionalPanel>
         )}
       </main>
 

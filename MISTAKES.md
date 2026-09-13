@@ -2188,3 +2188,29 @@ trusted it. It is also the fifth unverified claim in a row (112, 114, 115, 117, 
 data where that behaviour would have left a visible trace, and look at it -- here, the stored
 photos. And before routing a file around a code path, write down every job that path performs.
 A branch that "only re-encodes" is also the branch that strips GPS and enforces the cap.
+
+### 119. THE SAME TEST MISTAKE TWICE IN ONE AFTERNOON, AND TWO READINGS OF EVIDENCE I NEARLY BUILT ON
+
+**The repeat.** A test for lib/optional-load asserted `toHaveLength(DETAIL_MAX)` -- the constant the
+code itself reads -- so a mutation raising the bound from 200 to 100000 stayed green. An hour
+earlier I had fixed exactly this in tests/image-encode.test.ts (`toHaveBeenCalledWith(ENCODE_RETRY_MS)`)
+and written "the number, not the constant" into its comment. Knowing the rule, and having just
+written it down, did not stop me writing the next instance. Only the mutation run caught it.
+
+**Two readings that were wrong**, found while tracing why album pages crashed on iPhones, and caught
+before anything was built on them -- but only because they were checked, not because I doubted them:
+- A 1.35 MB chunk contained getUserMedia error messages, so I called it "a camera-based library".
+  It was heic2any, proven by byte size against its dist file and a shared string. Those messages are
+  Emscripten's generic browser runtime; no source file here uses getUserMedia.
+- That chunk's loader sat in the chunk group the upload panel requires, so I read it as "every guest
+  downloads 1.35 MB on page load". The required chunk is a 213-byte lazy wrapper; the converter is
+  only fetched when a HEIC actually needs converting.
+
+**And a test that failed for a reason unrelated to the code:** a vi.mock factory read a top-level
+constant. Mocks are hoisted above every declaration, so the factory threw its own error, and the
+assertion about the reported text failed on Vitest's wrapper message instead of on anything real.
+
+**Habit to build:** when a test needs a number the code also names, write the number. A test that
+imports the value it is checking cannot notice that value changing. And a chunk's contents, or a
+loader's dependency list, is evidence of what COULD load, not of what DOES -- read the loader's
+semantics before putting a size on a cost a user pays.

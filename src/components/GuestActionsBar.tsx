@@ -12,6 +12,8 @@ import type { Album, Photo } from '@/types'
 import SignInPrompt from '@/components/SignInPrompt'
 import { createClient } from '@/lib/supabase/client'
 import { qrForegroundColor } from '@/lib/album-design'
+import { reportClientError } from '@/lib/report-error'
+import { optionalLoadFailure } from '@/lib/optional-load'
 
 type Props = {
   album: Album
@@ -101,9 +103,15 @@ export default function GuestActionsBar({ album, photos, shareUrl, onOpenSlidesh
       // single most important channel for this product is invisible. Only the QR gets the marker:
       // putting it on the copied link too would show a human "?s=link" every time they shared an
       // album, and a slightly uglier URL is a real cost against a slightly better chart.
-      QRCode.toDataURL(qrUrl, { width: 300, margin: 2, color: { dark: qrForegroundColor(album.accent_color), light: '#FFFFFF' } })
+      return QRCode.toDataURL(qrUrl, { width: 300, margin: 2, color: { dark: qrForegroundColor(album.accent_color), light: '#FFFFFF' } })
         .then((url) => { if (!cancelled) setQrDataUrl(url) })
     })
+      // OPTIONAL, AND CAUGHT. This runs on every guest page load, for a picture beside a link the
+      // guest can still copy. Uncaught, a QR chunk that would not load became an unhandled rejection
+      // in "Failed to load chunk" words, and report-error answers those by RELOADING THE ALBUM -- 26
+      // production rows since 2026-08-22. Now it is reported in words that reload nothing
+      // (lib/optional-load), and the share panel simply shows no QR image.
+      .catch((error: unknown) => reportClientError(optionalLoadFailure('qr', error)))
     return () => { cancelled = true }
   }, [qrUrl, album.accent_color])
 
