@@ -618,8 +618,14 @@ describe('a guest must not be shown a security-policy dump', () => {
     //
     // Capturing the ARGUMENT binds them: the call must be made with `signature`, and `signature`
     // must be built from the error's name.
-    const src = stripJsComments(
+    // The HEIC converter moved out of UploadZone.tsx into lib/upload/image-pipeline on 2026-09-13.
+    // The component must not have kept, or grown back, a call of its own.
+    const zone = stripJsComments(
       readFileSync(join(process.cwd(), 'src', 'components', 'UploadZone.tsx'), 'utf8'),
+    )
+    expect(zone, 'the classifier is called from the pipeline, never from the component').not.toContain('isEvalBlockedByCsp(')
+    const src = stripJsComments(
+      readFileSync(join(process.cwd(), 'src', 'lib', 'upload', 'image-pipeline.ts'), 'utf8'),
     )
 
     const args = [...src.matchAll(/isEvalBlockedByCsp\(([^)]*)\)/g)].map((m) => m[1].trim())

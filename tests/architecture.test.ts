@@ -217,7 +217,13 @@ const SIZE_BUDGET: Record<string, number> = {
   // failures only a real device produces. What stayed is the two adapters that need the DOM. This
   // is the first repayment on the gap rule 14 measured on 2026-08-30, and it is the half that can
   // destroy a photograph rather than mislabel a row.
-  'src/components/UploadZone.tsx': 2032,
+  // 2032 -> 1693: THE REST OF THE PHOTO PIPELINE LEFT. Keep-or-re-encode, the location strip, the
+  // shrink ladder, HEIC conversion and the <img> last resort are lib/upload/image-pipeline now --
+  // generated from these exact lines by counted replacements, so the move is verbatim -- with 44
+  // tests and 29 mutations, each one a failure that never throws: a photo stored sideways, with its
+  // GPS position, as PNG bytes under a .webp name, or a phone that runs out of memory mid-batch.
+  // What stays is the browser wiring: the adapters, the HEIC worker and the decode slots. Locked in.
+  'src/components/UploadZone.tsx': 1693,
   // +3 on 2026-08-30: the branding toggle gained a real plan check (it was dimmed but still
   // clickable), and Face Finder and bib search stopped riding on the collections flag. Three
   // lines of reasoning for three gates that were wrong. Deliberate.

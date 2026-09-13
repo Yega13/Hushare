@@ -2214,3 +2214,26 @@ assertion about the reported text failed on Vitest's wrapper message instead of 
 imports the value it is checking cannot notice that value changing. And a chunk's contents, or a
 loader's dependency list, is evidence of what COULD load, not of what DOES -- read the loader's
 semantics before putting a size on a cost a user pays.
+
+### 120. A HAND-COPIED "MOVE" THAT REWORDED WHAT IT MOVED, AND A ZERO THAT WAS THE TOOL, NOT THE FILE
+
+**The copy.** Moving 366 lines of photo pipeline out of UploadZone.tsx, my first version of the new
+module was typed out by hand. Diffing it against the source showed it matched in code -- and did not
+match in comments: "createImageBitmap already read this file" had become "the decode already read
+this file", and three others were reworded the same way. Nothing wrong in them, but a move a reviewer
+is told is verbatim must BE verbatim, or the review compares two texts that differ for no reason and
+learns to skim. The module that shipped was generated from the component by exact, counted
+replacements that fail on any mismatch.
+
+**The zero.** `grep -c $'\r$' UploadZone.tsx` printed 0 in Git Bash. The file has 2,032 CRLF line
+endings. I read the 0 as "LF file" and wrote a generator on that basis; its own guard (refuse a CR
+it did not expect) stopped it. A count of zero from a shell quoting construct is evidence about the
+construct first.
+
+**And an overwrite I did not look at:** a scratch file named budget.mjs already existed from an
+earlier session and I replaced it without opening it. Harmless this time, because it was scratch --
+the habit is the thing that is wrong.
+
+**Habit to build:** move code with a script that proves the move (counted replacements, a diff of
+what remains), never by retyping it. Check line endings with a byte count in node, not a shell
+escape. Look at a file before writing over it, scratch or not.
