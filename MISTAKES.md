@@ -2237,3 +2237,34 @@ the habit is the thing that is wrong.
 **Habit to build:** move code with a script that proves the move (counted replacements, a diff of
 what remains), never by retyping it. Check line endings with a byte count in node, not a shell
 escape. Look at a file before writing over it, scratch or not.
+
+### 121. "EVERY DECISION NOW RUNS UNDER TEST" -- AND THE WIRING THAT FEEDS THEM DID NOT
+
+**The claim.** Commit ccb9b1d's title said every decision about a photo runs under test. The
+decisions did. The block in UploadZone that hands the pipeline its browser -- the decode slots, the
+retrying read, the HEIC decoder, the resample quality, the URL cleanup -- had no test at all. The
+review swapped five of those lines for plausible wrong ones (an unbounded slot, a bare arrayBuffer,
+decodeBitmapSafe passed as decodeImageSource) and the entire suite stayed green. Rule 15 says the
+enforcement moves with the decision; I moved the decision and left its enforcement unpinned, in the
+same commit that said otherwise. The precedent was already in the repo (the createImageEncoder pin in
+upload-zone-wiring) and I did not follow it.
+
+**Three test gaps of one shape: I asserted a property on the first path I wrote and not the rest.**
+- Thumbnails: checked on one of five exits. Dropping it on the other four -- the grid downloading full
+  3500px photos for every native-HEIC, resized or PNG photo -- survived.
+- Dimensions: every oversized fixture was wide or square, so judging only the WIDTH survived. A
+  portrait taller than 3500px would never have been shrunk.
+- The <img> path's never-enlarge check had no test; the identical check in scaleAndEncode did.
+
+**A test that passed for a reason that was not the code:** "recognised in any case" built its File
+with type 'image/HEIC', and the File constructor lowercases it. The uppercase never reached the
+pipeline, so removing the case-insensitive flag survived. I wrote the fixture and did not check what
+the platform did to it.
+
+**29 of 29 mutations killed hid all of this,** because I wrote the mutations too: they covered what I
+had thought of. The reviewer's own mutations found the rest.
+
+**Habit to build:** when a property must hold on every exit of a function, assert it on every exit
+(or loop over the exits). Give size fixtures both orientations. When a module moves out of a
+component, pin the wiring in the same commit. And treat my own "all killed" as the homework, not the
+proof -- which is what rule 27 already says.

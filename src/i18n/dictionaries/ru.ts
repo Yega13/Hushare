@@ -526,7 +526,6 @@ export const ru: Partial<Record<DictKey, string>> = {
   'guest.copyFail': 'Не удалось скопировать — скопируйте ссылку вручную.',
   'guest.noPhotos': 'Пока нет фотографий.',
   'guest.shareText': 'Посмотрите «{title}» на Hushare',
-  'guest.downloadPng': 'Скачать PNG',
 
   // face finder
   'ff.scanning': 'Сканирование фотографий альбома',

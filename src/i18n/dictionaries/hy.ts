@@ -539,7 +539,6 @@ export const hy: Partial<Record<DictKey, string>> = {
   'guest.copyFail': 'Չհաջողվեց պատճենել — պատճենեք հղումը ձեռքով։',
   'guest.noPhotos': 'Դեռ լուսանկարներ չկան։',
   'guest.shareText': 'Դիտեք «{title}»-ը Hushare-ում',
-  'guest.downloadPng': 'Ներբեռնել PNG',
 
   // face finder
   'ff.scanning': 'Ալբոմի լուսանկարների սկանավորում',

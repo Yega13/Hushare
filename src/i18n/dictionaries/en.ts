@@ -568,7 +568,6 @@ export const en = {
   'guest.copyFail': 'Could not copy — please copy the link manually.',
   'guest.noPhotos': 'No photos to show yet.',
   'guest.shareText': 'Check out “{title}” on Hushare',
-  'guest.downloadPng': 'Download PNG',
 
   // face finder
   'ff.scanning': 'Scanning album photos',

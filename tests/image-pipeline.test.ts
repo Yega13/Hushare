@@ -106,6 +106,12 @@ function webp(withMetadata: boolean): Uint8Array<ArrayBuffer> {
 
 const file = (bytes: Uint8Array<ArrayBuffer> | number, name: string, type: string) =>
   new File([typeof bytes === 'number' ? new Uint8Array(bytes) : bytes], name, { type })
+/**
+ * The same File, reporting exactly `type`. The File constructor lowercases its type option, so
+ * 'image/HEIC' passed to it never reaches the code -- the review of ccb9b1d found a test passing for
+ * that reason. A picked file's type is whatever the browser reports, so the code must not rely on it.
+ */
+const withType = (f: File, type: string) => Object.defineProperty(f, 'type', { value: type }) as File
 const reject = (message: string) => vi.fn(async () => { throw new Error(message) })
 const onlyThumbs = (encodes: Encode[]) => encodes.every((e) => e.quality === 0.85)
 
@@ -192,6 +198,7 @@ describe('too big', () => {
     expect(r.deps.resizeBitmap).toHaveBeenCalledWith(bm, 3500, 1750)
     expect(r.encodes).toContainEqual({ source: r.resized[1], w: 3500, h: 1750, mime: 'image/jpeg', quality: 0.92 })
     expect(out).toMatchObject({ mimeType: 'image/jpeg', name: 'big.jpg', width: 3500, height: 1750 })
+    expect(out.thumbBlob).not.toBeNull()
     for (const x of [bm, ...r.resized]) expect(x.close).toHaveBeenCalledTimes(1)
   })
 
@@ -217,6 +224,14 @@ describe('too big', () => {
     const r = rig({ decodeBitmapSafe: vi.fn(async () => bitmap(10000, 1)) })
     const out = await r.run(file(jpeg(1), 'strip.jpg', 'image/jpeg'))
     expect(out).toMatchObject({ width: 3500, height: 1 })
+  })
+
+  it('a TALL photo is judged on its long edge too -- a portrait over 3500px is brought down', async () => {
+    const bm = bitmap(3500, 7000)
+    const r = rig({ decodeBitmapSafe: vi.fn(async () => bm) })
+    const out = await r.run(file(jpeg(1), 'tall.jpg', 'image/jpeg'))
+    expect(r.deps.resizeBitmap).toHaveBeenCalledWith(bm, 1750, 3500)
+    expect(out).toMatchObject({ width: 1750, height: 3500 })
   })
 
   it('walks 3500 -> 2560 and STOPS at the first size under the album cap', async () => {
@@ -259,6 +274,15 @@ describe('too big', () => {
     const out = await r.run(file(webp(false), 'shot.webp', 'image/webp'))
     expect(out).toMatchObject({ mimeType: 'image/webp', name: 'shot.webp' })
   })
+
+  it('an encoder type the server would refuse is not trusted as the label', async () => {
+    const r = rig({
+      decodeBitmapSafe: vi.fn(async () => bitmap(7000, 7000)),
+      bitmapToBlob: vi.fn(async () => new Blob([new Uint8Array(10)], { type: 'image/bmp' })),
+    })
+    const out = await r.run(file(webp(false), 'shot.webp', 'image/webp'))
+    expect(out).toMatchObject({ mimeType: 'image/webp', name: 'shot.webp' })
+  })
 })
 
 describe('a PNG or WebP that fits', () => {
@@ -272,6 +296,8 @@ describe('a PNG or WebP that fits', () => {
     expect(contains(bytes, GPS)).toBe(false)
     expect(contains(bytes, ascii('IHDR'))).toBe(true)
     expect(out).toMatchObject({ mimeType: 'image/png', name: 'map.png', width: 800, height: 600 })
+    expect(out.thumbBlob).not.toBeNull()
+    expect(out.blob.type).toBe('image/png')
     expect(onlyThumbs(r.encodes)).toBe(true)
     expect(bm.close).toHaveBeenCalledTimes(1)
   })
@@ -306,6 +332,12 @@ describe('a PNG or WebP that fits', () => {
     const outWebp = await webp2.run(file(webp(true), 'b.webp', 'image/webp'))
     expect(webp2.deps.bitmapToBlob).toHaveBeenCalledWith(expect.anything(), 800, 600, 'image/webp', 0.92)
     expect(outWebp).toMatchObject({ mimeType: 'image/png', name: 'b.png' })
+  })
+
+  it('an unreadable WebP whose re-encode IS WebP keeps its .webp name', async () => {
+    const r = rig({ decodeBitmapSafe: vi.fn(async () => bitmap(800, 600)), readBytes: reject('NotReadableError') })
+    const out = await r.run(file(webp(true), 'c.webp', 'image/webp'))
+    expect(out).toMatchObject({ mimeType: 'image/webp', name: 'c.webp' })
   })
 })
 
@@ -345,7 +377,14 @@ describe('will not decode, but displays', () => {
   it('a PNG redrawn this way stays PNG', async () => {
     const r = rig({ loadImageElement: img(800, 600) })
     const out = await r.run(file(png(false), 'art.png', 'image/png'))
-    expect(out).toMatchObject({ mimeType: 'image/png', name: 'art.png' })
+    // And at its own size: this path must never ENLARGE an 800px image to the 3500px limit.
+    expect(out).toMatchObject({ mimeType: 'image/png', name: 'art.png', width: 800, height: 600 })
+  })
+
+  it('a type written in capitals is still recognised as PNG on this path', async () => {
+    const r = rig({ loadImageElement: img(800, 600) })
+    const out = await r.run(withType(file(png(false), 'art.png', ''), 'IMAGE/PNG'))
+    expect(out.mimeType).toBe('image/png')
   })
 
   it('its thumbnail failing does not lose the photo', async () => {
@@ -376,6 +415,13 @@ describe('will not decode, will not display', () => {
     const out = await r.run(file(jpeg(1), 'a.jpg', 'image/jpeg'))
     expect(contains(await bytesOf(out.blob), GPS)).toBe(false)
     expect(out).toMatchObject({ thumbBlob: null, mimeType: 'image/jpeg', name: 'a.jpg', width: null, height: null })
+    expect(out.blob.type).toBe('image/jpeg')
+  })
+
+  it('image/jpg is stripped the same way on this path -- its location does not survive either', async () => {
+    const r = rig()
+    const out = await r.run(file(jpeg(1), 'a.jpg', 'image/jpg'))
+    expect(contains(await bytesOf(out.blob), GPS)).toBe(false)
   })
 
   it('and when even its bytes cannot be read, the original File goes up -- the PUT is another read path', async () => {
@@ -428,20 +474,29 @@ describe('GIF', () => {
     expect(out.mimeType).toBe('image/gif')
     expect(onlyThumbs(r.encodes)).toBe(true)
   })
+
+  it('a type written in capitals is still a GIF, and still never re-encoded', async () => {
+    const r = rig({ decodeBitmapSafe: vi.fn(async () => bitmap(4000, 4000)) })
+    const f = withType(file(10, 'x.gif', ''), 'IMAGE/GIF')
+    const out = await r.run(f)
+    expect(out.blob).toBe(f)
+    expect(out.mimeType).toBe('image/gif')
+  })
 })
 
 describe('HEIC', () => {
   const small = () => new Blob([jpeg(1)], { type: 'image/jpeg' })
 
-  it('is recognised by type or by extension, in any case', async () => {
+  it('is recognised by type or by extension, in any case, and only a HEIC extension becomes .jpg', async () => {
     for (const [name, type, expected] of [
       ['IMG_1.HEIC', '', 'IMG_1.jpg'],
       ['IMG_2.heif', '', 'IMG_2.jpg'],
       ['photo', 'image/heif', 'photo'],
       ['photo', 'image/HEIC', 'photo'],
+      ['photo.jpeg', 'image/heic', 'photo.jpeg'],
     ] as const) {
       const r = rig({ decodeImageSource: vi.fn(async () => bitmap(800, 600)) })
-      const out = await r.run(file(10, name, type))
+      const out = await r.run(withType(file(10, name, ''), type))
       expect(r.deps.decodeImageSource, name).toHaveBeenCalledTimes(1)
       expect(out.name, name).toBe(expected)
       expect(out.mimeType, name).toBe('image/jpeg')
@@ -454,6 +509,7 @@ describe('HEIC', () => {
     const out = await r.run(file(10, 'IMG.HEIC', 'image/heic'))
     expect(r.encodes).toContainEqual({ source: r.resized[1], w: 3500, h: 2625, mime: 'image/jpeg', quality: 0.92 })
     expect(out).toMatchObject({ width: 3500, height: 2625 })
+    expect(out.thumbBlob, 'without it the grid downloads the full photo').not.toBeNull()
     expect(r.deps.convertHeicViaWorker).not.toHaveBeenCalled()
     expect(r.deps.convertHeicMainThread).not.toHaveBeenCalled()
     expect(bm.close).toHaveBeenCalledTimes(1)
@@ -519,6 +575,7 @@ describe('HEIC', () => {
       const out = await r.run(file(10, 'IMG.HEIC', 'image/heic'), 10)
       expect(onlyThumbs(r.encodes), String(size)).toBe(true)
       expect(out, String(size)).toMatchObject({ width: 3000, height: 2000, name: 'IMG.jpg' })
+      expect(out.thumbBlob, String(size)).not.toBeNull()
       expect(bm.close).toHaveBeenCalledTimes(1)
     }
   })
@@ -527,5 +584,11 @@ describe('HEIC', () => {
     const r = rig({ convertHeicViaWorker: vi.fn(async () => small()), decodeBitmapSafe: vi.fn(async () => bitmap(5000, 3000)) })
     const out = await r.run(file(10, 'IMG.HEIC', 'image/heic'))
     expect(out).toMatchObject({ width: 3500, height: 2100 })
+  })
+
+  it('and judges a TALL conversion on its long edge', async () => {
+    const r = rig({ convertHeicViaWorker: vi.fn(async () => small()), decodeBitmapSafe: vi.fn(async () => bitmap(3000, 5000)) })
+    const out = await r.run(file(10, 'IMG.HEIC', 'image/heic'))
+    expect(out).toMatchObject({ width: 2100, height: 3500 })
   })
 })

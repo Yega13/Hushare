@@ -163,7 +163,7 @@ export default function PhotoWall({
         <div style={{ textAlign: 'center' }}>
           {qr && (
             // A data: URL generated on this page: nothing to optimise, and the same idiom as every other
-            // QR code in the app (GuestActionsBar, GuestShareButton, ShareMenu).
+            // QR code in the app (GuestActionsBar, ShareMenu).
             <Image src={qr} alt="Scan to add your photos" width={220} height={220} unoptimized style={{ width: 220, height: 220, borderRadius: 16, background: '#FFF', padding: 10 }} />
           )}
           <p style={{ fontSize: 16, fontWeight: 600, marginTop: 14, color: '#FDFAF5' }}>Scan to add your photos</p>
