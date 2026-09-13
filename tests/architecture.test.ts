@@ -217,13 +217,7 @@ const SIZE_BUDGET: Record<string, number> = {
   // failures only a real device produces. What stayed is the two adapters that need the DOM. This
   // is the first repayment on the gap rule 14 measured on 2026-08-30, and it is the half that can
   // destroy a photograph rather than mislabel a row.
-  // 2032 -> 2047: the guard that stops a photo this engine could not rotate from being re-encoded
-  // and stored sideways. Measured three times on Windows, where createImageBitmap refuses
-  // `imageOrientation: 'from-image'` outright. Eleven lines of it are the comment carrying that
-  // evidence, because the failure leaves no trace anywhere else — not on screen, not in the panel.
-  // The decision (rejectsOrientationOption, orientationApplied) is lib/image-decode's, with 10
-  // mutations on it; this is only the call site that acts on the answer.
-  'src/components/UploadZone.tsx': 2047,
+  'src/components/UploadZone.tsx': 2032,
   // +3 on 2026-08-30: the branding toggle gained a real plan check (it was dimmed but still
   // clickable), and Face Finder and bib search stopped riding on the collections flag. Three
   // lines of reasoning for three gates that were wrong. Deliberate.

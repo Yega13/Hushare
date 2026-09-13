@@ -89,10 +89,6 @@ describe('UploadZone writes its rows through lib/upload/row-saver and keeps no c
     // still lose the photo, which is the mutation that survived until this line existed.
     expect(text, 'nothing may be uploaded with zero bytes').toMatch(/if \(processed\.blob\.size === 0\) throw readFailure\(/)
     expect(text, 'an empty thumbnail must not be uploaded beside a good image').toMatch(/processed\.thumbBlob\.size > 0/)
-    // A bitmap decoded by an engine that cannot apply EXIF rotation must not be re-encoded: the
-    // original bytes go up instead, tag intact. Three photos on Windows took the other path.
-    expect(text, 'the caller must ask whether orientation was applied').toMatch(/if \(bitmap && !orientationApplied\(\)\)/)
-    expect(text, 'and must hand over the untouched original when it was not').toMatch(/return \{ blob: file, thumbBlob: null, mimeType, name: file\.name, width: null, height: null \}/)
     // The failed panel takes BOTH its label and its body from lib, and no longer hardcodes the
     // sentence about a dropped connection -- which was the last surface still saying that over a
     // list of deliberate refusals, and the only one a phone can read.

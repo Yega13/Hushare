@@ -63,7 +63,6 @@ export async function decodeBitmapSafe(source: ImageBitmapSource): Promise<Image
     // failed upload, which is worse. So instead this makes the invisible case VISIBLE: if the line
     // below never appears, the case never happens and there is nothing to fix. If it does appear,
     // it carries the device and the reason, which is what a real fix would need.
-    if (rejectsOrientationOption(e)) orientationOptionRejected = true
     onFallbackDecode?.(e instanceof Error ? `${e.name}: ${e.message}` : String(e))
     try {
       return await createImageBitmap(source)
@@ -71,47 +70,6 @@ export async function decodeBitmapSafe(source: ImageBitmapSource): Promise<Image
       return null
     }
   }
-}
-
-/**
- * Did the engine reject the OPTION, or fail to decode the image? The two are not the same problem
- * and only one of them can store a photo sideways.
- *
- * Measured over 14 real occurrences between 2026-09-04 and 09-12. Eleven were InvalidStateError --
- * the source could not be decoded at all -- and for those the bare retry fails too and returns
- * null, so nothing is re-encoded and nothing is at risk. Three were this, all on Windows:
- *
- *   TypeError: Failed to execute 'createImageBitmap' on 'Window': Failed to read the
- *   'imageOrientation' property from 'ImageBitmapOptions': The provided value 'from-image' is not
- *   a valid enum value of type ImageOrientation.
- *
- * An engine old enough not to know the value is an engine whose default is 'none', so its retry
- * succeeds and returns UN-ROTATED pixels. That is the case worth acting on.
- */
-export function rejectsOrientationOption(e: unknown): boolean {
-  return e instanceof TypeError && /imageOrientation/i.test(e.message)
-}
-
-/**
- * STICKY, and deliberately a property of the ENGINE rather than of one photo. A browser that does
- * not know 'from-image' will not learn it during the session, so once this is known every later
- * decode is equally un-rotated -- and the caller must stop re-encoding for all of them, not just
- * for the one that happened to report.
- */
-let orientationOptionRejected = false
-
-/**
- * False once this engine has proven it cannot apply EXIF rotation while decoding. A caller that
- * re-encodes a bitmap when this is false stores the photo sideways for good: the pixels are
- * un-rotated and the re-encode drops the EXIF tag that was the only remaining record of it.
- */
-export function orientationApplied(): boolean {
-  return !orientationOptionRejected
-}
-
-/** Tests only -- the flag is sticky by design, so a test that sets it must be able to clear it. */
-export function resetOrientationSupport(): void {
-  orientationOptionRejected = false
 }
 
 /**

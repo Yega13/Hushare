@@ -70,11 +70,5 @@ export default {
     to: "if (processed.blob.size === 0) throw new Error('the photo arrived empty from this device')" },
   { name: 'an empty thumbnail is uploaded beside a good image',
     from: "(processed.thumbBlob && processed.thumbBlob.size > 0 && thumb)", to: "(processed.thumbBlob && thumb)" },
-  { name: 'A PHOTO THE ENGINE COULD NOT ROTATE IS RE-ENCODED ANYWAY, and stored sideways for good',
-    from: "  if (bitmap && !orientationApplied()) {", to: "  if (false) {" },
-  // NOT MUTATED: the passthrough's return line. It is character-for-character identical to the
-  // JPEG passthrough further down, so any anchor short enough to be readable is AMBIGUOUS and any
-  // anchor long enough to be unique spans the blank lines between two branches. The guard above is
-  // the load-bearing half and it is covered; a second mutation here would buy a worse anchor.
   ],
 }
