@@ -20,8 +20,12 @@ export default {
     { name: 'the face finder is unwrapped',
       from: "          <OptionalPanel part=\"face-finder\">\n", to: "" },
     { name: 'the designer is unwrapped',
-      from: "          <OptionalPanel part=\"designer\">\n", to: "" },
+      from: "          <OptionalPanel part=\"designer\" floating>\n", to: "" },
     { name: 'the upload panel is reported under the wrong part',
       from: "<OptionalPanel part=\"upload\">", to: "<OptionalPanel part=\"designer\">" },
+    { name: "the designer's fallback stops floating, and appears below the photo grid out of the owner's sight",
+      from: "<OptionalPanel part=\"designer\" floating>", to: "<OptionalPanel part=\"designer\">" },
+    { name: 'the upload panel floats too, covering the top of the album for every guest when it fails',
+      from: "<OptionalPanel part=\"upload\">", to: "<OptionalPanel part=\"upload\" floating>" },
   ],
 }

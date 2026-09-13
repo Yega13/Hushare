@@ -279,7 +279,7 @@ describe('AlbumPageClient contains every lazy panel, so one that will not load c
   for (const [part, tag] of PANELS) {
     it(`${tag.slice(1)} renders inside <OptionalPanel part="${part}">`, () => {
       const text = src()
-      const open = text.indexOf(`<OptionalPanel part="${part}">`)
+      const open = text.indexOf(`<OptionalPanel part="${part}"`)
       const at = text.indexOf(tag)
       const close = text.indexOf('</OptionalPanel>', open)
       expect(open, `no OptionalPanel for ${part}`).toBeGreaterThan(-1)
@@ -288,4 +288,12 @@ describe('AlbumPageClient contains every lazy panel, so one that will not load c
       expect(text.indexOf(tag, at + 1), `a second ${tag} would sit outside this check`).toBe(-1)
     })
   }
+
+  it('the designer floats its fallback into view, and it is the only panel that does', () => {
+    // AlbumDesigner is a full-screen overlay opened from the Settings sheet. Its place in the page is
+    // below the photo grid, so an ordinary fallback there was invisible to the owner who tapped.
+    const text = src()
+    expect(text).toContain('<OptionalPanel part="designer" floating>')
+    expect(text.match(/<OptionalPanel [^>]*floating/g)?.length).toBe(1)
+  })
 })

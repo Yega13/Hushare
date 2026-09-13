@@ -1568,7 +1568,7 @@ export default function AlbumPageClient({ initialAlbum = null, initialPhotos, in
         )}
 
         {effectiveIsOwner && designerOpen && (
-          <OptionalPanel part="designer">
+          <OptionalPanel part="designer" floating>
           <AlbumDesigner album={album} photos={photos} onAlbumUpdated={handleAlbumUpdated} onClose={() => { designerOpenRef.current = false; setDesignerOpen(false) }} />
           </OptionalPanel>
         )}

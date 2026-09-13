@@ -9,6 +9,8 @@ import { useIsNarrow } from '@/lib/useIsNarrow'
 import { useT } from '@/i18n/LocaleProvider'
 import { qrForegroundColor } from '@/lib/album-design'
 import { renderBrandedCard, renderBWCard } from './TableCardModal'
+import { failOptionalPart } from '@/lib/optional-load'
+import { showAppToast } from '@/components/AppToast'
 
 type CardStyle = 'branded' | 'bw'
 
@@ -87,6 +89,12 @@ function TableCardView({ shareUrl, albumTitle, accentColor, onBack }: { shareUrl
         link.href = off.toDataURL('image/png')
         link.click()
       }
+    } catch (error) {
+      // A device that will not fetch the PDF library -- the same unexplained failure behind the album
+      // page's chunk rows -- or a card that would not render. lib/optional-load decides the report and
+      // whether the page's one stale-deploy reload is spent; when the page is not reloading, the owner
+      // is told it did not work instead of watching the button quietly reset.
+      if (!failOptionalPart('table-card', error)) showAppToast(t('common.errorGeneric'), 'error')
     } finally { setDownloading(false) }
   }
 

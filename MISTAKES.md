@@ -2268,3 +2268,30 @@ had thought of. The reviewer's own mutations found the rest.
 (or loop over the exits). Give size fixtures both orientations. When a module moves out of a
 component, pin the wiring in the same commit. And treat my own "all killed" as the homework, not the
 proof -- which is what rule 27 already says.
+
+### 122. A CONTAINMENT THAT FILED EVERY CRASH AS A LOADING PROBLEM, AND A TEST THAT AGREED BECAUSE IT COULD NOT SEE
+
+**The design gap (b54b17d, deployed).** OptionalPanel caught every render error inside a panel and
+reported all of them as "Optional part could not load: <part>". That sentence was built for one
+failure -- a chunk that would not fetch -- and I applied it to everything the boundary catches. A real
+bug in the upload panel would have been merged by coalesce_error_event into the chunk incident's
+row, which keeps its FIRST context, so the new bug's words were thrown away; and report-error, which
+reads the message, could no longer recognise a page Chrome's translator had rewritten. Before the
+containment, the route boundary sent the real message and the stack. I made the guest's page better
+and the panel's evidence worse, and did not check the second half.
+
+**The test that passed for the wrong reason.** tests/guest-actions-bar-qr asserted the load sentence
+and called it proof that the QR failure is reported "in words that reload nothing". The error the
+test produced was not a chunk error at all -- Vitest replaces an error thrown in a mock factory with a
+message of its own -- and the assertion held only because the code ignored the error's text entirely.
+Same shape as entry 121's File-type test: I did not look at what the fixture actually delivered.
+
+**Found by the planner, not the reviewer or me:** the reviewer's finding D said the two ShareMenu QR
+imports could fail on their own. Reading the built chunk graph showed the QR chunk is already loaded by
+the time ShareMenu renders; only the jspdf import is exposed. A plan built on the finding as written
+would have added handling for a failure that cannot occur.
+
+**Habit to build:** when one boundary catches several kinds of failure, name each kind before choosing
+what to report -- a catch-all sentence is a decision to lose evidence. Before trusting a test about an
+error's words, print the words the fixture really produces. And read the evidence behind a review
+finding before planning around it; a finding is a claim too.

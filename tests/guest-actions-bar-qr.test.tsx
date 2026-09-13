@@ -5,6 +5,8 @@ import GuestActionsBar from '@/components/GuestActionsBar'
 import { LocaleProvider } from '@/i18n/LocaleProvider'
 import { en } from '@/i18n/dictionaries/en'
 import type { Album, Photo } from '@/types'
+// The REAL rule: the mock below spreads the original module, so this is not the mocked sink.
+import { looksLikeStaleDeploy } from '@/lib/report-error'
 
 // THE QR CODE THAT RELOADED THE ALBUM.
 //
@@ -60,11 +62,14 @@ describe('a QR code that will not load', () => {
       </LocaleProvider>,
     )
     await waitFor(() => expect(reported, 'the failed QR import must be caught and reported').toHaveLength(1))
-    expect(reported[0]).toMatchObject({ source: 'optional:qr', level: 'warn', message: 'Optional part could not load: qr' })
-    // WHAT the kept detail says is lib/optional-load's property, pinned in tests/optional-load.test.ts
-    // with the production text. Vitest wraps an error thrown inside a mock factory in a message of its
-    // own, so here only its presence is asserted.
-    expect(typeof (reported[0] as { context: { detail: unknown } }).context.detail).toBe('string')
+    expect(reported[0]).toMatchObject({ source: 'optional:qr', level: 'warn' })
+    // In words that reload nothing. This used to assert the load sentence, and passed only because the
+    // code ignored the error's text: Vitest wraps an error thrown inside a mock factory in a message of
+    // its own, with no chunk words in it, so the report here is filed as a crash, not a load failure.
+    // How the production chunk text is classified is pinned against the real rule in
+    // tests/optional-load.test.ts. What this file proves is that the import is caught, reported as the
+    // QR code, at warn, in words the reload rule does not match.
+    expect(looksLikeStaleDeploy((reported[0] as { message: string }).message)).toBe(false)
     // And the album's actions are still there for the guest.
     expect(document.querySelectorAll('button').length).toBeGreaterThan(0)
   })

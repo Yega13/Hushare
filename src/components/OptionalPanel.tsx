@@ -1,10 +1,9 @@
 'use client'
 
-import type { ReactNode } from 'react'
+import type { CSSProperties, ReactNode } from 'react'
 import ErrorBoundary from '@/components/ErrorBoundary'
 import { useT } from '@/i18n/LocaleProvider'
-import { reportClientError, reloadOnceForStaleDeploy, staleReloadStillAvailable } from '@/lib/report-error'
-import { optionalLoadFailure, shouldReloadForOptional, type OptionalPart } from '@/lib/optional-load'
+import { failOptionalPart, type OptionalPart } from '@/lib/optional-load'
 
 // ONE PART OF THE ALBUM PAGE FAILING MUST NOT TAKE THE ALBUM WITH IT.
 //
@@ -16,28 +15,34 @@ import { optionalLoadFailure, shouldReloadForOptional, type OptionalPart } from 
 //
 // The decisions are lib/optional-load's: spend the page's one stale-deploy reload while it is still
 // available (a real stale deploy heals itself, as it did before), and once it has been spent, contain
-// the failure to this part and report it in words that reload nothing. This file only carries them
-// out, plus the one line a guest sees.
+// the failure to this part and report it -- a load failure in words that reload nothing, a crash in its
+// own words with the component that threw. lib/optional-load's failOptionalPart carries them out; this
+// file only catches the failure and shows the one line a guest sees.
+
+// The top of the screen, above the Settings sheet and apart from the toasts at the bottom. For a part
+// that opens as a full-screen overlay: its place in the page is below the photo grid, where a fallback
+// would appear nowhere near the button the owner just tapped.
+const FLOATING: CSSProperties = { position: 'fixed', top: 16, left: 0, right: 0, zIndex: 400, width: 'fit-content', marginInline: 'auto' }
+
 export default function OptionalPanel({
   part,
   children,
+  floating = false,
   onRetry = () => window.location.reload(),
 }: {
   part: OptionalPart
   children: ReactNode
+  /** Show the fallback at the top of the screen instead of where the part sits in the page. */
+  floating?: boolean
   /** Injected for tests. A real retry has to reload: a lazy component caches its rejected import, so re-rendering would only fail again. */
   onRetry?: () => void
 }) {
   const { t } = useT()
   return (
     <ErrorBoundary
-      onError={(error) => {
-        const reloading = shouldReloadForOptional(part, error, staleReloadStillAvailable())
-        reportClientError(optionalLoadFailure(part, error, reloading))
-        if (reloading) reloadOnceForStaleDeploy()
-      }}
+      onError={(error, info) => { failOptionalPart(part, error, info.componentStack) }}
       fallback={
-        <div role="alert" className="flex justify-center px-4 py-3">
+        <div role="alert" className="flex justify-center px-4 py-3" style={floating ? FLOATING : undefined}>
           <button
             type="button"
             onClick={onRetry}
