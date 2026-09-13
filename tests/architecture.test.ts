@@ -223,7 +223,11 @@ const SIZE_BUDGET: Record<string, number> = {
   // tests and 29 mutations, each one a failure that never throws: a photo stored sideways, with its
   // GPS position, as PNG bytes under a .webp name, or a phone that runs out of memory mid-batch.
   // What stays is the browser wiring: the adapters, the HEIC worker and the decode slots. Locked in.
-  'src/components/UploadZone.tsx': 1693,
+  // 1693 -> 1649: the HEIC worker's bookkeeping (one worker per tab, replies routed by id, the
+  // two-minute limit, the crash that fails every waiting photo) is lib/upload/heic-convert, with its
+  // tests and mutations. What stays is the two expressions the bundler must see written here: the
+  // worker's new URL(...) and import('heic2any'). Locked in.
+  'src/components/UploadZone.tsx': 1649,
   // +3 on 2026-08-30: the branding toggle gained a real plan check (it was dimmed but still
   // clickable), and Face Finder and bib search stopped riding on the collections flag. Three
   // lines of reasoning for three gates that were wrong. Deliberate.

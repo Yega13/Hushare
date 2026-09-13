@@ -24,5 +24,13 @@ export default {
       from: "    img.onerror = () => reject(new Error('img element load failed'))", to: '' },
     { name: 'the decode bound is raised far past what a phone can hold',
       from: '? 2 : 4,', to: '? 64 : 64,' },
+    { name: 'the HEIC worker is given a bare arrayBuffer read -- a stale iPhone file reference fails it',
+      from: '  readBytes: (file) => readFileRobust(file),', to: '  readBytes: (file) => file.arrayBuffer(),' },
+    { name: 'the HEIC worker is started as a classic script, which cannot run the ES module it is',
+      from: "{ type: 'module' })", to: "{ type: 'classic' })" },
+    { name: 'the main-thread converter loads nothing',
+      from: "return convertHeicWith(() => import('heic2any'), file)", to: 'return convertHeicWith(async () => ({ default: undefined }), file)' },
+    { name: 'the old worker singleton grows back beside the module',
+      from: 'function convertHeicMainThread(file: File): Promise<Blob> {', to: 'let _heicWorker: Worker | null = null\nfunction convertHeicMainThread(file: File): Promise<Blob> {' },
   ],
 }

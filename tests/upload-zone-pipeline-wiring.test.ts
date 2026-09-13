@@ -61,4 +61,16 @@ describe('UploadZone hands the photo pipeline the real browser', () => {
     expect(text).toMatch(/img\.onload = \(\) => resolve\(img\)/)
     expect(text).toMatch(/img\.onerror = \(\) => reject\(new Error\('img element load failed'\)\)/)
   })
+
+  it('the HEIC converters are given the real worker script, the retrying read and the real heic2any', () => {
+    const text = src()
+    expect(text).toMatch(/import \{ convertHeicWith, createHeicWorkerClient \} from '@\/lib\/upload\/heic-convert'/)
+    expect(text).toContain('const { convert: convertHeicViaWorker } = createHeicWorkerClient({')
+    // Literal, because the bundler only finds the worker file by reading this expression as written.
+    expect(text).toContain("createWorker: () => new Worker(new URL('../lib/heic-worker.ts', import.meta.url), { type: 'module' }),")
+    expect(text).toContain('readBytes: (file) => readFileRobust(file),')
+    expect(text).toContain("return convertHeicWith(() => import('heic2any'), file)")
+    // The bookkeeping left with the module; none of it may grow back here.
+    expect(text).not.toMatch(/_heicCallbacks|_heicWorker|function getHeicWorker/)
+  })
 })

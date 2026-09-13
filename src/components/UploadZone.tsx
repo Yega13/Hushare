@@ -49,6 +49,7 @@ setFallbackDecodeReporter((reason) => {
 import { snapshotFileRobust, readFileRobust, readFailure } from '@/lib/file-read'
 import { createImageEncoder, type Surface } from '@/lib/upload/image-encode'
 import { createImagePipeline } from '@/lib/upload/image-pipeline'
+import { convertHeicWith, createHeicWorkerClient } from '@/lib/upload/heic-convert'
 import { trackUploadStep } from '@/lib/engagement'
 import { showAppToast } from '@/components/AppToast'
 import { useT } from '@/i18n/LocaleProvider'
@@ -62,64 +63,19 @@ import {
   STREAM_CHUNK_SIZE_BYTES,
 } from '@/lib/constants'
 
-// ─── HEIC Worker singleton ────────────────────────────────────────────────────
-// Module-level state: safe in 'use client' — each browser tab gets its own JS heap.
-
-let _heicWorker: Worker | null = null
-let _heicJobId = 0
-const _heicCallbacks = new Map<number, {
-  resolve: (b: Blob) => void
-  reject: (e: Error) => void
-  timer: ReturnType<typeof setTimeout>
-}>()
-
-function getHeicWorker(): Worker {
-  if (_heicWorker) return _heicWorker
+// ─── HEIC conversion, handed this browser ─────────────────────────────────────
+// The worker bookkeeping -- one worker per tab, each reply routed to its own photo, a two-minute
+// limit, every waiting photo failed together when the worker crashes -- is lib/upload/heic-convert,
+// tested and mutated there. These two expressions stay in this file: the bundler finds the worker
+// script and the converter chunk only by reading them where they are written.
+const { convert: convertHeicViaWorker } = createHeicWorkerClient({
   // Path MUST be a string literal — Turbopack/Webpack detect workers by static analysis of new URL(...)
-  _heicWorker = new Worker(new URL('../lib/heic-worker.ts', import.meta.url), { type: 'module' })
-  _heicWorker.onmessage = (e: MessageEvent<{ id: number; jpeg?: Blob; error?: string }>) => {
-    const { id, jpeg, error } = e.data
-    const cb = _heicCallbacks.get(id)
-    if (!cb) return
-    _heicCallbacks.delete(id)
-    clearTimeout(cb.timer)
-    if (jpeg) cb.resolve(jpeg)
-    else cb.reject(new Error(error ?? 'HEIC conversion failed'))
-  }
-  _heicWorker.onerror = () => {
-    // Null out the worker — getHeicWorker() will create a fresh one for the next file.
-    // No permanent broken flag: a transient crash (e.g. OOM on one large file) should
-    // not permanently disable the worker for subsequent (smaller) files.
-    for (const [, cb] of _heicCallbacks) { clearTimeout(cb.timer); cb.reject(new Error('HEIC worker crashed')) }
-    _heicCallbacks.clear()
-    _heicWorker = null
-  }
-  return _heicWorker
-}
+  createWorker: () => new Worker(new URL('../lib/heic-worker.ts', import.meta.url), { type: 'module' }),
+  readBytes: (file) => readFileRobust(file),
+})
 
-async function convertHeicViaWorker(file: File): Promise<Blob> {
-  const worker = getHeicWorker()
-  const id = ++_heicJobId
-  // Robust read: an iOS/Android picked-file reference can be momentarily unreadable — retry
-  // through readFileRobust rather than throwing on the first arrayBuffer() attempt.
-  const buffer = await readFileRobust(file)
-  return new Promise<Blob>((resolve, reject) => {
-    const timer = setTimeout(() => {
-      _heicCallbacks.delete(id)
-      reject(new Error('HEIC conversion timed out'))
-    }, 120_000)
-    _heicCallbacks.set(id, { resolve, reject, timer })
-    worker.postMessage({ id, buffer }, [buffer])
-  })
-}
-
-async function convertHeicMainThread(file: File): Promise<Blob> {
-  const heic2any = (await import('heic2any')).default as unknown as (
-    opts: { blob: Blob; toType: string; quality: number }
-  ) => Promise<Blob | Blob[]>
-  if (typeof heic2any !== 'function') throw new Error('heic2any failed to load')
-  const result = await heic2any({ blob: file, toType: 'image/jpeg', quality: 0.9 })
-  return Array.isArray(result) ? result[0] : result
+function convertHeicMainThread(file: File): Promise<Blob> {
+  return convertHeicWith(() => import('heic2any'), file)
 }
 
 // ─── Image processing helpers ─────────────────────────────────────────────────
