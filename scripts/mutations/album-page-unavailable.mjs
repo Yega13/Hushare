@@ -10,5 +10,11 @@ export default {
     { name: 'a failed read is rendered as a 404',
       from: "  if (resolved.kind === 'invalid' || resolved.kind === 'notfound') notFound()",
       to: "  if (resolved.kind === 'invalid' || resolved.kind === 'notfound' || resolved.kind === 'unavailable') notFound()" },
+    { name: 'the photos that came with the album are dropped, so every album paints empty first',
+      from: "  const initialPhotos: Photo[] = resolved.photos\n",
+      to: "  const initialPhotos: Photo[] = []\n" },
+    { name: 'the total is taken from the first window, so a big album never offers the rest',
+      from: "  const initialTotal = resolved.total\n",
+      to: "  const initialTotal = resolved.photos.length\n" },
   ],
 }

@@ -275,12 +275,19 @@ describe('a guest never sees a photo the owner took down', () => {
     }
   })
 
-  it('every photo query is scoped to THIS album', async () => {
-    await list()
-    for (const q of photoFilters()) {
-      expect(q.filters, `an unscoped photo query: ${q.select}`).toContainEqual(['album_id', ALBUM_ID])
-    }
-  })
+  // All three reads, because they are three separate queries: the window goes through the shared
+  // readPhotoWindow, while the delta and the probe build their own. Only the window was asked here, so
+  // unscoping the delta read -- every live refresh -- passed the whole file.
+  for (const [label, opts] of [['the window', {}], ['the delta read', { since: '2026-09-01T00:00:00.000Z' }], ['the probe', { probe: true }]] as const) {
+    it(`every photo query is scoped to THIS album: ${label}`, async () => {
+      await list(opts)
+      const qs = photoFilters()
+      expect(qs.length, `${label} must query photos at all`).toBeGreaterThan(0)
+      for (const q of qs) {
+        expect(q.filters, `an unscoped photo query: ${q.select}`).toContainEqual(['album_id', ALBUM_ID])
+      }
+    })
+  }
 })
 
 describe('the bib bounds come from the ALBUM, never from the caller', () => {

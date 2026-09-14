@@ -12,7 +12,7 @@ import { getUserTierById, getUserTierResolved } from '@/lib/subscriptions'
 import { readWithRetry } from '@/lib/server/read-with-retry'
 import { albumEffectiveTier, NOT_REVEALED, PASSWORD_REQUIRED } from '@/lib/album-entitlements'
 import { uploadCapsForTier , GRANDFATHER_FREE_BEFORE } from '@/lib/media'
-import type { Album, Photo } from '@/types'
+import type { Album, Photo, Tier } from '@/types'
 
 // Shared album access/gating logic — the SINGLE source of truth used by both the API routes
 // (/api/album/resolve, /api/album/photos) and the server-rendered album page. Keeping the
@@ -198,6 +198,10 @@ export type ResolveResult =
 /** How long a page waits before retrying a failed album read once. Short, because a guest is waiting on it. */
 export const ALBUM_READ_RETRY_DELAY_MS = 250
 
+// An album row that passed its gates, before it is shaped for a browser. Internal to this file: it
+// still holds password_hash and user_id, which publishAlbum removes.
+type ResolvedRow = { kind: 'row'; admin: ReturnType<typeof createAdminClient>; album: AlbumRow; isOwner: boolean }
+
 // Resolve a slug (random or custom) to an album, applying the reveal/password gates.
 //
 // A valid owner cookie bypasses the gates, whether or not the caller asked for owner mode — see the
@@ -207,11 +211,11 @@ export const ALBUM_READ_RETRY_DELAY_MS = 250
 //
 // Gated albums still never leak photos into HTML for anyone who is not the owner: without a cookie
 // that matches owner_token, the gate is rendered server-side exactly as before.
-export async function resolveAlbum(
+async function resolveAlbumRow(
   slugRaw: string,
   wantsOwner: boolean,
   cookieStore: CookieStore,
-): Promise<ResolveResult> {
+): Promise<Exclude<ResolveResult, { kind: 'album' }> | ResolvedRow> {
   const slug = (slugRaw ?? '').trim().toLowerCase()
   if (!slug || slug.length < 4 || slug.length > 80 || !SLUG_RE.test(slug)) {
     return { kind: 'invalid' }
@@ -276,12 +280,27 @@ export async function resolveAlbum(
 
   touchActivity(admin, albumId, album.last_activity_at)
   maybeAutoSuggestHeader(admin, album)
+  return { kind: 'row', admin, album, isOwner }
+}
 
+export async function resolveAlbum(
+  slugRaw: string,
+  wantsOwner: boolean,
+  cookieStore: CookieStore,
+): Promise<ResolveResult> {
+  const row = await resolveAlbumRow(slugRaw, wantsOwner, cookieStore)
+  if (row.kind !== 'row') return row
   // Sized by the OWNER's tier, exactly as /api/upload/presign sizes it (getUserTierById on the same
   // album.user_id), so the uploader and the authorizer cannot disagree about what this album allows.
   // One indexed subscriptions lookup per album load — negligible next to the presign path, which
   // runs this same call once per FILE.
-  const ownerTier = await getUserTierById(album.user_id)
+  const ownerTier = await getUserTierById(row.album.user_id)
+  return { kind: 'album', album: publishAlbum(row.album, ownerTier, row.isOwner) }
+}
+
+// The album a browser receives: the row without its internal fields, and every paid extra re-checked
+// against the plan. Shared by resolveAlbum and loadAlbumPage so the two can never mask differently.
+function publishAlbum(album: AlbumRow, ownerTier: Tier, isOwner: boolean): Album {
   // THE ALBUM'S tier, which since the packages is not always its OWNER's: a one-off package can
   // entitle the album above the account. Every mask and cap below keys on this — using ownerTier
   // for any of them would re-split the fact require-tier just unified, and its symptom is precise:
@@ -307,76 +326,73 @@ export async function resolveAlbum(
   const { password_hash: _pw, retired_at: _ra, header_touched: _ht, user_id: _uid, ...publicAlbum } = album
   void _ra; void _ht; void _uid
   return {
-    kind: 'album',
-    album: {
-      ...publicAlbum,
-      password_protected: !!_pw,
-      // The ALBUM'S plan, not the viewer's.
-      //
-      // The owner toolbar used to ask /api/me/tier — the plan of whoever is looking. Owner links are
-      // shareable, so that is a different question, and after the gates were corrected to check
-      // album.user_id the two could disagree outright: an admin opening a free owner's album saw no
-      // PRO marks at all while the server refused every one of those features. It also meant the
-      // owner of a free album could never see the marks if they happened to be signed in elsewhere.
-      // Reveals nothing new — media_caps already states the tier exactly.
-      plan: effectiveTier,
-      // RE-CHECKED HERE, not just when it was switched on.
-      //
-      // hide_branding was gated only at write time, and nothing ever looked at it again: subscribe
-      // for one month at the intro price, remove the mark from every album, cancel, and it stayed
-      // gone forever. The FAQ tells customers paid extras are removed when a plan lapses, so this
-      // was also a promise the code did not keep. Face Finder and Collections already re-check the
-      // owner's tier on every request; this now does the same, and it is free — ownerTier is
-      // already in hand for the upload caps.
-      // Two ways to lose the mark, and both are refused here rather than only where they are set.
-      // The plan check is the lapsed-subscription case; branding_locked is a collaboration album,
-      // which was given Max for free in exchange for carrying our name. A stored `true` from before
-      // either rule applied must not go on taking effect — that is exactly how hide_branding
-      // survived a cancelled subscription forever the first time.
-      hide_branding: album.hide_branding && effectiveTier !== 'free' && !album.branding_locked,
-      // SAME RE-CHECK, for the two flags that put a control in front of GUESTS.
-      //
-      // Both of these open a search that api/album/face-search and api/album/bib-search refuse
-      // unless the owner is on Max. Left unmasked, an album whose owner set them up while they were
-      // free — or who has since downgraded — shows its visitors a button that always fails, which
-      // reads as a broken album rather than as a plan boundary. The owner's own toolbar reads its
-      // state from `plan` and the PRO/MAX marks, so it still shows the setting truthfully.
-      //
-      // require_approval and reveal_at are deliberately NOT masked here: unmasking those would
-      // PUBLISH something the owner is holding back — photos awaiting approval, or an album that
-      // has not opened yet. A plan boundary must never be the thing that reveals someone's photos.
-      face_finder_enabled: album.face_finder_enabled && effectiveTier === 'studio',
-      bib_search_enabled: album.bib_search_enabled && effectiveTier === 'studio',
-      // THE SAME RE-CHECK FOR THE TWO PAID MARKS, which survived a lapsed plan forever.
-      //
-      // hide_branding above documents why this exists: a stored `true` from when the album was paid
-      // kept taking effect after the payment stopped. The album logo (Pro) and the sponsor marks
-      // (Max) were gated only at WRITE time and never looked at again — so one month of Pro at the
-      // intro price bought a custom logo on every album, permanently.
-      //
-      // MASKED FOR GUESTS, TRUE FOR THE OWNER, and that asymmetry is the point. The mark must stop
-      // being PUBLISHED when the plan lapses — that is the leak. But AlbumDesigner renders
-      // album.logo_url as the owner's current logo, so masking it for them too would show an empty
-      // slot on a file we still hold, and the honest reading of that is "Hushare deleted my logo".
-      // The owner keeps seeing their own asset, with the PRO/MAX badge beside it saying what makes
-      // it visible; nobody else sees a mark that is not paid for. Unlike require_approval, nothing
-      // here is being un-hidden — a mark disappearing costs the owner a mark, not their guests'
-      // privacy.
-      logo_url: (isOwner || markGrandfathered || effectiveTier !== 'free') ? album.logo_url : null,
-      // VALIDATED HERE, once, at the only point a database row becomes an Album. Everything
-      // downstream can then trust SponsorLogo[] instead of re-narrowing jsonb in three deletion
-      // paths that each learned to distrust it separately.
-      sponsor_logos: (isOwner || markGrandfathered || effectiveTier === 'studio')
-        ? parseSponsorLogos(album.sponsor_logos)
-        : [],
-      media_caps: uploadCapsForTier(effectiveTier),
-      // The ONE deliberately account-scoped feature. A collection groups albums across an
-      // account, so a single-album package must not unlock it — `plan` above would say it does.
-      // The toolbar needs this separate truth to hide the section on a packaged album (pure-hide)
-      // instead of showing an unlocked control the collections API then refuses.
-      collections_enabled: ownerTier === 'studio',
-    } as unknown as Album,
-  }
+    ...publicAlbum,
+    password_protected: !!_pw,
+    // The ALBUM'S plan, not the viewer's.
+    //
+    // The owner toolbar used to ask /api/me/tier — the plan of whoever is looking. Owner links are
+    // shareable, so that is a different question, and after the gates were corrected to check
+    // album.user_id the two could disagree outright: an admin opening a free owner's album saw no
+    // PRO marks at all while the server refused every one of those features. It also meant the
+    // owner of a free album could never see the marks if they happened to be signed in elsewhere.
+    // Reveals nothing new — media_caps already states the tier exactly.
+    plan: effectiveTier,
+    // RE-CHECKED HERE, not just when it was switched on.
+    //
+    // hide_branding was gated only at write time, and nothing ever looked at it again: subscribe
+    // for one month at the intro price, remove the mark from every album, cancel, and it stayed
+    // gone forever. The FAQ tells customers paid extras are removed when a plan lapses, so this
+    // was also a promise the code did not keep. Face Finder and Collections already re-check the
+    // owner's tier on every request; this now does the same, and it is free — ownerTier is
+    // already in hand for the upload caps.
+    // Two ways to lose the mark, and both are refused here rather than only where they are set.
+    // The plan check is the lapsed-subscription case; branding_locked is a collaboration album,
+    // which was given Max for free in exchange for carrying our name. A stored `true` from before
+    // either rule applied must not go on taking effect — that is exactly how hide_branding
+    // survived a cancelled subscription forever the first time.
+    hide_branding: album.hide_branding && effectiveTier !== 'free' && !album.branding_locked,
+    // SAME RE-CHECK, for the two flags that put a control in front of GUESTS.
+    //
+    // Both of these open a search that api/album/face-search and api/album/bib-search refuse
+    // unless the owner is on Max. Left unmasked, an album whose owner set them up while they were
+    // free — or who has since downgraded — shows its visitors a button that always fails, which
+    // reads as a broken album rather than as a plan boundary. The owner's own toolbar reads its
+    // state from `plan` and the PRO/MAX marks, so it still shows the setting truthfully.
+    //
+    // require_approval and reveal_at are deliberately NOT masked here: unmasking those would
+    // PUBLISH something the owner is holding back — photos awaiting approval, or an album that
+    // has not opened yet. A plan boundary must never be the thing that reveals someone's photos.
+    face_finder_enabled: album.face_finder_enabled && effectiveTier === 'studio',
+    bib_search_enabled: album.bib_search_enabled && effectiveTier === 'studio',
+    // THE SAME RE-CHECK FOR THE TWO PAID MARKS, which survived a lapsed plan forever.
+    //
+    // hide_branding above documents why this exists: a stored `true` from when the album was paid
+    // kept taking effect after the payment stopped. The album logo (Pro) and the sponsor marks
+    // (Max) were gated only at WRITE time and never looked at again — so one month of Pro at the
+    // intro price bought a custom logo on every album, permanently.
+    //
+    // MASKED FOR GUESTS, TRUE FOR THE OWNER, and that asymmetry is the point. The mark must stop
+    // being PUBLISHED when the plan lapses — that is the leak. But AlbumDesigner renders
+    // album.logo_url as the owner's current logo, so masking it for them too would show an empty
+    // slot on a file we still hold, and the honest reading of that is "Hushare deleted my logo".
+    // The owner keeps seeing their own asset, with the PRO/MAX badge beside it saying what makes
+    // it visible; nobody else sees a mark that is not paid for. Unlike require_approval, nothing
+    // here is being un-hidden — a mark disappearing costs the owner a mark, not their guests'
+    // privacy.
+    logo_url: (isOwner || markGrandfathered || effectiveTier !== 'free') ? album.logo_url : null,
+    // VALIDATED HERE, once, at the only point a database row becomes an Album. Everything
+    // downstream can then trust SponsorLogo[] instead of re-narrowing jsonb in three deletion
+    // paths that each learned to distrust it separately.
+    sponsor_logos: (isOwner || markGrandfathered || effectiveTier === 'studio')
+      ? parseSponsorLogos(album.sponsor_logos)
+      : [],
+    media_caps: uploadCapsForTier(effectiveTier),
+    // The ONE deliberately account-scoped feature. A collection groups albums across an
+    // account, so a single-album package must not unlock it — `plan` above would say it does.
+    // The toolbar needs this separate truth to hide the section on a packaged album (pure-hide)
+    // instead of showing an unlocked control the collections API then refuses.
+    collections_enabled: ownerTier === 'studio',
+  } as unknown as Album
 }
 
 // Photos rows the product cannot represent -- an unknown media_type or storage_backend -- are left
@@ -750,8 +766,8 @@ export async function fetchAuthorizedPhotos(
   // the real event album, and at a thousand guests that was the entire monthly database transfer
   // allowance in one afternoon. Deliberately NOT combined with a bib search or the recent feed —
   // those answer different questions and a delta of a filtered set is not a delta of the album.
-  let query = admin.from('photos').select(PHOTO_SELECT_COLS).eq('album_id', albumId)
   if (opts.since && opts.bib === undefined && !opts.recentLimit) {
+    const query = admin.from('photos').select(PHOTO_SELECT_COLS).eq('album_id', albumId)
     const rows = await (isOwner ? query : query.eq('hidden', false))
       .gt('created_at', opts.since)
       .order('created_at', { ascending: false })
@@ -765,6 +781,32 @@ export async function fetchAuthorizedPhotos(
     const { count } = await (isOwner ? countQ : countQ.eq('hidden', false))
     return { kind: 'ok', photos: narrowAndReport(rows.data ?? []), total: count ?? 0 }
   }
+  const { photos, total } = await readPhotoWindow(admin, album, isOwner, { offset, limit, recent, bibCandidates, countWithRows: false })
+  return {
+    kind: 'ok',
+    photos,
+    total,
+    bibStats: opts.bibStats ? await countBibStats(albumId, isOwner) : undefined,
+  }
+}
+
+// One window of an album's photos, in the album's own order, with the total that drives the wall
+// counter and the album's hasMore. The album page and the photo API both read through it, so the
+// moderation filter and the paging order are written once. Throws on a failed read.
+//
+// countWithRows asks PostgREST for the exact total IN THE SAME REQUEST as the rows (Prefer:
+// count=exact; the total comes back in Content-Range). The album page wants that: a guest is
+// waiting on the first paint, and a separate count was a whole extra round trip on every album
+// bigger than one window. The photo API keeps the rule below instead, because it runs on every
+// refresh at an event and most of those pages come back short, where no count is needed at all.
+async function readPhotoWindow(
+  admin: ReturnType<typeof createAdminClient>,
+  album: { id: string; photo_order: string | null },
+  isOwner: boolean,
+  opts: { offset: number; limit: number; recent: number | null; bibCandidates: string[] | null; countWithRows: boolean },
+): Promise<{ photos: Photo[]; total: number }> {
+  const { offset, limit, recent, bibCandidates } = opts
+  let query = admin.from('photos').select(PHOTO_SELECT_COLS, opts.countWithRows ? { count: 'exact' } : undefined).eq('album_id', album.id)
   if (!isOwner) query = query.eq('hidden', false)
   if (bibCandidates) query = query.overlaps('bib_numbers', bibCandidates)
   // recentLimit (the live wall): fetch only the newest N — the wall shows a bounded window, so
@@ -775,31 +817,33 @@ export async function fetchAuthorizedPhotos(
     // could swap places between page fetches, so range() paging would skip/duplicate one. With it
     // the total order is stable, which is what makes offset paging correct.
     // Ordering comes from the ALBUM, not from a constant here. It was fixed oldest-first, which
-      // made the first window — the slice every realtime refresh reloads — the 500 OLDEST photos,
-      // so on a growing album a new upload sorted past it and no visitor ever saw it arrive.
-      // lib/photo-order.ts owns the clauses and guarantees a unique tiebreak.
+    // made the first window — the slice every realtime refresh reloads — the 500 OLDEST photos,
+    // so on a growing album a new upload sorted past it and no visitor ever saw it arrive.
+    // lib/photo-order.ts owns the clauses and guarantees a unique tiebreak.
     : orderClausesFor(isPhotoOrder(album.photo_order) ? album.photo_order : 'oldest')
         .reduce(
           (q, c) => q.order(c.column, { ascending: c.ascending, nullsFirst: c.nullsFirst ?? false }),
           query,
         )
         .range(offset, offset + limit - 1)
-  const { data: photos, error } = await query
+  const { data: photos, error, count: countedWithRows } = await query
 
   if (error) {
     console.error('[album-access] photos fetch failed:', error.message)
     throw new Error('photos_fetch_failed')
   }
 
-  // Total drives the wall counter + the album's hasMore. Optimisation: if the full view returned
-  // FEWER than a full page, we've reached the end — so total = offset + what we got, no count query
-  // (the common small-album case). Only a full page (maybe more) or the wall needs a HEAD count.
+  // Without the total in hand: if the full view returned FEWER than a full page, we've reached the
+  // end — so total = offset + what we got, no count query (the common small-album case). Only a full
+  // page (maybe more) or the wall needs a HEAD count.
   const got = photos?.length ?? 0
   let total: number
-  if (!recent && got < limit) {
+  if (opts.countWithRows) {
+    total = countedWithRows ?? offset + got
+  } else if (!recent && got < limit) {
     total = offset + got
   } else {
-    let countQuery = admin.from('photos').select('id', { count: 'exact', head: true }).eq('album_id', albumId)
+    let countQuery = admin.from('photos').select('id', { count: 'exact', head: true }).eq('album_id', album.id)
     if (!isOwner) countQuery = countQuery.eq('hidden', false)
     // The count must carry the same filter as the rows it is counting. Without this a bib search
     // that filled a page would report the whole album's size as its match count.
@@ -807,12 +851,57 @@ export async function fetchAuthorizedPhotos(
     const { count } = await countQuery
     total = count ?? offset + got
   }
+  return { photos: narrowAndReport(photos ?? []), total }
+}
 
+export type AlbumPageLoad =
+  | Exclude<ResolveResult, { kind: 'album' }>
+  | { kind: 'album'; album: Album; photos: Photo[]; total: number }
+
+/**
+ * EVERYTHING THE ALBUM PAGE RENDERS: ONE ALBUM READ, THEN THE REST AT ONCE.
+ *
+ * The review of 2026-09-14 measured a guest waiting ~2.3 s (4.7 s worst) before the first photo
+ * address, because the page chained five database calls at 350 ms-1 s each: the album by slug, the
+ * owner's plan, the album AGAIN by id, 500 photos, then the count. Only the album read has to come
+ * first. The gate is resolveAlbum's own, unchanged; the owner's plan and the photo window (with its
+ * total in the same request) then run together.
+ *
+ * A failed photo read does not fail the page: the album renders with an empty window, the failure is
+ * reported, and the client refetches -- what the page did when its separate photo read threw.
+ */
+export async function loadAlbumPage(slugRaw: string, cookieStore: CookieStore): Promise<AlbumPageLoad> {
+  const row = await resolveAlbumRow(slugRaw, false, cookieStore)
+  if (row.kind !== 'row') return row
+  const { admin, album, isOwner } = row
+
+  // WHO COUNTS AS THE OWNER FOR THE PHOTOS is the photo listing's rule, not the resolve's: the owner
+  // cookie, compared against owner_token. resolveAlbumRow only asks when ownership could lift a gate,
+  // so on an open album the token is looked up here, and only when an owner cookie exists. It never
+  // joins the shared row, because publishAlbum spreads that row into what the browser receives. A
+  // failed lookup is a guest, which errs toward showing fewer photos, never more.
+  const photosAsOwner = async (): Promise<boolean> => {
+    if (isOwner) return true
+    const ownerCookie = (cookieStore.get(`hushare_owner_${album.id}`)?.value ?? '').trim()
+    if (!ownerCookie) return false
+    const { data: ownerRow } = await admin.from('albums').select('owner_token').eq('id', album.id).maybeSingle()
+    return !!ownerRow && timingSafeEqual(ownerCookie, ownerRow.owner_token)
+  }
+
+  const [ownerTier, firstWindow] = await Promise.all([
+    getUserTierById(album.user_id),
+    photosAsOwner()
+      .then((owner) => readPhotoWindow(admin, album, owner, { offset: 0, limit: ALBUM_PAGE_SIZE, recent: null, bibCandidates: null, countWithRows: true }))
+      .catch((e: unknown) => {
+        reportServerError('album-access', 'Album page photo read failed', { albumId: album.id, context: { reason: e instanceof Error ? e.message : String(e) } })
+        return null
+      }),
+  ])
   return {
-    kind: 'ok',
-    photos: narrowAndReport(photos ?? []),
-    total,
-    bibStats: opts.bibStats ? await countBibStats(albumId, isOwner) : undefined,
+    kind: 'album',
+    album: publishAlbum(album, ownerTier, isOwner),
+    photos: firstWindow?.photos ?? [],
+    total: firstWindow?.total ?? 0,
   }
 }
 

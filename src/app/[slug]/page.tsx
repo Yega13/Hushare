@@ -3,7 +3,7 @@ import { cookies } from 'next/headers'
 import type { Metadata } from 'next'
 import type { Photo } from '@/types'
 import { createAdminClient } from '@/lib/supabase/admin'
-import { resolveAlbum, fetchAuthorizedPhotos } from '@/lib/server/album-access'
+import { loadAlbumPage } from '@/lib/server/album-access'
 import { track } from '@/lib/analytics'
 import { getVisitorContext } from '@/lib/visitor-context'
 import EngagementBeacon from '@/components/EngagementBeacon'
@@ -170,7 +170,9 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 export default async function AlbumPage({ params, searchParams }: Props) {
   const { slug } = await params
   const cookieStore = await cookies()
-  const resolved = await resolveAlbum(slug, false, cookieStore)
+  // ONE ALBUM READ, THEN THE OWNER'S PLAN AND THE PHOTOS AT ONCE (lib/server/album-access). This page
+  // used to resolve the album and then fetch its photos separately, reading the album twice.
+  const resolved = await loadAlbumPage(slug, cookieStore)
 
   if (resolved.kind === 'invalid' || resolved.kind === 'notfound') notFound()
   // THE READ FAILED, SO NOTHING IS SEEDED -- and nothing is claimed about the album. The client
@@ -223,19 +225,10 @@ export default async function AlbumPage({ params, searchParams }: Props) {
     await getVisitorContext(arrivedVia),
   )
 
-  // Open / already-unlocked — fetch photos server-side so they land in the initial HTML.
-  let initialPhotos: Photo[] = []
-  let initialTotal = 0
-  try {
-    const photosRes = await fetchAuthorizedPhotos(resolved.album.id, cookieStore)
-    if (photosRes.kind === 'ok') {
-      initialPhotos = photosRes.photos
-      initialTotal = photosRes.total ?? photosRes.photos.length
-    }
-  } catch {
-    // Server-side photo fetch failed — render the shell; the client effect refetches.
-    initialPhotos = []
-  }
+  // Open / already-unlocked — the photos came with the album, so they land in the initial HTML. A
+  // failed photo read arrives as an empty window, already reported; the client effect refetches.
+  const initialPhotos: Photo[] = resolved.photos
+  const initialTotal = resolved.total
 
   return (
     <>

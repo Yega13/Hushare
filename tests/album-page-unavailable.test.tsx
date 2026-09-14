@@ -7,7 +7,8 @@ import type { ReactElement } from 'react'
 // scan rendered "this album does not exist" -- the one answer a guest at the venue believes and acts
 // on. The page now renders the client unseeded instead, which resolves the album itself and offers its
 // "try again" screen if that fails too. Server components are plain async functions, so this calls
-// the page and reads the tree it returns.
+// the page and reads the tree it returns. The page loads through loadAlbumPage (one album read, then
+// the plan, photos and count together); its own behaviour is tests/album-page-load.
 
 const state = {
   resolved: { kind: 'unavailable' } as Record<string, unknown>,
@@ -19,10 +20,7 @@ vi.mock('next/navigation', () => ({
 }))
 vi.mock('next/headers', () => ({ cookies: async () => ({ get: () => undefined }) }))
 vi.mock('@/lib/supabase/admin', () => ({ createAdminClient: () => ({}) }))
-vi.mock('@/lib/server/album-access', () => ({
-  resolveAlbum: async () => state.resolved,
-  fetchAuthorizedPhotos: async () => ({ kind: 'ok', photos: [{ id: 'p1' }], total: 1 }),
-}))
+vi.mock('@/lib/server/album-access', () => ({ loadAlbumPage: async () => state.resolved }))
 vi.mock('@/lib/analytics', () => ({ track: () => {} }))
 vi.mock('@/lib/visitor-context', () => ({ getVisitorContext: async () => ({}) }))
 vi.mock('@/components/EngagementBeacon', () => ({ default: () => null }))
@@ -61,9 +59,10 @@ describe('the album page', () => {
     expect(state.notFoundCalls).toBe(1)
   })
 
-  it('an album that resolves is seeded with its photos, as before', async () => {
-    state.resolved = { kind: 'album', album: { id: 'aaaaaaaa-1111-4111-8111-aaaaaaaaaaaa', slug: 'abcd1234' } }
+  it('an album that resolves is seeded with the photos that came with it', async () => {
+    // A total bigger than the window, so a total read off the window cannot pass for the real one.
+    state.resolved = { kind: 'album', album: { id: 'aaaaaaaa-1111-4111-8111-aaaaaaaaaaaa', slug: 'abcd1234' }, photos: [{ id: 'p1' }], total: 4566 }
     const client = clientIn((await render()) as ReactElement)
-    expect(client!.props).toMatchObject({ initialAlbum: { slug: 'abcd1234' }, initialPhotos: [{ id: 'p1' }], initialTotal: 1 })
+    expect(client!.props).toMatchObject({ initialAlbum: { slug: 'abcd1234' }, initialPhotos: [{ id: 'p1' }], initialTotal: 4566 })
   })
 })

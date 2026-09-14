@@ -60,9 +60,14 @@ export default {
     to: "      return q\n        .order('created_at', { ascending: false })" },
 
   // ── which album, and which columns the gate needs ────────────────────────────────────────────
+  // The main listing reads through readPhotoWindow, which the album page shares; the delta read keeps
+  // its own query. Both are named, because either one unscoped hands a guest another album's photos.
   { name: 'the photo query is not scoped to this album',
-    from: "  let query = admin.from('photos').select(PHOTO_SELECT_COLS).eq('album_id', albumId)",
-    to: "  let query = admin.from('photos').select(PHOTO_SELECT_COLS)" },
+    from: "  let query = admin.from('photos').select(PHOTO_SELECT_COLS, opts.countWithRows ? { count: 'exact' } : undefined).eq('album_id', album.id)",
+    to: "  let query = admin.from('photos').select(PHOTO_SELECT_COLS, opts.countWithRows ? { count: 'exact' } : undefined)" },
+  { name: 'the DELTA read is not scoped to this album',
+    from: "    const query = admin.from('photos').select(PHOTO_SELECT_COLS).eq('album_id', albumId)",
+    to: "    const query = admin.from('photos').select(PHOTO_SELECT_COLS)" },
   { name: 'the album lookup stops selecting the password hash, so every gated album reads as open',
     from: "    .select('id, user_id, owner_token, password_hash, reveal_at, retired_at, bib_search_enabled, bib_min, bib_max, bib_excluded_numbers, photo_order, package_tier, package_expires_at')",
     to: "    .select('id, user_id, owner_token, reveal_at, retired_at, bib_search_enabled, bib_min, bib_max, bib_excluded_numbers, photo_order, package_tier, package_expires_at')" },
