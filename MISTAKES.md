@@ -2370,3 +2370,37 @@ position in the walk is a key (startAfter), never an offset.
 command named beside it. A fake models only what I have SEEN the real service do, and anything else it
 does is written down as an assumption -- then checked against the real thing before the code relies on
 it. And a test's expected value is traced through the code when it is written, not after it fails.
+
+### 126. A TIMEZONE PIN I NEVER MEASURED, FAILURE VALUES I THREW AWAY, AND TWO COMMENTS THAT DISAGREED
+
+**The pin.** ac5a4f3 made tests/reveal-input.test.ts assign `process.env.TZ = 'Asia/Yerevan'` at the
+top of the file, and I proved it by running that one file under TZ=UTC. I never checked whether a
+runtime assignment takes effect wherever Vitest runs a file. Measured on 2026-09-14 (Node 22, Windows):
+it works on the main thread and in a child process, and does NOTHING inside a worker thread. Vitest 4
+defaults to child processes, so the pin holds here -- by that default, not by anything the test knows.
+
+**The values.** The first full-suite run of the day reported those three tests failing. I had piped the
+suite through `grep -E "×|FAIL|Tests "`, so the expected and received values -- the only evidence --
+never reached the screen. Every rerun passed, alone and in the full suite, and the cause is still not
+known. That is MISTAKES 123 again: a filter over the live stream is a decision, made in advance, about
+which lines will matter. The test now prints the timezone state it saw on every assertion.
+
+**The redundant guard.** request-error's digest check tested `rawDigest !== ''` next to an `if (digest)`
+that already treated an empty string as none. It surfaced only when I wrote its mutation and saw that
+removing it could not change a single outcome -- an equivalent mutant. Removed.
+
+**The comments.** upload-policy.ts said "Safari decodes HEIC natively and never reaches the converter, so
+every iPhone is fine" and called heic2any WASM with emscripten glue; lib/heic-worker.ts says heic2any is
+plain JavaScript with no WASM at all; image-decode.ts said iPhones never pass createImageBitmap. HEIF
+decoding in Safari begins at 17 (caniuse), and a Mac on Safari 16.6 reached the converter on
+2026-09-13 (row 1246). Rule 13 holds for prose too: two comments stating one fact disagreed, and the
+false one was the one sitting beside the decision.
+
+**What went right, to keep:** three documentation fetches failed to say whether an uncancelled worker
+error reaches window.onerror. I did not ship `preventDefault()` on the assumption; a targeted search
+found the HTML Standard's sentence first.
+
+**Habit to build:** a suite run writes its whole output to a file and the grep runs on the file, so a
+failure keeps its values. A test that changes process-wide state proves the change took effect in the
+process it runs in, not in a separate one-off run. And when a comment states a platform fact, it names
+where the fact was checked.

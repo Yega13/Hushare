@@ -9,24 +9,32 @@ process.env.TZ = 'Asia/Yerevan'
 
 // THE DELAYED-REVEAL RULES: what the picker shows, what a save sends, whether the album is sealed.
 
+// THESE THREE FAILED TOGETHER ONCE, in a full-suite run on 2026-09-14 that ran beside a production build,
+// and passed on every rerun and alone. The run's output did not include the values, so the cause is
+// not known. Each assertion now names the timezone state it saw, so the next failure says what it was.
+const zone = () => {
+  const d = new Date(2026, 9, 1, 0, 30)
+  return `TZ=${process.env.TZ} offset=${d.getTimezoneOffset()} intl=${Intl.DateTimeFormat().resolvedOptions().timeZone} pid=${process.pid} now=${new Date().toISOString()}`
+}
+
 describe('toDatetimeLocal -- what the picker shows for a stored reveal', () => {
   it('formats a timestamp as the local wall-clock value the input can hold', () => {
     const iso = new Date(2026, 8, 20, 18, 30).toISOString()   // local 20 Sep 2026 18:30
-    expect(toDatetimeLocal(iso)).toBe('2026-09-20T18:30')
+    expect(toDatetimeLocal(iso), zone()).toBe('2026-09-20T18:30')
   })
   it('reads the LOCAL date even when UTC is a different day -- half past midnight on the first', () => {
     // The one bug class this exists to prevent: an owner near midnight reading yesterday's date in
     // the picker. A review's mutation swapped the local getters for UTC ones and every mid-day
     // fixture stayed green; this one does not, in any timezone that is not UTC itself.
     const iso = new Date(2026, 9, 1, 0, 30).toISOString()   // local 1 Oct 2026 00:30
-    expect(toDatetimeLocal(iso)).toBe('2026-10-01T00:30')
+    expect(toDatetimeLocal(iso), zone()).toBe('2026-10-01T00:30')
     const d = new Date(iso)
     // THE PREMISE, asserted rather than skipped. In UTC this test proves nothing, and it used to pass anyway.
-    expect(d.getTimezoneOffset(), 'this test needs a timezone off UTC to mean anything').not.toBe(0)
-    expect(`${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`).not.toBe('2026-10-01')
+    expect(d.getTimezoneOffset(), `this test needs a timezone off UTC to mean anything -- ${zone()}`).not.toBe(0)
+    expect(`${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`, zone()).not.toBe('2026-10-01')
   })
   it('pads single-digit months, days, hours and minutes', () => {
-    expect(toDatetimeLocal(new Date(2026, 0, 5, 7, 4).toISOString())).toBe('2026-01-05T07:04')
+    expect(toDatetimeLocal(new Date(2026, 0, 5, 7, 4).toISOString()), zone()).toBe('2026-01-05T07:04')
   })
   it('is empty for no reveal, and for a value that is not a date', () => {
     expect(toDatetimeLocal(null)).toBe('')
