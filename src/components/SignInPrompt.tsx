@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import Image from 'next/image'
 import { X } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
+import { safeNextPath } from '@/lib/safe-next'
 
 // A branded, dismissible "Continue with Google" card shown at high-intent moments (owner saving their
 // album, a guest who just found their photos, a download). Google sign-in captures a real account +
@@ -70,13 +71,9 @@ export default function SignInPrompt({
     const origin = window.location.origin
     const target = next ?? (window.location.pathname + window.location.search)
     const callback = new URL('/auth/callback', origin)
-    // Only ever return to a same-origin path (mirrors the login page's guard).
-    try {
-      const u = new URL(target, origin)
-      callback.searchParams.set('next', u.origin === origin ? u.pathname + u.search : '/')
-    } catch {
-      callback.searchParams.set('next', '/')
-    }
+    // Only ever return to a page on this site: the same guard sign-in itself applies (lib/safe-next), which
+    // judges where the redirect lands rather than trusting a same-origin parse.
+    callback.searchParams.set('next', safeNextPath(target, origin) ?? '/')
     const { error } = await supabase.auth.signInWithOAuth({
       provider: 'google',
       options: { redirectTo: callback.toString() },

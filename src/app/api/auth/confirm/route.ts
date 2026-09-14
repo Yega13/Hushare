@@ -4,6 +4,7 @@ import type { EmailOtpType } from '@supabase/supabase-js'
 import { hasAccountAccess } from '@/lib/access'
 import { checkRateLimit, clientIpKey } from '@/lib/rate-limit'
 import { forbidCrossSiteRequest } from '@/lib/request-security'
+import { safeNextPath } from '@/lib/safe-next'
 
 export const runtime = 'nodejs'
 
@@ -59,15 +60,9 @@ export async function POST(req: NextRequest) {
     return NextResponse.redirect(new URL('/login?error=invalid_code', origin), { status: 303 })
   }
 
-  // Same-origin only, normalized through the URL constructor so encoded bypasses
-  // (//evil.com, /%2F%2Fevil.com) can't slip through a naive startsWith('/') check.
-  let requestedNext: string | null = null
-  if (rawNext) {
-    try {
-      const parsed = new URL(rawNext, origin)
-      if (parsed.origin === origin) requestedNext = parsed.pathname + parsed.search
-    } catch { /* malformed — ignore */ }
-  }
+  // Same-site destinations only, judged by where the redirect LANDS (lib/safe-next). The old same-origin
+  // check passed https://hushare.space//evil.example and redirected the new session to evil.example.
+  const requestedNext = safeNextPath(rawNext, origin)
 
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
   const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY

@@ -1,4 +1,5 @@
 import { NextResponse, type NextRequest } from 'next/server'
+import { safeNextPath } from '@/lib/safe-next'
 
 export const runtime = 'nodejs'
 
@@ -21,15 +22,10 @@ function randomState(): string {
   return [...bytes].map((b) => b.toString(16).padStart(2, '0')).join('')
 }
 
-// Only allow same-origin return paths — never an attacker-supplied absolute URL.
+// Only a page on this site (lib/safe-next, which judges where the redirect would LAND). Nothing reads the
+// cookie this feeds yet -- there is no TikTok callback route -- so it is guarded before one is written.
 function safeNext(raw: string | null, origin: string): string {
-  if (!raw) return '/'
-  try {
-    const u = new URL(raw, origin)
-    return u.origin === origin ? u.pathname + u.search : '/'
-  } catch {
-    return '/'
-  }
+  return safeNextPath(raw, origin) ?? '/'
 }
 
 export async function GET(req: NextRequest) {

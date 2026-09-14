@@ -6,6 +6,7 @@ import { createClient } from '@/lib/supabase/server'
 import { hasAccountAccess } from '@/lib/access'
 import { getServerLocale } from '@/i18n/server'
 import { getDictionary } from '@/i18n/get-dictionary'
+import { safeNextPath } from '@/lib/safe-next'
 import LoginForm from './LoginForm'
 
 export const runtime = 'nodejs'
@@ -22,14 +23,9 @@ type Props = {
 
 export default async function LoginPage({ searchParams }: Props) {
   const { next } = await searchParams
-  let requestedNext: string | null = null
-  if (next) {
-    try {
-      // Use URL constructor to normalise encoded variants before validating same-origin.
-      const parsed = new URL(next, 'https://hushare.space')
-      if (parsed.origin === 'https://hushare.space') requestedNext = parsed.pathname + parsed.search
-    } catch { /* invalid URL — leave null */ }
-  }
+  // Same-site destinations only (lib/safe-next). A signed-in visitor is redirected straight there, and the
+  // old same-origin check sent https://hushare.space//evil.example to evil.example.
+  const requestedNext = safeNextPath(next, 'https://hushare.space')
 
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()

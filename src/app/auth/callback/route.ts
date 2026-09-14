@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from 'next/server'
 import { createServerClient, type CookieOptions } from '@supabase/ssr'
 import { hasAccountAccess } from '@/lib/access'
+import { safeNextPath } from '@/lib/safe-next'
 
 export const runtime = 'nodejs'
 
@@ -17,15 +18,9 @@ export async function GET(req: NextRequest) {
   const code = url.searchParams.get('code')
   const rawNext = url.searchParams.get('next') ?? ''
 
-  // Normalize via URL constructor before validating — blocks encoded bypasses like
-  // /%2F%2Fevil.com or ///evil.com that pass naive startsWith('/') checks.
-  let requestedNext: string | null = null
-  if (rawNext) {
-    try {
-      const parsed = new URL(rawNext, url.origin)
-      if (parsed.origin === url.origin) requestedNext = parsed.pathname + parsed.search
-    } catch { /* invalid URL — leave null */ }
-  }
+  // Same-site destinations only, judged by where the redirect LANDS (lib/safe-next). The old same-origin
+  // check passed https://hushare.space//evil.example and redirected the new session to evil.example.
+  const requestedNext = safeNextPath(rawNext, url.origin)
 
   if (!code) {
     return NextResponse.redirect(new URL('/login?error=missing_code', url.origin))

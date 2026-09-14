@@ -4,22 +4,16 @@ import { useEffect, useState } from 'react'
 import { Send, CheckCircle2, AlertCircle } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { useT } from '@/i18n/LocaleProvider'
+import { safeNextPath } from '@/lib/safe-next'
 
 type Status = 'idle' | 'sending' | 'sent' | 'error'
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/
 
-// Validate ?next= so only same-origin paths are allowed. The URL constructor
-// normalises %2F%2F and other encoding tricks before the origin check.
+// Only a page on this site: lib/safe-next judges where the redirect LANDS, which a same-origin check on
+// the parsed URL did not (https://hushare.space//evil.example passed it). '' means no destination.
 function parseSafeNext(raw: string): string {
-  if (!raw) return ''
-  try {
-    const url = new URL(raw, window.location.origin)
-    if (url.origin !== window.location.origin) return ''
-    return url.pathname + url.search
-  } catch {
-    return ''
-  }
+  return safeNextPath(raw, window.location.origin) ?? ''
 }
 
 function buildCallbackUrl(base: string = window.location.origin): string {
