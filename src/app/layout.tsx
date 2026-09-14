@@ -14,22 +14,34 @@ import BackToTop from "@/components/BackToTop";
 import SupportChat from "@/components/SupportChat";
 import "./globals.css";
 
+// PRELOADED ON EVERY PAGE: ONLY WHAT AN ENGLISH FIRST PAINT USES -- the body face and the heading face,
+// Latin subset. Next preloads every listed subset of every font a ROOT layout declares, on every route
+// (next/dist/docs, components/font.md). Before this list was cut, every visitor downloaded 8 font files
+// up front, 235 KB, 129 KB of them Armenian and Cyrillic that an English page never renders (review of
+// 2026-09-14). Nothing else is lost: next/font self-hosts every subset in Google's CSS, each behind its
+// unicode-range, and `subsets` only chooses which get a preload tag (find-font-files-in-css) -- so a
+// Russian or Armenian page still downloads exactly the faces it renders, when it renders them.
+// tests/font-preload holds this list.
 const geistSans = Geist({
   variable: "--font-geist-sans",
   subsets: ["latin"],
   display: "swap",
 });
 
+// Small numeric labels only (the owner toolbar, the reveal countdown): not worth a download before paint.
 const geistMono = Geist_Mono({
   variable: "--font-geist-mono",
   subsets: ["latin"],
+  preload: false,
   display: "swap",
 });
 
 const playfair = Playfair_Display({
   variable: "--font-serif",
-  // 'cyrillic' so Russian headings render in Playfair itself instead of falling back to Times.
-  subsets: ["latin", "cyrillic"],
+  // Latin is preloaded. Cyrillic is still SERVED -- Russian headings render in Playfair itself, not
+  // Times -- because the Cyrillic face stays in the CSS whether or not it is listed here; listing it
+  // only preloaded two more files for every visitor. Italic stays: album headers open in it.
+  subsets: ["latin"],
   style: ["normal", "italic"],
   display: "swap",
 });
@@ -37,19 +49,25 @@ const playfair = Playfair_Display({
 // Playfair/Geist have no Armenian glyphs. To keep Armenian looking like the English design (elegant
 // serif headings + clean sans body), Armenian pages use Noto Serif Armenian (matches Playfair's role)
 // and Noto Sans Armenian (matches Geist's role) — swapped in via html[lang="hy"] in styles/base.css.
-// Only downloaded when Armenian is actually rendered.
+// Only downloaded when Armenian is actually rendered -- which is true only with preload: false. This
+// comment said so for months while the root layout preloaded both on every page.
 const notoSerifArmenian = Noto_Serif_Armenian({
   variable: "--font-serif-am",
   subsets: ["armenian"],
+  preload: false,
   display: "swap",
 });
 
 const notoSansArmenian = Noto_Sans_Armenian({
   variable: "--font-sans-am",
   subsets: ["armenian"],
+  preload: false,
   display: "swap",
 });
 
+// The handwritten title on the back of a flipped photo. Never preloaded, and it cannot be asked to be:
+// Google lists no subset for this family, so next/font switches preload off itself
+// (validate-google-font-function-call) and its type does not accept the option at all.
 const handwriting = Playwrite_GB_J({
   variable: "--font-hand",
   weight: "400",
