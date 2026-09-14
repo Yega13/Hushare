@@ -18,7 +18,7 @@ import { createClient } from '@/lib/supabase/client'
 import { shouldHoldForOwnerCheck } from '@/lib/owner-view'
 import { applyPhotoWindow, mergePreservingExtras, shouldApplyRefresh } from '@/lib/photo-window'
 import { createSettingsSync, shouldCommitSettings } from '@/lib/settings-sync'
-import { createChannelSupervisor } from '@/lib/realtime-supervisor'
+import { watchPhotosChannel } from '@/lib/realtime-supervisor'
 import { albumChanged, deltaRowsNeeded, initialFreshness, mergeDelta, type AlbumFreshness } from '@/lib/album-freshness'
 import type { Album, Photo, Tier } from '@/types'
 import AlbumSkeleton from '@/components/AlbumSkeleton'
@@ -878,62 +878,30 @@ export default function AlbumPageClient({ initialAlbum = null, initialPhotos, in
   // `changed` broadcast that uploads already used. Do not reintroduce postgres_changes here
   // without a way to scope table reads to one album.
   //
-  // WHAT HAPPENS ON EACH EVENT -- the jittered reconnect backoff, the fallback poll armed once
-  // while the channel is down, the debounced and rate-limited-force refetch -- is
-  // lib/realtime-supervisor, where every one of its timer rules is a test (each was a shipped
-  // bug: reconnect loops accumulating per drop, a second poll per retry, a room of phones
-  // reconnecting on the same tick). This effect owns the socket and the channel identity guard.
+  // WHAT HAPPENS ON EACH EVENT, AND THE CHANNEL'S OWN LIFECYCLE, are lib/realtime-supervisor's
+  // watchPhotosChannel: the jittered reconnect backoff, the fallback poll armed once while the channel
+  // is down, the debounced refetch with its maximum wait and rate-limited force, and the identity guard
+  // that ignores a replaced channel's echoes. Each rule was a shipped bug and each is a test there; the
+  // live wall runs the same ones. This effect supplies only the Supabase calls and the refresh.
   useEffect(() => {
     if (!album?.id) return
     const albumId = album.id
     let active = true
-    let currentChannel: RealtimeChannel | null = null
 
-    const supervisor = createChannelSupervisor({
-      connect: () => connect(),
+    const stop = watchPhotosChannel({
+      // Channel name IS the broadcast topic the server sends to (`album:<id>`).
+      create: (onChanged) => supabase.channel(`album:${albumId}`).on('broadcast', { event: 'changed' }, onChanged),
+      subscribe: (ch, onStatus) => { ch.subscribe(onStatus) },
+      remove: (ch) => { supabase.removeChannel(ch) },
+    }, {
       refresh: ({ force }) => { void refreshIfChanged(albumId, r => { if (active) applyWindowRefresh(r) }, { force }) },
       now: () => Date.now(),
       debounceMs: REFETCH_DEBOUNCE_MS,
     })
 
-    function connect() {
-      if (!active) return
-      // Null out currentChannel BEFORE removing it. removeChannel makes the old channel fire
-      // CLOSED into its own subscribe callback — SYNCHRONOUSLY when the socket can't push,
-      // which is exactly the refused-websocket state. The identity guard in that callback
-      // (`ch !== currentChannel`) only silences the echo if the reassignment has already
-      // happened; with the old order, every retry's own teardown scheduled one MORE connect,
-      // and reconnect loops accumulated for as long as a websocket-blocking network kept the
-      // page open — then all drained as a refetch herd the moment connectivity returned.
-      const prev = currentChannel
-      currentChannel = null
-      if (prev) supabase.removeChannel(prev)
-
-      const ch = supabase
-        // Channel name IS the broadcast topic the server sends to (`album:<id>`).
-        .channel(`album:${albumId}`)
-        .on('broadcast', { event: 'changed' }, () => { if (active) supervisor.onChanged() })
-
-      // Assigned BEFORE subscribe so the identity guard below can never mistake this channel's
-      // own first status event for a stale echo, however promptly the callback fires.
-      currentChannel = ch
-      ch.subscribe(status => {
-        // The identity check is load-bearing: a channel replaced by a newer connect() still
-        // fires CLOSED (and stray errors) into THIS callback. Without the check, a dead
-        // channel's echo re-arms retry/poll timers that belong to its successor.
-        if (!active || ch !== currentChannel) return
-        if (status === 'SUBSCRIBED' || status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') {
-          supervisor.onStatus(status)
-        }
-      })
-    }
-
-    connect()
-
     return () => {
       active = false
-      supervisor.dispose()
-      if (currentChannel) supabase.removeChannel(currentChannel)
+      stop()
     }
   }, [album?.id, supabase, refreshIfChanged, applyWindowRefresh])
 

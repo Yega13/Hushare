@@ -1,14 +1,17 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import type { RealtimeChannel } from '@supabase/supabase-js'
 import Image from 'next/image'
 import QRCode from 'qrcode'
 import { createClient } from '@/lib/supabase/client'
 import type { Photo } from '@/types'
 import { qrForegroundColor } from '@/lib/album-design'
+import { watchPhotosChannel } from '@/lib/realtime-supervisor'
 
 const MAX_TILES = 60 // a wall doesn't need the whole album — show the most recent
+// The wall is one screen, not a room of phones, so it can afford to feel live: half a second, where the
+// album page waits 2.5 s because hundreds of guests on one venue IP share a single rate limit.
+const WALL_REFETCH_DEBOUNCE_MS = 500
 
 function displayUrl(p: Photo): string | null {
   if (p.media_type === 'video') return p.poster_url ?? p.stream_thumbnail_url ?? null
@@ -80,42 +83,21 @@ export default function PhotoWall({
     }
   }, [albumId])
 
-  // Realtime: same `album:<id>` broadcast channel the album page uses. Debounce a burst of uploads
-  // into a single refetch, and resubscribe with backoff if the connection drops.
+  // Realtime: the same `album:<id>` channel as the album page, under the same rules, from
+  // lib/realtime-supervisor. It had its own copy -- a debounce every ping replaced with no maximum
+  // wait, a fixed backoff and no fallback poll -- so a steady stream of pings (a busy event, or anyone
+  // holding the album link) held its refresh off, and a venue network that refuses websockets froze it.
+  // The wall has no probe: every refresh is its bounded newest-80 read, forced or not.
   useEffect(() => {
-    let active = true
-    let retry = 0
-    let retryTimer: ReturnType<typeof setTimeout> | null = null
-    let debounce: ReturnType<typeof setTimeout> | null = null
-    let channel: RealtimeChannel | null = null
-
-    function connect() {
-      if (!active) return
-      if (channel) supabase.removeChannel(channel)
-      channel = supabase
-        .channel(`album:${albumId}`)
-        .on('broadcast', { event: 'changed' }, () => {
-          if (debounce) clearTimeout(debounce)
-          debounce = setTimeout(() => { void refetch() }, 500)
-        })
-        .subscribe((status) => {
-          if (!active) return
-          if (status === 'SUBSCRIBED') {
-            retry = 0
-            void refetch()
-          } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') {
-            retryTimer = setTimeout(connect, Math.min(2000 * 2 ** retry++, 30_000))
-          }
-        })
-    }
-    connect()
-
-    return () => {
-      active = false
-      if (retryTimer) clearTimeout(retryTimer)
-      if (debounce) clearTimeout(debounce)
-      if (channel) supabase.removeChannel(channel)
-    }
+    return watchPhotosChannel({
+      create: (onChanged) => supabase.channel(`album:${albumId}`).on('broadcast', { event: 'changed' }, onChanged),
+      subscribe: (ch, onStatus) => { ch.subscribe(onStatus) },
+      remove: (ch) => { supabase.removeChannel(ch) },
+    }, {
+      refresh: () => { void refetch() },
+      now: () => Date.now(),
+      debounceMs: WALL_REFETCH_DEBOUNCE_MS,
+    })
   }, [albumId, supabase, refetch])
 
   return (

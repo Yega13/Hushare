@@ -132,26 +132,31 @@ describe('AlbumPageClient reads the owner link through one reader and verifies i
   })
 })
 
-describe('AlbumPageClient hands the photos channel to the supervisor and keeps only the socket', () => {
-  it('the supervisor is built with connect, the probe-first refresh with the force flag, the wall clock and the debounce', () => {
-    const call = singleCall(src(), 'createChannelSupervisor(')
-    expect(call).toMatch(/connect:\s*\(\)\s*=>\s*connect\(\)/)
+// The channel lifecycle -- forget the old channel before removing it, record the new one before it
+// subscribes, ignore a replaced channel's echoes -- moved into lib/realtime-supervisor's
+// watchPhotosChannel on 2026-09-14 so the live wall runs the same rules, and is tested there against a
+// fake that echoes the way Supabase does. What stays here is what only this file can get wrong: which
+// client, which topic, which refresh.
+describe('AlbumPageClient hands the photos channel to watchPhotosChannel and keeps only the Supabase calls', () => {
+  it('the port is the album topic with its changed listener, and subscribe and remove on the real client', () => {
+    const call = singleCall(src(), 'watchPhotosChannel(')
+    expect(call).toMatch(/create:\s*\(onChanged\)\s*=>\s*supabase\.channel\(`album:\$\{albumId\}`\)\.on\('broadcast', \{ event: 'changed' \}, onChanged\)/)
+    expect(call).toMatch(/subscribe:\s*\(ch, onStatus\)\s*=>\s*\{\s*ch\.subscribe\(onStatus\)\s*\}/)
+    expect(call).toMatch(/remove:\s*\(ch\)\s*=>\s*\{\s*supabase\.removeChannel\(ch\)\s*\}/)
+  })
+  it('the refresh is the probe-first refresh with the force flag, on the wall clock and the album debounce', () => {
+    const call = singleCall(src(), 'watchPhotosChannel(')
     expect(call).toMatch(/refresh:\s*\(\{\s*force\s*\}\)\s*=>\s*\{\s*void refreshIfChanged\(albumId, r => \{ if \(active\) applyWindowRefresh\(r\) \}, \{ force \}\)/)
     expect(call).toMatch(/now:\s*\(\)\s*=>\s*Date\.now\(\)/)
     expect(call).toMatch(/debounceMs:\s*REFETCH_DEBOUNCE_MS\b/)
   })
-  it('a broadcast goes to onChanged, a status event goes to onStatus AFTER the identity guard, and cleanup disposes', () => {
-    const text = src()
-    expect(text).toMatch(/\.on\('broadcast', \{ event: 'changed' \}, \(\) => \{ if \(active\) supervisor\.onChanged\(\) \}\)/)
-    expect(text).toMatch(/if \(!active \|\| ch !== currentChannel\) return\s+if \(status === 'SUBSCRIBED' \|\| status === 'CHANNEL_ERROR' \|\| status === 'TIMED_OUT' \|\| status === 'CLOSED'\) \{\s+supervisor\.onStatus\(status\)/)
-    expect(text).toMatch(/active = false\s+supervisor\.dispose\(\)\s+if \(currentChannel\) supabase\.removeChannel\(currentChannel\)/)
+  it('cleanup silences a refresh already in flight, then stops the watch', () => {
+    expect(src()).toMatch(/const stop = watchPhotosChannel\(/)
+    expect(src()).toMatch(/return \(\) => \{\s*active = false\s*stop\(\)\s*\}/)
   })
-  it('connect() nulls the current channel BEFORE removing the old one (167023e: the synchronous CLOSED echo must miss the guard)', () => {
-    expect(src()).toMatch(/const prev = currentChannel\s+currentChannel = null\s+if \(prev\) supabase\.removeChannel\(prev\)/)
-  })
-  it('no timer of the photos channel is left in the component', () => {
+  it('no timer or channel bookkeeping of the photos channel is left in the component', () => {
     const text = src()
-    expect(text).not.toMatch(/retryTimer|pollTimer|refetchTimer|fallbackPollDelay|forcedRefreshAllowed/)
+    expect(text).not.toMatch(/retryTimer|pollTimer|refetchTimer|fallbackPollDelay|forcedRefreshAllowed|currentChannel|createChannelSupervisor/)
   })
 })
 
