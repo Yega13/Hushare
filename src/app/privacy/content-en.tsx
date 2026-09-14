@@ -416,6 +416,16 @@ export const en: PrivacyContent = {
             year after it ends. You may request deletion of your album at any
             time by emailing us - see section 15.
           </p>
+          <p className="mt-3">
+            A deleted photo is not gone at once. Whenever photos or other images
+            are deleted - by you, by the album&rsquo;s owner, or by the inactivity
+            rule above - a copy stays in a private backup for{' '}
+            <strong style={INK}>31 days</strong>, so a deletion made by mistake can
+            still be undone: email us within those 31 days (section 15) and we can
+            recover the photos. Once the 31 days have passed, the backup copy is
+            erased within the following day, and the photos are gone permanently.
+            Nobody can see the backup, and it is used for nothing else.
+          </p>
       </>
     ),
   },

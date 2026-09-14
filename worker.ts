@@ -1,4 +1,5 @@
 import { default as handler } from "./.open-next/worker.js";
+import { consumeMediaEvents, type BackupBucket, type QueuedMessage } from "./src/lib/server/media-backup";
 
 // Minimal inline types — avoids importing @cloudflare/workers-types globally
 // (that package conflicts with DOM types and is excluded from tsconfig)
@@ -13,9 +14,18 @@ interface ExecutionContext {
   passThroughOnException(): void
 }
 
+interface MessageBatch {
+  queue: string
+  messages: readonly QueuedMessage[]
+}
+
+// A Workers global: a pass-through stream of a declared length, which R2 needs to store a stream.
+declare const FixedLengthStream: new (length: number) => { readable: ReadableStream; writable: WritableStream }
+
 type Env = {
   ASSETS: { fetch(req: Request): Promise<Response> }
-  R2_BUCKET: { delete(keys: string | string[]): Promise<void> }
+  R2_BUCKET: BackupBucket
+  R2_BACKUP: BackupBucket
   ALBUM_RETIREMENT_SECRET: string
   NEXT_PUBLIC_SITE_URL: string
 }
@@ -78,6 +88,9 @@ const worker = {
         // Watches for a CLUSTER of real errors and emails once per hour at most. Cheap: one indexed
         // count, and it returns before touching anything else unless the threshold is crossed.
         callCronRoute(baseUrl, '/api/cron/error-alert', secret),
+        // The photo backup's safety net: walks the media bucket and copies whatever the queue below
+        // missed. One database read and out between its daily passes; see lib/server/media-backup.
+        callCronRoute(baseUrl, '/api/cron/backup-reconcile', secret),
       ]))
       return
     }
@@ -140,6 +153,18 @@ const worker = {
     // through into the daily batch, by contrast, emails real customers on whatever cadence somebody
     // typed — and nothing would have caught it (rule 19).
     console.error('[cron] unrecognised schedule, nothing run:', event.cron)
+  },
+
+  // THE PHOTO BACKUP'S FAST PATH. R2 sends every create and delete in hushare-media to the
+  // hushare-media-events queue, and this copies a new object into hushare-media-backup within seconds,
+  // or records a deletion without deleting the copy. A throw retries the whole batch; anything that
+  // still fails is repaired, and reported, by /api/cron/backup-reconcile.
+  async queue(batch: MessageBatch, env: Env): Promise<void> {
+    await consumeMediaEvents(batch, env, {
+      now: () => new Date(),
+      log: (message) => { console.error(message) },
+      fixedLength: (size) => new FixedLengthStream(size),
+    })
   },
 }
 

@@ -2340,3 +2340,33 @@ had waved away.
 one row? If it recurs, it is not transient, it is a schedule. And a job that runs every minute will meet
 every blip the platform has, so its reads need a retry and its failures need to reach the panel before
 it ships, not after the panel fills up.
+
+### 125. A SIZE I CARRIED FROM MEMORY, A FAKE THAT MODELLED THE LOCK HALFWAY, AND TEST ANSWERS DONE IN MY HEAD
+
+**The size.** My storage note said the photo backup would add "~$0.30/month at ~20 GB". The first time I
+actually ran `wrangler r2 bucket info hushare-media` (2026-09-14) it was 66 GB in 62,250 objects --
+over three times that. The user had said, the same hour, that the ~$1/month bill is their next biggest
+problem. A backup cost understated by two-thirds is exactly the number that would have misled them.
+
+**The lock.** The backup bucket carries a 30-day bucket lock. My fake bucket refused an OVERWRITE of a
+locked object with an error, and I assumed a DELETE would be refused the same way, so pruneBackup counts
+an object as removed whenever delete() does not throw. Proving the lock on the real bucket showed
+otherwise: `wrangler r2 object delete` on a one-minute-old object printed "Delete complete." and the
+object was still there, bytes unchanged. The overwrite, by contrast, failed loudly (code 10069, "The
+object is locked by the bucket policy"). A refused delete looks like a successful one. With a 31-day
+grace against a 30-day lock the prune should never meet a refusal -- but "should" is the word rule 0 is
+about, and a count of removals nobody made is a negative stated without backing (rule 20).
+
+**The test answers.** Two reconcile tests failed on their first run. Both times the code was right and
+my expected value was arithmetic I had done in my head (a budget of 2 copies a and c when b is already
+held; a run that reaches the end of the bucket completes). I traced each through the code before
+changing the test, which is the right order -- but I had written them without tracing at all.
+
+**And the fake did catch one real bug:** the first pruneBackup deleted tombstones while paging through
+them, so any position that shifts under deletion skipped a page. It now lists everything first, and every
+position in the walk is a key (startAfter), never an offset.
+
+**Habit to build:** a size or cost I put in front of the user is measured in the same session, with the
+command named beside it. A fake models only what I have SEEN the real service do, and anything else it
+does is written down as an assumption -- then checked against the real thing before the code relies on
+it. And a test's expected value is traced through the code when it is written, not after it fails.

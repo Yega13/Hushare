@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest'
 import { readFileSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { stripJsComments, stripMockPaths } from './helpers/source-text'
+import { MEDIA_EVENTS_QUEUE } from '@/lib/server/media-backup'
 
 /**
  * Every matching file at ANY depth, absolute paths, deterministic order.
@@ -704,5 +705,43 @@ describe('cron routes are reachable by the scheduler', () => {
       expect(branched, `wrangler.toml schedules "${literal}" but worker.ts has no branch for it, so it would run nothing`)
         .toContain(literal)
     }
+  })
+})
+
+// THE PHOTO BACKUP IS WIRED END TO END, OR IT IS NOT A BACKUP.
+//
+// Three places must agree, and none of them fails loudly on its own. A queue wrangler.toml consumes
+// that the code does not answer to throws every batch into retries; a worker.ts without the queue
+// handler never runs the copy; a missing R2_BACKUP binding fails every message. The reconcile cron
+// would then copy everything a day late and report it -- which is the safety net, not the design.
+describe('the photo backup is wired end to end', () => {
+  const wrangler = readFileSync(join(process.cwd(), 'wrangler.toml'), 'utf8')
+  // Production only: staging redeclares its own bindings under [env.staging].
+  const production = wrangler.split('[env.staging]')[0]
+  const worker = stripJsComments(readFileSync(join(process.cwd(), 'worker.ts'), 'utf8'))
+
+  it('wrangler.toml consumes exactly the queue the consumer answers to', () => {
+    const consumed = [...production.matchAll(/\[\[queues\.consumers\]\]\s*queue\s*=\s*"([^"]+)"/g)].map((m) => m[1])
+    expect(consumed).toEqual([MEDIA_EVENTS_QUEUE])
+  })
+
+  it('binds the backup as R2_BACKUP, a bucket of its own, beside the media it backs up', () => {
+    const buckets = [...production.matchAll(/\[\[r2_buckets\]\]\s*binding\s*=\s*"([^"]+)"\s*bucket_name\s*=\s*"([^"]+)"/g)]
+      .map((m) => `${m[1]}=${m[2]}`)
+    expect(buckets).toEqual(['R2_BUCKET=hushare-media', 'R2_BACKUP=hushare-media-backup'])
+  })
+
+  it('worker.ts hands every queue batch to consumeMediaEvents, streaming through FixedLengthStream', () => {
+    expect(worker).toMatch(/async queue\(batch: MessageBatch, env: Env\)/)
+    expect(worker).toContain('await consumeMediaEvents(batch, env, {')
+    expect(worker).toContain('fixedLength: (size) => new FixedLengthStream(size)')
+  })
+
+  it('the every-minute schedule runs the reconcile walk', () => {
+    const start = worker.indexOf('if (event.cron === EVERY_MINUTE) {')
+    const end = worker.indexOf('if (event.cron === EVERY_3_HOURS) {')
+    expect(start, 'could not find the every-minute branch in worker.ts').toBeGreaterThan(-1)
+    expect(end).toBeGreaterThan(start)
+    expect(worker.slice(start, end)).toContain("callCronRoute(baseUrl, '/api/cron/backup-reconcile', secret)")
   })
 })

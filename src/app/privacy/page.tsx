@@ -13,8 +13,8 @@ export const runtime = 'nodejs'
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL ?? 'https://hushare.space'
 const PUBLISHED = '2026-04-25'
-const LAST_UPDATED = '2026-08-17'
-const LAST_UPDATED_HUMAN = 'August 17, 2026'
+const LAST_UPDATED = '2026-09-15'
+const LAST_UPDATED_HUMAN = 'September 15, 2026'
 
 const PAGE_TITLE = 'Privacy Policy'
 const PAGE_DESCRIPTION =

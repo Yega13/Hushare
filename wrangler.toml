@@ -25,6 +25,21 @@ binding = "ASSETS"
 binding = "R2_BUCKET"
 bucket_name = "hushare-media"
 
+# THE PHOTO BACKUP (src/lib/server/media-backup.ts). A second bucket that only the backup writes to,
+# in Infrequent Access storage and under a 30-day bucket lock. The queue below fills it within seconds
+# of an upload; /api/cron/backup-reconcile repairs whatever the queue missed. The link from
+# hushare-media to the queue is an R2 event notification, which lives in Cloudflare, not in this file:
+#   npx wrangler r2 bucket notification create hushare-media --event-types object-create object-delete --queue hushare-media-events
+[[r2_buckets]]
+binding = "R2_BACKUP"
+bucket_name = "hushare-media-backup"
+
+[[queues.consumers]]
+queue = "hushare-media-events"
+max_batch_size = 10
+max_batch_timeout = 5
+max_retries = 5
+
 # Workers Analytics Engine — product event stream (queried via the SQL API / GraphQL).
 # Fire-and-forget writes from src/lib/analytics.ts; never on the request's critical path.
 # Dataset name matches the one created in the Cloudflare dashboard (case-sensitive).
