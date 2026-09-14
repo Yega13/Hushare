@@ -10,11 +10,20 @@ import { interpolate } from '@/i18n/get-dictionary'
 import HomeHeroInteractive from '@/components/HomeHeroInteractive'
 import HomeScrollButton from '@/components/HomeScrollButton'
 import MyDeviceAlbums from '@/components/MyDeviceAlbums'
+import InitialPreloader from '@/components/InitialPreloader'
 import { getServerLocale } from '@/i18n/server'
 import { getDictionary } from '@/i18n/get-dictionary'
 import type { DictKey } from '@/i18n/dictionaries/en'
 
 const NATURE_IMG = '/hero-nature.jpg'
+
+// THE FIRST-VISIT SPLASH, ON THIS PAGE ONLY. It was in the root layout, so it sat for 1.5 seconds in
+// front of every page -- and a guest scanning an album QR code is almost always on a first visit. The
+// owner decided on 2026-09-14 to keep it on the home page. This script adds the class that hides the
+// page before React runs, and InitialPreloader removes it: the two must live in the same page, or a
+// page would stay hidden with nothing to reveal it (tests/splash-home-only).
+const PRELOADER_INIT_SCRIPT =
+  "try{if(window.localStorage.getItem('hushare.initialPreloaderSeen')!=='1'){document.body.classList.add('hush-page-preloading','hush-scroll-locked')}}catch(e){document.body.classList.add('hush-page-preloading','hush-scroll-locked')}"
 
 export default async function HomePage() {
   // The hero image is a full-viewport CSS background — the browser only discovers it after CSS
@@ -55,6 +64,11 @@ export default async function HomePage() {
     a: interpolate(dict[`home.faq.a${i + 1}` as DictKey], caps),
   }))
   return (
+    <>
+      {/* BEFORE <main>, not inside it: while the splash shows, main is opacity 0, and so would be
+          anything inside it -- the splash included. */}
+      <script dangerouslySetInnerHTML={{ __html: PRELOADER_INIT_SCRIPT }} />
+      <InitialPreloader />
     <main style={{ background: '#FDFAF5', fontFamily: 'var(--font-sans)' }} className="min-h-screen">
       <EngagementBeacon page="home" />
 
@@ -428,5 +442,6 @@ export default async function HomePage() {
       </section>
 
     </main>
+    </>
   )
 }

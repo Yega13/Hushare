@@ -10,7 +10,6 @@ import { en } from "@/i18n/dictionaries/en";
 import { uploadCapsForTier, formatCapSize } from "@/lib/media";
 import { LocaleProvider } from "@/i18n/LocaleProvider";
 import ErrorReporter from "@/components/ErrorReporter";
-import InitialPreloader from "@/components/InitialPreloader";
 import BackToTop from "@/components/BackToTop";
 import SupportChat from "@/components/SupportChat";
 import "./globals.css";
@@ -316,10 +315,6 @@ const jsonLd = {
   ],
 };
 
-// Exact text of the one inline (non-JSON-LD) <script> tag below, kept as a named constant so its
-// content is greppable and reviewable rather than buried in JSX.
-const PRELOADER_INIT_SCRIPT =
-  "try{if(window.localStorage.getItem('hushare.initialPreloaderSeen')!=='1'){document.body.classList.add('hush-page-preloading','hush-scroll-locked')}}catch(e){document.body.classList.add('hush-page-preloading','hush-scroll-locked')}"
 // Google Analytics was removed on 2026-08-17.
 //
 // The privacy policy used to say "no third-party analytics script runs on this site". That claim
@@ -369,14 +364,14 @@ export default async function RootLayout({
           working site you half-read beats a crashing site in your own language. Reconsider only by
           shipping the language properly. */}
       <body translate="no" className="min-h-full flex flex-col">
-        <script dangerouslySetInnerHTML={{ __html: PRELOADER_INIT_SCRIPT }} />
         {/* type="application/ld+json" is inert data, not executable script — browsers never run
             it under script-src, so it is unaffected by CSP either way. */}
         <script
           type="application/ld+json"
           dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd).replace(/</g, '\\u003c') }}
         />
-        <InitialPreloader />
+        {/* The first-visit splash is rendered by the home page only (src/app/page.tsx): the owner's
+            decision of 2026-09-14, because every guest scanning a QR code sat behind it here. */}
         {/* Renders nothing; installs the window-level error + unhandled-rejection reporters so
             crashes reach /admin instead of dying silently in the user's browser. */}
         <ErrorReporter />
