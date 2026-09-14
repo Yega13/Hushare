@@ -2313,3 +2313,30 @@ after the commit showed it still untracked. A follow-up commit added it before a
 or list only file:line, never cap the output -- a cap is a claim about where the matches stop. And stage
 from what `git status` reports, then compare the staged list with the files the commit message names,
 instead of retyping the list from memory.
+
+### 124. ONE ROW CALLED A BLIP, AND THE BLIP BECAME MOST OF THE ERRORS THE USER WAS ANGRY ABOUT
+
+**What I concluded.** On 2026-09-13 the error-alert cron filed one "Gateway Timeout" row (1240). I
+looked at it, saw a tiny indexed table and a first-ever failure, called it a transient Supabase blip,
+and moved on. I did not look again.
+
+**What was true.** Within twenty hours there were 13 of them -- every one at :00 or :30 past the hour,
+twelve seconds after the tick, nothing else failing near them -- and they were 13 of the last 17 error
+rows. The user saw the error count rising and asked, rightly, why. The rise I had been told about was
+mine to have noticed: rule 12 makes a new panel error my job, and "transient" is a claim about the
+FUTURE that one row cannot support.
+
+**What checking it properly took,** once I did: counting the rows over time, splitting the daily error
+count with and without that source, timing the same query against production, looking for anything of
+ours that runs at :00/:30, and looking for other failures near each timestamp. Twenty minutes. The fix
+(a single retry before reporting) was then obvious and small.
+
+**And the same shape was waiting next door:** the bib-index and prune-data crons run on the same
+minute, never reported their failures at all, and the retention cron's face-data branch treated a
+failed read as "no recent photos" -- deleting a live album's face data on exactly the kind of blip I
+had waved away.
+
+**Habit to build:** a failure I decide is transient gets a follow-up check within a day -- is it still
+one row? If it recurs, it is not transient, it is a schedule. And a job that runs every minute will meet
+every blip the platform has, so its reads need a retry and its failures need to reach the panel before
+it ships, not after the panel fills up.

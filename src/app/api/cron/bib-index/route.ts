@@ -4,6 +4,9 @@ import { timingSafeEqual } from '@/lib/timing-safe'
 import { indexAlbumBibsBatch, BIB_BATCH } from '@/lib/server/bib-index'
 import { indexAlbumFacesBatch, FACE_BATCH } from '@/lib/server/face-sweep'
 import { createSubrequestBudget } from '@/lib/server/index-budget'
+import { serverError } from '@/lib/server/respond'
+import { reportServerError } from '@/lib/report-server-error'
+import { readWithRetry } from '@/lib/server/read-with-retry'
 
 export const runtime = 'nodejs'
 export const maxDuration = 60
@@ -37,12 +40,21 @@ export async function POST(req: Request) {
   // Albums that opted in. Small list in practice — only race albums ever turn this on.
   // ORDERED, because the read below is paged by the driver and an unordered result has no defined
   // sequence; the rotation underneath needs a stable list to rotate.
-  const { data: albums } = await admin
+  //
+  // A READ THAT FAILED WAS AN EMPTY LIST. Only `data` was destructured, so a failed query looked
+  // exactly like "no album has indexing switched on": nothing was indexed and nothing was reported,
+  // and a race album's runners were told they were in no photos. Retried once first, because this
+  // runs every minute and meets the same :00/:30 database gateway blips the error alarm did
+  // (lib/server/read-with-retry); a failure that survives the retry is reported and answered as one.
+  const { result: { data: albums, error: albumsError } } = await readWithRetry(() => admin
     .from('albums')
     .select('id, bib_search_enabled, face_finder_enabled')
     .or('bib_search_enabled.eq.true,face_finder_enabled.eq.true')
     .is('retired_at', null)
-    .order('id', { ascending: true })
+    .order('id', { ascending: true }))
+  if (albumsError) {
+    return serverError('cron/bib-index', albumsError.message, { publicMessage: 'Could not list albums to index' })
+  }
 
   // WHOEVER IS FIRST GETS THE BUDGET, so nobody may be first every time.
   //
@@ -112,6 +124,11 @@ export async function POST(req: Request) {
       const msg = e instanceof Error ? e.message : String(e)
       console.error('[cron/index] album', album.id, 'failed:', msg)
       errors.push(`${album.id}: ${msg}`.slice(0, 200))
+      // AND ON THE PANEL. The errors above go into the response body, which the scheduler throws
+      // away, so an album whose indexing failed every minute on race morning left no trace anywhere
+      // anyone looks. One stable sentence per album, so the minute-by-minute repeats coalesce into a
+      // row rather than sixty of them; the reason rides in context.
+      reportServerError('cron/bib-index', 'Album indexing failed', { albumId: album.id, context: { reason: msg.slice(0, 300) } })
     }
 
     if (touched) albumsTouched++

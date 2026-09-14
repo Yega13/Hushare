@@ -2,6 +2,8 @@ import { NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { timingSafeEqual } from '@/lib/timing-safe'
 import { deleteCollection } from '@/lib/rekognition'
+import { reportServerError } from '@/lib/report-server-error'
+import { readWithRetry } from '@/lib/server/read-with-retry'
 
 export const runtime = 'nodejs'
 export const maxDuration = 60
@@ -49,6 +51,11 @@ export async function POST(req: Request) {
   const admin = createAdminClient()
   const iso = (days: number) => new Date(Date.now() - days * 864e5).toISOString()
   const result: Record<string, unknown> = {}
+  // EVERY STEP'S FAILURE REACHES THE PANEL. Each one was written into the response body, which the
+  // scheduler throws away, so a retention period the privacy policy publishes could stop being kept
+  // and nothing anywhere would say so. One stable sentence per step, the reason in context.
+  const failed = (step: string, reason: string, albumId?: string) =>
+    reportServerError('cron/prune-data', `Retention step failed: ${step}`, { albumId: albumId ?? null, context: { reason: reason.slice(0, 300) } })
 
   // Presence rows say which page someone has open, so the policy promises they are gone within 10
   // minutes of a visitor leaving. That promise used to rest on a Math.random() < 0.02 sweep during
@@ -56,12 +63,16 @@ export async function POST(req: Request) {
   // stopped, because the thing that cleans up only ran when there was something to clean up after.
   // Exactly the pattern the rate-limit note below complains about. This mode runs every minute
   // whether or not anyone is on the site, which is what makes the published number true.
+  //
+  // Retried once: this runs every minute and meets the same :00/:30 database gateway blips the error
+  // alarm did (lib/server/read-with-retry). Retrying a delete is safe -- it removes the same stale rows.
   {
-    const { error, count } = await admin
+    const { result: { error, count } } = await readWithRetry(() => admin
       .from('active_sessions')
       .delete({ count: 'exact' })
-      .lt('last_seen', new Date(Date.now() - 10 * 60 * 1000).toISOString())
+      .lt('last_seen', new Date(Date.now() - 10 * 60 * 1000).toISOString()))
     result.presenceDeleted = error ? `error: ${error.message}` : (count ?? 0)
+    if (error) failed('presence', error.message)
   }
   if (new URL(req.url).searchParams.get('mode') === 'presence') {
     return NextResponse.json({ ok: true, ...result }, { headers: NO_STORE })
@@ -74,6 +85,7 @@ export async function POST(req: Request) {
       .delete({ count: 'exact' })
       .lt('created_at', iso(IP_LOG_DAYS))
     result.rateLimitDeleted = error ? `error: ${error.message}` : (count ?? 0)
+    if (error) failed('rate_limit_events', error.message)
   }
 
   // ── Abandoned video-upload tokens ─────────────────────────────────────────
@@ -95,6 +107,7 @@ export async function POST(req: Request) {
       .delete({ count: 'exact' })
       .lt('created_at', new Date(Date.now() - PENDING_UPLOAD_HOURS * 3600e3).toISOString())
     result.pendingUploadsDeleted = error ? `error: ${error.message}` : (count ?? 0)
+    if (error) failed('pending_stream_uploads', error.message)
   }
 
   // ── Rate-limit counters ───────────────────────────────────────────────────
@@ -108,6 +121,7 @@ export async function POST(req: Request) {
       .delete({ count: 'exact' })
       .lt('window_start', iso(1))
     result.rateLimitCountersDeleted = error ? `error: ${error.message}` : (count ?? 0)
+    if (error) failed('rate_limit_counters', error.message)
   }
 
   // ── Client error reports (carry user-agent and the page they happened on) ──
@@ -117,6 +131,7 @@ export async function POST(req: Request) {
       .delete({ count: 'exact' })
       .lt('created_at', iso(ERROR_LOG_DAYS))
     result.errorEventsDeleted = error ? `error: ${error.message}` : (count ?? 0)
+    if (error) failed('error_events', error.message)
   }
 
   // ── Face collections for albums that have gone quiet ──────────────────────
@@ -143,22 +158,28 @@ export async function POST(req: Request) {
     // biometric templates indefinitely, past the 90 days the privacy policy publishes. Ordering by
     // id makes the set deterministic; once more than 200 albums use Face Finder this needs a
     // cursor, but a stable window is strictly better than an arbitrary one.
-    const { data: albums } = await admin
+    const { data: albums, error: albumsError } = await admin
       .from('albums')
       .select('id, created_at')
       .eq('face_finder_enabled', true)
       .is('retired_at', null)
       .order('id', { ascending: true })
       .limit(200)
+    if (albumsError) failed('face collection candidates', albumsError.message)
 
     let expired = 0
     for (const album of albums ?? []) {
-      const { data: recent } = await admin
+      const { data: recent, error: recentError } = await admin
         .from('photos')
         .select('id')
         .eq('album_id', album.id)
         .gt('created_at', cutoff)
         .limit(1)
+      // A FAILED READ IS NOT "NO RECENT PHOTOS". Only `data` was read, so a query that failed came
+      // back as null, sailed past the check below, and the album had Face Finder switched off and its
+      // face data deleted -- an album still taking photos, on a database blip. The uncertain branch
+      // does nothing (rule 19): skip this album, report it, and the next night decides.
+      if (recentError) { failed('face collection recent-photo check', recentError.message, album.id); continue }
       if (recent && recent.length > 0) continue
 
       // "No photo in 90 days" and "no photos yet" are the same query result and completely
@@ -180,14 +201,22 @@ export async function POST(req: Request) {
         // UP with the collection gone, and the every-minute indexer immediately re-enrols every
         // face at full IndexFaces price, which is the exact failure this block exists to prevent.
         // (The code previously deleted first while this comment claimed otherwise.)
-        await admin.from('albums').update({ face_finder_enabled: false }).eq('id', album.id)
+        //
+        // AND THE FLAG HAS TO HAVE GONE DOWN. supabase-js RETURNS { error } for a failed write rather
+        // than throwing, so a flag that did not change fell straight through to the delete: the flag
+        // left UP with the collection gone, which is the precise re-enrolment failure described above.
+        const flag = await admin.from('albums').update({ face_finder_enabled: false }).eq('id', album.id)
+        if (flag.error) { failed('face collection expiry', flag.error.message, album.id); continue }
         await deleteCollection(album.id)
         // face_ids back to NULL means "never looked at", so a re-enable indexes from scratch
         // rather than trusting ids AWS no longer has.
-        await admin.from('photos').update({ face_ids: null }).eq('album_id', album.id)
+        const cleared = await admin.from('photos').update({ face_ids: null }).eq('album_id', album.id)
+        if (cleared.error) failed('face ids reset', cleared.error.message, album.id)
         expired++
       } catch (e) {
-        console.error('[cron/prune-data] face collection expiry failed:', album.id, e instanceof Error ? e.message : String(e))
+        const msg = e instanceof Error ? e.message : String(e)
+        console.error('[cron/prune-data] face collection expiry failed:', album.id, msg)
+        failed('face collection expiry', msg, album.id)
       }
     }
     result.faceCollectionsExpired = expired
