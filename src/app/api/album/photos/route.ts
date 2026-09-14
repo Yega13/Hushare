@@ -95,7 +95,8 @@ export async function GET(req: Request) {
             // Deliberately just the two fields. Sending photos: [] alongside them would let a
             // caller that forgot to check `probe` read an empty album as a real answer.
             ? { total: result.total ?? 0, latest: result.latest ?? null }
-            : { photos: result.photos, total: result.total, bibStats: result.bibStats },
+            // `latest` is set only by the since read, so every other answer serialises without it.
+            : { photos: result.photos, total: result.total, latest: result.latest, bibStats: result.bibStats },
           { headers: NO_STORE },
         )
     }

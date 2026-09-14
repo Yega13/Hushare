@@ -19,7 +19,8 @@ import { shouldHoldForOwnerCheck } from '@/lib/owner-view'
 import { applyPhotoWindow, mergePreservingExtras, shouldApplyRefresh } from '@/lib/photo-window'
 import { createSettingsSync, shouldCommitSettings } from '@/lib/settings-sync'
 import { watchPhotosChannel } from '@/lib/realtime-supervisor'
-import { albumChanged, deltaRowsNeeded, initialFreshness, mergeDelta, type AlbumFreshness } from '@/lib/album-freshness'
+import { initialFreshness, mergeDelta, type AlbumFreshness } from '@/lib/album-freshness'
+import { refreshAlbum } from '@/lib/album-refresh'
 import type { Album, Photo, Tier } from '@/types'
 import AlbumSkeleton from '@/components/AlbumSkeleton'
 import PasswordGate from '@/components/PasswordGate'
@@ -373,16 +374,23 @@ export default function AlbumPageClient({ initialAlbum = null, initialPhotos, in
     }
   }, [])
 
-  const fetchSince = useCallback(async (albumId: string, since: string, limit: number): Promise<{ photos: Photo[]; total: number } | null> => {
+  // The rows newer than `since`, and -- in the same response -- the total and the newest time, which is
+  // what lets one request answer a whole refresh (lib/album-refresh).
+  const fetchSince = useCallback(async (albumId: string, since: string, limit: number): Promise<{ photos: Photo[]; total: number; latest: string | null } | null> => {
     try {
       const res = await fetch(
         `/api/album/photos?albumId=${encodeURIComponent(albumId)}&since=${encodeURIComponent(since)}&limit=${limit}`,
         { cache: 'no-store' },
       )
       if (!res.ok) return null
-      const json = await res.json() as { photos?: Photo[]; total?: number }
+      const json = await res.json() as { photos?: Photo[]; total?: number; latest?: string | null }
       if (typeof json.total !== 'number') return null
-      return { photos: (json.photos ?? []).filter(p => !isRecentlyDeleted(p.id)), total: json.total }
+      return {
+        photos: (json.photos ?? []).filter(p => !isRecentlyDeleted(p.id)),
+        total: json.total,
+        // Absent from a server older than this change: null then means the refresh takes the window.
+        latest: typeof json.latest === 'string' ? json.latest : null,
+      }
     } catch {
       return null
     }
@@ -399,54 +407,26 @@ export default function AlbumPageClient({ initialAlbum = null, initialPhotos, in
     setPhotos(prev => mergeDelta(prev, fresh.photos, albumOrderRef.current))
   }, [])
 
-  // Refresh the window, asking the cheap question first EXCEPT when we were told something
-  // changed.
-  //
-  // The probe compares {total, latest}, which catches arrivals and departures but not an edit in
-  // place — and a REORDER moves neither. So a broadcast, which only ever fires because something
-  // actually changed, must not be answered with "the counts look the same, never mind": an owner
-  // rearranging an album would have had every other viewer keep the old order for the rest of
-  // their session, with nothing to heal it until the next upload.
-  //
-  // This costs almost nothing. An upload moves the count, so the probe would have fetched anyway;
-  // the only broadcasts this adds a fetch for are reorders and settings changes, which are rare
-  // and deliberate. The polling path — the one running on every viewer past the realtime cap, and
-  // the reason the probe exists — still probes.
+  // ONE REQUEST PER LIVE REFRESH where the album allows it. What to ask, in which order, when a delta may
+  // be trusted and when freshness may be remembered are lib/album-refresh, each rule a test there; a
+  // broadcast forces because a reorder moves neither field the probe compares. This supplies the
+  // requests and what to do with their answers.
   const refreshIfChanged = useCallback(async (
     albumId: string,
     apply: (r: { photos: Photo[]; total: number } | null) => void,
     opts: { force?: boolean } = {},
   ) => {
-    const probe = await probeAlbum(albumId)
-    if (!opts.force && !albumChanged(seenFreshnessRef.current, probe)) return
-
-    // ASK FOR WHAT IS MISSING, NOT FOR EVERYTHING.
-    //
-    // The probe made an idle album free; measuring a real event showed the live case was still
-    // pulling the whole 500-row window — 424 KB — on nearly every check, because during an event
-    // the album genuinely has changed. At a thousand guests that is the entire monthly database
-    // transfer allowance in one afternoon. When the only difference is a few new photos, this
-    // fetches those few. deltaRowsNeeded returns null for anything it cannot express safely —
-    // a deletion, an edit in place, a gap too large — and then the window is fetched as before.
-    const delta = deltaRowsNeeded(seenFreshnessRef.current, probe, ALBUM_DELTA_MAX)
-    if (delta !== null && seenFreshnessRef.current?.latest) {
-      const fresh = await fetchSince(albumId, seenFreshnessRef.current.latest, delta)
-      // A delta that came back with exactly what the probe promised is trustworthy; anything else
-      // (a short read, a failure, a count that moved underneath) falls through to the full window
-      // rather than leaving the grid quietly wrong.
-      if (fresh && fresh.photos.length === delta && fresh.total === probe?.total) {
-        seenFreshnessRef.current = probe
-        applyDelta(fresh)
-        return
-      }
-    }
-
-    const r = await fetchPhotos(albumId)
-    // Only record freshness on a fetch that actually succeeded, or a failed window would be
-    // remembered as the current state and the next probe would skip the retry.
-    if (r && probe) seenFreshnessRef.current = probe
-    apply(r)
-  }, [probeAlbum, fetchPhotos])
+    await refreshAlbum<Photo>({
+      seen: () => seenFreshnessRef.current,
+      remember: (freshness) => { seenFreshnessRef.current = freshness },
+      probe: () => probeAlbum(albumId),
+      since: (since, limit) => fetchSince(albumId, since, limit),
+      window: () => fetchPhotos(albumId),
+      applyDelta,
+      applyWindow: apply,
+      maxDelta: ALBUM_DELTA_MAX,
+    }, { force: opts.force === true })
+  }, [probeAlbum, fetchSince, fetchPhotos, applyDelta])
 
   // Load the next page of a BIG album's tail (appended after what's loaded). Self-gates on refs so
   // it's safe from a button or a scroll observer without stale-closure bugs. No-op once caught up.

@@ -38,6 +38,28 @@ function limitFor(rel: string, key: string): { windowSeconds: number; max: numbe
 const { READ_LIMITS, READ_LIMIT_PERIOD_SECONDS } = await import('@/lib/server/edge-rate-limit')
 const edgeLimit = (name: keyof typeof READ_LIMITS) => ({ windowSeconds: READ_LIMIT_PERIOD_SECONDS, max: READ_LIMITS[name].perMinute })
 
+// HOW MANY REQUESTS ONE REFRESH IS, counted by RUNNING the refresh (rule 17) the way it runs during an
+// upload stream: the viewer knows what it holds and every check finds a few new photos. This was assumed
+// to be one while the code made two -- a probe and then a fetch -- which put a real venue past the limit
+// at about 420 guests instead of the 800 the arithmetic promised (review of 2026-09-14).
+const { refreshAlbum } = await import('@/lib/album-refresh')
+async function requestsPerBusyRefresh(): Promise<number> {
+  let requests = 0
+  let seen = { total: 100, latest: '2026-09-19T08:00:00Z' }
+  const newRows = [1, 2, 3].map((i) => ({ id: `n${i}`, created_at: '2026-09-19T08:00:05Z' }))
+  await refreshAlbum({
+    seen: () => seen,
+    remember: (f) => { seen = { total: f.total, latest: f.latest ?? seen.latest } },
+    probe: async () => { requests++; return { total: 103, latest: '2026-09-19T08:00:05Z' } },
+    since: async () => { requests++; return { photos: newRows, total: 103, latest: '2026-09-19T08:00:05Z' } },
+    window: async () => { requests++; return { photos: newRows, total: 103 } },
+    applyDelta: () => {},
+    applyWindow: () => {},
+    maxDelta: 100,
+  }, { force: false })
+  return requests
+}
+
 describe('rate limits fit a real event, not just one visitor', () => {
   it('presence: every guest pings, and they all share one venue IP', () => {
     const beacon = source('components/PresenceBeacon.tsx')
@@ -52,14 +74,16 @@ describe('rate limits fit a real event, not just one visitor', () => {
     expect(max, `${GUESTS} guests need ${Math.ceil(needed)} per ${windowSeconds}s`).toBeGreaterThanOrEqual(needed * HEADROOM)
   })
 
-  it('album photos: every guest refetches on the debounce during an upload burst', () => {
+  it('album photos: every guest refetches on the debounce during an upload burst', async () => {
     const client = source('app/[slug]/AlbumPageClient.tsx')
     const debounce = /const REFETCH_DEBOUNCE_MS = (\d[\d_]*)/.exec(client)
     expect(debounce, 'the refetch debounce must be a named constant').not.toBeNull()
     const everyMs = Number((debounce as RegExpExecArray)[1].replace(/_/g, ''))
 
     const { windowSeconds, max } = edgeLimit('albumPhotos')
-    const needed = GUESTS * (windowSeconds / (everyMs / 1000))
+    const perRefresh = await requestsPerBusyRefresh()
+    expect(perRefresh, 'a refresh that finds new photos must be ONE request').toBe(1)
+    const needed = GUESTS * (windowSeconds / (everyMs / 1000)) * perRefresh
     // Being refused here is the worst of the three: the album stops updating during the event it
     // was made for, which is the one moment it exists to serve.
     expect(max, `${GUESTS} guests refetching every ${everyMs}ms need ${Math.ceil(needed)} per ${windowSeconds}s`)

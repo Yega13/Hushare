@@ -160,6 +160,24 @@ describe('AlbumPageClient hands the photos channel to watchPhotosChannel and kee
   })
 })
 
+describe('AlbumPageClient refreshes through lib/album-refresh with its real requests', () => {
+  it('refreshAlbum gets the freshness ref, the three real fetchers, the delta merge, the caller apply and the delta cap', () => {
+    const call = singleCall(src(), 'refreshAlbum<Photo>(')
+    expect(call).toMatch(/seen:\s*\(\)\s*=>\s*seenFreshnessRef\.current/)
+    expect(call).toMatch(/remember:\s*\(freshness\)\s*=>\s*\{\s*seenFreshnessRef\.current = freshness\s*\}/)
+    expect(call).toMatch(/probe:\s*\(\)\s*=>\s*probeAlbum\(albumId\)/)
+    expect(call).toMatch(/since:\s*\(since, limit\)\s*=>\s*fetchSince\(albumId, since, limit\)/)
+    expect(call).toMatch(/window:\s*\(\)\s*=>\s*fetchPhotos\(albumId\)/)
+    expect(call).toMatch(/\bapplyDelta,/)
+    expect(call).toMatch(/applyWindow:\s*apply\b/)
+    expect(call).toMatch(/maxDelta:\s*ALBUM_DELTA_MAX\b/)
+    expect(call).toMatch(/\{ force: opts\.force === true \}\)$/)
+  })
+  it('the since request passes on the newest time the server sends', () => {
+    expect(src()).toMatch(/latest: typeof json\.latest === 'string' \? json\.latest : null/)
+  })
+})
+
 describe('AlbumPageClient hands settings-sync the refetch itself; the jitter is the module\'s', () => {
   it('refetch is refetchSettings, with no timer or random source at the call site', () => {
     const call = singleCall(src(), 'createSettingsSync(')

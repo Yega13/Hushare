@@ -27,8 +27,10 @@ const cfg: {
   queries: Rec[]
   /** How many album reads fail before one succeeds, the way a gateway timeout does. */
   albumReadFailures: number
+  /** Every photos-table read fails, the way a gateway timeout does. */
+  photoReadFails: boolean
   reports: Array<{ source: string; message: string; opts?: unknown }>
-} = { album: null, photos: [], photoCount: 0, newest: null, cookies: {}, queries: [], albumReadFailures: 0, reports: [] }
+} = { album: null, photos: [], photoCount: 0, newest: null, cookies: {}, queries: [], albumReadFailures: 0, photoReadFails: false, reports: [] }
 
 // A builder that records what was asked and answers plausibly. It records FILTERS because that is
 // where the secret lives: `.eq('hidden', false)` is the difference between a guest seeing an
@@ -49,10 +51,13 @@ function builder(table: string): Record<string, unknown> {
         cfg.albumReadFailures--
         return { data: null, error: { message: 'Gateway Timeout' } }
       }
+      if (table === 'photos' && cfg.photoReadFails) return { data: null, error: { message: 'Gateway Timeout' } }
       return { data: table === 'albums' ? cfg.album : cfg.newest, error: null }
     },
     then: (resolve: (v: unknown) => void) =>
-      resolve(rec.head ? { count: cfg.photoCount, error: null } : { data: cfg.photos, count: cfg.photoCount, error: null }),
+      resolve(table === 'photos' && cfg.photoReadFails
+        ? { data: null, count: null, error: { message: 'Gateway Timeout' } }
+        : rec.head ? { count: cfg.photoCount, error: null } : { data: cfg.photos, count: cfg.photoCount, error: null }),
   })
   return b
 }
@@ -88,6 +93,7 @@ beforeEach(() => {
   cfg.cookies = {}
   cfg.queries = []
   cfg.albumReadFailures = 0
+  cfg.photoReadFails = false
   cfg.reports = []
 })
 
@@ -288,6 +294,20 @@ describe('a guest never sees a photo the owner took down', () => {
       }
     })
   }
+})
+
+describe('the delta read answers the freshness question too (one request per refresh)', () => {
+  it('returns the new rows, the total and the newest visible time in one answer', async () => {
+    cfg.photoCount = 7
+    cfg.newest = { created_at: '2026-09-19T08:00:05Z' }
+    const res = await list({ since: '2026-09-19T08:00:00Z' })
+    expect(res).toMatchObject({ kind: 'ok', total: 7, latest: '2026-09-19T08:00:05Z' })
+  })
+
+  it('A FAILED READ IS UNAVAILABLE, never an album with a total of zero', async () => {
+    cfg.photoReadFails = true
+    expect((await list({ since: '2026-09-19T08:00:00Z' })).kind).toBe('unavailable')
+  })
 })
 
 describe('the bib bounds come from the ALBUM, never from the caller', () => {

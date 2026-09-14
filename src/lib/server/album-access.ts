@@ -766,20 +766,30 @@ export async function fetchAuthorizedPhotos(
   // the real event album, and at a thousand guests that was the entire monthly database transfer
   // allowance in one afternoon. Deliberately NOT combined with a bib search or the recent feed —
   // those answer different questions and a delta of a filtered set is not a delta of the album.
+  //
+  // AND THE FRESHNESS ANSWER. The total and the newest visible time come back in the same response, read
+  // in parallel with the rows, so a viewer that knows what it holds needs no probe first: one request
+  // per live refresh instead of two (lib/album-refresh). The count lets a client applying a delta check
+  // that its own arithmetic agrees with the database.
   if (opts.since && opts.bib === undefined && !opts.recentLimit) {
     const query = admin.from('photos').select(PHOTO_SELECT_COLS).eq('album_id', albumId)
-    const rows = await (isOwner ? query : query.eq('hidden', false))
-      .gt('created_at', opts.since)
-      .order('created_at', { ascending: false })
-      .order('id', { ascending: false })
-      .limit(Math.min(opts.limit ?? 100, 200))
-
-    if (rows.error) return { kind: 'ok', photos: [], total: 0 }
-    // The count comes back with it, so a client applying a delta still learns the true size and
-    // can tell that its own arithmetic agreed with the database.
     const countQ = admin.from('photos').select('id', { count: 'exact', head: true }).eq('album_id', albumId)
-    const { count } = await (isOwner ? countQ : countQ.eq('hidden', false))
-    return { kind: 'ok', photos: narrowAndReport(rows.data ?? []), total: count ?? 0 }
+    const newestQ = admin.from('photos').select('created_at').eq('album_id', albumId)
+    const [rows, counted, newest] = await Promise.all([
+      (isOwner ? query : query.eq('hidden', false))
+        .gt('created_at', opts.since)
+        .order('created_at', { ascending: false })
+        .order('id', { ascending: false })
+        .limit(Math.min(opts.limit ?? 100, 200)),
+      isOwner ? countQ : countQ.eq('hidden', false),
+      (isOwner ? newestQ : newestQ.eq('hidden', false))
+        .order('created_at', { ascending: false }).limit(1).maybeSingle(),
+    ])
+    // COULD NOT ANSWER, which is not "the album has no photos". This returned a total of 0 on a failed
+    // read; the client happened to answer that with a full fetch, but a response stating a count it
+    // does not have is one caller away from blanking a guest's album.
+    if (rows.error || counted.error || newest.error) return { kind: 'unavailable' }
+    return { kind: 'ok', photos: narrowAndReport(rows.data ?? []), total: counted.count ?? 0, latest: newest.data?.created_at ?? null }
   }
   const { photos, total } = await readPhotoWindow(admin, album, isOwner, { offset, limit, recent, bibCandidates, countWithRows: false })
   return {

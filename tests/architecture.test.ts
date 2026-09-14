@@ -346,7 +346,9 @@ const SIZE_BUDGET: Record<string, number> = {
   // 2026-08-22 recorded. Ten lines: one import with its comment, and an open and close around each of
   // the four panels. The decisions live in lib/optional-load and components/OptionalPanel, tested and
   // mutated there.
-  'src/app/[slug]/AlbumPageClient.tsx': 1587,
+  // -52 (2026-09-14): the photos channel lifecycle moved to lib/realtime-supervisor's watchPhotosChannel,
+  // and the refresh decision to lib/album-refresh (one request per live refresh).
+  'src/app/[slug]/AlbumPageClient.tsx': 1535,
   'src/app/card-editor/CardEditorClient.tsx': 873,
   // +1 (2026-08-31): pass collectionTotal to the lightbox counter.
   // +2 (2026-08-31): morphAllowed gate on open and close.
