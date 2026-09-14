@@ -1455,7 +1455,7 @@ export default function AlbumPageClient({ initialAlbum = null, initialPhotos, in
           <OptionalPanel part="face-finder">
           <FaceFinder
             albumSlug={album.custom_slug ?? album.slug}
-            photos={photos}
+            photos={photos} albumTotal={total}
             onClose={() => setShowFaceFinder(false)}
           />
           </OptionalPanel>

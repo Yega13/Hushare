@@ -5,10 +5,13 @@ import { X, Camera, Upload, Search, ChevronLeft } from 'lucide-react'
 import type { Photo } from '@/types'
 import { useT } from '@/i18n/LocaleProvider'
 import SignInPrompt from '@/components/SignInPrompt'
+import { canSkipFaceIndexing } from '@/lib/face-finder-plan'
 
 type Props = {
   albumSlug: string
   photos: Photo[]
+  /** The album's own photo count (the photos API total), so the loaded window is never taken for the album. */
+  albumTotal: number
   onClose: () => void
 }
 
@@ -52,7 +55,7 @@ async function downscaleSelfie(file: File): Promise<File> {
   }
 }
 
-export default function FaceFinder({ albumSlug, photos, onClose }: Props) {
+export default function FaceFinder({ albumSlug, photos, albumTotal, onClose }: Props) {
   const { t } = useT()
   const [step, setStep] = useState<Step>('indexing')
   const [indexed, setIndexed] = useState(0)
@@ -79,8 +82,11 @@ export default function FaceFinder({ albumSlug, photos, onClose }: Props) {
   const runIndexing = useCallback(async () => {
     if (indexingDone.current) return
 
-    // Fast path: if every image we know about is already indexed, skip straight to selfie.
-    if (imagePhotos.length > 0 && imagePhotos.every((p) => p.face_ids != null)) {
+    // Fast path: straight to the selfie ONLY when the photos loaded here are the whole album and all
+    // of them are scanned (lib/face-finder-plan). "Every image we know about" was the loaded window,
+    // which on a big album is the first 500 -- the ones scanned first -- and skipping the server's
+    // check then produced "No matches found" over photos nobody had scanned.
+    if (canSkipFaceIndexing(photos, albumTotal)) {
       setTotal(imagePhotos.length)
       setIndexed(imagePhotos.length)
       indexingDone.current = true
