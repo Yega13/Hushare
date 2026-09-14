@@ -163,11 +163,13 @@ export function isMissingContentLengthFailure(message: unknown): boolean {
  * That is a security-policy dump handed to somebody at a wedding. It names no cause they
  * recognise and no action they can take (rule 20).
  *
- * WHAT ACTUALLY HAPPENS. Safari decodes HEIC natively and never reaches the converter, so every
- * iPhone is fine. Chrome on Android cannot, falls through to the WASM converter, and heic2any's
- * emscripten glue calls `new Function(...)` — which our Content-Security-Policy refuses, in the
- * worker and on the main thread alike, because both inherit the document's policy. There is no
- * retry that helps: the conversion cannot run in this browser at all.
+ * WHAT ACTUALLY HAPPENS. A browser that decodes HEIC itself never reaches the converter — Safari
+ * 17 and later (caniuse, checked 2026-09-14; this line once said every Safari, and a Mac on Safari
+ * 16.6 reached the converter on 2026-09-13). A browser that cannot, and that lib/image-decode's
+ * WebCodecs attempt cannot rescue, falls through to heic2any, which is plain JavaScript that calls
+ * `new Function(...)` (not WASM — see lib/heic-worker.ts) — and our Content-Security-Policy refuses
+ * that, in the worker and on the main thread alike, because both inherit the document's policy.
+ * There is no retry that helps: the conversion cannot run in this browser at all.
  *
  * IT NO LONGER ASKS WHETHER THE TEXT SAYS "HEIC", and that removal is the point. It used to, and
  * its one caller passed `` `heic ${detail}` `` — so the caller wrote the word the guard checked

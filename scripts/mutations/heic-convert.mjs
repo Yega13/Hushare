@@ -27,6 +27,8 @@ export default {
       from: "cb.reject(new Error('HEIC worker crashed'))", to: 'void cb' },
     { name: 'a crash leaves the waiting photos\' timers running',
       from: "{ clearTimeout(cb.timer); cb.reject(new Error('HEIC worker crashed')) }", to: "{ cb.reject(new Error('HEIC worker crashed')) }" },
+    { name: 'A CRASH THE CLIENT ALREADY HANDLES IS REPORTED AGAIN AS A PAGE ERROR (row 1246)',
+      from: '      e.preventDefault()\n', to: '' },
     { name: 'THE ORDER THE MOVE FIXED: the worker is fetched before the read, so a crash mid-read strands the photo',
       from: '    const buffer = await deps.readBytes(file)\n    const target = getWorker()', to: '    const target = getWorker()\n    const buffer = await deps.readBytes(file)' },
 

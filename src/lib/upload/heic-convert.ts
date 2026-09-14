@@ -55,7 +55,14 @@ export function createHeicWorkerClient(deps: {
       if (jpeg) cb.resolve(jpeg)
       else cb.reject(new Error(error ?? 'HEIC conversion failed'))
     }
-    created.onerror = () => {
+    created.onerror = (e) => {
+      // HANDLED HERE, SO IT IS NOT REPORTED AGAIN ON THE PAGE. The HTML Standard: "If the event is not
+      // canceled, the user agent must act as if the uncaught runtime script error had occurred in the
+      // global scope that the Worker object is in" -- which fires window.onerror. Row 1246 (2026-09-13)
+      // was exactly that: a Mac on Safari 16 cannot decode HEIC, heic2any's `new Function` was refused
+      // inside the worker, and the raw CSP sentence landed in the panel as a page error, while this
+      // handler and the main-thread converter behind it were already dealing with the failure.
+      e.preventDefault()
       // Null out the worker -- the next file gets a fresh one. No permanent broken flag: a transient
       // crash (e.g. OOM on one large file) should not disable the worker for later, smaller files.
       for (const [, cb] of callbacks) { clearTimeout(cb.timer); cb.reject(new Error('HEIC worker crashed')) }

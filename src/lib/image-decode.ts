@@ -11,8 +11,9 @@
  *
  * THE ORDER IS THE DECISION.
  *
- *   1. createImageBitmap — the platform's ordinary path. Handles HEIC on Safari, which is why
- *      iPhones never reach anything below this line, and is the cheapest of the three.
+ *   1. createImageBitmap — the platform's ordinary path, and the cheapest of the three. It handles
+ *      HEIC on Safari 17 and later ONLY (caniuse, checked 2026-09-14). This line used to say every
+ *      iPhone stopped here; a Mac on Safari 16.6 fell through to the converter on 2026-09-13 (row 1246).
  *   2. ImageDecoder (WebCodecs) — the platform's OTHER decoder. Android has HEIF support at the OS
  *      level and Chrome exposes it here.
  *   3. (the caller's WASM converter, which is not in this module)

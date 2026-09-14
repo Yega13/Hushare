@@ -12,6 +12,8 @@ type Fake = HeicWorker & {
   posts: Array<{ message: { id: number; buffer: ArrayBuffer }; transfer: Transferable[] }>
   reply: (r: HeicReply) => void
   crash: () => void
+  /** How many crash events the client cancelled. An uncancelled one is re-reported as a page error. */
+  cancelled: number
 }
 
 function fakeWorker(): Fake {
@@ -19,9 +21,10 @@ function fakeWorker(): Fake {
     posts: [],
     onmessage: null,
     onerror: null,
+    cancelled: 0,
     postMessage(message, transfer) { w.posts.push({ message, transfer }) },
     reply: (r) => w.onmessage?.({ data: r } as MessageEvent<HeicReply>),
-    crash: () => w.onerror?.({} as ErrorEvent),
+    crash: () => w.onerror?.({ preventDefault: () => { w.cancelled++ } } as unknown as ErrorEvent),
   }
   return w
 }
@@ -137,6 +140,10 @@ describe('the HEIC worker client', () => {
     await settle()
     expect(vi.getTimerCount()).toBe(2)
     workers[0].crash()
+    // CANCELLED, so the browser does not report the same crash a second time as a page error. An
+    // uncancelled worker error event is re-reported in the page's global scope (HTML Standard) -- which
+    // is how row 1246 put a raw CSP sentence in the panel.
+    expect(workers[0].cancelled).toBe(1)
     expect(await a).toBe('HEIC worker crashed')
     expect(await b).toBe('HEIC worker crashed')
     expect(vi.getTimerCount()).toBe(0)
