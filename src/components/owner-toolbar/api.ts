@@ -2,7 +2,7 @@ import type { NumberTally } from '@/lib/bib-exclusions'
 import type { CollectionSummary } from '@/components/owner-toolbar/types'
 import type { MediaDisplayFilter, MobileGridColumns, SlideshowAnimation } from '@/lib/media-display'
 import type { SponsorLogo, SlideshowMotion } from '@/types'
-import { readFileRobust } from '@/lib/file-read'
+import { prepareDesignImage } from '@/lib/design-image'
 import { afterInFlight } from '@/lib/inflight-gate'
 import { isNetworkFailure } from '@/lib/network-failure'
 import { IMMUTABLE_CACHE_CONTROL } from '@/lib/media'
@@ -164,11 +164,6 @@ export async function saveMediaSettingsRequest(
   return { ok: true, applied }
 }
 
-// Storable image types for a design asset. Deliberately narrower than the main photo pipeline's
-// server-side set: a header/logo/background is drawn by an <img> in every browser, so HEIC has no
-// place here even though R2 would accept it.
-const STORABLE_DESIGN_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/avif'])
-
 // How large a re-encoded design asset is allowed to be. A logo renders at ~64px and a header band
 // at a page width, so these are generous; they exist to stop a phone's 12 MP original becoming a
 // multi-megabyte re-encode.
@@ -180,97 +175,8 @@ export const DESIGN_IMAGE_MAX_EDGE = 2560
 export const LOGO_MAX_BYTES = 5 * 1024 * 1024
 export const DESIGN_IMAGE_MAX_BYTES = 10 * 1024 * 1024
 
-// Last-resort recovery + normalisation for pictures picked on a phone.
-//
-// readFileRobust() covers arrayBuffer(), FileReader and blob-URL fetch. On some Android devices a
-// picked file is "displayable but not byte-readable": every one of those paths fails, yet an <img>
-// element renders it perfectly. Drawing that <img> to a canvas produces fresh, valid bytes.
-// UploadZone already relies on this to fix the identical "Could not read this file" failure for
-// photo uploads; the logo and background pickers never got it, so choosing a logo on an Android
-// phone simply failed with no way forward.
-// A design asset is drawn at a few hundred pixels at most, so there is no reason to carry a 12 MP
-// original through the re-encode — and every reason not to: a lossless PNG of one is easily 20 MB,
-// which would blow straight past the logo route's 5 MB cap and turn a recovered upload into a
-// different error. Cap the long edge, prefer WebP, and fall back down the format list for older
-// canvas implementations.
-const CANVAS_ENCODE_ORDER: Array<[type: string, quality: number]> = [
-  ['image/webp', 0.9],
-  ['image/jpeg', 0.92],
-  ['image/png', 1],
-]
-
-async function reencodeViaCanvas(file: File, maxEdge: number): Promise<{ blob: Blob; type: string } | null> {
-  const url = URL.createObjectURL(file)
-  try {
-    const img = await new Promise<HTMLImageElement | null>((resolve) => {
-      const el = new Image()
-      el.onload = () => resolve(el)
-      el.onerror = () => resolve(null)
-      el.src = url
-    })
-    if (!img || !img.naturalWidth || !img.naturalHeight) return null
-    const scale = Math.min(1, maxEdge / Math.max(img.naturalWidth, img.naturalHeight))
-    const canvas = document.createElement('canvas')
-    canvas.width = Math.max(1, Math.round(img.naturalWidth * scale))
-    canvas.height = Math.max(1, Math.round(img.naturalHeight * scale))
-    const ctx = canvas.getContext('2d')
-    if (!ctx) return null
-    ctx.drawImage(img, 0, 0, canvas.width, canvas.height)
-    for (const [type, quality] of CANVAS_ENCODE_ORDER) {
-      const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, type, quality))
-      // A canvas that can't produce the requested type silently falls back to PNG, so trust the
-      // blob's own type rather than the one we asked for — that mismatch is what the presigned
-      // signature would reject.
-      if (blob && blob.size > 0 && STORABLE_DESIGN_TYPES.has(blob.type)) {
-        return { blob, type: blob.type }
-      }
-    }
-    return null
-  } catch {
-    return null
-  } finally {
-    URL.revokeObjectURL(url)
-  }
-}
-
-// Turn whatever the device's picker handed us into bytes we can actually sign for and store.
-//
-// Two things go wrong on a phone and neither is the owner's fault:
-//   - The picker reports no type at all, or image/heic from an iPhone. Presigning under that type
-//     is either rejected outright (415) or produces a stored file no browser can draw.
-//   - The File is "displayable but not byte-readable" — every read path fails, yet an <img> renders
-//     it perfectly (a stale Android content-provider reference).
-// Both are fixed the same way: redraw it through a canvas. The returned `type` is what the bytes
-// REALLY are, and it is the only type used from here on — presign, PUT header and Blob label all
-// agree. They used to disagree (the presign got file.type while the blob was PNG), which silently
-// broke every recovery: "logo — error", with nothing the owner could do about it.
-async function prepareDesignImage(
-  file: File,
-  maxEdge: number,
-  maxBytes: number,
-): Promise<{ ok: true; blob: Blob; type: string } | { ok: false; error: string }> {
-  if (STORABLE_DESIGN_TYPES.has(file.type)) {
-    try {
-      const bytes = await readFileRobust(file)
-      if (bytes.byteLength <= maxBytes) {
-        return { ok: true, blob: new Blob([bytes], { type: file.type }), type: file.type }
-      }
-      // Storable, but bigger than the endpoint will take. Falling through re-encodes it down
-      // instead of telling the owner their picture is too big — a phone camera shot is always over
-      // the logo cap, and "pick a smaller one" is not an instruction anybody can act on.
-    } catch {
-      // Unreadable bytes — fall through to the canvas path rather than giving up.
-    }
-  }
-  const recovered = await reencodeViaCanvas(file, maxEdge)
-  if (!recovered) {
-    return { ok: false, error: 'Could not read this image from your device. Please pick a different one.' }
-  }
-  if (recovered.blob.size > maxBytes) {
-    return { ok: false, error: `That image is too detailed to use here (over ${Math.round(maxBytes / 1024 / 1024)} MB even after resizing).` }
-  }
-  return { ok: true, blob: recovered.blob, type: recovered.type }
-}
+// Every design upload -- background, header, logo, sponsor mark -- goes through lib/design-image's
+// prepareDesignImage: stored at no more than the edge cap for its slot, whatever the camera took.
 
 export async function uploadBackgroundRequest(
   slug: string,

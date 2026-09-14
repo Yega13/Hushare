@@ -21,7 +21,7 @@ export const DESIGN_IMAGE_TYPES = new Set(['image/jpeg', 'image/png', 'image/web
 // which is what we can store directly: a phone's picker regularly reports image/heic or no type at
 // all for a picture the owner can see perfectly well in their gallery, and rejecting those up front
 // meant "unsupported format" for a valid photo with no way forward. Anything that gets past this
-// is normalised by prepareDesignImage() in owner-toolbar/api.ts, which re-encodes it through a
+// is normalised by prepareDesignImage() in lib/design-image, which re-encodes it through a
 // canvas and only fails if the browser genuinely cannot draw it.
 export function isPickableImage(file: File): boolean {
   return DESIGN_IMAGE_TYPES.has(file.type) || file.type === '' || file.type.startsWith('image/')
