@@ -881,6 +881,162 @@ body:has(.hush-footer-reveal) > main {
   }
 }
 
+/* ─── Footer socials: two prints ────────────────────────────────────────────────────────────── */
+/* The accounts are handed over the way Hushare hands over everything else: as photographs. Two
+   small instant prints, dropped askew, the network's mark where the picture would be. Hovering one
+   picks it up. Markup in components/FooterSocials.tsx.
+
+   Each print's lean is a custom property, so the picked-up state and the reduced-motion override
+   can both refer to "the way this one was lying" without restating it per network. */
+.hush-foot-social {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-top: 18px;
+}
+
+.hush-foot-prints {
+  display: flex;
+  flex: none;
+  /* flex-start, not the default stretch: the second print sits lower, and stretch would grow the
+     first one's white lip to match the difference. */
+  align-items: flex-start;
+  /* Room for the tilted corners and the shadow beside the sentence. */
+  padding: 4px 4px 8px 2px;
+}
+
+.hush-foot-print {
+  --hush-print-tilt: 0deg;
+  position: relative;
+  display: block;
+  width: 46px;
+  /* The thick bottom lip is what makes a white square read as an instant print rather than a tile. */
+  padding: 4px 4px 11px;
+  background: #FFFDF8;
+  border: 1px solid #E8E0D0;
+  border-radius: 3px;
+  box-shadow: 0 1px 1px rgba(92, 74, 60, 0.06), 0 6px 14px rgba(92, 74, 60, 0.13);
+  color: #FDFAF5;
+  transform: rotate(var(--hush-print-tilt));
+  transform-origin: 50% 85%;
+  transition:
+    transform 180ms cubic-bezier(0.16, 1, 0.3, 1),
+    box-shadow 180ms ease;
+}
+
+.hush-foot-print--instagram {
+  --hush-print-tilt: -6deg;
+  z-index: 1;
+}
+
+/* Overlapping and a touch lower, like the second of two prints dropped on a table. */
+.hush-foot-print--tiktok {
+  --hush-print-tilt: 5deg;
+  margin-left: -9px;
+  margin-top: 7px;
+}
+
+.hush-foot-print-photo {
+  display: grid;
+  place-items: center;
+  aspect-ratio: 1;
+  border-radius: 1px;
+}
+
+/* The two colours the site already paints its darkest surfaces in: burgundy, and /about's deep green. */
+.hush-foot-print--instagram .hush-foot-print-photo {
+  background: #630826;
+}
+
+.hush-foot-print--tiktok .hush-foot-print-photo {
+  background: #1B2E1A;
+}
+
+/* Picked up: straightened, lifted, brought to the front of the pair.
+
+   opacity: 1 overrides base.css's site-wide `a:hover { opacity: 0.76 }`, and on purpose. Everywhere
+   else a fade IS the hover state. Here the lift already is, and a print that goes 24% transparent
+   when you pick it up looks washed out and lets the one it overlaps show through its picture --
+   seen in a screenshot of this exact state, not assumed. */
+.hush-foot-print:hover {
+  opacity: 1;
+}
+
+.hush-foot-print:focus-visible {
+  opacity: 1;
+  z-index: 2;
+  transform: rotate(0deg) translateY(-3px);
+  box-shadow: 0 2px 2px rgba(92, 74, 60, 0.08), 0 12px 22px rgba(92, 74, 60, 0.2);
+}
+
+/* THE LIFT ONLY WHERE A POINTER CAN HOVER. On a phone a tap sets :hover and it sticks: the print opens
+   its network in a new tab, and on coming back it is still sitting straightened and raised, looking
+   selected, until the next tap somewhere else. The opacity override above stays outside this query on
+   purpose -- base.css's link fade sticks on touch too, and a faded print is worse than a lifted one. */
+@media (hover: hover) {
+  .hush-foot-print:hover {
+    z-index: 2;
+    transform: rotate(0deg) translateY(-3px);
+    box-shadow: 0 2px 2px rgba(92, 74, 60, 0.08), 0 12px 22px rgba(92, 74, 60, 0.2);
+  }
+}
+
+.hush-foot-print:focus-visible {
+  outline: 2px solid #630826;
+  outline-offset: 3px;
+}
+
+.hush-foot-print:active {
+  transform: rotate(0deg) translateY(-1px) scale(0.98);
+}
+
+.hush-foot-follow {
+  margin: 0;
+  font-family: var(--font-serif);
+  font-style: italic;
+  font-size: 0.9rem;
+  line-height: 1.45;
+  /* #85694A, not the site's usual #8B6F4E: on the footer's #FBF6EC that brown measures 4.35:1, under
+     the 4.5:1 AA needs for 14px italic text. This measures 4.74:1 and is barely distinguishable by
+     eye. The tagline directly above uses the same value (SiteFooter.tsx), so the two lines match. */
+  color: #85694A;
+}
+
+/* The site's handwriting face, which exists for one other thing: the title on the back of a flipped
+   photo. Measured before using it here (2026-09-14): one file, 29,768 bytes, never preloaded, since
+   next/font cannot preload a family Google lists no subset for. The pages with this footer now
+   fetch it late and cache it; the fallbacks keep the handle legible and on-theme until it lands. */
+.hush-foot-handle {
+  font-family: var(--font-hand), "Segoe Print", cursive;
+  font-style: normal;
+  font-size: 0.92em;
+  color: #630826;
+  white-space: nowrap;
+}
+
+/* The footer centres its brand column on a phone. Prints above the sentence, so the two are not
+   squeezed side by side into a 300px column. */
+@media (max-width: 640px) {
+  .hush-foot-social {
+    flex-direction: column;
+    gap: 8px;
+  }
+}
+
+/* A print that swings on hover is motion. For someone who asked for less, it stays exactly where it
+   was dropped; the deeper shadow and the focus ring still say which one is under the pointer. */
+@media (prefers-reduced-motion: reduce) {
+  .hush-foot-print {
+    transition: box-shadow 180ms ease;
+  }
+
+  .hush-foot-print:hover,
+  .hush-foot-print:focus-visible,
+  .hush-foot-print:active {
+    transform: rotate(var(--hush-print-tilt));
+  }
+}
+
 /* ─── Reveal curtain ────────────────────────────────────────────────────────────────────────── */
 /* The mark on a scheduled album's curtain.
    It sits there for as long as the album takes to load — measured at 1.1-1.3s, and up to five

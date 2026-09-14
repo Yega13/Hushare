@@ -5,6 +5,8 @@ import { Heart, Zap, Shield, Mail, Phone } from 'lucide-react'
 import AccountNavLink from '@/components/AccountNavLink'
 import HamburgerMenu from '@/components/HamburgerMenu'
 import { Globe3DLazy } from '@/components/ui/Globe3DLazy'
+import SocialButtons from '@/components/SocialButtons'
+import { socialHandleLabel, socialProfile } from '@/lib/social-profiles'
 import { getServerLocale } from '@/i18n/server'
 import { getDictionary } from '@/i18n/get-dictionary'
 
@@ -491,7 +493,7 @@ export default async function AboutPage() {
             className="relative z-10 mt-8 text-sm italic"
             style={{ color: 'rgba(253,250,245,0.3)', fontFamily: 'var(--font-serif)' }}
           >
-            {dict['about.followPre']} <a href="https://www.instagram.com/hushare_space/" target="_blank" rel="noopener noreferrer" style={{ color: 'rgba(253,250,245,0.55)', textDecoration: 'underline' }}>@hushare_space</a> {dict['about.followPost']}
+            {dict['about.followPre']} <a href={socialProfile('instagram').url} target="_blank" rel="noopener noreferrer" style={{ color: 'rgba(253,250,245,0.55)', textDecoration: 'underline' }}>{socialHandleLabel()}</a> {dict['about.followPost']}
           </p>
         </div>
       </section>
@@ -600,32 +602,10 @@ export default async function AboutPage() {
           </h2>
 
           <div className="relative z-10 flex items-center justify-center gap-3 flex-wrap mb-8">
-            <a
-              href="https://www.instagram.com/hushare_space/"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="hush-press flex items-center gap-2.5 px-6 py-3 rounded-full font-semibold text-sm"
-              style={{ background: '#FDFAF5', color: '#630826' }}
-            >
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                <rect width="20" height="20" x="2" y="2" rx="5" ry="5"/>
-                <path d="M16 11.37A4 4 0 1 1 12.63 8 4 4 0 0 1 16 11.37z"/>
-                <line x1="17.5" x2="17.51" y1="6.5" y2="6.5"/>
-              </svg>
-              @hushare_space
-            </a>
-            <a
-              href="https://www.tiktok.com/@hushare_space"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="hush-press flex items-center gap-2.5 px-6 py-3 rounded-full font-semibold text-sm"
-              style={{ background: '#FDFAF5', color: '#630826' }}
-            >
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-                <path d="M19.59 6.69a4.83 4.83 0 0 1-3.77-4.25V2h-3.45v13.67a2.89 2.89 0 0 1-2.88 2.5 2.89 2.89 0 0 1-2.89-2.89 2.89 2.89 0 0 1 2.89-2.89c.28 0 .54.04.79.1V9.01a6.33 6.33 0 0 0-.79-.05 6.34 6.34 0 0 0-6.34 6.34 6.34 6.34 0 0 0 6.34 6.34 6.34 6.34 0 0 0 6.33-6.34V8.69a8.18 8.18 0 0 0 4.78 1.52V6.76a4.85 4.85 0 0 1-1.01-.07z"/>
-              </svg>
-              @hushare_space
-            </a>
+            {/* components/SocialButtons, so a test can render the buttons: this page is an async
+                server component, and checking its source could not tell a TikTok button pointed at
+                Instagram from a correct one. */}
+            <SocialButtons />
           </div>
 
           <div className="relative z-10 flex items-center gap-4 mb-6 max-w-xs mx-auto">

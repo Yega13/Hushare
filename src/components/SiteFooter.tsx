@@ -4,6 +4,7 @@ import { useEffect, useRef } from 'react'
 import Image from 'next/image'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
+import FooterSocials from '@/components/FooterSocials'
 import LanguageSwitcher from '@/components/LanguageSwitcher'
 import { LANGUAGE_UI_ENABLED } from '@/i18n/config'
 import { useT } from '@/i18n/LocaleProvider'
@@ -142,9 +143,14 @@ export default function SiteFooter() {
             <Link href="/" aria-label="Hushare home" style={{ display: 'inline-flex' }}>
               <Image src="/logo/logo-dark-transparent.png" alt="Hushare" width={618} height={146} style={{ height: 30, width: 'auto' }} draggable={false} />
             </Link>
-            <p style={{ marginTop: 12, fontFamily: 'var(--font-serif)', fontStyle: 'italic', fontSize: '0.98rem', lineHeight: 1.5, color: '#8B6F4E' }}>
+            {/* #85694A: the site's usual #8B6F4E measures 4.35:1 on this background, under AA's 4.5:1.
+                The follow line below uses the same value (layout.css, .hush-foot-follow). */}
+            <p style={{ marginTop: 12, fontFamily: 'var(--font-serif)', fontStyle: 'italic', fontSize: '0.98rem', lineHeight: 1.5, color: '#85694A' }}>
               {t('footer.tagline')}
             </p>
+            {/* Under the brand, not in the link list: the accounts are part of who Hushare is, and
+                a twelfth text link in a wrapping row is exactly where nobody would notice them. */}
+            <FooterSocials followPre={t('about.followPre')} followPost={t('about.followPost')} />
           </div>
           <nav aria-label="Footer" className="hush-foot-nav" style={{ display: 'flex', flexWrap: 'wrap', gap: '0.55rem 1.4rem', maxWidth: 620, justifyContent: 'flex-end' }}>
             {visibleLinks.map((link) => (

@@ -8,6 +8,7 @@ import { getServerLocale } from "@/i18n/server";
 import { getDictionary, interpolate } from "@/i18n/get-dictionary";
 import { en } from "@/i18n/dictionaries/en";
 import { uploadCapsForTier, formatCapSize } from "@/lib/media";
+import { socialProfileUrls } from "@/lib/social-profiles";
 import { LocaleProvider } from "@/i18n/LocaleProvider";
 import ErrorReporter from "@/components/ErrorReporter";
 import BackToTop from "@/components/BackToTop";
@@ -229,10 +230,9 @@ const jsonLd = {
       },
       // Social profiles — tells Google these accounts are the SAME entity as the site, which is what
       // lets "Hushare" rank as our brand (not the surname) and builds toward a knowledge panel.
-      sameAs: [
-        "https://www.tiktok.com/@hushare_space",
-        "https://www.instagram.com/hushare_space",
-      ],
+      // Read from lib/social-profiles, the one place the handle is written: /about and the footer
+      // link the same accounts, and a rename that missed this copy would tell Google a stale one.
+      sameAs: socialProfileUrls(),
     },
     {
       "@type": "WebSite",
