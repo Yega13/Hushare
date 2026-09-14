@@ -367,17 +367,10 @@ export const hy: Partial<Record<DictKey, string>> = {
   "uploadWall.saving": "Պահպանվում է…",
   "uploadWall.saved": "Պահպանվեց {n} լուսանկար։",
   "uploadWall.failedTitle": "{n} լուսանկար վերբեռնվել է, բայց դեռ չի պահպանվել",
-  "uploadWall.failedBody": "Ֆայլերը հասել են մեզ — չի անցել միայն վերջին քայլը, սովորաբար կապի կարճ ընդհատման պատճառով։ Սեղմեք «Ավարտել պահպանումը», և դրանք կհայտնվեն։ Կրկին վերբեռնելու կարիք չկա։",
-  // upload.retry.chipRefused and upload.retry.bodyRefused are absent for the same reason as the two
-  // uploadWall keys below: the sentence must say "the album declined these on purpose" without
-  // naming which of the three reasons it was, and I cannot write that in Armenian and check it.
-  //
-  // uploadWall.refusedBody and uploadWall.refusedBodyNone are deliberately absent, for the same
-  // reason as bodyNone above, and after the same mistake. The sentence has to say "the album
-  // declined this on purpose, and the reason is on each photo" WITHOUT naming a cause, because one
-  // wall covers uploads-switched-off, the password gate and the reveal date. Every Armenian I could
-  // assemble from sentences already in this file named one of them. The title is fine -- 'refused'
-  // reuses uploadWall.failedTitle, which is translated -- so only the body falls back to English.
+  "uploadWall.failedBody": "Ֆայլերը հասել են մեզ — չի անցել միայն վերջին քայլը, սովորաբար կապի կարճ ընդհատման պատճառով։ Սեղմեք «Պահպանել», և դրանք կհայտնվեն։ Կրկին վերբեռնելու կարիք չկա։",
+  // Written and approved by the owner, a native speaker, on 2026-09-14 -- not assembled here.
+  "uploadWall.refusedBody": "{n} լուսանկար վերբեռնվել է — ալբոմը մերժեց վերջին քայլը։ Կրկին վերբեռնելու կարիք չկա։ Եթե ալբոմը թարմացվի, սեղմեք «Պահպանել»։",
+  "uploadWall.refusedBodyNone": "Ալբոմը մերժեց տվյալ լուսանկարները։",
   // A translator is needed.
   'bib.tryFaceFinder': 'Գտնել ինձ դեմքով',
   'ad.zoom': 'Խոշորացում',
@@ -441,6 +434,8 @@ export const hy: Partial<Record<DictKey, string>> = {
   'upload.retry.body': 'Բեռնման ընթացքում կապն ընդհատվեց։ Ֆայլերը դեռ այստեղ են - նորից փնտրելու կարիք չկա, պարզապես սեղմեք, երբ կապ լինի։',
   'upload.retry.action': 'Կրկնել ({n})',
   'upload.retry.chip': 'չբեռնվեց',
+  'upload.retry.chipRefused': 'չպահպանված',
+  'upload.retry.bodyRefused': 'Ալբոմը մերժեց տվյալ լուսանկարները, պատճառները ստորև։ Կրկին վերբեռնելու կարիք չկա — պարզապես սեղմեք, երբ ալբոմը թարմացվի։',
   'upload.retry.unknown': 'Բեռնումը ձախողվեց',
   'ot.faceConsent.title': 'Նախքան միացնելը',
   'ot.faceConsent.b1': 'Դեմքով որոնումը հաշվարկում է ալբոմի յուրաքանչյուր դեմքի մաթեմատիկական կաղապարը։ Դա կենսաչափական տվյալ է, և Եվրոպայում ու ԱՄՆ մի շարք նահանգներում դա արգելված է առանց տվյալ մարդկանց բացահայտ համաձայնության։',
