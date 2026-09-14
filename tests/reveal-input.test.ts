@@ -1,6 +1,12 @@
 import { describe, it, expect } from 'vitest'
 import { toDatetimeLocal, revealRequestFor, revealStatus } from '@/lib/reveal-input'
 
+// A FIXED TIMEZONE EAST OF GREENWICH, whatever machine runs this. The midnight test below can only tell
+// local getters from UTC ones where the two disagree, and CI runs in UTC: there the UTC-getter mutation
+// survived the weekly mutation run on 2026-09-14 while passing on a laptop in Yerevan. Pinned here, per
+// file, rather than for the whole suite, so no other test changes behaviour.
+process.env.TZ = 'Asia/Yerevan'
+
 // THE DELAYED-REVEAL RULES: what the picker shows, what a save sends, whether the album is sealed.
 
 describe('toDatetimeLocal -- what the picker shows for a stored reveal', () => {
@@ -15,9 +21,9 @@ describe('toDatetimeLocal -- what the picker shows for a stored reveal', () => {
     const iso = new Date(2026, 9, 1, 0, 30).toISOString()   // local 1 Oct 2026 00:30
     expect(toDatetimeLocal(iso)).toBe('2026-10-01T00:30')
     const d = new Date(iso)
-    if (d.getTimezoneOffset() !== 0) {
-      expect(`${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`).not.toBe('2026-10-01')
-    }
+    // THE PREMISE, asserted rather than skipped. In UTC this test proves nothing, and it used to pass anyway.
+    expect(d.getTimezoneOffset(), 'this test needs a timezone off UTC to mean anything').not.toBe(0)
+    expect(`${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`).not.toBe('2026-10-01')
   })
   it('pads single-digit months, days, hours and minutes', () => {
     expect(toDatetimeLocal(new Date(2026, 0, 5, 7, 4).toISOString())).toBe('2026-01-05T07:04')
