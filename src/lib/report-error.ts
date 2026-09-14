@@ -484,12 +484,17 @@ export function installGlobalErrorReporting(): () => void {
       isForeignError(message, e.filename) ||
       isOutsideOurDocument(e.filename, e.lineno, { url: window.location.href, lineCount: documentLineCount })
     )) return
+    // THE SERVER'S NAME FOR IT. React puts a digest on an error the server hit while rendering (error
+    // #419: the server could not finish a Suspense boundary). The same digest is on the server:render
+    // row src/instrumentation.ts files -- the only row that says what actually went wrong.
+    const digest = (e.error as { digest?: unknown } | null | undefined)?.digest
     reportClientError({
       source: 'window.onerror',
       message,
       context: {
         // Line/column locate it in the deployed bundle; the filename tells us whose code it was.
         file: (e.filename ?? '').slice(0, 200), line: e.lineno, col: e.colno,
+        ...(typeof digest === 'string' && digest !== '' ? { digest: digest.slice(0, 100) } : {}),
       },
     })
   }
