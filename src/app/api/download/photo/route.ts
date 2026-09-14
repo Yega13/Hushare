@@ -8,6 +8,7 @@ import { checkRateLimit, clientIpKey } from '@/lib/rate-limit'
 import { createPresignedGet } from '@/lib/cloudflare/r2'
 import { NOT_REVEALED } from '@/lib/album-entitlements'
 import { track } from '@/lib/analytics'
+import { readWithRetry } from '@/lib/server/read-with-retry'
 import { cookies } from 'next/headers'
 
 export const runtime = 'nodejs'
@@ -43,26 +44,35 @@ export async function GET(req: Request) {
   }
 
   const admin = createAdminClient()
-  const { data: photo, error: photoErr } = await admin
+  // BOTH READS ARE RETRIED ONCE, AND A READ THAT STILL FAILS IS A FAILURE, NOT AN ABSENCE.
+  //
+  // Row 1242 (2026-09-13): a guest's download failed on "Gateway Timeout" from the photos read -- the
+  // same brief database gateway blips the every-minute crons met (lib/server/read-with-retry) -- and
+  // the row had no context to say which read it was. The album read was worse: an error there
+  // answered 404 "Not found", telling a guest that a photo they were looking at did not exist (rule 20).
+  const { result: { data: photo, error: photoErr } } = await readWithRetry(() => admin
     .from('photos')
     .select('url, storage_path, storage_backend, album_id, hidden')
     .eq('id', photoId)
-    .maybeSingle()
+    .maybeSingle())
 
   if (photoErr) {
-    return serverError('download-photo', photoErr.message, { publicMessage: 'DB error' })
+    return serverError('download-photo', photoErr.message, { publicMessage: 'DB error', context: { step: 'photo-read' } })
   }
   if (!photo) {
     return NextResponse.json({ error: 'Not found' }, { status: 404, headers: NO_STORE })
   }
 
-  const { data: album, error: albumErr } = await admin
+  const { result: { data: album, error: albumErr } } = await readWithRetry(() => admin
     .from('albums')
     .select('id, owner_token, allow_guest_downloads, password_hash, reveal_at, retired_at')
     .eq('id', photo.album_id)
-    .maybeSingle()
+    .maybeSingle())
 
-  if (albumErr || !album || album.retired_at) {
+  if (albumErr) {
+    return serverError('download-photo', albumErr.message, { publicMessage: 'DB error', context: { step: 'album-read' } })
+  }
+  if (!album || album.retired_at) {
     return NextResponse.json({ error: 'Not found' }, { status: 404, headers: NO_STORE })
   }
 
