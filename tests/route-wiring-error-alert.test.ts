@@ -29,6 +29,10 @@ type Upsert = { key: string; value: string }
 const cfg: {
   rows: Array<{ album_id: string | null; message: string; source: string; ua: string | null; context: { repeats?: number } | null }>
   queryError: string | null
+  /** How many times the log query fails with a gateway timeout before it answers. The retry is for this. */
+  queryFailures: number
+  /** How many times the log query was actually run. */
+  queryAttempts: number
   state: string | null
   /** The created_at lower bound the query actually used. */
   since: string | null
@@ -47,7 +51,7 @@ const cfg: {
   sent: unknown[]
   logs: string[]
 } = {
-  rows: [], queryError: null, state: null, since: null, sampleLimit: null, stateReadError: null, sendThrows: false, failUpsertsAfter: null, upsertErrorFrom: null,
+  rows: [], queryError: null, queryFailures: 0, queryAttempts: 0, state: null, since: null, sampleLimit: null, stateReadError: null, sendThrows: false, failUpsertsAfter: null, upsertErrorFrom: null,
   enrichDelayMs: 0, enrichThrows: false, upserts: [], sent: [], logs: [],
 }
 
@@ -63,9 +67,12 @@ vi.mock('@/lib/supabase/admin', () => ({
         chain.limit = (n: number) => { cfg.sampleLimit = n; return chain }
         // The chain is awaited directly now that the `.returns<>()` cast is gone: a thenable, so
         // `await admin.from(...).select(...)...limit(n)` resolves to the scripted result.
-        const result = () => (cfg.queryError
-          ? { data: null, error: { message: cfg.queryError } }
-          : { data: cfg.rows, error: null })
+        const result = () => {
+          cfg.queryAttempts++
+          if (cfg.queryError) return { data: null, error: { message: cfg.queryError } }
+          if (cfg.queryFailures > 0) { cfg.queryFailures--; return { data: null, error: { message: 'Gateway Timeout' } } }
+          return { data: cfg.rows, error: null }
+        }
         chain.then = (res: (v: unknown) => unknown, rej?: (e: unknown) => unknown) => Promise.resolve(result()).then(res, rej)
         return chain
       }
@@ -130,6 +137,8 @@ beforeEach(() => {
   process.env.ERROR_ALERT_EMAIL = 'admin@hushare.space'
   cfg.rows = spike()
   cfg.queryError = null
+  cfg.queryFailures = 0
+  cfg.queryAttempts = 0
   cfg.state = null
   cfg.since = null
   cfg.sampleLimit = null
@@ -204,10 +213,29 @@ describe('an ordinary spike sends one email, naming the albums', () => {
     expect(cfg.upserts, 'not sending must not consume the hourly slot').toHaveLength(0)
   })
 
-  it('reports a failed query instead of alerting on nothing', async () => {
+  it('ONE GATEWAY BLIP IS NOT AN INCIDENT: a query that fails once is asked again, and the run carries on', async () => {
+    // 13 "Gateway Timeout" error rows in 20 hours, each at :00 or :30 and each alone, all from this read.
+    // Without the retry, every one of those one-tick blips was an error row in the panel.
+    vi.useFakeTimers()
+    cfg.queryFailures = 1
+    const p = POST(post())
+    await vi.advanceTimersByTimeAsync(3_000)
+    const res = await p
+    expect(res.status).toBe(200)
+    expect(cfg.queryAttempts).toBe(2)
+    expect(await res.json()).toMatchObject({ alerted: true })
+    expect(cfg.sent).toHaveLength(1)
+  })
+
+  it('a query that keeps failing is still reported, after exactly two asks, and nothing is alerted on', async () => {
+    // The retry must not hide an outage: an alarm that cannot read the log says so.
+    vi.useFakeTimers()
     cfg.queryError = 'connection reset'
-    const res = await POST(post())
+    const p = POST(post())
+    await vi.advanceTimersByTimeAsync(3_000)
+    const res = await p
     expect(res.status).toBe(500)
+    expect(cfg.queryAttempts).toBe(2)
     expect(cfg.sent).toHaveLength(0)
   })
 })

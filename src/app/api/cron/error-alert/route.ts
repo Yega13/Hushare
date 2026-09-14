@@ -9,6 +9,7 @@ import {
   ALERT_WINDOW_MINUTES,
 } from '@/lib/error-alert-grouping'
 import { attachAlbumOwners } from '@/lib/server/error-attribution'
+import { readWithRetry } from '@/lib/server/read-with-retry'
 
 export const runtime = 'nodejs'
 
@@ -54,7 +55,11 @@ export async function POST(req: Request) {
   // still being the thing going wrong right now.
   const since = new Date(Date.now() - ALERT_WINDOW_MINUTES * 60_000).toISOString()
 
-  const { data: rows, error } = await admin
+  // ONE GATEWAY BLIP IS NOT AN INCIDENT. This runs every minute, and the database gateway briefly stops
+  // answering at :00 and :30 -- 13 "Gateway Timeout" error rows in 20 hours, each one alone, all from this
+  // read. A failed read is asked once more after a pause (lib/server/read-with-retry), and only a failure
+  // that survives the retry is reported. A tick that still fails loses nothing: the next reads the same window.
+  const { result: { data: rows, error } } = await readWithRetry(() => admin
     .from('error_events')
     // album_id is what turns "23 things failed" into something anyone can act on. It was always in
     // the table and simply never selected, so every alert sent the reader to /admin to work out by
@@ -68,7 +73,7 @@ export async function POST(req: Request) {
     // and-N-more count were both drawn from an arbitrary subset. Newest first, so a truncated
     // sample is at least the most recent part of what is happening right now.
     .order('created_at', { ascending: false })
-    .limit(SAMPLE_LIMIT)
+    .limit(SAMPLE_LIMIT))
   if (error) {
     return serverError('cron/error-alert', error.message, { publicMessage: 'query failed' })
   }
