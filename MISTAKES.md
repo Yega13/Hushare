@@ -2295,3 +2295,21 @@ would have added handling for a failure that cannot occur.
 what to report -- a catch-all sentence is a decision to lose evidence. Before trusting a test about an
 error's words, print the words the fixture really produces. And read the evidence behind a review
 finding before planning around it; a finding is a claim too.
+
+### 123. TWO THINGS I DID NOT SEE BECAUSE I CUT THE OUTPUT SHORT OR TYPED THE LIST BY HAND
+
+**A search capped at fifteen lines.** Planning the retired-album change, I grepped the video door's
+test file for its retired-filter assertions with `| head -15`. The mock's comments filled the first
+fifteen matches; the test that actually asserts `is:retired_at` sat at line 479 and never printed. I
+concluded only the image door's test pinned the filter, changed the doors, and the video test failed
+on its first run. It cost one run, not a customer -- but the conclusion "there is no other test" was
+drawn from output I had truncated myself.
+
+**A staging list typed by hand.** Commit 4c6e815's message names scripts/mutations/share-menu-table-card.mjs
+and its four mutations; the file was not in the `git add` list I wrote out, and only the `git status`
+after the commit showed it still untracked. A follow-up commit added it before anything was pushed.
+
+**Habit to build:** when a search is meant to prove something is ABSENT, count the matches (`grep -c`)
+or list only file:line, never cap the output -- a cap is a claim about where the matches stop. And stage
+from what `git status` reports, then compare the staged list with the files the commit message names,
+instead of retyping the list from memory.

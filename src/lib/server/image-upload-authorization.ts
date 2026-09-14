@@ -7,7 +7,7 @@ import { isAllowedImage, safeExtForMime } from '@/lib/cloudflare/r2'
 import { checkRateLimit, clientIpKey } from '@/lib/rate-limit'
 import { presignBudget } from '@/lib/presign-budget'
 import { uploadCapsForTier, tooLargeMessage, TYPE_NOT_ALLOWED } from '@/lib/media'
-import { albumCap as albumCapFor, albumEffectiveTier, albumFullRefusal, capDependsOnTier, UPLOADS_DISABLED } from '@/lib/album-entitlements'
+import { ALBUM_UNAVAILABLE, albumCap as albumCapFor, albumEffectiveTier, albumFullRefusal, capDependsOnTier, UPLOADS_DISABLED } from '@/lib/album-entitlements'
 import { getUserTierResolved } from '@/lib/subscriptions'
 import { reportServerError } from '@/lib/report-server-error'
 import { gateAllowsContribution, signedInUserForGate, ALBUM_GATE_COLS } from '@/lib/server/album-access'
@@ -74,9 +74,8 @@ export async function authorizeImageUpload(
     checkRateLimit(clientIpKey(req, 'presign_ip'), 3600, 12000, { failOpen: false }),
     admin
       .from('albums')
-      .select(`id, user_id, guest_uploads_enabled, media_cap_override, created_at, package_tier, package_expires_at, ${ALBUM_GATE_COLS}`)
+      .select(`id, user_id, guest_uploads_enabled, media_cap_override, created_at, package_tier, package_expires_at, retired_at, ${ALBUM_GATE_COLS}`)
       .eq('id', params.albumId)
-      .is('retired_at', null)
       .maybeSingle(),
   ])
   if (!ipRl.ok) {
@@ -91,6 +90,11 @@ export async function authorizeImageUpload(
   const album = albumRes.data
   if (albumRes.error || !album) {
     return { ok: false, response: NextResponse.json({ error: 'Album not found' }, { status: 404, headers: NO_STORE }) }
+  }
+  // Deleted by its owner, or retired when its retention ran out: a decision about THIS album, so it is
+  // refused in words the uploader recognises as one -- not "Album not found", which is filed as a fault.
+  if (album.retired_at) {
+    return { ok: false, response: NextResponse.json({ error: ALBUM_UNAVAILABLE }, { status: 404, headers: NO_STORE }) }
   }
   if (!album.guest_uploads_enabled) {
     return { ok: false, response: NextResponse.json({ error: UPLOADS_DISABLED }, { status: 403, headers: NO_STORE }) }

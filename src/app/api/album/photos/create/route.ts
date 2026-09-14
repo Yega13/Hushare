@@ -15,7 +15,7 @@ import { timingSafeEqual } from '@/lib/timing-safe'
 import { getUserTierResolved } from '@/lib/subscriptions'
 import type { Tier } from '@/types'
 import { ANON_ALBUM_MEDIA } from '@/lib/media'
-import { albumCap, albumFullRefusal, capDependsOnTier, registeringWouldHelp, chargeableDurationSeconds, UPLOADS_DISABLED } from '@/lib/album-entitlements'
+import { ALBUM_UNAVAILABLE, albumCap, albumFullRefusal, capDependsOnTier, registeringWouldHelp, chargeableDurationSeconds, UPLOADS_DISABLED } from '@/lib/album-entitlements'
 import { gateAllowsContribution } from '@/lib/server/album-access'
 import { queueBibIndex } from '@/lib/server/bib-index'
 import { cookies } from 'next/headers'
@@ -106,9 +106,8 @@ export async function POST(req: Request) {
 
   const { data: album, error: albumError } = await admin
     .from('albums')
-    .select('id, user_id, guest_uploads_enabled, require_approval, title, slug, owner_token, password_hash, reveal_at, created_at, media_cap_override, package_tier, package_expires_at')
+    .select('id, user_id, guest_uploads_enabled, require_approval, title, slug, owner_token, password_hash, reveal_at, created_at, media_cap_override, package_tier, package_expires_at, retired_at')
     .eq('id', albumId)
-    .is('retired_at', null)
     .maybeSingle()
 
   if (albumError) {
@@ -116,6 +115,11 @@ export async function POST(req: Request) {
   }
   if (!album) {
     return NextResponse.json({ error: 'Album not found' }, { status: 404, headers: NO_STORE })
+  }
+  // Deleted by its owner, or retired when its retention ran out: a decision about THIS album, so it is
+  // refused in words the uploader recognises as one -- not "Album not found", which is filed as a fault.
+  if (album.retired_at) {
+    return NextResponse.json({ error: ALBUM_UNAVAILABLE }, { status: 404, headers: NO_STORE })
   }
   if (!album.guest_uploads_enabled) {
     return NextResponse.json({ error: UPLOADS_DISABLED }, { status: 403, headers: NO_STORE })

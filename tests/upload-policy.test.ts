@@ -10,7 +10,7 @@ import {
   createRelayPolicy, verdictForResponse, verdictForThrow,
 } from '@/lib/upload-policy'
 import { TYPE_NOT_ALLOWED } from '@/lib/media'
-import { NOT_REVEALED, PASSWORD_REQUIRED, UPLOADS_DISABLED } from '@/lib/album-entitlements'
+import { ALBUM_UNAVAILABLE, NOT_REVEALED, PASSWORD_REQUIRED, UPLOADS_DISABLED } from '@/lib/album-entitlements'
 
 // THE UPLOADER'S JUDGEMENTS ABOUT SOMEONE ELSE'S PHOTO.
 //
@@ -259,6 +259,40 @@ describe('an owner switching uploads off is a decision, not a fault', () => {
       const text = stripJsComments(readFileSync(join(process.cwd(), file), 'utf8'))
       expect(text, `${file} must send the imported constant`).toMatch(/error: UPLOADS_DISABLED/)
       expect(text, `${file} must not retype the words`).not.toMatch(/['"`]Uploads disabled for this album/)
+    }
+  })
+})
+
+describe('a deleted or expired album is a decision, not a fault', () => {
+  // Measured on 2026-09-12: album 9a010449 was deleted eleven minutes after it was created, while a
+  // guest was still uploading. Every door filtered retired albums out of its lookup and answered
+  // "Album not found" -- rows 1214 and 1215, both at `error`. Fifth instance of this shape.
+  it('the refusal all three doors send is recognised as one', () => {
+    expect(isExpectedRefusal(ALBUM_UNAVAILABLE)).toBe(true)
+    expect(isExpectedRefusal('This album is no longer available')).toBe(true)
+  })
+
+  it('a missing album is not covered by it', () => {
+    expect(isExpectedRefusal('Album not found')).toBe(false)
+  })
+
+  it('the prefix is IMPORTED from where the decision is made, never retyped here', () => {
+    expect(EXPECTED_REFUSAL_PREFIXES).toContain(ALBUM_UNAVAILABLE)
+    const src = stripJsComments(readFileSync(join(process.cwd(), 'src', 'lib', 'upload-policy.ts'), 'utf8'))
+    expect(src, 'the words must not be typed again in this file').not.toMatch(/['"`]This album is no longer available/)
+  })
+
+  it('all THREE doors send exactly that constant, type none of the words, and no longer filter retired albums out', () => {
+    for (const file of [
+      'src/app/api/album/photos/create/route.ts',
+      'src/lib/server/image-upload-authorization.ts',
+      'src/lib/server/video-upload-authorization.ts',
+    ]) {
+      const text = stripJsComments(readFileSync(join(process.cwd(), file), 'utf8'))
+      expect(text, `${file} must send the imported constant`).toMatch(/error: ALBUM_UNAVAILABLE/)
+      expect(text, `${file} must not retype the words`).not.toMatch(/['"`]This album is no longer available/)
+      // Filtering them out of the lookup is what turned a decision into "Album not found".
+      expect(text, `${file} must find a retired album and refuse it by name`).not.toMatch(/\.is\('retired_at', null\)/)
     }
   })
 })

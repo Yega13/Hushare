@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { UPLOADS_DISABLED } from '@/lib/album-entitlements'
+import { ALBUM_UNAVAILABLE, UPLOADS_DISABLED } from '@/lib/album-entitlements'
 
 // THE ROUTE THAT WRITES EVERY PHOTO ROW, EXECUTED BY A TEST FOR THE FIRST TIME.
 //
@@ -62,8 +62,19 @@ vi.mock('@/lib/supabase/admin', () => ({
       if (table === 'albums') {
         albumLookups++
         const b: Record<string, unknown> = {}
-        for (const m of ['select', 'eq', 'is', 'not', 'in', 'order', 'limit']) b[m] = () => b
-        b.maybeSingle = async () => ({ data: cfg.album, error: cfg.albumError })
+        let cols = ''
+        for (const m of ['eq', 'is', 'not', 'in', 'order', 'limit']) b[m] = () => b
+        b.select = (c: string) => { cols = c; return b }
+        // ONLY THE SELECTED COLUMNS, as the database would return them. A retired album is refused by
+        // reading retired_at; a fixture that handed back every field would keep that test green with the
+        // column dropped from the select, while production wrote rows into deleted albums.
+        b.maybeSingle = async () => {
+          const row = cfg.album
+          const data = row && Object.fromEntries(
+            cols.split(',').map((c) => c.trim()).filter((c) => c in row).map((c) => [c, row[c]]),
+          )
+          return { data, error: cfg.albumError }
+        }
         return b
       }
       // `photos` serves two different queries: the head count, and the upsert. Which one it is
@@ -234,10 +245,23 @@ describe('photos/create -- the refusal ladder, executed', () => {
     expect(upserts, 'the valid row in the same batch was written anyway').toHaveLength(0)
   })
 
-  it('an album that does not exist (or was retired) is a 404, and writes nothing', async () => {
+  it('an album that does not exist is a 404 saying so, and writes nothing', async () => {
     cfg.album = null
     const res = await POST(post({ albumId: ALBUM_ID, photos: [photo()] }))
     expect(res.status).toBe(404)
+    expect(await res.json()).toEqual({ error: 'Album not found' })
+    expect(upserts).toHaveLength(0)
+  })
+
+  it('A DELETED OR EXPIRED ALBUM is a 404 in words the uploader recognises as a decision, and writes nothing', async () => {
+    // Album 9a010449, 2026-09-12: deleted while a guest was still uploading. This route filtered retired
+    // albums out of its lookup and answered "Album not found", which the uploader filed as a fault.
+    // Switched-off uploads included: an album that is gone is gone, whatever its settings were.
+    cfg.album = albumRow({ retired_at: '2026-09-12T04:32:23.000Z', guest_uploads_enabled: false })
+    const res = await POST(post({ albumId: ALBUM_ID, photos: [photo()] }))
+    expect(res.status).toBe(404)
+    expect(await res.json()).toEqual({ error: ALBUM_UNAVAILABLE })
+    expect(gateCalls, 'a retired album must not reach the password gate').toHaveLength(0)
     expect(upserts).toHaveLength(0)
   })
 

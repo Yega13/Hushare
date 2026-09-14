@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { UPLOADS_DISABLED } from '@/lib/album-entitlements'
+import { ALBUM_UNAVAILABLE, UPLOADS_DISABLED } from '@/lib/album-entitlements'
 
 // THE AUTHORIZATION CHAIN FOR 98.5% OF ALL MEDIA, which had no test at all.
 //
@@ -50,21 +50,23 @@ vi.mock('@/lib/supabase/admin', () => ({
   createAdminClient: () => ({
     from: (table: string) => {
       if (table === 'albums') {
-        // RECORDS ITS FILTERS. Ignoring them meant `.is('retired_at', null)` could become
-        // `.is('deleted_at', null)` — a column that does not exist on this table — and every test
-        // still passed, while a retired album (retention expired, data queued for deletion) went on
-        // accepting uploads into storage nobody is paying for any more.
+        // RECORDS ITS FILTERS, and RETURNS ONLY THE COLUMNS SELECTED, as the database would. The
+        // filters were once ignored, so a filter could name any column and every test still passed.
+        // The columns matter the same way now that a retired album is found and refused by reading
+        // retired_at: a fixture that handed back every field would keep that test green with the
+        // column dropped from the select, while production read every album as live.
         return {
-          select: () => ({
+          select: (cols: string) => ({
             eq: (col: string, val: unknown) => {
               cfg.albumFilters[`eq:${col}`] = val
               return {
-                is: (col2: string, val2: unknown) => {
-                  cfg.albumFilters[`is:${col2}`] = val2
-                  return {
-                    maybeSingle: async () =>
-                      (cfg.albumError ? { data: null, error: { message: 'boom' } } : { data: cfg.album, error: null }),
-                  }
+                maybeSingle: async () => {
+                  if (cfg.albumError) return { data: null, error: { message: 'boom' } }
+                  const row = cfg.album
+                  const data = row && Object.fromEntries(
+                    cols.split(',').map((c) => c.trim()).filter((c) => c in row).map((c) => [c, row[c]]),
+                  )
+                  return { data, error: null }
                 },
               }
             },
@@ -203,11 +205,28 @@ describe('the gate applies to contributing, not just viewing', () => {
     }
   })
 
-  it('404s a missing or retired album', async () => {
+  it('404s a missing album, saying it was not found', async () => {
     cfg.album = null
     const res = await authorizeImageUpload(req, params())
     expect(res.ok).toBe(false)
-    if (!res.ok) expect(res.response.status).toBe(404)
+    if (!res.ok) {
+      expect(res.response.status).toBe(404)
+      expect(await res.response.json()).toEqual({ error: 'Album not found' })
+    }
+  })
+
+  it('A DELETED OR EXPIRED ALBUM is refused in words the uploader recognises as a decision, before anything else is asked', async () => {
+    // Album 9a010449, 2026-09-12: deleted while a guest was still uploading. This door filtered retired
+    // albums out of its lookup, answered "Album not found", and the guest's next photos were filed as
+    // errors. Switched-off uploads included: an album that is gone is gone, whatever its settings were.
+    cfg.album = { ...OK_ALBUM, retired_at: '2026-09-12T04:32:23.000Z', guest_uploads_enabled: false }
+    const res = await authorizeImageUpload(req, params())
+    expect(res.ok).toBe(false)
+    if (!res.ok) {
+      expect(res.response.status).toBe(404)
+      expect(await res.response.json()).toEqual({ error: ALBUM_UNAVAILABLE })
+    }
+    expect(cfg.gateCalls, 'a retired album must not reach the password gate').toHaveLength(0)
   })
 })
 
@@ -391,15 +410,13 @@ describe('when something cannot be determined', () => {
 })
 
 describe('the album it authorizes is the album it looked up', () => {
-  it('filters on this album id AND on the album not being retired', async () => {
-    // Both filters were invisible: the mock ignored its arguments, so `.is('retired_at', null)`
-    // could name any column at all and every test still passed. A retired album is one whose
-    // retention has run out and whose media is queued for deletion — it must not take new uploads,
-    // and it must not be found here.
+  it('filters on this album id', async () => {
+    // The filter was invisible once: the mock ignored its arguments, so the id could be dropped and
+    // every test still passed. Retired albums are no longer filtered out of this lookup -- a retired
+    // album is found and refused by name (the deleted-or-expired test above), so that "not found"
+    // means exactly that.
     await authorizeImageUpload(req, params())
     expect(cfg.albumFilters['eq:id']).toBe(ALBUM_ID)
-    expect(cfg.albumFilters).toHaveProperty('is:retired_at')
-    expect(cfg.albumFilters['is:retired_at']).toBeNull()
   })
 })
 

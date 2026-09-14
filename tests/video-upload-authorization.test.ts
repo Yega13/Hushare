@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { UPLOADS_DISABLED } from '@/lib/album-entitlements'
+import { ALBUM_UNAVAILABLE, UPLOADS_DISABLED } from '@/lib/album-entitlements'
 
 // THE ONLY THING BOUNDING VIDEO COST, FINALLY TESTED.
 //
@@ -63,21 +63,22 @@ vi.mock('@/lib/supabase/admin', () => ({
   createAdminClient: () => ({
     from: (table: string) => {
       if (table === 'albums') {
-        // RECORDS ITS FILTERS, like the photos chain below already did. Ignoring them meant
-        // `.is('retired_at', null)` could name any column at all and every test still passed, while
-        // a retired album — retention expired, media queued for deletion — went on reserving
-        // Cloudflare Stream quota that nobody is paying for.
+        // RECORDS ITS FILTERS, and RETURNS ONLY THE COLUMNS SELECTED, as the database would. A retired
+        // album is found and refused by reading retired_at; a fixture that handed back every field
+        // would keep that test green with the column dropped from the select, while a deleted album
+        // went on reserving Cloudflare Stream minutes nobody is paying for.
         return {
-          select: () => ({
+          select: (cols: string) => ({
             eq: (col: string, val: unknown) => {
               cfg.albumFilters[`eq:${col}`] = val
               return {
-                is: (col2: string, val2: unknown) => {
-                  cfg.albumFilters[`is:${col2}`] = val2
-                  return {
-                    maybeSingle: async () =>
-                      (cfg.albumError ? { data: null, error: { message: 'boom' } } : { data: cfg.album, error: null }),
-                  }
+                maybeSingle: async () => {
+                  if (cfg.albumError) return { data: null, error: { message: 'boom' } }
+                  const row = cfg.album
+                  const data = row && Object.fromEntries(
+                    cols.split(',').map((c) => c.trim()).filter((c) => c in row).map((c) => [c, row[c]]),
+                  )
+                  return { data, error: null }
                 },
               }
             },
@@ -344,11 +345,28 @@ describe('the guards in front of the budget, in order', () => {
     if (!res.ok) expect(res.response.status).toBe(413)
   })
 
-  it('404s a missing or retired album', async () => {
+  it('404s a missing album, saying it was not found', async () => {
     cfg.album = null
     const res = await authorizeVideoUpload(req())
     expect(res.ok).toBe(false)
-    if (!res.ok) expect(res.response.status).toBe(404)
+    if (!res.ok) {
+      expect(res.response.status).toBe(404)
+      expect(await res.response.json()).toEqual({ error: 'Album not found' })
+    }
+  })
+
+  it('A DELETED OR EXPIRED ALBUM is refused in words the uploader recognises as a decision, before anything else is asked', async () => {
+    // Row 1214, 2026-09-12: a video door answer of "Album not found" for album 9a010449, deleted while
+    // a guest was still uploading, filed as an error. Switched-off uploads included: gone is gone.
+    cfg.album = { ...OK_ALBUM, retired_at: '2026-09-12T04:32:23.000Z', guest_uploads_enabled: false }
+    const res = await authorizeVideoUpload(req())
+    expect(res.ok).toBe(false)
+    if (!res.ok) {
+      expect(res.response.status).toBe(404)
+      expect(await res.response.json()).toEqual({ error: ALBUM_UNAVAILABLE })
+    }
+    expect(cfg.gateCalls, 'a retired album must not reach the password gate').toHaveLength(0)
+    expect(cfg.rpcCalls, 'nor the minute pool').toHaveLength(0)
   })
 
   it('refuses when guest uploads are switched off, with the shared refusal in the body', async () => {
@@ -458,14 +476,13 @@ describe('the refusal message is one a guest can act on', () => {
 })
 
 describe('the album it authorizes is the album it looked up', () => {
-  it('filters on this album id AND on the album not being retired', async () => {
-    // Both filters were invisible here: this mock ignored its arguments while the photos chain right
-    // beside it recorded them. A retired album is one whose retention ran out and whose media is
-    // queued for deletion — it must never reserve new Cloudflare Stream quota.
+  it('filters on this album id', async () => {
+    // The filter was invisible here once: this mock ignored its arguments while the photos chain right
+    // beside it recorded them. Retired albums are no longer filtered out of this lookup -- a retired
+    // album is found and refused by name (the deleted-or-expired test above), and never reserves new
+    // Cloudflare Stream quota.
     await authorizeVideoUpload(req({ durationSeconds: 30 }))
     expect(cfg.albumFilters['eq:id']).toBe(ALBUM_ID)
-    expect(cfg.albumFilters).toHaveProperty('is:retired_at')
-    expect(cfg.albumFilters['is:retired_at']).toBeNull()
   })
 })
 

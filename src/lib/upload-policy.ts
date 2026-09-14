@@ -1,5 +1,5 @@
 import { TYPE_NOT_ALLOWED } from '@/lib/media'
-import { NOT_REVEALED, PASSWORD_REQUIRED, UPLOADS_DISABLED, VIDEO_ALBUM_FULL_PREFIX } from '@/lib/album-entitlements'
+import { ALBUM_UNAVAILABLE, NOT_REVEALED, PASSWORD_REQUIRED, UPLOADS_DISABLED, VIDEO_ALBUM_FULL_PREFIX } from '@/lib/album-entitlements'
 import { monotonicNow } from '@/lib/clock'
 // THE DECISIONS THE UPLOADER MAKES ABOUT SOMEONE ELSE'S PHOTO.
 //
@@ -293,6 +293,9 @@ export const EXPECTED_REFUSAL_PREFIXES = [
   // Fourth of the same shape, and the same import rule. An owner switching guest uploads off is a
   // decision they made on purpose; all three doors answer 403 with this constant.
   UPLOADS_DISABLED,
+  // A deleted or expired album. The doors answer with this instead of "Album not found" -- see its
+  // definition in album-entitlements. Two error rows on 2026-09-12 were exactly this.
+  ALBUM_UNAVAILABLE,
 ] as const
 
 export function isExpectedRefusal(message: string): boolean {

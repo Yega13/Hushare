@@ -35,8 +35,15 @@ export default {
       from: '    if (err) return NextResponse.json({ error: err }, { status: 400, headers: NO_STORE })\n', to: '' },
 
     // ── the album itself ───────────────────────────────────────────────────────────────────────
-    { name: 'a missing (or retired) album is not refused',
+    { name: 'a missing album is not refused',
       from: '  if (!album) {', to: '  if (false) {' },
+    { name: 'A RETIRED ALBUM STILL TAKES ROWS -- a deleted album gets new photos written into it',
+      from: '  if (album.retired_at) {', to: '  if (false) {' },
+    { name: 'retired_at is never selected, so the check above can never fire',
+      from: ", package_expires_at, retired_at')", to: ", package_expires_at')" },
+    { name: 'a deleted album is refused as "Album not found" again, and filed as a fault',
+      from: "NextResponse.json({ error: ALBUM_UNAVAILABLE }, { status: 404, headers: NO_STORE })",
+      to: "NextResponse.json({ error: 'Album not found' }, { status: 404, headers: NO_STORE })" },
     { name: 'an album with guest uploads switched OFF still accepts them',
       from: '  if (!album.guest_uploads_enabled) {', to: '  if (false) {' },
 

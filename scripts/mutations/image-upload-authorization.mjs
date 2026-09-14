@@ -28,10 +28,15 @@ export default {
     from: "  return { ok: true, tier: tierRes.tier, imageCap: caps.image }", to: "  return { ok: true, tier: tierRes.tier, imageCap: MAX_FILESIZE_HARD_CAP }" },
 
   // ── which album, and whether it is open ──────────────────────────────────────────────────────
-  { name: 'a RETIRED album still takes uploads',
-    from: "      .eq('id', params.albumId)\n      .is('retired_at', null)", to: "      .eq('id', params.albumId)" },
+  { name: 'A RETIRED ALBUM STILL TAKES UPLOADS -- deleted or expired, its storage keeps filling',
+    from: "  if (album.retired_at) {", to: "  if (false) {" },
+  { name: 'retired_at is never selected, so every album reads as live and the check can never fire',
+    from: "package_expires_at, retired_at, ${ALBUM_GATE_COLS}", to: "package_expires_at, ${ALBUM_GATE_COLS}" },
+  { name: 'a deleted album is refused as "Album not found" again, and filed as a fault',
+    from: "NextResponse.json({ error: ALBUM_UNAVAILABLE }, { status: 404, headers: NO_STORE })",
+    to: "NextResponse.json({ error: 'Album not found' }, { status: 404, headers: NO_STORE })" },
   { name: 'the album id is not filtered, so the first album in the table is authorized',
-    from: "      .eq('id', params.albumId)\n      .is('retired_at', null)", to: "      .is('retired_at', null)" },
+    from: "      .eq('id', params.albumId)\n      .maybeSingle(),", to: "      .maybeSingle()," },
   { name: 'guest uploads being switched OFF is ignored',
     from: "  if (!album.guest_uploads_enabled) {", to: "  if (false) {" },
   // NOT MUTATED -- dropping `albumRes.error ||` is equivalent: supabase-js returns data null

@@ -229,6 +229,19 @@ export function albumFullRefusal(input: AlbumCapInput): { code: 'album_full'; nu
 export const UPLOADS_DISABLED = 'Uploads disabled for this album'
 
 /**
+ * The refusal every upload door sends for an album that no longer takes photos: deleted by its owner,
+ * or retired by the retention cron when its time ran out. Both set `retired_at`; neither is missing.
+ *
+ * The doors used to filter retired albums out of their lookup, so a deleted album answered exactly
+ * like one that never existed -- "Album not found" -- and nothing recognised that as a decision. On
+ * 2026-09-12 album 9a010449 was deleted eleven minutes after it was created, while a guest was still
+ * uploading, and both doors filed that guest's next photos as errors (rows 1214 and 1215).
+ *
+ * The words are true for both ways an album retires, which is why they do not say "deleted".
+ */
+export const ALBUM_UNAVAILABLE = 'This album is no longer available'
+
+/**
  * The two GATE refusals, here for a reason worth stating: they are produced by
  * lib/server/album-access, which imports the server-only Supabase admin client, so the browser
  * cannot import them from where they are decided. They were typed out by hand instead -- the reveal
