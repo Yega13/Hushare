@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server'
 import { serverError } from '@/lib/server/respond'
 import { cookies } from 'next/headers'
 import { fetchAuthorizedPhotos } from '@/lib/server/album-access'
-import { checkRateLimit, clientIpKey } from '@/lib/rate-limit'
+import { readRateLimit } from '@/lib/server/edge-rate-limit'
 
 export const runtime = 'nodejs'
 
@@ -34,7 +34,9 @@ export async function GET(req: Request) {
   // 20000. The previous 6000 was already a raise from 600, but it was still short: at peak each
   // guest refetches every 2.5s (24/min), so 300 guests is 7200/min and 500 is 12000. Being refused
   // here means an album that stops updating during the event it was made for.
-  const rl = await checkRateLimit(clientIpKey(req, 'album_photos'), 60, 20000, { failOpen: true })
+  // Counted at the edge (lib/server/edge-rate-limit): the same limit, without a database round trip
+  // before the work. A deploy missing the binding falls back to the database limiter.
+  const rl = await readRateLimit(req, 'albumPhotos')
   if (!rl.ok) {
     return NextResponse.json(
       { error: 'Too many requests' },

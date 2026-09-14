@@ -74,6 +74,31 @@ namespace_id = "1002"
   limit = 100
   period = 60
 
+# Edge rate limits for the reads a guest waits on (src/lib/server/edge-rate-limit.ts). They replaced a
+# Postgres round trip before every album photo read, album resolve and presence ping. Counted per
+# Cloudflare location and eventually consistent: a runaway-loop backstop, not accounting.
+# tests/edge-rate-limit-config holds these numbers equal to the code, in both environments.
+[[ratelimits]]
+name = "ALBUM_PHOTOS_LIMITER"
+namespace_id = "1003"
+  [ratelimits.simple]
+  limit = 20000
+  period = 60
+
+[[ratelimits]]
+name = "ALBUM_RESOLVE_LIMITER"
+namespace_id = "1004"
+  [ratelimits.simple]
+  limit = 900
+  period = 60
+
+[[ratelimits]]
+name = "PRESENCE_LIMITER"
+namespace_id = "1005"
+  [ratelimits.simple]
+  limit = 3000
+  period = 60
+
 [vars]
 NEXT_PUBLIC_SITE_URL = "https://hushare.space"
 NEXT_PUBLIC_SUPABASE_URL = "https://yqngmyjquwemwogdyuwv.supabase.co"
@@ -158,6 +183,31 @@ name = "SUPPORT_CHAT_LIMITER"
 namespace_id = "2002"
   [env.staging.ratelimits.simple]
   limit = 100
+  period = 60
+
+# Edge rate limits for the reads a guest waits on (src/lib/server/edge-rate-limit.ts). They replaced a
+# Postgres round trip before every album photo read, album resolve and presence ping. Counted per
+# Cloudflare location and eventually consistent: a runaway-loop backstop, not accounting.
+# tests/edge-rate-limit-config holds these numbers equal to the code, in both environments.
+[[env.staging.ratelimits]]
+name = "ALBUM_PHOTOS_LIMITER"
+namespace_id = "2003"
+  [env.staging.ratelimits.simple]
+  limit = 20000
+  period = 60
+
+[[env.staging.ratelimits]]
+name = "ALBUM_RESOLVE_LIMITER"
+namespace_id = "2004"
+  [env.staging.ratelimits.simple]
+  limit = 900
+  period = 60
+
+[[env.staging.ratelimits]]
+name = "PRESENCE_LIMITER"
+namespace_id = "2005"
+  [env.staging.ratelimits.simple]
+  limit = 3000
   period = 60
 
 [env.staging.ai]

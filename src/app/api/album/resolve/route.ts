@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { cookies } from 'next/headers'
-import { checkRateLimit, clientIpKey } from '@/lib/rate-limit'
+import { readRateLimit } from '@/lib/server/edge-rate-limit'
 import { resolveAlbum } from '@/lib/server/album-access'
 
 export const runtime = 'nodejs'
@@ -19,7 +19,9 @@ export async function GET(req: Request) {
   // failOpen:true — album/resolve is read-only; failing closed would 429 all album views during a
   // rate-limit store outage. Limit is high because at an event dozens–hundreds of guests share ONE
   // venue-WiFi public IP — 900/min throttles a scraper but never a real crowd.
-  const rl = await checkRateLimit(clientIpKey(req, 'album_resolve'), 60, 900, { failOpen: true })
+  // Counted at the edge (lib/server/edge-rate-limit): the same limit, without a database round trip
+  // before the work. A deploy missing the binding falls back to the database limiter.
+  const rl = await readRateLimit(req, 'albumResolve')
   if (!rl.ok) {
     return NextResponse.json(
       { error: 'Too many requests' },

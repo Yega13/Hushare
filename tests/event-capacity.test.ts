@@ -31,6 +31,13 @@ function limitFor(rel: string, key: string): { windowSeconds: number; max: numbe
   return { windowSeconds: Number(m[1]), max: Number(m[2]) }
 }
 
+// PRESENCE AND ALBUM PHOTOS ARE COUNTED AT THE EDGE since 2026-09-14 (lib/server/edge-rate-limit), so
+// their numbers are read from the module that holds them -- not parsed out of a route that no longer
+// calls checkRateLimit. tests/edge-rate-limit-config holds the module equal to wrangler.toml and proves
+// each route asks its own limit, so this arithmetic is about the numbers that actually run.
+const { READ_LIMITS, READ_LIMIT_PERIOD_SECONDS } = await import('@/lib/server/edge-rate-limit')
+const edgeLimit = (name: keyof typeof READ_LIMITS) => ({ windowSeconds: READ_LIMIT_PERIOD_SECONDS, max: READ_LIMITS[name].perMinute })
+
 describe('rate limits fit a real event, not just one visitor', () => {
   it('presence: every guest pings, and they all share one venue IP', () => {
     const beacon = source('components/PresenceBeacon.tsx')
@@ -40,7 +47,7 @@ describe('rate limits fit a real event, not just one visitor', () => {
     // A presence row is pruned after ten minutes, so pinging much faster than that buys nothing.
     expect(everyMs, 'pinging more than once a minute costs requests for data kept 10 minutes').toBeGreaterThanOrEqual(60_000)
 
-    const { windowSeconds, max } = limitFor('app/api/presence/route.ts', 'presence')
+    const { windowSeconds, max } = edgeLimit('presence')
     const needed = GUESTS * (windowSeconds / (everyMs / 1000))
     expect(max, `${GUESTS} guests need ${Math.ceil(needed)} per ${windowSeconds}s`).toBeGreaterThanOrEqual(needed * HEADROOM)
   })
@@ -51,7 +58,7 @@ describe('rate limits fit a real event, not just one visitor', () => {
     expect(debounce, 'the refetch debounce must be a named constant').not.toBeNull()
     const everyMs = Number((debounce as RegExpExecArray)[1].replace(/_/g, ''))
 
-    const { windowSeconds, max } = limitFor('app/api/album/photos/route.ts', 'album_photos')
+    const { windowSeconds, max } = edgeLimit('albumPhotos')
     const needed = GUESTS * (windowSeconds / (everyMs / 1000))
     // Being refused here is the worst of the three: the album stops updating during the event it
     // was made for, which is the one moment it exists to serve.

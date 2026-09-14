@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { checkRateLimit, clientIpKey } from '@/lib/rate-limit'
+import { readRateLimit } from '@/lib/server/edge-rate-limit'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { forbidCrossSiteRequest } from '@/lib/request-security'
 
@@ -23,7 +23,9 @@ export async function POST(req: Request) {
   // use case: the entire point is many people at one venue, and cf-connecting-ip gives all of them
   // ONE bucket. 300 guests pinging once a minute is 300/min; 120 refused four fifths of them.
   // 3000 covers about 500 guests with headroom and still stops a runaway loop.
-  const rl = await checkRateLimit(clientIpKey(req, 'presence'), 60, 3000, { failOpen: true })
+  // Counted at the edge (lib/server/edge-rate-limit): the same limit, without a database round trip
+  // before the work. A deploy missing the binding falls back to the database limiter.
+  const rl = await readRateLimit(req, 'presence')
   if (!rl.ok) return NextResponse.json({ ok: true, throttled: true }, { headers: NO_STORE })
 
   const body = await req.json().catch(() => null) as { id?: unknown; path?: unknown } | null
