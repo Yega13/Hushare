@@ -25,6 +25,17 @@ export default async function WallPage({ params }: Props) {
   const resolved = await resolveAlbum(slug, false, cookieStore)
 
   if (resolved.kind === 'invalid' || resolved.kind === 'notfound') notFound()
+  // A failed read is not a missing album: the display at the venue says to reload, not "404".
+  if (resolved.kind === 'unavailable') {
+    return (
+      <main style={{ minHeight: '100dvh', display: 'grid', placeItems: 'center', background: '#160A12', color: '#F3E0BC', textAlign: 'center', padding: 24, fontFamily: 'var(--font-serif)' }}>
+        <div>
+          <p style={{ fontSize: 24, fontWeight: 700 }}>The wall could not load</p>
+          <p style={{ fontSize: 15, opacity: 0.7, marginTop: 10 }}>Reload the page in a moment.</p>
+        </div>
+      </main>
+    )
+  }
 
   // The live wall is a Max feature.
   //

@@ -173,6 +173,16 @@ export default async function AlbumPage({ params, searchParams }: Props) {
   const resolved = await resolveAlbum(slug, false, cookieStore)
 
   if (resolved.kind === 'invalid' || resolved.kind === 'notfound') notFound()
+  // THE READ FAILED, SO NOTHING IS SEEDED -- and nothing is claimed about the album. The client
+  // resolves it itself and, if that fails too, shows its "try again" screen instead of a 404.
+  if (resolved.kind === 'unavailable') {
+    return (
+      <>
+        <OwnerHashFlag />
+        <AlbumPageClient />
+      </>
+    )
+  }
 
   // NOTE: canonicalising the URL to the album's custom slug is done in the BROWSER
   // (see AlbumPageClient), NOT with a redirect() here. A server redirect was tried on 2026-08-19 and

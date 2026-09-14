@@ -25,7 +25,10 @@ const cfg: {
   newest: Record<string, unknown> | null
   cookies: Record<string, string>
   queries: Rec[]
-} = { album: null, photos: [], photoCount: 0, newest: null, cookies: {}, queries: [] }
+  /** How many album reads fail before one succeeds, the way a gateway timeout does. */
+  albumReadFailures: number
+  reports: Array<{ source: string; message: string; opts?: unknown }>
+} = { album: null, photos: [], photoCount: 0, newest: null, cookies: {}, queries: [], albumReadFailures: 0, reports: [] }
 
 // A builder that records what was asked and answers plausibly. It records FILTERS because that is
 // where the secret lives: `.eq('hidden', false)` is the difference between a guest seeing an
@@ -41,7 +44,13 @@ function builder(table: string): Record<string, unknown> {
     gt: (c: string, v: unknown) => { rec.filters.push([c, v]); return b },
     overlaps: (c: string, v: unknown) => { rec.filters.push([c, v]); return b },
     order: self, limit: self, range: self, is: self,
-    maybeSingle: async () => ({ data: table === 'albums' ? cfg.album : cfg.newest, error: null }),
+    maybeSingle: async () => {
+      if (table === 'albums' && cfg.albumReadFailures > 0) {
+        cfg.albumReadFailures--
+        return { data: null, error: { message: 'Gateway Timeout' } }
+      }
+      return { data: table === 'albums' ? cfg.album : cfg.newest, error: null }
+    },
     then: (resolve: (v: unknown) => void) =>
       resolve(rec.head ? { count: cfg.photoCount, error: null } : { data: cfg.photos, count: cfg.photoCount, error: null }),
   })
@@ -50,7 +59,9 @@ function builder(table: string): Record<string, unknown> {
 
 vi.mock('@/lib/supabase/admin', () => ({ createAdminClient: () => ({ from: (t: string) => builder(t) }) }))
 vi.mock('next/headers', () => ({ cookies: async () => ({ get: (n: string) => (n in cfg.cookies ? { value: cfg.cookies[n] } : undefined) }) }))
-vi.mock('@/lib/report-server-error', () => ({ reportServerError: () => {} }))
+vi.mock('@/lib/report-server-error', () => ({
+  reportServerError: (source: string, message: string, opts?: unknown) => { cfg.reports.push({ source, message, opts }) },
+}))
 
 process.env.ALBUM_PASSWORD_PEPPER ??= 'test-pepper-value-not-a-real-secret'
 
@@ -76,6 +87,30 @@ beforeEach(() => {
   cfg.newest = null
   cfg.cookies = {}
   cfg.queries = []
+  cfg.albumReadFailures = 0
+  cfg.reports = []
+})
+
+describe('a database that blinks', () => {
+  it('A FAILED ALBUM READ IS NOT A MISSING ALBUM: two failures answer unavailable, and are reported against the album', async () => {
+    cfg.albumReadFailures = 2
+    expect((await list()).kind).toBe('unavailable')
+    expect(cfg.queries.filter((q) => q.table === 'photos'), 'no photo is read for an album that was not').toHaveLength(0)
+    expect(cfg.reports).toEqual([{
+      source: 'album-access',
+      message: 'Album read failed',
+      opts: { albumId: ALBUM_ID, context: { step: 'photos', reason: 'Gateway Timeout' } },
+    }])
+  })
+
+  it('ONE blip is retried and the photos come back, with no read failure reported', async () => {
+    cfg.albumReadFailures = 1
+    const res = await list()
+    expect(res.kind).toBe('ok')
+    // Only THIS report. The fixture's photo rows carry no media_type, so the row narrowing files its
+    // own "rows dropped" report here too -- a different fact, and not what this test is about.
+    expect(cfg.reports.filter((r) => r.message === 'Album read failed')).toEqual([])
+  })
 })
 
 describe('an album that cannot be listed at all', () => {

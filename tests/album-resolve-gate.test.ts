@@ -21,7 +21,10 @@ const cfg: {
   tier: 'free' | 'pro' | 'studio'
   cookies: Record<string, string>
   queries: Rec[]
-} = { rows: null, ownerRow: null, tier: 'free', cookies: {}, queries: [] }
+  /** How many album reads fail before one succeeds, the way a gateway timeout does. */
+  readFailures: number
+  reports: Array<{ source: string; message: string; opts?: unknown }>
+} = { rows: null, ownerRow: null, tier: 'free', cookies: {}, queries: [], readFailures: 0, reports: [] }
 
 function builder(table: string): Record<string, unknown> {
   const rec: Rec = { table, select: '', filters: [] }
@@ -40,15 +43,22 @@ function builder(table: string): Record<string, unknown> {
     limit: (n: number) => { rec.limit = n; return b },
     // The owner-token lookup is the only maybeSingle here.
     maybeSingle: async () => ({ data: cfg.ownerRow, error: null }),
-    then: (resolve: (v: unknown) => void) =>
-      resolve({ data: rec.limit === undefined ? cfg.rows : (cfg.rows ?? []).slice(0, rec.limit), error: null }),
+    then: (resolve: (v: unknown) => void) => {
+      if (table === 'albums' && rec.updated === undefined && cfg.readFailures > 0) {
+        cfg.readFailures--
+        return resolve({ data: null, error: { message: 'Gateway Timeout' } })
+      }
+      return resolve({ data: rec.limit === undefined ? cfg.rows : (cfg.rows ?? []).slice(0, rec.limit), error: null })
+    },
   })
   return b
 }
 
 vi.mock('@/lib/supabase/admin', () => ({ createAdminClient: () => ({ from: (t: string) => builder(t) }) }))
 vi.mock('@/lib/subscriptions', () => ({ getUserTierById: async () => cfg.tier }))
-vi.mock('@/lib/report-server-error', () => ({ reportServerError: () => {} }))
+vi.mock('@/lib/report-server-error', () => ({
+  reportServerError: (source: string, message: string, opts?: unknown) => { cfg.reports.push({ source, message, opts }) },
+}))
 
 process.env.ALBUM_PASSWORD_PEPPER ??= 'test-pepper-value-not-a-real-secret'
 
@@ -82,6 +92,35 @@ beforeEach(() => {
   cfg.tier = 'studio'
   cfg.cookies = {}
   cfg.queries = []
+  cfg.readFailures = 0
+  cfg.reports = []
+})
+
+describe('a database that blinks', () => {
+  it('A FAILED READ IS NOT A MISSING ALBUM: two failures answer unavailable, never notfound, and are reported', async () => {
+    // The error used to be dropped, so a gateway timeout became `notfound` -- a real 404 on the QR
+    // scan, telling a guest the album does not exist, and reported to nobody.
+    cfg.readFailures = 2
+    expect((await resolve()).kind).toBe('unavailable')
+    expect(cfg.queries.filter((q) => q.table === 'albums'), 'retried once').toHaveLength(2)
+    expect(cfg.reports).toEqual([{
+      source: 'album-access',
+      message: 'Album read failed',
+      opts: { context: { step: 'resolve', reason: 'Gateway Timeout' } },
+    }])
+  })
+
+  it('ONE blip is retried and the album opens, with nothing reported', async () => {
+    cfg.readFailures = 1
+    expect((await resolve()).kind).toBe('album')
+    expect(cfg.reports).toEqual([])
+  })
+
+  it('the retry waits a quarter of a second, because a guest is waiting on the page', async () => {
+    // The crons retry after 3 seconds (lib/server/read-with-retry's default). A page render cannot.
+    const { ALBUM_READ_RETRY_DELAY_MS } = await import('@/lib/server/album-access')
+    expect(ALBUM_READ_RETRY_DELAY_MS).toBe(250)
+  })
 })
 
 describe('which album, if any', () => {

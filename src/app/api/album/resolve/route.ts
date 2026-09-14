@@ -35,6 +35,10 @@ export async function GET(req: Request) {
       return NextResponse.json({ error: 'Invalid slug' }, { status: 400, headers: NO_STORE })
     case 'notfound':
       return NextResponse.json({ error: 'Album not found' }, { status: 404, headers: NO_STORE })
+    case 'unavailable':
+      // 503, never 404: the read failed and the album may well exist. classifyResolve turns any
+      // failure other than a 404 into the page's retry screen.
+      return NextResponse.json({ error: 'Could not load this album right now' }, { status: 503, headers: NO_STORE })
     case 'reveal':
       return NextResponse.json(
         { reveal_at: result.reveal_at, locked: true, slug: result.slug, title: result.title },

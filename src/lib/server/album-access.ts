@@ -9,6 +9,7 @@ import { createClient } from '@/lib/supabase/server'
 import { verifyAccessToken } from '@/lib/album-password'
 import { timingSafeEqual } from '@/lib/timing-safe'
 import { getUserTierById, getUserTierResolved } from '@/lib/subscriptions'
+import { readWithRetry } from '@/lib/server/read-with-retry'
 import { albumEffectiveTier, NOT_REVEALED, PASSWORD_REQUIRED } from '@/lib/album-entitlements'
 import { uploadCapsForTier , GRANDFATHER_FREE_BEFORE } from '@/lib/media'
 import type { Album, Photo } from '@/types'
@@ -190,6 +191,12 @@ export type ResolveResult =
   | { kind: 'reveal'; reveal_at: string; slug: string; title: string }
   | { kind: 'password'; slug: string; title: string }
   | { kind: 'album'; album: Album }
+  // COULD NOT ANSWER, which is not "does not exist". The album read failed twice; callers offer a
+  // retry instead of a 404 that tells a guest at the venue the album is gone.
+  | { kind: 'unavailable' }
+
+/** How long a page waits before retrying a failed album read once. Short, because a guest is waiting on it. */
+export const ALBUM_READ_RETRY_DELAY_MS = 250
 
 // Resolve a slug (random or custom) to an album, applying the reveal/password gates.
 //
@@ -211,10 +218,18 @@ export async function resolveAlbum(
   }
 
   const admin = createAdminClient()
-  const { data: rows } = await admin.from('albums').select(ALBUM_SELECT_COLS)
+  // A FAILED READ IS NOT A MISSING ALBUM. The error was dropped here, so a database blip became
+  // `notfound` -- a real 404 on the QR scan, after a password unlock and on the wall, reported to
+  // nobody (review of 2026-09-14; row 1242 shows these gateway timeouts happen). One quick retry,
+  // because a page is waiting on it, and then an answer the caller can offer a retry for.
+  const { result: { data: rows, error: readError } } = await readWithRetry(() => admin.from('albums').select(ALBUM_SELECT_COLS)
     .or(`slug.eq.${slug},custom_slug.eq.${slug}`)
     .is('retired_at', null)
-    .limit(2)
+    .limit(2), { delayMs: ALBUM_READ_RETRY_DELAY_MS })
+  if (readError) {
+    reportServerError('album-access', 'Album read failed', { context: { step: 'resolve', reason: readError.message.slice(0, 300) } })
+    return { kind: 'unavailable' }
+  }
 
   const album: AlbumRow | null = rows && rows.length > 0
     ? (rows.find((r) => r.slug === slug) ?? rows[0])
@@ -602,15 +617,20 @@ export async function fetchAuthorizedPhotos(
   if (!UUID_RE.test(albumId)) return { kind: 'invalid' }
 
   const admin = createAdminClient()
-  const { data: album } = await admin
+  const { result: { data: album, error: readError } } = await readWithRetry(() => admin
     .from('albums')
     // bib_min/bib_max come from the ALBUM, never from the caller. They decide which OCR readings
     // count, so accepting them from the request would let anyone widen the race's numbering and
     // pull back photos the owner's bounds were set to exclude.
     .select('id, user_id, owner_token, password_hash, reveal_at, retired_at, bib_search_enabled, bib_min, bib_max, bib_excluded_numbers, photo_order, package_tier, package_expires_at')
     .eq('id', albumId)
-    .maybeSingle()
+    .maybeSingle(), { delayMs: ALBUM_READ_RETRY_DELAY_MS })
 
+  // The same rule as resolveAlbum: a read that failed twice is not an album that does not exist.
+  if (readError) {
+    reportServerError('album-access', 'Album read failed', { albumId, context: { step: 'photos', reason: readError.message.slice(0, 300) } })
+    return { kind: 'unavailable' }
+  }
   if (!album || album.retired_at) return { kind: 'notfound' }
 
   // BOTH COOKIES KEY ON THE ROW'S id, not on the caller's. UUID_RE carries /i, so an uppercase id
