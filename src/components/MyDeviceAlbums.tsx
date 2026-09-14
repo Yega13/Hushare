@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { getMyAlbums, forgetAlbum, type MyAlbum } from '@/lib/my-albums'
-import { createClient } from '@/lib/supabase/client'
+import { useAccountIdentity } from '@/lib/use-account-identity'
 import { showAppToast } from '@/components/AppToast'
 import { useT } from '@/i18n/LocaleProvider'
 
@@ -22,8 +22,12 @@ import { useT } from '@/i18n/LocaleProvider'
 export default function MyDeviceAlbums() {
   const { t } = useT()
   const [albums, setAlbums] = useState<MyAlbum[] | null>(null)
-  // null = still checking; false = signed out (show); true = signed in (hide).
-  const [loggedIn, setLoggedIn] = useState<boolean | null>(null)
+  // null = still checking; false = signed out; true = signed in. From the same /api/me answer the nav
+  // link on this page already asks for -- one request between them. This used to create a Supabase
+  // client to read the session cookie, which put supabase-js (221 KB) on the home page for one boolean,
+  // and believed a cookie the server might no longer accept; /api/me answers from the server.
+  const { status } = useAccountIdentity()
+  const loggedIn = status === 'loading' ? null : status === 'signed-in'
   const [busy, setBusy] = useState<string | null>(null)
   // Slugs the server says have no account behind them. null = not asked yet, so a signed-in
   // visitor is shown nothing rather than a list we cannot describe honestly (rule 20).
@@ -35,7 +39,6 @@ export default function MyDeviceAlbums() {
   useEffect(() => {
     const local = getMyAlbums()
     setAlbums(local)
-    createClient().auth.getSession().then(({ data }) => setLoggedIn(!!data.session)).catch(() => setLoggedIn(false))
 
     // localStorage has no idea an album was deleted elsewhere — from the owner toolbar, on another
     // device, or by the retention job — so deleted albums sat in this list forever, and tapping

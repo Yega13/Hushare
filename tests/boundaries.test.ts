@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
-import { readFileSync, readdirSync, existsSync, statSync } from 'node:fs'
-import { join, dirname, resolve } from 'node:path'
+import { join } from 'node:path'
+import { buildGraphFromDisk, rel, SRC, type Graph } from './helpers/import-graph'
 
 // THE ONE BOUNDARY RULE.
 //
@@ -25,8 +25,8 @@ import { join, dirname, resolve } from 'node:path'
 // WHY IT IS NOT REDUNDANT WITH `server-only`. That marker is real and does fail the build, but only
 // three modules carry it. next/headers, @aws-sdk and @opennextjs/cloudflare have no marker, and a
 // bundler error names a chunk rather than the import chain. This names the chain.
-
-const SRC = join(process.cwd(), 'src')
+//
+// The graph itself is built by tests/helpers/import-graph, shared with tests/marketing-bundle.
 
 const FORBIDDEN_FROM_BROWSER = [
   'server-only',
@@ -38,26 +38,6 @@ const FORBIDDEN_FROM_BROWSER = [
 
 const isForbidden = (spec: string) =>
   FORBIDDEN_FROM_BROWSER.some((f) => (f.endsWith('/') ? spec.startsWith(f) : spec === f))
-
-type Graph = {
-  /** file -> local files it imports */
-  local: Map<string, Set<string>>
-  /** file -> bare package specifiers it imports */
-  external: Map<string, Set<string>>
-  clientEntries: Set<string>
-}
-
-// Repo-relative, with no escape anywhere: an absolute Windows path per hop makes a four-hop chain
-// unreadable, and the chain is this check's entire advantage over a bundler error.
-//
-// The separators are built with fromCharCode rather than written as escapes. The first version of
-// this line was generated through a script and its backslashes were eaten on the way to disk,
-// leaving an unterminated string literal — AGENTS.md rule 24, in the same session that keeps citing
-// it. Code that needs no escape cannot lose one.
-const BACKSLASH = String.fromCharCode(92)
-const SLASH = String.fromCharCode(47)
-const rel = (p: string) =>
-  p.split(process.cwd()).join('').split(BACKSLASH).join(SLASH).replace(/^\//, '')
 
 /**
  * Every server-only specifier reachable from a client entry, with the chain that gets there.
@@ -85,66 +65,6 @@ export function violations(g: Graph): string[] {
   }
   for (const entry of g.clientEntries) visit(entry, [])
   return out.sort()
-}
-
-// ── Building the real graph ────────────────────────────────────────────────────────────────────
-
-const IMPORT_RE = /(?:^|\n)\s*(?:import|export)\s+(?:type\s+)?[^;'"]*from\s*['"]([^'"]+)['"]/g
-const BARE_IMPORT_RE = /(?:^|\n)\s*import\s*['"]([^'"]+)['"]/g
-
-function walkFiles(dir: string): string[] {
-  const out: string[] = []
-  for (const entry of readdirSync(dir, { withFileTypes: true })) {
-    if (entry.name.startsWith('.') || entry.name === 'node_modules') continue
-    const full = join(dir, entry.name)
-    if (entry.isDirectory()) out.push(...walkFiles(full))
-    else if (/\.tsx?$/.test(entry.name)) out.push(full)
-  }
-  return out
-}
-
-/** Resolve a specifier to a file on disk, or null if it is a package. */
-function resolveLocal(fromFile: string, spec: string): string | null {
-  let base: string
-  if (spec.startsWith('@/')) base = join(SRC, spec.slice(2))
-  else if (spec.startsWith('.')) base = resolve(dirname(fromFile), spec)
-  else return null
-  for (const candidate of [
-    base, `${base}.ts`, `${base}.tsx`,
-    join(base, 'index.ts'), join(base, 'index.tsx'),
-  ]) {
-    if (existsSync(candidate) && statSync(candidate).isFile()) return candidate
-  }
-  return null
-}
-
-function buildGraphFromDisk(): Graph {
-  const local = new Map<string, Set<string>>()
-  const external = new Map<string, Set<string>>()
-  const clientEntries = new Set<string>()
-
-  for (const file of walkFiles(SRC)) {
-    const text = readFileSync(file, 'utf8')
-    // The directive must be the first statement, but a licence banner or a lint disable can precede
-    // it. Scanning a generous prefix rather than N lines means a formatting change cannot quietly
-    // shrink the set of files considered client-side — and the count is asserted below.
-    if (/^[\s\S]{0,2000}?['"]use client['"]/.test(text)) clientEntries.add(file)
-
-    const deps = new Set<string>()
-    const pkgs = new Set<string>()
-    for (const re of [IMPORT_RE, BARE_IMPORT_RE]) {
-      re.lastIndex = 0
-      let m: RegExpExecArray | null
-      while ((m = re.exec(text)) !== null) {
-        const resolved = resolveLocal(file, m[1])
-        if (resolved) deps.add(resolved)
-        else pkgs.add(m[1])
-      }
-    }
-    local.set(file, deps)
-    external.set(file, pkgs)
-  }
-  return { local, external, clientEntries }
 }
 
 // ── The checker's own correctness, on inputs that cannot drift ────────────────────────────────

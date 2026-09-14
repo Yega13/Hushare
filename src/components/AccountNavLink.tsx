@@ -1,10 +1,10 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect } from 'react'
 import Link from 'next/link'
 import { CircleUserRound } from 'lucide-react'
 import { useAccountIdentity, clearAccountIdentityCache } from '@/lib/use-account-identity'
-import { createClient } from '@/lib/supabase/client'
+import { watchAuthFromOtherTabs } from '@/lib/auth-tab-sync'
 import { useT } from '@/i18n/LocaleProvider'
 
 const linkClass = 'text-sm font-medium hover:underline'
@@ -12,25 +12,19 @@ const linkStyle = { color: '#630826' } as const
 
 export default function AccountNavLink() {
   const { t } = useT()
-  const [supabase] = useState(() => createClient())
   // ONE request, both answers, one state transition. See lib/use-account-identity for the flicker
   // this replaced: sign-in state and picture were fetched separately and in sequence, so the slot
   // rendered three different shapes on the way to settling.
   const { status, avatarUrl } = useAccountIdentity()
 
-  useEffect(() => {
-    // ONLY a real change of identity. TOKEN_REFRESHED fires roughly hourly on its own, and
-    // INITIAL_SESSION fires on every mount — reacting to either would re-ask on a schedule for an
-    // answer that has not changed, and an earlier draft of this reloaded the page on them, which
-    // would have restarted someone's upload once an hour.
-    const { data: sub } = supabase.auth.onAuthStateChange((event) => {
-      if (event !== 'SIGNED_IN' && event !== 'SIGNED_OUT' && event !== 'USER_UPDATED') return
-      // Clearing notifies every control showing an identity, so they re-ask together and settle in
-      // one step — no reload, nothing interrupted.
-      clearAccountIdentityCache()
-    })
-    return () => { sub.subscription.unsubscribe() }
-  }, [supabase])
+  // A sign-in or sign-out in ANOTHER tab clears the cache, which re-asks every control showing an
+  // identity so they settle together in one step -- no reload, nothing interrupted. Only real changes
+  // of identity count: TOKEN_REFRESHED fires roughly hourly, and an earlier draft that reacted to it
+  // reloaded the page, which would have restarted someone's upload once an hour.
+  //
+  // Heard on supabase-js's own cross-tab channel, NOT through a Supabase client: creating one here put
+  // the whole library (221 KB) on every marketing page for this one listener (lib/auth-tab-sync).
+  useEffect(() => watchAuthFromOtherTabs(clearAccountIdentityCache), [])
 
   const state = status
 
