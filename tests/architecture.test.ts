@@ -727,9 +727,10 @@ describe('the photo backup is wired end to end', () => {
     expect(consumed).toEqual([MEDIA_EVENTS_QUEUE])
   })
 
-  it('the consumer retries exactly as many times as the code reports its last attempts against', async () => {
-    // One fact in two files (rule 13): the queue gives up after wrangler.toml's max_retries, and the code
-    // reports "giving up" at QUEUE_MAX_RETRIES. If they drift, the report fires early every time or never.
+  it('max_retries is the QUEUE_MAX_RETRIES isFinalDelivery counts from', async () => {
+    // One fact in two files (rule 13). Cloudflare delivers a message once and then retries it up to
+    // wrangler.toml's max_retries times, so the last delivery is attempt max_retries + 1 -- which is what
+    // isFinalDelivery counts from QUEUE_MAX_RETRIES. If they drift, the report fires a delivery early, or never.
     const { QUEUE_MAX_RETRIES } = await import('@/lib/server/media-backup')
     const consumer = /\[\[queues\.consumers\]\]\s*queue\s*=\s*"hushare-media-events"[\s\S]*?max_retries\s*=\s*(\d+)/.exec(production)
     expect(consumer, 'could not read max_retries for the media events consumer').not.toBeNull()
@@ -746,6 +747,17 @@ describe('the photo backup is wired end to end', () => {
     expect(worker).toMatch(/async queue\(batch: MessageBatch, env: Env\)/)
     expect(worker).toContain('await consumeMediaEvents(batch, env, {')
     expect(worker).toContain('fixedLength: (size) => new FixedLengthStream(size)')
+  })
+
+  it('THE QUEUE CAN REACH THE PANEL: worker.ts passes a reporter, and the route it posts to exists', async () => {
+    // `report` is optional so the lib's tests can leave it out -- which is exactly how worker.ts left it out,
+    // and the queue gave up on copies in silence (review of 2026-09-15).
+    const { BACKUP_REPORT_PATH } = await import('@/lib/server/media-backup')
+    const start = worker.indexOf('await consumeMediaEvents(batch, env, {')
+    expect(start, 'could not find the consumer call in worker.ts').toBeGreaterThan(-1)
+    expect(worker.slice(start, worker.indexOf('})', start)))
+      .toContain('report: reportThroughSite((url, init) => fetch(url, init), siteBaseUrl(env), env.ALBUM_RETIREMENT_SECRET),')
+    expect(readdirSync(join(process.cwd(), 'src', 'app', ...BACKUP_REPORT_PATH.split('/').filter(Boolean)))).toContain('route.ts')
   })
 
   it('the every-minute schedule runs the reconcile walk', () => {

@@ -82,9 +82,34 @@ export type BackupDeps = {
   fixedLength: (size: number) => { readable: ReadableStream; writable: WritableStream }
   /**
    * Puts a sentence in the admin panel. Optional, because this file cannot import the reporter; the
-   * caller passes one when it has a way to deliver it. Must not throw, and is guarded here as if it might.
+   * caller passes one when it has a way to deliver it. It may throw: a report that fails is logged, and
+   * never fails the batch it was reporting on.
    */
   report?: (message: string, context: Record<string, string | number>) => Promise<void>
+}
+
+/** The site route the Worker's queue handler reports through; it hands the sentence to the error panel. */
+export const BACKUP_REPORT_PATH = '/api/cron/backup-queue-report'
+
+/**
+ * THE QUEUE'S WAY INTO THE PANEL. worker.ts's queue handler runs outside Next.js, where the panel's reporter
+ * has no request context to keep its database write alive, so the sentence is posted to BACKUP_REPORT_PATH
+ * with the cron secret -- the way worker.ts already calls every cron route. A refused post THROWS, so the
+ * consumer logs it instead of believing the report arrived.
+ */
+export function reportThroughSite(
+  post: (url: string, init: RequestInit) => Promise<Response>,
+  baseUrl: string,
+  secret: string,
+): NonNullable<BackupDeps['report']> {
+  return async (message, context) => {
+    const res = await post(`${baseUrl}${BACKUP_REPORT_PATH}`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${secret}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ message, context }),
+    })
+    if (!res.ok) throw new Error(`report route answered ${res.status}`)
+  }
 }
 
 export type BackupOutcome = 'copied' | 'already-backed-up' | 'already-gone' | 'tombstoned' | 'ignored' | 'retrying' | 'conflict'
@@ -111,6 +136,15 @@ export const LIST_PAGE = 1000
 export const RETRY_DELAYS_SECONDS = [60, 600, 3_600, 21_600, 43_200] as const
 /** wrangler.toml's max_retries for the media events consumer; a test holds the two equal. */
 export const QUEUE_MAX_RETRIES = 5
+
+/**
+ * WHETHER THIS IS THE QUEUE'S LAST DELIVERY of a message. Cloudflare delivers once and then retries up to
+ * max_retries times ("retry delivery three times" at the default of 3), and `attempts` starts at 1, so the
+ * last delivery is attempt max_retries + 1 -- the sixth, not the fifth (Queues docs, read 2026-09-15).
+ */
+export function isFinalDelivery(attempts: number): boolean {
+  return attempts >= QUEUE_MAX_RETRIES + 1
+}
 
 export function retryDelaySeconds(attempts: number): number {
   const index = Number.isInteger(attempts) && attempts >= 1 ? attempts - 1 : 0
@@ -154,13 +188,14 @@ export function keySortsAfter(a: string, b: string): boolean {
   return x.length > y.length
 }
 
-type Meter = { used: number; limit: number }
+export type Meter = { used: number; limit: number }
 
 /**
  * A bucket whose every call is counted. Past the limit a call THROWS -- a reported failure of this run,
- * never the platform's subrequest limit, which would take the save and the report down with it.
+ * never the platform's subrequest limit, which would take the save and the report down with it. Exported
+ * so a test can reach the throw: every caller here checks the budget first, so none of them ever does.
  */
-function metered(bucket: BackupBucket, meter: Meter): BackupBucket {
+export function metered(bucket: BackupBucket, meter: Meter): BackupBucket {
   const spend = () => {
     if (meter.used >= meter.limit) throw new Error(`this run's budget of ${meter.limit} bucket operations is spent`)
     meter.used++
@@ -258,9 +293,11 @@ export async function handleBackupMessage(message: QueuedMessage, deps: BackupDe
     deps.log(`[media-backup] ${action} ${key} failed on attempt ${message.attempts}, retrying in ${delaySeconds}s: ${describe(e)}`)
     // Retried even on the last attempt, so a dead-letter queue added later receives it.
     message.retry({ delaySeconds })
-    // THE LAST TRIES ARE REPORTED, at >= rather than one exact attempt: if the platform counts attempts
-    // differently than expected, this can only report early, never not at all.
-    if (message.attempts >= QUEUE_MAX_RETRIES && deps.report) {
+    // THE LAST DELIVERY IS REPORTED, and only the last. This errs late, which costs nothing lasting: were the
+    // platform ever to deliver fewer times than documented, no report is sent here, but the walk still
+    // reports the object on its next daily pass, as a failed copy or one the queue missed. Erring early put a
+    // "giving up" in the panel for copies that then succeeded on the next delivery.
+    if (isFinalDelivery(message.attempts) && deps.report) {
       try {
         await deps.report('Backup queue is giving up on an object', {
           key, action, attempts: message.attempts, reason: describe(e).slice(0, 300),

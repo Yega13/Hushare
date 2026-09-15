@@ -1,5 +1,5 @@
 import { default as handler } from "./.open-next/worker.js";
-import { consumeMediaEvents, type BackupBucket, type QueuedMessage } from "./src/lib/server/media-backup";
+import { consumeMediaEvents, reportThroughSite, type BackupBucket, type QueuedMessage } from "./src/lib/server/media-backup";
 
 // Minimal inline types — avoids importing @cloudflare/workers-types globally
 // (that package conflicts with DOM types and is excluded from tsconfig)
@@ -54,6 +54,9 @@ async function callCronRoute(baseUrl: string, path: string, secret: string): Pro
   }
 }
 
+// The site every call back into Next.js goes to: the cron routes, and the backup queue's reports.
+const siteBaseUrl = (env: Env): string => (env.NEXT_PUBLIC_SITE_URL ?? 'https://hushare.space').replace(/\/+$/, '')
+
 const worker = {
   // NOTE: a worker-level `caches.default` HTML cache was removed here. It cached
   // marketing/home HTML in the colo cache, but the colo cache is NOT cleared on
@@ -72,7 +75,7 @@ const worker = {
       console.error('[cron] ALBUM_RETIREMENT_SECRET is not set — aborting scheduled run')
       return
     }
-    const baseUrl = (env.NEXT_PUBLIC_SITE_URL ?? 'https://hushare.space').replace(/\/+$/, '')
+    const baseUrl = siteBaseUrl(env)
 
     // Two schedules share this handler, so branch on which one fired — otherwise adding the
     // every-minute bib sweep would also send renewal emails and retire albums 1440x a day.
@@ -158,12 +161,14 @@ const worker = {
   // THE PHOTO BACKUP'S FAST PATH. R2 sends every create and delete in hushare-media to the
   // hushare-media-events queue, and this copies a new object into hushare-media-backup within seconds,
   // or records a deletion without deleting the copy. A throw retries the whole batch; anything that
-  // still fails is repaired, and reported, by /api/cron/backup-reconcile.
+  // still fails is repaired, and reported, by /api/cron/backup-reconcile. A copy the queue gives up on is
+  // reported on its last delivery, through the site, since this handler has no Next.js request to report in.
   async queue(batch: MessageBatch, env: Env): Promise<void> {
     await consumeMediaEvents(batch, env, {
       now: () => new Date(),
       log: (message) => { console.error(message) },
       fixedLength: (size) => new FixedLengthStream(size),
+      report: reportThroughSite((url, init) => fetch(url, init), siteBaseUrl(env), env.ALBUM_RETIREMENT_SECRET),
     })
   },
 }

@@ -15,5 +15,7 @@ export default {
       from: '      fixedLength: (size) => new FixedLengthStream(size),', to: '      fixedLength: () => new TransformStream(),' },
     { name: 'the every-minute schedule no longer runs the reconcile walk',
       from: "        callCronRoute(baseUrl, '/api/cron/backup-reconcile', secret),\n", to: '' },
+    { name: 'THE QUEUE GIVES UP IN SILENCE IN PRODUCTION -- no reporter is passed, so nothing reaches the panel',
+      from: '      report: reportThroughSite((url, init) => fetch(url, init), siteBaseUrl(env), env.ALBUM_RETIREMENT_SECRET),\n', to: '' },
   ],
 }

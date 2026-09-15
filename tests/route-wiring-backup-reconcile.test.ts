@@ -253,6 +253,21 @@ describe('the backup walk route', () => {
     expect(savedState().pruneStartAfter).toBe('_deleted/albums/a')
   })
 
+  it('THE SWEEP RUNS FIRST -- a walk longer than the sweep\'s 10 seconds cannot starve it', async () => {
+    // In the fakes a walk takes no time at all, so nothing else here can tell which ran first. This walk
+    // takes longer than the sweep's whole budget; had it run first, the sweep would stop before erasing.
+    vi.useFakeTimers({ toFake: ['Date'] })
+    const source = bucket({ 'albums/a': old() }, {
+      onGet: () => { vi.setSystemTime(Date.now() + PRUNE_TIME_BUDGET_MS + 1) },
+    })
+    const backup = bucket({ 'albums/gone.jpg': old(), '_deleted/albums/gone.jpg': expiredMarker() }, { locked: true })
+    rig(source, backup)
+    const res = await POST(post())
+    expect(source.calls.gets, 'the walk ran, and took longer than the sweep may').toBe(1)
+    expect(await res.json()).toMatchObject({ copied: 1, pruned: { removed: 1 } })
+    expect(backup.store.has('albums/gone.jpg')).toBe(false)
+  })
+
   it('THE SWEEP POSITION IS SAVED, and the next run resumes from it', async () => {
     const backupSeed: Record<string, Obj> = {}
     for (let i = 0; i < 600; i++) {

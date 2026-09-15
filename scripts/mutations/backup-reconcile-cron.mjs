@@ -4,10 +4,52 @@
 // The every-minute walk and sweep under the photo backup. Nothing reads this route's response, so each
 // mutation below either stops the backup quietly, stops erasing on time, or hides a failure from the only
 // place anyone looks.
+// The sweep block and the walk block, verbatim, for the one mutation that swaps their order. If either
+// drifts from the route, the runner reports DID NOT APPLY rather than passing quietly.
+const PRUNE = `  let pruned: Pick<PruneResult, 'removed' | 'kept' | 'failed' | 'sweepComplete'> | null = null
+  if (pruneDue) {
+    try {
+      const sweep = await pruneBackup({
+        ...deps,
+        startAfter: state.pruneStartAfter,
+        opBudget: PRUNE_OP_BUDGET,
+        shouldStop: () => Date.now() - started > PRUNE_TIME_BUDGET_MS,
+      })
+      pruned = { removed: sweep.removed, kept: sweep.kept, failed: sweep.failed, sweepComplete: sweep.sweepComplete }
+      next = nextPruneState(next, sweep, new Date().toISOString())
+      if (sweep.failed > 0) reportServerError(SOURCE, 'Backup prune failed', { context: { failed: sweep.failed } })
+    } catch (e) {
+      reportServerError(SOURCE, 'Backup prune failed', { context: { reason: reasonOf(e).slice(0, 300) } })
+    }
+  }
+
+`
+const WALK = `  let step: ReconcileResult | null = null
+  let walkFailure: { error: unknown } | null = null
+  if (walkDue) {
+    try {
+      step = await reconcileStep({
+        ...deps,
+        startAfter: state.startAfter,
+        budget: RECONCILE_COPY_BUDGET,
+        opBudget: RECONCILE_OP_BUDGET,
+        missedAfterMs: QUEUE_WINDOW_MS,
+        shouldStop: () => Date.now() - started > RECONCILE_TIME_BUDGET_MS,
+      })
+      next = nextBackupState(next, step, new Date().toISOString())
+    } catch (e) {
+      walkFailure = { error: e }
+    }
+  }
+
+`
+
 export default {
   file: 'src/app/api/cron/backup-reconcile/route.ts',
   test: 'tests/route-wiring-backup-reconcile.test.ts',
   mutations: [
+    { name: 'THE WALK RUNS FIRST, and a walk longer than 10 seconds leaves the sweep no time to erase anything',
+      from: PRUNE + WALK, to: WALK + PRUNE },
     { name: 'anyone can run the walk',
       from: '  if (!secret || !timingSafeEqual(provided, secret)) {', to: '  if (false) {' },
     { name: 'an unreadable position is walked from the start, silently',

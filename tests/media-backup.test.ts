@@ -2,10 +2,11 @@ import { describe, it, expect } from 'vitest'
 import {
   handleBackupMessage, handleBackupBatch, consumeMediaEvents, reconcileStep, pruneBackup, keySortsAfter,
   parseBackupState, backupRunDue, pruneRunDue, nextBackupState, nextPruneState, retryDelaySeconds,
-  TOMBSTONE_PREFIX, GRACE_DAYS, RETRY_DELAYS_SECONDS, QUEUE_MAX_RETRIES, MEDIA_EVENTS_QUEUE, LIST_PAGE, BACKUP_STATE_KEY,
+  isFinalDelivery, reportThroughSite, metered,
+  TOMBSTONE_PREFIX, GRACE_DAYS, RETRY_DELAYS_SECONDS, MEDIA_EVENTS_QUEUE, LIST_PAGE, BACKUP_STATE_KEY,
   PASS_INTERVAL_MS, PRUNE_INTERVAL_MS, RECONCILE_COPY_BUDGET, RECONCILE_TIME_BUDGET_MS, PRUNE_TIME_BUDGET_MS,
   RECONCILE_OP_BUDGET, PRUNE_OP_BUDGET, OPS_PER_OBJECT, MAX_LIST_PAGES, QUEUE_WINDOW_MS,
-  type BackupBucket, type BackupDeps, type QueuedMessage, type ReconcileResult, type BackupState,
+  type BackupBucket, type BackupDeps, type QueuedMessage, type ReconcileResult, type BackupState, type Meter,
 } from '@/lib/server/media-backup'
 
 // THE SECOND COPY OF EVERY PHOTO. Every failure here is silent until the day the backup is needed: a
@@ -242,28 +243,72 @@ describe('the queue -- retrying for as long as an outage lasts', () => {
     expect([0, -1, 1.5, Number.NaN].map(retryDelaySeconds)).toEqual([60, 60, 60, 60])
   })
 
-  it('ON ITS LAST ATTEMPTS it reports the object -- and still retries, so a dead-letter queue would receive it', async () => {
+  it('THE LAST DELIVERY IS REPORTED -- max_retries 5 is six deliveries -- and still retried, so a dead-letter queue would receive it', async () => {
     const r = rig({ 'albums/a1/p.jpg': photo }, {}, {}, { failPut: () => true })
-    const last = message(event('PutObject', 'albums/a1/p.jpg'), QUEUE_MAX_RETRIES)
+    const last = message(event('PutObject', 'albums/a1/p.jpg'), 6)
     await handleBackupMessage(last, r.deps)
     expect(r.reports).toEqual([{
       message: 'Backup queue is giving up on an object',
-      context: { key: 'albums/a1/p.jpg', action: 'PutObject', attempts: 5, reason: 'R2 put failed' },
+      context: { key: 'albums/a1/p.jpg', action: 'PutObject', attempts: 6, reason: 'R2 put failed' },
     }])
     expect(last.state.retried).toEqual({ delaySeconds: 43_200 })
   })
 
-  it('an earlier attempt reports nothing', async () => {
+  it('THE FIFTH DELIVERY IS NOT THE LAST: a copy failing there reports nothing, because a sixth is coming', async () => {
     const r = rig({ 'albums/a1/p.jpg': photo }, {}, {}, { failPut: () => true })
-    await handleBackupMessage(message(event('PutObject', 'albums/a1/p.jpg'), QUEUE_MAX_RETRIES - 1), r.deps)
+    await handleBackupMessage(message(event('PutObject', 'albums/a1/p.jpg'), 5), r.deps)
     expect(r.reports).toEqual([])
+  })
+
+  it('isFinalDelivery: attempts start at 1, and max_retries counts the retries after the first delivery', () => {
+    // "The number of times the consumer has attempted to process this message. Starts at 1." and "retry
+    // delivery three times" at the default max_retries of 3 -- Cloudflare Queues docs, read 2026-09-15.
+    expect([4, 5].map(isFinalDelivery)).toEqual([false, false])
+    expect([6, 7].map(isFinalDelivery)).toEqual([true, true])
+    expect(isFinalDelivery(Number.NaN)).toBe(false)
   })
 
   it('a report that fails is logged and does not throw the batch', async () => {
     const r = rig({ 'albums/a1/p.jpg': photo }, {}, {}, { failPut: () => true })
     const deps = { ...r.deps, report: async () => { throw new Error('panel unreachable') } }
-    expect(await handleBackupMessage(message(event('PutObject', 'albums/a1/p.jpg'), 5), deps)).toBe('retrying')
+    expect(await handleBackupMessage(message(event('PutObject', 'albums/a1/p.jpg'), 6), deps)).toBe('retrying')
     expect(r.logs.join(' ')).toContain('panel unreachable')
+  })
+})
+
+describe('reportThroughSite -- how the Worker queue reaches the panel', () => {
+  it('posts the sentence and its context to the report route, with the cron secret', async () => {
+    const calls: Array<{ url: string; init: RequestInit }> = []
+    const report = reportThroughSite(async (url, init) => { calls.push({ url, init }); return new Response('{}') }, 'https://hushare.space', 's3cret')
+    await report('Backup queue is giving up on an object', { key: 'k', attempts: 6 })
+    expect(calls).toHaveLength(1)
+    expect(calls[0].url).toBe('https://hushare.space/api/cron/backup-queue-report')
+    expect(calls[0].init.method).toBe('POST')
+    expect((calls[0].init.headers as Record<string, string>).Authorization).toBe('Bearer s3cret')
+    expect(JSON.parse(calls[0].init.body as string)).toEqual({ message: 'Backup queue is giving up on an object', context: { key: 'k', attempts: 6 } })
+  })
+
+  it('A REFUSED POST THROWS, so the consumer logs that the panel never got it', async () => {
+    const report = reportThroughSite(async () => new Response('{}', { status: 403 }), 'https://hushare.space', 'wrong')
+    await expect(report('x', {})).rejects.toThrow('report route answered 403')
+  })
+})
+
+describe('the meter -- the hard stop under every budget', () => {
+  it('THE LONGEST COPY -- get, head, refused put, head -- fits in OPS_PER_OBJECT, and a call past the budget never reaches R2', async () => {
+    const r = rig({ 'albums/a1/p.jpg': photo }, {}, {}, {
+      beforePut: (key, store) => { if (!store.has(key)) store.set(key, { body: 'JPEG!', uploaded: NOW }) },
+    })
+    const meter: Meter = { used: 0, limit: OPS_PER_OBJECT }
+    const deps: BackupDeps = { ...r.deps, source: metered(r.src.bucket, meter), backup: metered(r.bak.bucket, meter) }
+    expect(await handleBackupMessage(message(event('PutObject', 'albums/a1/p.jpg')), deps)).toBe('already-backed-up')
+    expect(r.bak.calls.putAttempts, 'not the longest path: no put was attempted and refused').toBe(1)
+    expect(r.total()).toBeLessThanOrEqual(OPS_PER_OBJECT)
+    // The edge as the fakes counted it, not a number this test works out (rule 17).
+    meter.limit = r.total()
+    const before = r.total()
+    await expect(deps.backup.head('albums/a1/p.jpg')).rejects.toThrow('operations is spent')
+    expect(r.total(), 'the call past the budget reached the bucket').toBe(before)
   })
 })
 
