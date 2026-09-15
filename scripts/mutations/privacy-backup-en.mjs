@@ -10,5 +10,9 @@ export default {
       from: 'within those 31 days', to: 'within those 30 days' },
     { name: 'the permanent-deletion sentence names a different number',
       from: 'Once the 31 days have passed', to: 'Once the 7 days have passed' },
+    { name: 'THE POLICY PROMISES ERASURE WITHIN THE FOLLOWING DAY again, which the code cannot always keep',
+      from: 'erased, normally within a day,', to: 'erased within the following day,' },
+    { name: 'the policy stops admitting that a photo deleted before its copy was made cannot be recovered',
+      from: 'A photo deleted before its backup copy was made -', to: 'A photo deleted after its backup copy was made -' },
   ],
 }

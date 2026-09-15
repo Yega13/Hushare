@@ -417,13 +417,15 @@ export const en: PrivacyContent = {
             time by emailing us - see section 15.
           </p>
           <p className="mt-3">
-            A deleted photo is not gone at once. Whenever photos or other images
-            are deleted - by you, by the album&rsquo;s owner, or by the inactivity
-            rule above - a copy stays in a private backup for{' '}
+            A deleted photo is usually not gone at once. Whenever photos or other
+            images are deleted - by you, by the album&rsquo;s owner, or by the
+            inactivity rule above - a copy stays in a private backup for{' '}
             <strong style={INK}>31 days</strong>, so a deletion made by mistake can
             still be undone: email us within those 31 days (section 15) and we can
-            recover the photos. Once the 31 days have passed, the backup copy is
-            erased within the following day, and the photos are gone permanently.
+            recover the photos. A photo deleted before its backup copy was made -
+            for example moments after it was uploaded - has no copy and cannot be
+            recovered. Once the 31 days have passed, the backup copy is
+            erased, normally within a day, and the photos are gone permanently.
             Nobody can see the backup, and it is used for nothing else.
           </p>
       </>
