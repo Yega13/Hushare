@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest'
 import { readFileSync, existsSync, statSync } from 'node:fs'
 import { createHash } from 'node:crypto'
 import { join } from 'node:path'
-import { FRAME, WINDOW, FRAMES, frameStyle, windowStyle } from '@/lib/not-found-frames'
+import { FRAME, WINDOW, FRAMES, PILE_HEIGHT, frameStyle, pileExtent, pileScale, windowStyle } from '@/lib/not-found-frames'
 import { stripJsComments } from './helpers/source-text'
 
 // THE PHOTOS IN THE 404 PAGE'S FRAMES.
@@ -16,7 +16,7 @@ import { stripJsComments } from './helpers/source-text'
 //   - the window losing its cover sizing, its sand colour or its photo,
 //   - the page drawing an <img> again, which shows a broken-image icon when a load fails.
 // Sizes and photos are IMPORTED from src/lib/not-found-frames.ts; the numbers a person would check by
-// eye (the 88 x 83 window, three photos) are written out literally, so the module cannot vouch for itself.
+// eye (the 116 x 113 window, three photos) are written out literally, so the module cannot vouch for itself.
 
 const ROOT = process.cwd()
 const MAX_BYTES = 16_000
@@ -106,8 +106,22 @@ describe('the pile of photos', () => {
 })
 
 describe('the frame and its window', () => {
-  it('leaves an 88 x 83 window: a 108 x 118 border-box frame, less its 1px border and the insets', () => {
-    expect(WINDOW).toEqual({ width: 88, height: 83 })
+  it('leaves a 116 x 113 window: a 132 x 160 border-box frame, less its 1px border and the insets', () => {
+    expect(WINDOW).toEqual({ width: 116, height: 113 })
+  })
+
+  it('is shaped like a real instant print: a tall card around a near-square picture', () => {
+    // Polaroid's published size for I-Type / 600 / SX-70 film (its support article, as quoted in search
+    // results), written out here rather than read from the module: a 3.483 x 4.233 in card around a
+    // 3.108 x 3.024 in picture. The owner asked for prints that look real, and these two ratios are what
+    // a real one is. A picture rounded to square would be 2.7% off and fail: these are Polaroid's own
+    // figures, and it is those the test holds.
+    const CARD_TALLER_BY = 4.233 / 3.483
+    const PICTURE_WIDER_BY = 3.108 / 3.024
+    expect(Math.abs(FRAME.height / FRAME.width / CARD_TALLER_BY - 1)).toBeLessThanOrEqual(0.02)
+    expect(Math.abs(WINDOW.width / WINDOW.height / PICTURE_WIDER_BY - 1)).toBeLessThanOrEqual(0.02)
+    // The thick lip under the picture is what makes a white square read as a print.
+    expect(FRAME.bottom).toBeGreaterThanOrEqual(3 * FRAME.top)
   })
 
   it('draws the frame at exactly the size the window is computed from', () => {
@@ -116,6 +130,22 @@ describe('the frame and its window', () => {
     expect(s.height).toBe(FRAME.height)
     expect(s.boxSizing).toBe('border-box')
     expect(String(s.border).startsWith(`${FRAME.border}px `)).toBe(true)
+  })
+
+  it('mounts each print at the centre of the pile, as a solid card', () => {
+    const s = frameStyle(FRAMES[0])
+    expect(s.position).toBe('absolute')
+    expect([s.left, s.top]).toEqual(['50%', '50%'])
+    // Without these the whole pile shifts right by half a print, and the right-hand print leaves a phone.
+    expect([s.marginLeft, s.marginTop]).toEqual([-FRAME.width / 2, -FRAME.height / 2])
+    // The see-through prints could come back this way too, through the photos as well as the lip.
+    expect('opacity' in s).toBe(false)
+  })
+
+  it('is an opaque card, so a print behind never shows through the one in front', () => {
+    // Real prints are card, not tracing paper. At 92% opacity the side photos showed as faint squares
+    // through the front print's white lip once the bigger prints overlapped more (screenshot, 2026-09-15).
+    expect(String(frameStyle(FRAMES[0]).background)).toMatch(/^#[0-9A-Fa-f]{6}$/)
   })
 
   it('draws the photo over sand, covering the window, inset exactly as computed', () => {
@@ -168,15 +198,93 @@ describe('the 404 page', () => {
     expect(count(text, `@keyframes ${name} {`)).toBe(1)
   })
 
-  it('gives the pile a box at least one print tall, so the prints stay off the logo and heading', () => {
+  it('draws the pile with the height, drift and narrow-screen scale the geometry tests hold', () => {
     const text = page()
     const start = text.indexOf('aria-hidden="true"')
     expect(start).toBeGreaterThan(-1)
     const pile = text.slice(start, text.indexOf('FRAMES.map(', start))
     expect(pile).toContain("position: 'relative'")
-    const at = pile.indexOf('height: ')
-    expect(at).toBeGreaterThan(-1)
-    expect(Number.parseInt(pile.slice(at + 'height: '.length), 10)).toBeGreaterThanOrEqual(FRAME.height)
+    expect(pile).toContain('height: PILE_HEIGHT')
+    expect(pile).toContain('className="hush-404-pile"')
+    // The margins below are only true of the page if the page draws with these same numbers.
+    expect(text).toContain('calc(var(--y) - ${DRIFT.lift}px)')
+    expect(text).toContain('rotate(calc(var(--r) * ${DRIFT.tiltKept}))')
+    expect(text).toContain('NARROW.map(')
+    expect(text).toContain('@media (max-width: ${n.maxWidth}px) { .hush-404-pile { transform: scale(${n.scale}); } }')
+  })
+})
+
+describe('the pile on a phone', () => {
+  // THE WIDTH THAT WAS MISSED. The bigger prints were measured in Chrome at 1280, 390 and 360 px; a review
+  // then computed that they reached the screen edge at 320 -- the smallest common phone -- where the page before them had 23 to 25 px each
+  // side. Nothing scrolls sideways to warn anyone: base.css clips horizontal
+  // overflow on html and body, so a pile too wide for the screen is cut off. A review found it by
+  // computing the rotated boxes; this is that computation, held to real widths.
+  const MIN_MARGIN = 12
+  // EVERY WHOLE WIDTH from 300 to 1280, not a few sample points. With four fixed widths, moving a rule's
+  // edge -- 359 down to 320, or 319 down to 300 -- passed every test while the phones between the old edge
+  // and the new one had their prints cut off. Below 300 the narrowest rule still leaves about 10 px at
+  // 280 px (a folded phone's cover screen), and the pile is only cut below about 259 px.
+  it(`leaves at least ${MIN_MARGIN} px each side at every width from 300 to 1280 px, all through the drift`, () => {
+    const tight: string[] = []
+    for (let width = 300; width <= 1280; width++) {
+      const e = pileExtent(pileScale(width))
+      const least = Math.min(width / 2 - e.left, width / 2 - e.right)
+      if (least < MIN_MARGIN) tight.push(`${width}px: ${least.toFixed(1)} px`)
+    }
+    expect(tight).toEqual([])
+  })
+
+  it('draws the pile smaller only below 360 px, so desktop and ordinary phones keep the full size', () => {
+    expect(pileScale(1280)).toBe(1)
+    expect(pileScale(390)).toBe(1)
+    expect(pileScale(360)).toBe(1)
+    expect(pileScale(320)).toBeLessThan(1)
+    expect(pileScale(300)).toBeLessThanOrEqual(pileScale(320))
+  })
+
+  it('matches Chrome frozen at rest and at the top of the drift, pose by pose', () => {
+    // Measured 2026-09-15 at 390 px with every print's animation frozen -- 'animation: none' for rest, a
+    // paused -4.5 s delay for the peak -- and the front print's computed transform checked to confirm the
+    // pose (rotate -2deg at rest; rotate -1.64deg and 7 px up at the peak), then the frames' bounding boxes
+    // read from the pile's centre. The first comparison used a reading taken mid-drift and passed only
+    // because 159.8 happened to round to 160, so each pose is now held to its own measurement.
+    //
+    // The GEOMETRY Chrome was measuring is written out here, not read from the module. These readings then
+    // describe one fixed pile for good: a later change to the real sizes cannot make them stale, and
+    // cannot tempt anyone to paste the function's own output in as if Chrome had said it.
+    const MEASURED = {
+      frame: { width: 132, height: 160 },
+      frames: [{ x: -84, y: 14, rotate: -9 }, { x: 84, y: 22, rotate: 7 }, { x: 0, y: 0, rotate: -2 }],
+      drift: { lift: 7, tiltKept: 0.82 },
+    }
+    const CHROME = {
+      rest: { left: 161.7, right: 159.26, above: 82.25, below: 109.45 },
+      peak: { left: 159.73, right: 157.67, above: 88.86, below: 101.2 },
+    }
+    for (const pose of ['rest', 'peak'] as const) {
+      const e = pileExtent(1, pose, MEASURED)
+      for (const side of ['left', 'right', 'above', 'below'] as const) {
+        expect(Math.abs(e[side] - CHROME[pose][side]), `${pose} ${side}`).toBeLessThanOrEqual(0.05)
+      }
+    }
+  })
+
+  it('keeps the prints inside their box above, and at most a few px into the gap below, lift included', () => {
+    // Under the pile come its own 4 px margin and gap-8's 32 px before the "404" label: 36 px. The right
+    // print's lowest corner sits 3.45 px below the box at rest; more than 8 px would start closing on the
+    // text. The highest point is the front print at the top of its lift, and the worst case must be the
+    // larger of the two poses on EVERY side -- with the peak left out, the lift could grow into the logo
+    // and nothing here would notice.
+    const e = pileExtent(1)
+    const rest = pileExtent(1, 'rest')
+    const peak = pileExtent(1, 'peak')
+    for (const side of ['left', 'right', 'above', 'below'] as const) {
+      expect(e[side], side).toBe(Math.max(rest[side], peak[side]))
+    }
+    expect(e.above).toBeLessThanOrEqual(PILE_HEIGHT / 2)
+    expect(e.below - PILE_HEIGHT / 2).toBeLessThanOrEqual(8)
+    expect(PILE_HEIGHT).toBeGreaterThanOrEqual(FRAME.height)
   })
 })
 

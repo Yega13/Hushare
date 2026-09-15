@@ -3,7 +3,7 @@ import Image from 'next/image'
 import type { Metadata } from 'next'
 import { getServerLocale } from '@/i18n/server'
 import { getDictionary } from '@/i18n/get-dictionary'
-import { FRAMES, frameStyle, windowStyle } from '@/lib/not-found-frames'
+import { DRIFT, FRAMES, NARROW, PILE_HEIGHT, frameStyle, windowStyle } from '@/lib/not-found-frames'
 
 export const metadata: Metadata = {
   title: 'Album not found — Hushare',
@@ -51,7 +51,8 @@ export default async function NotFound() {
             which is the part that says anything. */}
         <div
           aria-hidden="true"
-          style={{ position: 'relative', width: '100%', height: 150, marginBottom: 4 }}
+          className="hush-404-pile"
+          style={{ position: 'relative', width: '100%', height: PILE_HEIGHT, marginBottom: 4 }}
         >
           {FRAMES.map((frame) => (
             <span key={frame.z} className="hush-404-frame" style={frameStyle(frame)}>
@@ -117,8 +118,9 @@ export default async function NotFound() {
         }
         @keyframes hush-404-drift {
           0%, 100% { transform: translate(var(--x), var(--y)) rotate(var(--r)); }
-          50% { transform: translate(var(--x), calc(var(--y) - 7px)) rotate(calc(var(--r) * 0.82)); }
+          50% { transform: translate(var(--x), calc(var(--y) - ${DRIFT.lift}px)) rotate(calc(var(--r) * ${DRIFT.tiltKept})); }
         }
+        ${NARROW.map((n) => `@media (max-width: ${n.maxWidth}px) { .hush-404-pile { transform: scale(${n.scale}); } }`).join(' ')}
       `}</style>
     </div>
   )
