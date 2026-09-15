@@ -727,6 +727,15 @@ describe('the photo backup is wired end to end', () => {
     expect(consumed).toEqual([MEDIA_EVENTS_QUEUE])
   })
 
+  it('the consumer retries exactly as many times as the code reports its last attempts against', async () => {
+    // One fact in two files (rule 13): the queue gives up after wrangler.toml's max_retries, and the code
+    // reports "giving up" at QUEUE_MAX_RETRIES. If they drift, the report fires early every time or never.
+    const { QUEUE_MAX_RETRIES } = await import('@/lib/server/media-backup')
+    const consumer = /\[\[queues\.consumers\]\]\s*queue\s*=\s*"hushare-media-events"[\s\S]*?max_retries\s*=\s*(\d+)/.exec(production)
+    expect(consumer, 'could not read max_retries for the media events consumer').not.toBeNull()
+    expect(Number((consumer as RegExpExecArray)[1])).toBe(QUEUE_MAX_RETRIES)
+  })
+
   it('binds the backup as R2_BACKUP, a bucket of its own, beside the media it backs up', () => {
     const buckets = [...production.matchAll(/\[\[r2_buckets\]\]\s*binding\s*=\s*"([^"]+)"\s*bucket_name\s*=\s*"([^"]+)"/g)]
       .map((m) => `${m[1]}=${m[2]}`)
