@@ -3,6 +3,7 @@ import Image from 'next/image'
 import type { Metadata } from 'next'
 import { getServerLocale } from '@/i18n/server'
 import { getDictionary } from '@/i18n/get-dictionary'
+import { FRAMES, frameStyle, windowStyle } from '@/lib/not-found-frames'
 
 export const metadata: Metadata = {
   title: 'Album not found — Hushare',
@@ -15,20 +16,12 @@ export const metadata: Metadata = {
 // characterless, on the one page where somebody is already disappointed. Nearly everyone who lands
 // here was sent a link to somebody's wedding and got nothing.
 //
-// The picture is three EMPTY FRAMES, tilted the way photographs sit when they have been put down in
-// a pile. It says "the album is not here" in the product's own vocabulary, and it is drawn entirely
-// in CSS: no illustration to load, nothing for the CSP to block, nothing to go missing on the exact
-// page whose whole job is to work when something else did not.
+// The picture is a pile of three framed beach photos, tilted the way prints sit when they have been
+// put down on a table. What is in the pile, every size its parts share, and why the photos are CSS
+// backgrounds rather than images all live in src/lib/not-found-frames.ts; this page only lays it out.
 //
 // Reduced motion is handled globally in styles/base.css, which flattens every animation and
 // transition — so the drift below simply does not run, and the frames sit still.
-
-const FRAMES = [
-  { rotate: -9, x: -74, y: 10, delay: '0s', z: 1 },
-  { rotate: 7, x: 74, y: 16, delay: '.9s', z: 2 },
-  // Drawn last and centred, so the front frame of the pile is the one that reads first.
-  { rotate: -2, x: 0, y: 0, delay: '.45s', z: 3 },
-]
 
 export default async function NotFound() {
   const dict = getDictionary(await getServerLocale())
@@ -54,49 +47,15 @@ export default async function NotFound() {
           />
         </Link>
 
-        {/* The pile of empty frames. Purely decorative — a screen reader gets the heading below,
-            which says the same thing in words. */}
+        {/* The pile of framed photos. Purely decorative — a screen reader gets the heading below,
+            which is the part that says anything. */}
         <div
           aria-hidden="true"
           style={{ position: 'relative', width: '100%', height: 150, marginBottom: 4 }}
         >
           {FRAMES.map((frame) => (
-            <span
-              key={frame.z}
-              className="hush-404-frame"
-              style={{
-                position: 'absolute',
-                left: '50%',
-                top: '50%',
-                width: 108,
-                height: 118,
-                marginLeft: -54,
-                marginTop: -59,
-                zIndex: frame.z,
-                borderRadius: 10,
-                background: 'rgba(255, 253, 248, 0.92)',
-                border: '1px solid #E3D6C0',
-                boxShadow: '0 10px 26px rgba(99, 8, 38, 0.10)',
-                // Custom properties so one keyframe can drive all three: the animation adds its
-                // drift on top of each frame's own resting position instead of overwriting it.
-                ['--x' as string]: `${frame.x}px`,
-                ['--y' as string]: `${frame.y}px`,
-                ['--r' as string]: `${frame.rotate}deg`,
-                animationDelay: frame.delay,
-              }}
-            >
-              {/* The empty window inside the mount, dashed to read as "nothing here yet" rather
-                  than as a photo that failed to load. */}
-              <span
-                style={{
-                  position: 'absolute',
-                  inset: '9px 9px 24px',
-                  borderRadius: 5,
-                  border: '1px dashed #DCCBB0',
-                  background:
-                    'linear-gradient(135deg, rgba(243,224,188,0.20) 0%, rgba(243,224,188,0.05) 100%)',
-                }}
-              />
+            <span key={frame.z} className="hush-404-frame" style={frameStyle(frame)}>
+              <span style={windowStyle(frame.photo)} />
             </span>
           ))}
         </div>
