@@ -52,6 +52,8 @@ export default {
       from: PRUNE + WALK, to: WALK + PRUNE },
     { name: 'anyone can run the walk',
       from: '  if (!secret || !timingSafeEqual(provided, secret)) {', to: '  if (false) {' },
+    { name: 'WITH NO SECRET SET, ANYONE CAN RUN THE WALK -- timingSafeEqual("", "") is true',
+      from: '  if (!secret || !timingSafeEqual(provided, secret)) {', to: '  if (!timingSafeEqual(provided, secret)) {' },
     { name: 'an unreadable position is walked from the start, silently',
       from: "  if (error) {\n    return serverError(SOURCE, error.message, { publicMessage: 'Could not read backup progress' })\n  }\n", to: '' },
     { name: 'the walk and the sweep run every minute between passes, listing buckets all day',

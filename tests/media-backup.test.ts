@@ -3,7 +3,7 @@ import {
   handleBackupMessage, handleBackupBatch, consumeMediaEvents, reconcileStep, pruneBackup, keySortsAfter,
   parseBackupState, backupRunDue, pruneRunDue, nextBackupState, nextPruneState, retryDelaySeconds,
   isFinalDelivery, reportThroughSite, metered,
-  TOMBSTONE_PREFIX, GRACE_DAYS, RETRY_DELAYS_SECONDS, MEDIA_EVENTS_QUEUE, LIST_PAGE, BACKUP_STATE_KEY,
+  TOMBSTONE_PREFIX, GRACE_DAYS, RETRY_DELAYS_SECONDS, QUEUE_MAX_RETRIES, MEDIA_EVENTS_QUEUE, LIST_PAGE, BACKUP_STATE_KEY,
   PASS_INTERVAL_MS, PRUNE_INTERVAL_MS, RECONCILE_COPY_BUDGET, RECONCILE_TIME_BUDGET_MS, PRUNE_TIME_BUDGET_MS,
   RECONCILE_OP_BUDGET, PRUNE_OP_BUDGET, OPS_PER_OBJECT, MAX_LIST_PAGES, QUEUE_WINDOW_MS,
   type BackupBucket, type BackupDeps, type QueuedMessage, type ReconcileResult, type BackupState, type Meter,
@@ -266,6 +266,10 @@ describe('the queue -- retrying for as long as an outage lasts', () => {
     expect([4, 5].map(isFinalDelivery)).toEqual([false, false])
     expect([6, 7].map(isFinalDelivery)).toEqual([true, true])
     expect(isFinalDelivery(Number.NaN)).toBe(false)
+    // And it moves WITH max_retries: the literals above cannot tell a hardcoded 6 from the rule while the
+    // constant is 5, so a later raise of max_retries would bring the early "giving up" straight back.
+    expect(isFinalDelivery(QUEUE_MAX_RETRIES)).toBe(false)
+    expect(isFinalDelivery(QUEUE_MAX_RETRIES + 1)).toBe(true)
   })
 
   it('a report that fails is logged and does not throw the batch', async () => {

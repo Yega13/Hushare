@@ -10,6 +10,8 @@ export default {
   mutations: [
     { name: 'anyone can put a row in the error panel',
       from: '  if (!secret || !timingSafeEqual(provided, secret)) {', to: '  if (false) {' },
+    { name: 'WITH NO SECRET SET, A CALLER WITH NO SECRET PUTS ROWS IN THE PANEL -- timingSafeEqual("", "") is true',
+      from: '  if (!secret || !timingSafeEqual(provided, secret)) {', to: '  if (!timingSafeEqual(provided, secret)) {' },
     { name: 'A BODY OF ANY SHAPE IS STORED',
       from: "  if (typeof body?.message !== 'string' || !isFlatContext(body.context)) {", to: '  if (false) {' },
     { name: 'an array passes as context',

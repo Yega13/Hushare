@@ -162,6 +162,24 @@ describe('the backup walk route', () => {
     expect(cfg.writes).toEqual([])
   })
 
+  it('WITH NO SECRET SET, a caller with no secret is still refused before reading, listing or writing anything', async () => {
+    // timingSafeEqual('', '') is true, so with the secret unset only `!secret` keeps this route closed.
+    const source = bucket({ 'albums/a/p.jpg': old() })
+    const backup = bucket({}, { locked: true })
+    rig(source, backup)
+    for (const unset of [() => { delete process.env.ALBUM_RETIREMENT_SECRET }, () => { process.env.ALBUM_RETIREMENT_SECRET = '' }]) {
+      unset()
+      for (const req of [new Request('https://hushare.space/api/cron/backup-reconcile', { method: 'POST' }), post('')]) {
+        expect((await POST(req)).status).toBe(403)
+      }
+    }
+    expect(source.total() + backup.total()).toBe(0)
+    expect(cfg.readAttempts).toBe(0)
+    expect(cfg.writes).toEqual([])
+    expect(reports).toEqual([])
+    expect(backup.store.size).toBe(0)
+  })
+
   it('THE FIRST RUN IS THE BACKFILL: copies through FixedLengthStream, saves the finished pass, and reports nothing as missed', async () => {
     const source = bucket({ 'albums/a/1.jpg': old(), 'albums/a/2.jpg': old(), 'thumbs/a/1.jpg': old() })
     const backup = bucket({}, { locked: true })

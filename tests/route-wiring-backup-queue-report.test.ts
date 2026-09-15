@@ -32,6 +32,20 @@ describe('the backup queue report route', () => {
     expect(reports).toEqual([])
   })
 
+  it('WITH NO SECRET SET, a caller with no secret is still refused, and puts nothing in the panel', async () => {
+    // timingSafeEqual('', '') is true, so with the secret unset only `!secret` keeps this route closed.
+    const body = JSON.stringify({ message: 'Backup queue is giving up on an object', context })
+    for (const unset of [() => { delete process.env.ALBUM_RETIREMENT_SECRET }, () => { process.env.ALBUM_RETIREMENT_SECRET = '' }]) {
+      unset()
+      const requests = [
+        new Request('https://hushare.space/api/cron/backup-queue-report', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body }),
+        post(body, ''),
+      ]
+      for (const req of requests) expect((await POST(req)).status).toBe(403)
+    }
+    expect(reports).toEqual([])
+  })
+
   it('puts the queue sentence in the panel under queue/media-backup, with its context', async () => {
     const res = await POST(post(JSON.stringify({ message: 'Backup queue is giving up on an object', context })))
     expect(res.status).toBe(200)
