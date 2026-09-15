@@ -28,8 +28,9 @@ const reasonOf = (e: unknown): string => (e instanceof Error ? e.message : Strin
 //
 // Called every minute by worker.ts. Mid-pass it walks the next range of the media bucket and copies
 // what the backup lacks; between passes it returns after one database read, until a day has passed.
-// Its first pass is the backfill of everything uploaded before the queue existed -- about ten hours
-// for the 62,250 objects there were on 2026-09-14.
+// Its first pass is the backfill of everything uploaded before the queue existed. MEASURED on 2026-09-15 in
+// production, not worked out: about 20 copies a run, because the 25-second time budget binds long before
+// the 200-copy one, so the 63,716 objects (61.75 GB) there were take roughly 38 to 50 hours.
 //
 // THE PRUNE SWEEP HAS ITS OWN CLOCK and runs FIRST, inside its own budget. It used to run only when a
 // walk pass finished, which made every erasure wait on a pass -- and a walk that could not finish
